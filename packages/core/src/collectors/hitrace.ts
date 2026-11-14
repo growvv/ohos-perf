@@ -7,13 +7,17 @@ import type { Collector, TraceCollectOptions } from './types';
 /**
  * Default trace categories, matching HapRay `command_templates.py:36-60`.
  * All 25 were confirmed present on the emulator with `hitrace -l`.
+ *
+ * Frozen because this is published API (Task 14 re-exports it) and
+ * `beginCommand` reads it by reference: a caller's `push()` would otherwise
+ * change every later capture in the process.
  */
-export const HITRACE_DEFAULT_CATEGORIES: string[] = [
+export const HITRACE_DEFAULT_CATEGORIES: readonly string[] = Object.freeze([
   'ability', 'ace', 'app', 'ark', 'binder', 'disk', 'freq', 'graphic', 'idle',
   'irq', 'memreclaim', 'mmc', 'multimodalinput', 'notification', 'ohos',
   'pagecache', 'rpc', 'sched', 'sync', 'window', 'workq', 'zaudio', 'zcamera',
   'zimage', 'zmedia',
-];
+]);
 
 /** HapRay's `buffer_size_kb`. */
 const DEFAULT_BUFFER_KB = 204800;
@@ -31,21 +35,51 @@ const DEVICE_TRACE_PATH = '/data/local/tmp/ohosperf_trace.htrace';
 const BEGIN_MARKER = 'OpenRecording done';
 const FINISH_MARKER = 'trace read done';
 
+/** Node's setTimeout clamps anything larger to 1 ms (32-bit signed limit). */
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * `durationMs` must be a finite positive number. Silently clamping 0, NaN or a
- * negative value to zero would produce a zero-length capture that later reads
- * as "the UI was static"; an unbounded value would hang the process. Rejecting
- * is the only outcome the caller can act on.
+ * `durationMs` must be a finite number in `(0, 2^31 - 1]`.
+ *
+ * Silently clamping 0, NaN or a negative value to zero would produce a
+ * zero-length capture that later reads as "the UI was static". Above the 32-bit
+ * setTimeout limit Node does not wait at all — it clamps the timer to 1 ms and
+ * emits `TimeoutOverflowWarning`, so a 30-day capture silently becomes
+ * milliseconds and still passes the size check. Rejecting is the only outcome
+ * the caller can act on.
  */
 function assertDuration(durationMs: number): void {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
     throw new OhosPerfError(
       `durationMs must be a finite number greater than 0 (got ${String(durationMs)})`,
       { code: 'HITRACE_BAD_DURATION' },
+    );
+  }
+  if (durationMs > MAX_TIMEOUT_MS) {
+    throw new OhosPerfError(
+      `durationMs must not exceed ${MAX_TIMEOUT_MS} ms (the 32-bit setTimeout limit);` +
+        ` larger values are silently clamped to 1 ms (got ${String(durationMs)})`,
+      { code: 'HITRACE_BAD_DURATION' },
+    );
+  }
+}
+
+/**
+ * An empty or blank category list is not a capture. Measured on device:
+ * `hitrace --trace_begin -b N` with no categories prints
+ * `error: tag is empty, please add.` **and** `OpenRecording done.`, so every
+ * marker check would pass and the result would be an eventless trace.
+ */
+function assertCategories(categories: readonly string[]): void {
+  if (categories.length === 0 || categories.some((c) => c.trim().length === 0)) {
+    throw new OhosPerfError(
+      'categories must contain at least one non-empty category name' +
+        ` (got ${JSON.stringify(categories)})`,
+      { code: 'HITRACE_BAD_CATEGORIES' },
     );
   }
 }
@@ -55,13 +89,28 @@ function combined(result: { stdout: string; stderr: string }): string {
   return `${result.stdout}\n${result.stderr}`;
 }
 
-/** One-line excerpt of device output for an error message. */
+/** How many device-output lines an error message may quote. */
+const DETAIL_MAX_LINES = 5;
+
+/**
+ * Device output excerpt for an error message.
+ *
+ * The interesting line is rarely the first: hitrace's failures look like
+ * `hitrace enter, running_state is ...`, an `args:` line, then
+ * `error: OpenRecording failed, errorCode(1103)`. Quoting only the first line
+ * hides the actual cause, so every non-empty line is included, bounded to
+ * {@link DETAIL_MAX_LINES}.
+ */
 function detail(text: string): string {
-  const line = text
+  const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .find((l) => l.length > 0);
-  return line ?? '(no output)';
+    .filter((l) => l.length > 0);
+  if (lines.length === 0) return '(no output)';
+  const shown = lines.slice(0, DETAIL_MAX_LINES).join(' | ');
+  return lines.length > DETAIL_MAX_LINES
+    ? `${shown} | ... (${lines.length - DETAIL_MAX_LINES} more lines)`
+    : shown;
 }
 
 /**
@@ -106,7 +155,8 @@ export class HitraceCollector implements Collector {
    */
   beginCommand(opts: TraceCollectOptions): string {
     const bufferKb = opts.bufferKb ?? DEFAULT_BUFFER_KB;
-    const categories = opts.categories ?? HITRACE_DEFAULT_CATEGORIES;
+    const categories: readonly string[] = opts.categories ?? HITRACE_DEFAULT_CATEGORIES;
+    assertCategories(categories);
     return `hitrace --trace_begin -b ${bufferKb} ${categories.join(' ')}`;
   }
 
@@ -129,8 +179,17 @@ export class HitraceCollector implements Collector {
    * Nothing is transferred unless every check above passes, so a failed or
    * empty capture can never overwrite `layout.traceFile` with stale data.
    *
-   * `opts.durationMs` must be a finite number greater than 0; anything else
-   * throws `HITRACE_BAD_DURATION` before the device is touched.
+   * If anything throws after a successful begin but before a successful
+   * finish, a best-effort `hitrace --trace_finish_nodump` is issued in a
+   * `finally`. Without it a transport failure (hdc throws, target drops) would
+   * leave hitrace recording on the device, and every later begin would fail
+   * with `errorCode(1103)` until someone stopped it by hand. The stop's own
+   * error is swallowed; the original failure is what the caller sees.
+   *
+   * `opts.durationMs` must be finite and in `(0, 2^31 - 1]`; anything else
+   * throws `HITRACE_BAD_DURATION` before the device is touched. `categories`,
+   * when supplied, must contain at least one non-empty name, else
+   * `HITRACE_BAD_CATEGORIES`.
    */
   async collect(
     hdc: Hdc,
@@ -139,6 +198,7 @@ export class HitraceCollector implements Collector {
     layout: SceneLayout,
   ): Promise<void> {
     assertDuration(opts.durationMs);
+    assertCategories(opts.categories ?? HITRACE_DEFAULT_CATEGORIES);
 
     const devicePath = DEVICE_TRACE_PATH;
 
@@ -152,27 +212,47 @@ export class HitraceCollector implements Collector {
       );
     }
 
-    await delay(opts.durationMs);
+    let finished = false;
+    try {
+      await delay(opts.durationMs);
 
-    const finish = await hdc.shell(target, this.finishCommand(devicePath));
-    if (!combined(finish).includes(FINISH_MARKER)) {
-      throw new OhosPerfError(
-        `hitrace finish failed: expected "${FINISH_MARKER}"; device output: ${detail(combined(finish))}`,
-        { code: 'HITRACE_FINISH_FAILED' },
-      );
+      const finish = await hdc.shell(target, this.finishCommand(devicePath));
+      if (!combined(finish).includes(FINISH_MARKER)) {
+        throw new OhosPerfError(
+          `hitrace finish failed: expected "${FINISH_MARKER}"; device output: ${detail(combined(finish))}`,
+          { code: 'HITRACE_FINISH_FAILED' },
+        );
+      }
+      // Recording is stopped from here on; a later failure must not re-stop.
+      finished = true;
+
+      const listing = await hdc.shell(target, `ls -l ${devicePath}`);
+      const size = parseSize(listing.stdout, devicePath);
+      if (size === undefined || size <= 0) {
+        throw new OhosPerfError(
+          `hitrace produced no trace output at ${devicePath}` +
+            ` (${size === undefined ? 'file not found' : 'file is empty'});` +
+            ` ls -l output: ${detail(combined(listing))}`,
+          { code: 'HITRACE_NO_OUTPUT' },
+        );
+      }
+
+      await hdc.recv(target, devicePath, layout.traceFile);
+    } finally {
+      if (!finished) await this.stopBestEffort(hdc, target);
     }
+  }
 
-    const listing = await hdc.shell(target, `ls -l ${devicePath}`);
-    const size = parseSize(listing.stdout, devicePath);
-    if (size === undefined || size <= 0) {
-      throw new OhosPerfError(
-        `hitrace produced no trace output at ${devicePath}` +
-          ` (${size === undefined ? 'file not found' : 'file is empty'});` +
-          ` ls -l output: ${detail(combined(listing))}`,
-        { code: 'HITRACE_NO_OUTPUT' },
-      );
+  /**
+   * Stop a recording that is still running. Never throws: this runs while an
+   * error is propagating, and replacing that error with a stop failure would
+   * hide the actual cause.
+   */
+  private async stopBestEffort(hdc: Hdc, target: string): Promise<void> {
+    try {
+      await hdc.shell(target, 'hitrace --trace_finish_nodump');
+    } catch {
+      // Deliberately swallowed.
     }
-
-    await hdc.recv(target, devicePath, layout.traceFile);
   }
 }
