@@ -89,6 +89,26 @@ describe('FrameQuery', () => {
     });
   });
 
+  it('counts flag 3 in total but in no flag bucket', () => {
+    // Flag 3 is RS-App abnormal. It is deliberately unbucketed (pinned here so
+    // a future `abnormal` field is a conscious change, not an accident): on the
+    // measured trace 10 of 177 rows are flag 3, so
+    // stuttered + empty + normal = 167 != total = 177.
+    const q3 = withDb('flag3.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 100, 10, 17, 44, 94, 100000, '', 0, 0, 'actural', 0, 0, 0),
+        (1, 200, 11, 17, 44, 95, 100000, '', 0, 0, 'actural', 3, 0, 1)`);
+    });
+    try {
+      expect(new FrameQuery(q3).stats()).toEqual({
+        total: 2, actual: 2, expect: 0, stuttered: 0, empty: 0, normal: 1,
+      });
+    } finally {
+      q3.close();
+    }
+  });
+
   it('computes zeroed stats for an empty window', () => {
     const q = new FrameQuery(db);
     expect(q.stats({ startNs: 10_000, endNs: 20_000 })).toEqual({
@@ -236,16 +256,19 @@ describe('FrameQuery.mapped', () => {
         (0, 100, 10, 17, 44, 94, 100000, '', 0, 0, 'actural', 0, 0, 0),
         (1, 150, 10, 26, 64, 95, 100000, '', 0, 1, 'expect', NULL, 0, 1),
         (2, 200, 11, 17, 44, 96, 100000, '', 0, 0, 'actural', 0, 0, 2),
-        (3, 250, 11, 26, 64, 97, 100000, '', 0, 0, 'actural', 0, 0, 3)`);
+        (3, 250, 11, 26, 64, 97, 100000, '', 0, 0, 'actural', 0, 0, 3),
+        (4, 300, 11, 26, 64, 98, 100000, '', 0, 1, 'expect',  NULL, 0, 4)`);
       d.exec('CREATE TABLE frame_maps(id INT, src_row INT, dst_row INT)');
       d.exec(`INSERT INTO frame_maps VALUES
         (0, 0, 1),
         (1, 2, 3),
-        (2, 99, 3)`);
+        (2, 99, 3),
+        (3, 4, 3)`);
     });
     try {
       // (0, 0, 1): dst row 1 has a NULL flag, so it has no Frame.
       // (2, 99, 3): row 99 does not exist.
+      // (3, 4, 3): src row 4 has a NULL flag — the src-side guard.
       expect(new FrameQuery(sparse).mapped().map((m) => [m.src.id, m.dst.id])).toEqual([
         [2, 3],
       ]);

@@ -1,7 +1,18 @@
 import type { QueryHandle } from '../db/driver';
 import type { TimeRange } from '../types';
 
-/** Frame status as stored in `frame_slice.flag`. */
+/**
+ * Frame status as stored in `frame_slice.flag`.
+ *
+ * `0` normal, `1` stuttered (rendered late), `2` empty (nothing to draw),
+ * `3` RS-App abnormal.
+ *
+ * Note `3` is **not** a `FrameStats` bucket: `stats()` counts flag-3 rows in
+ * `total` but in none of `stuttered`/`empty`/`normal`, so
+ * `stuttered + empty + normal` can be less than `total` (10 of 177 rows on the
+ * measured 249MB trace). Do not compute a stutter rate as `stuttered / total`
+ * without deciding what to do with flag 3.
+ */
 export type FrameFlag = 0 | 1 | 2 | 3;
 /** 0 = actual (rendered) frame, 1 = expected frame. */
 export type FrameType = 0 | 1;

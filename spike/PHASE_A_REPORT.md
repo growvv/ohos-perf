@@ -185,7 +185,7 @@ VSync 异常（`trace_vsyncAnomaly.json`）：
 **这不是丢事件，是模拟器渲染真的慢。** 依据：
 
 1. 帧数是**实际帧多于期望帧**（105 actual vs 81 expected），没有大批丢失；
-2. `frame_maps` 100 条配对关系完整，actual/expect 成对出现；
+2. ~~`frame_maps` 100 条配对关系完整，actual/expect 成对出现；~~ **此条已证伪（2026-11-15，Task 9 期间在 249MB trace 上重测）**：`frame_maps` 的 100 条是 50 条 type0→type0 + 50 条 type1→type1，连接的是**同一类型、跨进程**的帧（app/sceneboard `ipid=17`/`35` → render_service `ipid=26`），两端 vsync 还分属两个域（3975/3977/3979 vs 6130/6132/6134），因此它既不是 actual↔expect 配对，也不是同 vsync 连接。结论 1、3、4 不受影响；"不是丢事件"这个总判断仍成立。
 3. vsync 号是连续的（6127→6289），说明 vsync 信号源本身正常；
 4. 真机在 2.6 秒内跑 142 帧，模拟器在 25 秒内跑 105 帧——差异来自 QEMU 软件渲染（`gpu_slice=0`，无硬件 GPU）。
 

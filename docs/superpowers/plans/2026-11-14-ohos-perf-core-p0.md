@@ -912,7 +912,7 @@ git commit -m "feat: add scene layout and ingest pipeline"
     - `expect(range?: TimeRange): Frame[]`
     - `stuttered(range?: TimeRange): Frame[]`
     - `empty(range?: TimeRange): Frame[]`
-    - `pairs(): Array<{ actual: Frame; expect?: Frame }>`
+    - `mapped(): Array<{ src: Frame; dst: Frame }>`
     - `stats(range?: TimeRange): FrameStats`
 
 - [ ] **Step 1: 写失败测试**

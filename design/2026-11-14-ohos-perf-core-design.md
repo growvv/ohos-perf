@@ -273,7 +273,7 @@ interface FrameQuery {
   expect(range?: TimeRange): Promise<Frame[]>;
   stuttered(range?: TimeRange): Promise<Frame[]>;
   empty(range?: TimeRange): Promise<Frame[]>;
-  pairs(): Promise<Array<{ actual: Frame; expect?: Frame }>>;  // 经 frame_maps
+  mapped(): Array<{ src: Frame; dst: Frame }>;   // 经 frame_maps：跨进程同类型帧链接
   stats(range?: TimeRange): Promise<FrameStats>;
 }
 ```
@@ -311,7 +311,7 @@ interface AnalyzeContext {
 
 | 分析器 | 数据源（表） | TS 模块 | 算法要点 | 移植难度 |
 |---|---|---|---|---|
-| 统一帧 | `frame_slice` `frame_maps` `perf_sample` | `analyze/frames` | flag/type 语义；actual/expect 配对；帧负载 = 帧窗口内 `event_count` 累加 | 中 |
+| 统一帧 | `frame_slice` `frame_maps` `perf_sample` | `analyze/frames` | flag/type 语义；`frame_maps` 为跨进程同类型帧链接（**非** actual/expect 配对，已实测证伪）；帧负载 = 帧窗口内 `event_count` 累加 | 中 |
 | 空帧 + 唤醒链 | `frame_slice(flag=2)` `instant` `thread_state` `callstack` | `analyze/empty-frame` | 正向 flag=2；反向 RS skip 追溯；唤醒链 BFS | 高 |
 | VSync 异常 | `frame_slice.vsync` `callstack` | `analyze/vsync` | 只有实际帧无期望帧 / 反之；符号匹配 `VSyncCallBackListener` | 中 |
 | IPC Binder | `callstack` `data_dict` `thread` `process` | `analyze/binder` | `transaction id` 配对请求/响应；按进程/线程/接口三维聚合 | 中 |
