@@ -208,4 +208,140 @@ describe('FrameAnalyzer', () => {
       expectOnly.close();
     }
   });
+
+  it('averages duration over rendered frames, not actual frames', async () => {
+    // The base fixture cannot tell the two apart (all frames have dur=16ms).
+    // Here rendered mean is 20ms and actual mean is (20+20+100)/3 = 46.67ms,
+    // so using `actual` would fail this assertion.
+    const mixed = withDb('avg-rendered.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 100, 0, 17, 44, 94, 20000000, '', 0, 0, 'actural', 0, 0, 0),
+        (1, 200, 0, 17, 44, 94, 20000000, '', 0, 0, 'actural', 0, 0, 0),
+        (2, 300, 0, 17, 44, 94, 100000000, '', 0, 0, 'actural', 2, 0, 0)`);
+      d.exec(PROCESS_DDL);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const c = { ...ctx(), frames: new FrameQuery(mixed) };
+      const r = await new FrameAnalyzer().run(c);
+      expect(r.metrics.find((m) => m.id === 'frame.avg.duration')!.value)
+        .toBeCloseTo(20, 5);
+    } finally {
+      mixed.close();
+    }
+  });
+
+  it('computes fps over the frame span, not the analysis window', async () => {
+    // 11 frames span exactly 1s inside a 10s window: correct fps is 11,
+    // while using ctx.window would give 1.1.
+    const narrow = withDb('fps-span.db', (d) => {
+      d.exec(FRAME_DDL);
+      const rows = [];
+      for (let i = 0; i <= 10; i++) {
+        rows.push(`(${i}, ${1_000_000_000 + i * 100_000_000}, ${i}, 17, 44, 94, 0,
+          '', 0, 0, 'actural', 0, 0, 0)`);
+      }
+      d.exec(`INSERT INTO frame_slice VALUES ${rows.join(',')}`);
+      d.exec(PROCESS_DDL);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const c = {
+        ...ctx(), frames: new FrameQuery(narrow),
+        window: { startNs: 0, endNs: 10_000_000_000 },
+      };
+      const r = await new FrameAnalyzer().run(c);
+      expect(r.metrics.find((m) => m.id === 'frame.fps')!.value).toBeCloseTo(11, 5);
+    } finally {
+      narrow.close();
+    }
+  });
+
+  it('emits metrics and evidence in their documented sort order', async () => {
+    // All three jank frames share one ts, so (kind, startNs) ties and only the
+    // id can break them. Insertion order is zzz, mmm, aaa (rowid order) while
+    // sorted-by-id order is aaa, mmm, zzz — so removing either sort fails here.
+    const unsorted = withDb('sort-order.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 1000000000, 0, 10, 44, 94, 20000000, '', 0, 0, 'actural', 1, 0, 0),
+        (1, 1000000000, 0, 11, 44, 94, 20000000, '', 0, 0, 'actural', 1, 0, 0),
+        (2, 1000000000, 0, 12, 44, 94, 20000000, '', 0, 0, 'actural', 1, 0, 0)`);
+      d.exec(PROCESS_DDL);
+      d.exec(`INSERT INTO process VALUES
+        (0, 10, 500, 'zzz', NULL, 0, 1, 1, 0),
+        (1, 11, 501, 'mmm', NULL, 0, 1, 1, 0),
+        (2, 12, 502, 'aaa', NULL, 0, 1, 1, 0)`);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const c = {
+        ...ctx(), frames: new FrameQuery(unsorted),
+        processes: new ProcessQuery(unsorted),
+      };
+      const r = await new FrameAnalyzer().run(c);
+      const ids = r.metrics.map((m) => m.id);
+      expect(ids).toEqual([...ids].sort());
+      expect(r.metrics.map((m) => m.id)).toEqual([
+        'frame.avg.duration', 'frame.count', 'frame.empty.rate',
+        'frame.fps', 'frame.jank.rate', 'frame.rendered.count',
+      ]);
+      const jank = r.evidence.filter((e) => e.kind === 'jank');
+      expect(jank.map((e) => e.subject.process)).toEqual(['aaa', 'mmm', 'zzz']);
+    } finally {
+      unsorted.close();
+    }
+  });
+
+  it('does not claim a sub-budget frame exceeded a budget', async () => {
+    // 11 of 60 real flag-1 frames have dur < 16.7ms (lowest 0.35ms). The
+    // platform flagged them late for reasons unrelated to the 60Hz budget, so
+    // an explain that says "took 0.5ms (budget 16.7ms)" reads as a false
+    // positive. It must name the platform verdict instead.
+    const tiny = withDb('sub-budget-jank.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 1000000000, 7, 17, 44, 94, 500000, '', 0, 0, 'actural', 1, 0, 0)`);
+      d.exec(PROCESS_DDL);
+      d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', NULL, 0, 1, 1, 0)`);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const c = { ...ctx(), frames: new FrameQuery(tiny) };
+      const r = await new FrameAnalyzer().run(c);
+      const jank = r.evidence.filter((e) => e.kind === 'jank');
+      expect(jank).toHaveLength(1);
+      expect(jank[0].explain).toContain('flagged late by platform');
+      expect(jank[0].explain).toContain('dur 0.5ms');
+      expect(jank[0].explain).toContain('vsync 7');
+      expect(jank[0].explain).not.toMatch(/budget/i);
+      expect(jank[0].explain).not.toContain('16.7');
+    } finally {
+      tiny.close();
+    }
+  });
+
+  it('reports the real row count when the window has only unknown frame types', async () => {
+    // type outside {0,1} is not produced by the measured traces, but if it
+    // occurs the no_data evidence must not claim 0 rows when frames.all()
+    // would return rows.
+    const odd = withDb('unknown-type.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 100, 0, 17, 44, 94, 100000, '', 0, 2, 'other', 0, 0, 0),
+        (1, 200, 0, 17, 44, 94, 100000, '', 0, 2, 'other', 0, 0, 0)`);
+      d.exec(PROCESS_DDL);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const c = { ...ctx(), frames: new FrameQuery(odd) };
+      const r = await new FrameAnalyzer().run(c);
+      const noData = r.evidence.filter((e) => e.kind === 'no_data');
+      expect(noData).toHaveLength(1);
+      expect(noData[0].drillDown[0].estRows).toBe(2);
+    } finally {
+      odd.close();
+    }
+  });
 });

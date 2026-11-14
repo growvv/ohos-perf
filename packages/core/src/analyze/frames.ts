@@ -4,15 +4,6 @@ import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
-/**
- * Per-frame render budget in milliseconds, used only in the human-readable
- * `explain` text. It is 60Hz's 16.7ms and is deliberately **not** used as a
- * stutter threshold: `frame_slice.flag` already carries the device's own
- * stutter verdict (`flag = 1`), and re-deriving it from `dur` would disagree
- * with the platform on any non-60Hz panel.
- */
-const BUDGET_MS = 16.7;
-
 /** `frame_slice` provenance shared by every metric this analyzer emits. */
 function provenance(ctx: AnalyzeContext, rows: number) {
   return {
@@ -84,9 +75,15 @@ function jankEvidence(frame: Frame, processName: string, originNs: number): Evid
     // no information, while ipid says which process owns the frame. `offsetMs`
     // is the human-facing time; `durMs` is the frame's own cost.
     signals: { durMs, offsetMs, vsync: frame.vsync, ipid: frame.ipid },
+    // Names the platform's own verdict rather than comparing against a
+    // 60Hz budget: 11 of the 60 measured flag-1 frames have `dur` under 16.7ms
+    // (lowest 0.35ms), so a "(budget 16.7ms)" clause would present them as
+    // self-contradictory and an agent would dismiss them as false positives.
+    // `flag = 1` means the platform judged the frame late — not that it missed
+    // a fixed budget this library chose.
     explain:
-      `${processName} frame at ${offsetMs.toFixed(1)}ms took ` +
-      `${durMs.toFixed(1)}ms (budget ${BUDGET_MS}ms)`,
+      `${processName} frame at ${offsetMs.toFixed(1)}ms flagged late by platform ` +
+      `(dur ${durMs.toFixed(1)}ms, vsync ${frame.vsync})`,
     drillDown: [
       { label: 'Frame detail', tool: 'frames.get', args: { id: frame.id }, returns: 'Frame' },
       {
@@ -112,12 +109,21 @@ function jankEvidence(frame: Frame, processName: string, originNs: number): Evid
  *   query worked and the trace has data, but no actual frame was rendered in
  *   this window. Saying "no frames captured" would be false; the explain names
  *   the expect-frame count instead.
+ * - `frames.length > 0` with no actual and no expect rows (a `type` outside
+ *   `{0, 1}`). This does not occur on the measured traces, where `type` is
+ *   always 0 or 1, but the branch is reachable in principle. It falls back to
+ *   the "no frames captured" text; `estRows` still reports `totalRows`, so the
+ *   drill-down never claims 0 rows when `frames.all()` would return some.
  *
  * Returning an empty `metrics` array with no evidence (or six zeros with no
  * evidence) would be indistinguishable from a broken query, so the evidence
  * carries the explanation and a drill-down that lets an agent confirm it.
  */
-function noDataEvidence(ctx: AnalyzeContext, expectFrames: number): Evidence {
+function noDataEvidence(
+  ctx: AnalyzeContext,
+  expectFrames: number,
+  totalRows: number,
+): Evidence {
   // First non-empty name: an empty `subject.process` would make the evidence id
   // and the explain text unattributable. Falls back to the package name.
   const process =
@@ -140,7 +146,9 @@ function noDataEvidence(ctx: AnalyzeContext, expectFrames: number): Evidence {
         tool: 'frames.all',
         args: { window: ctx.window },
         returns: 'Frame[]',
-        estRows: expectFrames,
+        // The rows `frames.all(window)` would actually return, not just the
+        // expect count: an unknown-type window has rows but no expect frames.
+        estRows: totalRows,
       },
     ],
   });
@@ -237,7 +245,7 @@ export class FrameAnalyzer implements Analyzer {
     const frames = ctx.frames.all(ctx.window);
 
     if (frames.length === 0) {
-      return { metrics: [], evidence: [noDataEvidence(ctx, 0)] };
+      return { metrics: [], evidence: [noDataEvidence(ctx, 0, 0)] };
     }
 
     const actual = frames.filter((frame) => frame.type === 0);
@@ -250,7 +258,8 @@ export class FrameAnalyzer implements Analyzer {
     // are honest zeros, but without evidence they are indistinguishable from a
     // broken analyzer. The no_data item names the expect-frame count so the
     // zeros are attributable.
-    const noData = actual.length === 0 ? noDataEvidence(ctx, expect.length) : undefined;
+    const noData =
+      actual.length === 0 ? noDataEvidence(ctx, expect.length, frames.length) : undefined;
 
     // Span of the captured actual frames, not of ctx.window: a caller window
     // wider than the capture would under-report fps. `actual` preserves
