@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type QueryHandle } from '../src/db/driver';
 import { ProcessQuery, ThreadQuery } from '../src/query/process';
+import { num } from '../src/query/rows';
 
 let dir: string; let db: QueryHandle;
 
@@ -93,5 +94,48 @@ describe('ThreadQuery', () => {
     expect(all.map((t) => t.id)).toEqual([44, 45, 46]);
     expect(all[2].endTs).toBe(0);
     expect(all[2].startTs).toBe(0);
+  });
+  it('resolves threads by pid without confusing it for an ipid', () => {
+    // Measured on the real trace: a pid is NOT an ipid. 40 of 437 processes
+    // have a pid that is also a legal ipid belonging to a DIFFERENT process,
+    // so `forProcess(pid)` silently returns another process's threads —
+    // e.g. `hilogd` (ipid 4, pid 113) yields `sh`'s threads. `forPid` joins
+    // through `process`, so it cannot make that mistake.
+    const conf = withDb('pid-ipid.db', (d) => {
+      d.exec(PROCESS_DDL);
+      d.exec(`INSERT INTO process VALUES
+        (4, 4, 113, 'hilogd', NULL, 0, 2, 0, 0),
+        (113, 113, 500, 'sh', NULL, 0, 1, 0, 0)`);
+      d.exec(THREAD_DDL);
+      d.exec(`INSERT INTO thread VALUES
+        (6, 6, 4001, 'hilogd.server', NULL, NULL, 4, 0, 0),
+        (10, 10, 4002, 'hilogd', NULL, NULL, 4, 1, 0),
+        (386, 386, 5001, 'sh', NULL, NULL, 113, 1, 0)`);
+    });
+    try {
+      const threads = new ThreadQuery(conf);
+      // ipid 113 belongs to `sh`, not to `hilogd`: the old accessor returns
+      // another process's thread here, with no error.
+      expect(threads.forProcess(113).map((t) => t.id)).toEqual([386]);
+      // forPid(113) is `hilogd`'s pid, so it returns `hilogd`'s threads.
+      expect(threads.forPid(113).map((t) => t.id)).toEqual([6, 10]);
+      expect(threads.forPid(500).map((t) => t.id)).toEqual([386]);
+    } finally {
+      conf.close();
+    }
+  });
+  it('returns [] for an unknown pid', () => {
+    expect(new ThreadQuery(db).forPid(123456)).toEqual([]);
+  });
+});
+
+describe('rows', () => {
+  it('coerces a non-numeric value to 0 instead of NaN', () => {
+    // SQLite can store text in an INT-affinity column. `JSON.stringify(NaN)`
+    // is `null`, so a NaN would silently become a missing value downstream;
+    // `0` is the documented "absent" sentinel for numeric fields.
+    expect(num('abc' as unknown as number | null)).toBe(0);
+    expect(Number.isNaN(num('abc' as unknown as number | null))).toBe(false);
+    expect(num('12' as unknown as number | null)).toBe(12);
   });
 });

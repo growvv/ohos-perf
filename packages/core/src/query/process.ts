@@ -166,9 +166,11 @@ export class ProcessQuery {
 /**
  * Typed accessor over `thread`.
  *
- * Every method shares `all()`'s set and `id` ascending order; `mainThreads()`
- * and `forProcess()` filter that set rather than issuing their own SQL, so
- * their ordering and NULL handling cannot drift from `all()`.
+ * Every method returns `all()`'s row shape in `id` ascending order.
+ * `mainThreads()` and `forProcess()` filter that set rather than issuing their
+ * own SQL, so their NULL handling cannot drift from `all()`. `forPid()` joins
+ * through `process` and reuses the same `toThread` mapping, so only its
+ * predicate differs.
  *
  * `thread` is a core trace_streamer table, so no `hasTable()` guard is used.
  */
@@ -190,8 +192,46 @@ export class ThreadQuery {
     return this.all().filter((thread) => thread.isMainThread);
   }
 
-  /** Rows whose `ipid` belongs to the given process, ordered by `id`. */
+  /**
+   * Rows whose `ipid` belongs to the given process, ordered by `id`.
+   *
+   * **The argument is an `ipid`, not a `pid`.** `frame_slice.ipid` and
+   * `callstack.ipid` are ipids, so this is the right accessor for frame and
+   * binder analysis. If you have a `pid` — for example the value
+   * `ProcessQuery.pidsFor()` returns — use {@link forPid} instead.
+   *
+   * Passing a pid here is not merely "not found": ipids and pids are different
+   * number spaces that overlap, so a pid can name a *different* process's
+   * ipid. Measured on the 249MB trace, of 437 processes 396 pids are not a
+   * legal ipid (this returns `[]`), 1 pid happens to equal its own ipid, and
+   * **40 silently return another process's threads**. For example `hilogd`
+   * has `ipid=4, pid=113`, and ipid 113 belongs to `sh` — so
+   * `forProcess(113)` returns `sh`'s thread with no error.
+   */
   forProcess(ipid: number): ThreadInfo[] {
     return this.all().filter((thread) => thread.ipid === ipid);
+  }
+
+  /**
+   * Rows of the process whose **`pid`** is `pid`, ordered by `id`.
+   *
+   * Resolves the pid through `process` (`thread.ipid = process.ipid`) rather
+   * than comparing it against `thread.ipid` directly, so a pid can never be
+   * mistaken for an ipid — see {@link forProcess} for the measured overlap.
+   * Measured: `hilogd` (pid 113) yields its 6 threads, `ohos.sceneboard` 32,
+   * `render_service` 17, `sh` 1. Pids are unique on the measured traces, so
+   * the join cannot fan out; an unknown pid returns `[]`.
+   */
+  forPid(pid: number): ThreadInfo[] {
+    return this.db
+      .query<ThreadRow>(
+        `SELECT t.id, t.itid, t.tid, t.name, t.start_ts, t.end_ts, t.ipid,
+                t.is_main_thread, t.switch_count
+         FROM thread t JOIN process p ON t.ipid = p.ipid
+         WHERE p.pid = ?
+         ORDER BY t.id`,
+        [pid],
+      )
+      .map(toThread);
   }
 }
