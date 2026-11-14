@@ -29,7 +29,7 @@
 - **Git Bash / MSYS 路径转换**：`hdc file recv /data/local/tmp/x.htrace out/` 在 Windows Git Bash 下会被改写成 `D:/.../data/local/tmp/...`。实现必须在 spawn 时设置 `MSYS_NO_PATHCONV=1`，且测试覆盖设备绝对路径。
 - **设备返回空表而非报错**：`frame_slice` 为空可能意味着"桌面静止无重绘"（Phase B 实测：空闲 3 秒 0 帧）而非采集失败。分析器必须产出 `no_data` 证据并附解释，不能返回 `[]` 了事。
 - **hdc 端口静默失败**：`Emulator.exe -start -hdcPort 5555` 退出码为 0 但不启动（合法范围 10000–16555）。设备连接逻辑不能以退出码判定成功。
-- **`node:sqlite` 对大库的延迟**：249MB 的 trace.db 未实测。若单次查询超过 2 秒，需在 `db/driver.ts` 留出切换到 `better-sqlite3` 的接口边界。
+- ~~**`node:sqlite` 对大库的延迟**：249MB 的 trace.db 未实测。~~ **已实测（2026-11-15，Task 5）**：249MB 是输入 `.htrace`，其转换出的 SQLite 是 17.9MB / 88 表。在 `node:sqlite` 上：打开 2.8ms、全帧有序查询 0.2ms、帧+双 JOIN 0.9ms、`sched_slice` COUNT 2.2ms、`thread_state` COUNT 4.5ms、`callstack` COUNT 4.5ms。全部远低于 2 秒阈值，**不需要 `better-sqlite3` 切换边界**，D6（零原生依赖）成立。
 - **期望帧的 flag 多为 NULL**：实测 249MB trace 中，`type_desc='expect'` 的 169 行里有 161 行 `flag` 为 NULL，仅 8 行为整数。HapRay 全链路带 `WHERE flag IS NOT NULL`，因此 `expect()` 返回的帧数远少于期望帧总数，这是**既有行为而非缺陷**。任何按期望帧计数的指标必须知道这一点，否则会误判为采集不全。
 
 ---
