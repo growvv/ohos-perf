@@ -30,8 +30,9 @@ function emptyScene(): Scene {
   return {
     dir: '',
     traceDb: { path: '', query: () => [], close: () => {} },
+    query: () => [],
     close: () => {},
-  } as unknown as Scene;
+  };
 }
 
 describe('packageVersion', () => {
@@ -55,6 +56,28 @@ describe('packageVersion', () => {
   it('resolves package.json one level above the module', () => {
     // Holds for both `src/deps.ts` and the bundled `dist/index.js`.
     expect(manifestPath).toBe(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'));
+  });
+
+  it('falls back to 0.0.0 instead of throwing when the manifest is missing', () => {
+    // `realDeps()` runs at module load, so a throw here would make `--help`
+    // crash. The version is metadata; a broken install must stay usable.
+    expect(() => packageVersion(join(tmpdir(), 'ohosperf-no-such-dir', 'package.json'))).not.toThrow();
+    expect(packageVersion(join(tmpdir(), 'ohosperf-no-such-dir', 'package.json'))).toBe('0.0.0');
+  });
+
+  it('falls back to 0.0.0 when the manifest is malformed or has no version', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-badmanifest-'));
+    try {
+      const broken = join(dir, 'package.json');
+      writeFileSync(broken, '{ not json');
+      expect(packageVersion(broken)).toBe('0.0.0');
+
+      const versionless = join(dir, 'versionless.json');
+      writeFileSync(versionless, JSON.stringify({ name: 'x' }));
+      expect(packageVersion(versionless)).toBe('0.0.0');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -96,14 +119,16 @@ describe('realDeps().analyze', () => {
 
   it('closes the scene when analysis fails', async () => {
     let closed = false;
-    const scene = {
+    const scene: Scene = {
+      dir: 'scene1',
       traceDb: {
         path: '',
         query: () => { throw new Error('query exploded'); },
         close: () => {},
       },
+      query: () => [],
       close: () => { closed = true; },
-    } as unknown as Scene;
+    };
     const deps = realDeps('0.0.0', { ingest: async () => scene });
 
     await expect(deps.analyze('scene1')).rejects.toThrow('query exploded');
@@ -121,13 +146,50 @@ describe('realDeps().capsReport', () => {
     expect(report).toEqual({ hdcOk: false, hdcError: 'no hdc', capabilities: [] });
   });
 
-  it('treats a missing device as environmental', async () => {
+  it('treats a missing device as environmental, but records why', async () => {
     const deps = realDeps('0.0.0', {
       hdc: { resolvePath: async () => '/hdc' },
       connectDevice: async () => { throw new Error('no device'); },
     });
     const report = await deps.capsReport();
     expect(report.hdcOk).toBe(true);
+    // "we could not ask" must be distinguishable from "we asked, got zero".
+    expect(report.probeError).toBe('no device');
+    expect(report.capabilities).toEqual([]);
+  });
+
+  it('records a capabilities() failure as a probe error, not an empty matrix', async () => {
+    const deps = realDeps('0.0.0', {
+      hdc: { resolvePath: async () => '/hdc' },
+      connectDevice: async () => ({
+        id: 't1',
+        kind: 'emulator',
+        abi: 'x86_64',
+        capabilities: async () => {
+          throw new Error('probe exploded');
+        },
+      }),
+    });
+    const report = await deps.capsReport();
+    expect(report.hdcOk).toBe(true);
+    // The device answered, but its probe failed: that is not "zero capabilities".
+    expect(report.probeError).toBe('probe exploded');
+    expect(report.capabilities).toEqual([]);
+  });
+
+  it('does not set probeError when the device genuinely reports zero capabilities', async () => {
+    const deps = realDeps('0.0.0', {
+      hdc: { resolvePath: async () => '/hdc' },
+      connectDevice: async () => ({
+        id: 't1',
+        kind: 'emulator',
+        abi: 'x86_64',
+        capabilities: async () => ({ all: () => [] }),
+      }),
+    });
+    const report = await deps.capsReport();
+    expect(report.hdcOk).toBe(true);
+    expect(report.probeError).toBeUndefined();
     expect(report.capabilities).toEqual([]);
   });
 });

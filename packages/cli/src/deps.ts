@@ -33,8 +33,14 @@ export const manifestPath = join(here, '../package.json');
  * different version and prove this function actually reads a file.
  */
 export function packageVersion(path: string = manifestPath): string {
-  const pkg = JSON.parse(readFileSync(path, 'utf8')) as { version: string };
-  return pkg.version;
+  try {
+    const pkg = JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown };
+    return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
+  } catch {
+    // A missing or malformed manifest must not make the CLI unusable:
+    // the version is metadata, and `--help`/`doctor` still work without it.
+    return '0.0.0';
+  }
 }
 
 /** The pieces of production wiring that tests need to replace. */
@@ -94,9 +100,11 @@ export function realDeps(
         const device = await connectDevice();
         const matrix = await device.capabilities();
         return { hdcOk: true, capabilities: matrix.all() };
-      } catch {
-        // Toolchain present, no usable device: environmental, not a failure.
-        return { hdcOk: true, capabilities: [] };
+      } catch (err) {
+        // Toolchain present, device unusable: environmental, not a toolchain
+        // failure — but the caller must be able to tell this apart from a
+        // device that genuinely reported zero capabilities.
+        return { hdcOk: true, probeError: safeMessage(err), capabilities: [] };
       }
     },
 

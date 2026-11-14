@@ -24,6 +24,11 @@ export interface CliResult {
 export interface CapsReport {
   hdcOk: boolean;
   hdcError?: string;
+  /**
+   * Set when hdc is present but the device probe failed. Distinguishes
+   * "we could not ask" from "we asked and the answer was empty".
+   */
+  probeError?: string;
   capabilities: CapabilityState[];
 }
 
@@ -79,7 +84,9 @@ function firstLine(text: string): { text: string; truncated: boolean } {
   const marker = ' Searched paths:';
   const at = first.indexOf(marker);
   if (at !== -1) return { text: first.slice(0, at), truncated: true };
-  return { text: first, truncated: first !== text };
+  // A multi-line error without a path list is still truncated, but the
+  // "--json" hint would be a lie: there is nothing extra to see.
+  return { text: first, truncated: false };
 }
 
 function json(value: unknown): string {
@@ -133,7 +140,16 @@ export async function runCaps(deps: CliDeps, opts: { json?: boolean }): Promise<
   if (!report.hdcOk) {
     return { stdout: '', stderr: `hdc unavailable: ${report.hdcError}\n`, exitCode: 1 };
   }
-  const stdout = opts.json ? json(report.capabilities) : formatCapabilities(report.capabilities);
+  let stdout: string;
+  if (opts.json) {
+    // The machine contract stays a bare array; `probeError` is human-only.
+    stdout = json(report.capabilities);
+  } else if (report.probeError !== undefined) {
+    // A failed probe is not "no capabilities": say what actually happened.
+    stdout = `capabilities unavailable: ${report.probeError}\n`;
+  } else {
+    stdout = formatCapabilities(report.capabilities);
+  }
   return { stdout, stderr: '', exitCode: 0 };
 }
 

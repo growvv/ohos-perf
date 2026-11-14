@@ -31,7 +31,10 @@ function emit(result: CliResult): void {
  */
 function ignoreEpipe(stream: NodeJS.WriteStream): void {
   stream.on('error', (err: NodeJS.ErrnoException) => {
-    if (err.code === 'EPIPE') process.exit(0);
+    // A consumer that stopped reading (`| head`) is not an analysis failure.
+    // Do NOT exit here: `emit()` has already computed the exit code, and
+    // `process.exit(0)` would turn a failed analysis into success.
+    if (err.code === 'EPIPE') return;
     throw err;
   });
 }

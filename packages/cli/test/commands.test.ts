@@ -133,6 +133,24 @@ describe('runDoctor', () => {
     const json = await runDoctor(failing(), { json: true });
     expect(json.stdout).toContain('C:/tools/99/hdc.exe');
   });
+
+  it('does not offer --json for a multi-line error with no search path list', async () => {
+    // Truncation is real (only the first line is shown), but there is no list
+    // to reveal, so the hint would be a lie.
+    const r = await runDoctor(
+      deps({
+        doctor: {
+          resolveHdc: async () => {
+            throw new Error('line one\nline two\nline three');
+          },
+        },
+      }),
+      {},
+    );
+    expect(r.stdout).toContain('hdc      FAIL  line one\n');
+    expect(r.stdout).not.toContain('line two');
+    expect(r.stdout).not.toContain('--json');
+  });
 });
 
 describe('runCaps', () => {
@@ -152,6 +170,46 @@ describe('runCaps', () => {
     });
     expect(r.exitCode).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual([]);
+  });
+
+  it('terminates --json output with exactly one newline', async () => {
+    // Byte-level, not `JSON.parse`: D5 requires stable bytes.
+    const r = await runCaps(deps({ capsReport: async () => ({ hdcOk: true, capabilities: [] }) }), {
+      json: true,
+    });
+    expect(r.stdout).toBe('[]\n');
+  });
+
+  it('prints a human-readable line when nothing was probed', async () => {
+    const r = await runCaps(
+      deps({ capsReport: async () => ({ hdcOk: true, capabilities: [] }) }),
+      {},
+    );
+    expect(r.stdout).toBe('no capabilities (no device probed)\n');
+  });
+
+  it('says the probe failed, rather than pretending there are no capabilities', async () => {
+    const r = await runCaps(
+      deps({
+        capsReport: async () => ({ hdcOk: true, probeError: 'probe exploded', capabilities: [] }),
+      }),
+      {},
+    );
+    expect(r.stdout).toBe('capabilities unavailable: probe exploded\n');
+    expect(r.stderr).toBe('');
+    expect(r.exitCode).toBe(0); // environmental, not a failure
+  });
+
+  it('keeps --json a bare array even when the probe failed', async () => {
+    // Machine consumers keep the contract they had before probeError existed.
+    const r = await runCaps(
+      deps({
+        capsReport: async () => ({ hdcOk: true, probeError: 'probe exploded', capabilities: [] }),
+      }),
+      { json: true },
+    );
+    expect(r.stdout).toBe('[]\n');
+    expect(r.exitCode).toBe(0);
   });
 
   it('prints capabilities in human mode', async () => {
