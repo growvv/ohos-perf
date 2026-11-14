@@ -1,5 +1,6 @@
 import type { QueryHandle } from '../db/driver';
 import type { TimeRange } from '../types';
+import { num, str } from './rows';
 
 /**
  * Frame status as stored in `frame_slice.flag`.
@@ -80,13 +81,6 @@ const SELECT_FRAMES = `SELECT id, ts, vsync, ipid, itid, callstack_id, dur, src,
 FROM frame_slice
 WHERE flag IS NOT NULL`;
 
-/** SQLite may hand back NULL for numeric columns (e.g. `dst` is NULL on most
- * real rows); the declared types are non-nullable, so normalise like HapRay's
- * `pd.to_numeric(...).fillna(0)`. */
-function num(value: number | null): number {
-  return value == null ? 0 : Number(value);
-}
-
 function toFrame(row: FrameSliceRow): Frame {
   return {
     id: num(row.id),
@@ -96,10 +90,10 @@ function toFrame(row: FrameSliceRow): Frame {
     itid: num(row.itid),
     callstackId: num(row.callstack_id),
     dur: num(row.dur),
-    src: row.src ?? '',
+    src: str(row.src),
     dst: num(row.dst),
     type: num(row.type) as FrameType,
-    typeDesc: row.type_desc ?? '',
+    typeDesc: str(row.type_desc),
     flag: num(row.flag) as FrameFlag,
     depth: num(row.depth),
     frameNo: num(row.frame_no),
