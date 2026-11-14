@@ -132,6 +132,10 @@ export class ProcessQuery {
    * "return any matching row" would make output depend on row order, which
    * violates the determinism requirement (D5). `ORDER BY id LIMIT 1` fixes the
    * tie-break.
+   *
+   * Rows with `name IS NULL` map to `ProcessInfo.name === ''`, but
+   * `byName('')` does **not** find them: SQL `name = ''` never matches NULL.
+   * A NULL-named row is reachable only through `all()`.
    */
   byName(name: string): ProcessInfo | undefined {
     const [row] = this.db.query<ProcessRow>(
