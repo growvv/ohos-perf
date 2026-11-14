@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, renameSync, rmSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { IngestError, StreamerNotFoundError } from '../errors';
 
@@ -24,11 +24,16 @@ export interface SpawnSpec {
 export interface SpawnResult {
   stdout: string;
   stderr: string;
-  code: number;
+  /** Null when the process was terminated by a signal. */
+  code: number | null;
+  signal?: NodeJS.Signals | null;
 }
 
 /** Minimum trace_streamer version whose `-e` SQLite output we understand. */
 const MIN_VERSION: readonly [number, number, number] = [4, 3, 0];
+
+/** Metadata file the 4.3.7 binary writes beside every converted database. */
+const SIDECAR_SUFFIX = '.ohos.ts';
 
 /**
  * `trace_streamer.exe FILE -e sqlite_out.db` is the convert invocation printed
@@ -72,6 +77,8 @@ export class Streamer {
   private readonly env: NodeJS.ProcessEnv;
   private resolvedPath?: string;
   private parsedVersion?: string;
+  /** Per-instance temp-name counter; deterministic across runs and processes. */
+  private tempCounter = 0;
 
   constructor(opts: StreamerOptions = {}) {
     this.opts = opts;
@@ -121,32 +128,84 @@ export class Streamer {
   }
 
   /**
-   * Convert an `.htrace` capture into a SQLite database. The output file is
-   * removed first so a previous run's database can never be mistaken for this
-   * run's result; exit code 0 without a fresh file is a failure.
+   * Convert an `.htrace` capture into a SQLite database.
+   *
+   * The converter writes to a sibling temp path and is renamed over the real
+   * output only on success, so a failed conversion leaves any previously-good
+   * database untouched. A non-zero exit, a signal termination, or exit 0
+   * without a fresh file all fail. Every filesystem failure is surfaced as an
+   * IngestError, never a raw fs error.
    */
   async convert(inputPath: string, outputDbPath: string): Promise<void> {
-    const spec = this.spawnSpec(inputPath, outputDbPath);
+    await this.assertSupported();
 
-    // A converter that exits 0 but writes nothing must not look successful,
-    // and a stale DB from an earlier run must not pass as the new output.
-    rmSync(outputDbPath, { force: true });
+    const tempPath = `${outputDbPath}.tmp-${process.pid}-${this.tempCounter++}`;
+    const tempSidecar = tempPath + SIDECAR_SUFFIX;
+    const spec = this.spawnSpec(inputPath, tempPath);
+    let committed = false;
+    try {
+      const result = await this.spawnProcess(spec.command, spec.args);
 
-    const result = await this.spawnProcess(spec.command, spec.args);
+      if (result.signal) {
+        throw new IngestError(
+          `trace_streamer was killed by signal ${result.signal} while converting ${inputPath}`,
+          result.stderr,
+          `STREAMER_KILLED_${result.signal}`,
+        );
+      }
+      // code === null without a signal name still means "not a normal exit".
+      if (result.code === null) {
+        throw new IngestError(
+          `trace_streamer did not exit normally while converting ${inputPath}`,
+          result.stderr,
+          'STREAMER_KILLED_UNKNOWN',
+        );
+      }
+      if (result.code !== 0) {
+        throw new IngestError(
+          `trace_streamer failed converting ${inputPath} (exit code ${result.code})`,
+          result.stderr,
+          `STREAMER_EXIT_${result.code}`,
+        );
+      }
+      if (!existsSync(tempPath)) {
+        throw new IngestError(
+          `trace_streamer exited 0 but produced no database for ${inputPath}`,
+          result.stderr,
+          'STREAMER_NO_OUTPUT',
+        );
+      }
 
-    if (result.code !== 0) {
-      throw new IngestError(
-        `trace_streamer failed converting ${inputPath} (exit code ${result.code})`,
-        result.stderr,
-        `STREAMER_EXIT_${result.code}`,
-      );
-    }
-    if (!existsSync(outputDbPath)) {
-      throw new IngestError(
-        `trace_streamer exited 0 but produced no database at ${outputDbPath}`,
-        result.stderr,
-        'STREAMER_NO_OUTPUT',
-      );
+      try {
+        // Same-directory rename: atomic overwrite on POSIX and Windows.
+        renameSync(tempPath, outputDbPath);
+      } catch (err) {
+        throw new IngestError(
+          `Failed to move converted database into place at ${outputDbPath}: ${(err as Error).message}`,
+          result.stderr,
+          'STREAMER_FS_FAILED',
+          { cause: err },
+        );
+      }
+      committed = true;
+
+      // The binary also emits `<output>.ohos.ts` beside the DB. Move it along
+      // so no temp-named sidecar is orphaned; its absence is not a failure.
+      try {
+        if (existsSync(tempSidecar)) renameSync(tempSidecar, outputDbPath + SIDECAR_SUFFIX);
+      } catch {
+        /* metadata only */
+      }
+    } finally {
+      // Never mask the original failure with a cleanup error. After commit the
+      // temp DB is gone; only an orphaned temp sidecar could remain.
+      for (const p of [tempPath, tempSidecar]) {
+        try {
+          rmSync(p, { force: true });
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }
 
@@ -185,8 +244,8 @@ export class Streamer {
           }),
         );
       });
-      child.on('close', (code) => {
-        resolve({ stdout, stderr, code: code ?? 0 });
+      child.on('close', (code, signal) => {
+        resolve({ stdout, stderr, code, signal });
       });
     });
   }
