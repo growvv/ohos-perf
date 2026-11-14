@@ -34,6 +34,16 @@ describe('doctorReport', () => {
     expect(r.capabilities.map((c) => c.id)).toEqual(['perf.pmu', 'ui.tree']);
   });
 
+  it('does not escape when a non-Error cannot be stringified', async () => {
+    const r = await doctorReport({
+      resolveHdc: async () => { throw { toString() { throw new Error('toString exploded'); } }; },
+      resolveStreamer: async () => ({ path: '/s', version: '4.3.7' }),
+      connectDevice: async () => { throw new Error('no device'); },
+    });
+    expect(r.hdc.ok).toBe(false);
+    expect(r.hdc.error).toBe('<unprintable error>');
+  });
+
   it('keeps going when streamer fails but hdc and device work', async () => {
     const r = await doctorReport({
       resolveHdc: async () => '/h',

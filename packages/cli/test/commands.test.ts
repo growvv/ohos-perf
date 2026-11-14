@@ -1,0 +1,213 @@
+import { describe, it, expect } from 'vitest';
+import type { CapabilityState } from '@ohos-perf/core';
+import { runAnalyze, runCaps, runDoctor, type CliDeps, type DoctorDeps } from '../src/commands';
+
+const okDevice = {
+  id: 't1',
+  kind: 'emulator',
+  abi: 'x86_64',
+  capabilities: async () => ({ all: () => [] as CapabilityState[] }),
+};
+
+function available(id: CapabilityState['id']): CapabilityState {
+  return { id, available: true, collector: 'hitrace', fidelity: 'exact', probe: { command: '', stdout: '', stderr: '', code: 0 } };
+}
+
+function unavailable(id: CapabilityState['id']): CapabilityState {
+  return {
+    id,
+    available: false,
+    fidelity: 'exact',
+    reason: 'not supported',
+    probe: { command: '', stdout: '', stderr: '', code: 0 },
+  };
+}
+
+/** A complete deps object with every field overridable, including the doctor half. */
+function deps(
+  overrides: { doctor?: Partial<DoctorDeps> } & Partial<Omit<CliDeps, 'doctor'>> = {},
+): CliDeps {
+  const { doctor, ...rest } = overrides;
+  return {
+    version: '1.0.0',
+    doctor: {
+      resolveHdc: async () => '/hdc',
+      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
+      connectDevice: async () => okDevice,
+      ...doctor,
+    },
+    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
+    analyze: async () => ({ metrics: [], evidence: [] }),
+    ...rest,
+  };
+}
+
+describe('runDoctor', () => {
+  it('exits 1 when hdc is unavailable, even if a device answers', async () => {
+    const r = await runDoctor(
+      deps({ doctor: { resolveHdc: async () => { throw new Error('no hdc'); } } }),
+      { json: true },
+    );
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toBe('');
+    const report = JSON.parse(r.stdout);
+    expect(report.hdc.ok).toBe(false);
+    // A device that answers must not mask a missing toolchain (mutant F).
+    expect(report.device?.id).toBe('t1');
+  });
+
+  it('exits 0 when hdc works but no device is attached', async () => {
+    const r = await runDoctor(
+      deps({ doctor: { connectDevice: async () => { throw new Error('no device'); } } }),
+      { json: true },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout).device).toBeUndefined();
+  });
+
+  it('exits 0 when capabilities are merely degraded', async () => {
+    const r = await runDoctor(
+      deps({
+        doctor: {
+          connectDevice: async () => ({
+            ...okDevice,
+            capabilities: async () => ({ all: () => [unavailable('perf.pmu')] }),
+          }),
+        },
+      }),
+      { json: true },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout).capabilities).toHaveLength(1);
+  });
+
+  it('exits 0 and drops the device when capabilities() throws', async () => {
+    const r = await runDoctor(
+      deps({
+        doctor: {
+          connectDevice: async () => ({
+            ...okDevice,
+            capabilities: async () => { throw new Error('probe exploded'); },
+          }),
+        },
+      }),
+      { json: true },
+    );
+    const report = JSON.parse(r.stdout);
+    expect(r.exitCode).toBe(0);
+    // The probe failure is environmental: hdc is still healthy (mutant G).
+    expect(report.hdc.ok).toBe(true);
+    expect(report.device).toBeUndefined();
+    expect(report.capabilities).toEqual([]);
+  });
+
+  it('prints the human report with a capability line', async () => {
+    const r = await runDoctor(
+      deps({
+        doctor: {
+          connectDevice: async () => ({
+            ...okDevice,
+            capabilities: async () => ({ all: () => [available('trace.frames')] }),
+          }),
+        },
+      }),
+      {},
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('hdc      ok  /hdc');
+    expect(r.stdout).toContain('device   t1 (emulator, x86_64)');
+    expect(r.stdout).toContain('✓ trace.frames  hitrace  exact');
+  });
+
+  it('truncates a search-path error in human mode but not in --json', async () => {
+    const long =
+      'hdc executable not found. Searched paths: ' +
+      Array.from({ length: 100 }, (_, i) => `C:/tools/${i}/hdc.exe`).join(', ');
+    const failing = () => deps({ doctor: { resolveHdc: async () => { throw new Error(long); } } });
+
+    const human = await runDoctor(failing(), {});
+    expect(human.stdout).toContain('hdc      FAIL  hdc executable not found.');
+    expect(human.stdout).toContain('(use --json for the full search path list)');
+    expect(human.stdout).not.toContain('C:/tools/99/hdc.exe');
+
+    const json = await runDoctor(failing(), { json: true });
+    expect(json.stdout).toContain('C:/tools/99/hdc.exe');
+  });
+});
+
+describe('runCaps', () => {
+  it('writes nothing to stdout and exits 1 when hdc is unavailable', async () => {
+    const r = await runCaps(
+      deps({ capsReport: async () => ({ hdcOk: false, hdcError: 'no hdc', capabilities: [] }) }),
+      { json: true },
+    );
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toContain('no hdc');
+  });
+
+  it('exits 0 with an empty capability list', async () => {
+    const r = await runCaps(deps({ capsReport: async () => ({ hdcOk: true, capabilities: [] }) }), {
+      json: true,
+    });
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual([]);
+  });
+
+  it('prints capabilities in human mode', async () => {
+    const r = await runCaps(
+      deps({ capsReport: async () => ({ hdcOk: true, capabilities: [available('trace.frames')] }) }),
+      {},
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('✓ trace.frames  hitrace  exact');
+  });
+});
+
+describe('runAnalyze', () => {
+  const result = {
+    metrics: [
+      { id: 'frame.count', value: 2, unit: 'count' as const, fidelity: 'exact' as const },
+      { id: 'frame.fps', value: 5.5, unit: 'fps' as const, fidelity: 'approximate' as const },
+    ],
+    evidence: [{ kind: 'jank' }, { kind: 'no_data' }, { kind: 'jank' }],
+  };
+
+  it('prints JSON and exits 0 on success', async () => {
+    const r = await runAnalyze(deps({ analyze: async () => result }), 'scene', { json: true });
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe('');
+    expect(JSON.parse(r.stdout)).toEqual(result);
+  });
+
+  it('prints one line per metric and an evidence summary in human mode', async () => {
+    const r = await runAnalyze(deps({ analyze: async () => result }), 'scene', {});
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe(
+      'frame.count  2 count (exact)\n' +
+        'frame.fps  5.5 fps (approximate)\n' +
+        'evidence  3 items (jank: 2)\n',
+    );
+  });
+
+  it('passes the scene dir and app through', async () => {
+    const seen: Array<[string, string | undefined]> = [];
+    await runAnalyze(
+      deps({ analyze: async (dir, app) => { seen.push([dir, app]); return result; } }),
+      'scene1',
+      { app: 'com.demo' },
+    );
+    expect(seen).toEqual([['scene1', 'com.demo']]);
+  });
+
+  it('writes errors to stderr only and exits 1 on failure', async () => {
+    const r = await runAnalyze(
+      deps({ analyze: async () => { throw new Error('Nothing to ingest'); } }),
+      'missing',
+      { json: true },
+    );
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toBe('Nothing to ingest\n');
+  });
+});

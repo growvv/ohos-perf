@@ -44,8 +44,21 @@ function byId(a: CapabilityState, b: CapabilityState): number {
   return 0;
 }
 
+/**
+ * `String(err)` can itself throw (a rejected non-Error whose `toString` is
+ * hostile), and this report's contract is that it never throws.
+ */
+export function safeMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  try {
+    return String(err);
+  } catch {
+    return '<unprintable error>';
+  }
+}
+
 function message(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return safeMessage(err);
 }
 
 /**
