@@ -59,9 +59,18 @@ function meanDurationMs(frames: Frame[]): number {
  * attributing a render_service frame to the app would be a wrong answer, while
  * an ipid is at least a true identifier. Duplicate ipids resolve to the lowest
  * `process.id` row, matching `ProcessQuery.byName`'s deterministic tie-break.
+ *
+ * `originNs` is the `ts` of the first frame in the analyzed set. The `explain`
+ * text prints the frame's offset from it, not the raw `ts`: `ts` is device
+ * uptime (the measured trace's first jank is at 6382537.7ms, ~106 minutes of
+ * uptime), so two captures from the same device produce unrelated numbers and
+ * an absolute timestamp is useless for triage. The measured first jank is
+ * 1955.4ms into the capture. The `window` and drill-down args stay absolute —
+ * they must remain in the database's own time base for ids and queries.
  */
-function jankEvidence(frame: Frame, processName: string): Evidence {
+function jankEvidence(frame: Frame, processName: string, originNs: number): Evidence {
   const durMs = frame.dur / 1e6;
+  const offsetMs = (frame.ts - originNs) / 1e6;
   const startNs = frame.ts;
   const endNs = frame.ts + frame.dur;
 
@@ -72,10 +81,11 @@ function jankEvidence(frame: Frame, processName: string): Evidence {
     // The frame's own interval, not ctx.window — see the doc comment above.
     window: { startNs, endNs },
     // `ipid` rather than `frameNo`: frameNo is 0 on every real row and carries
-    // no information, while ipid says which process owns the frame.
-    signals: { durMs, vsync: frame.vsync, ipid: frame.ipid },
+    // no information, while ipid says which process owns the frame. `offsetMs`
+    // is the human-facing time; `durMs` is the frame's own cost.
+    signals: { durMs, offsetMs, vsync: frame.vsync, ipid: frame.ipid },
     explain:
-      `${processName} frame at ${(frame.ts / 1e6).toFixed(1)}ms took ` +
+      `${processName} frame at ${offsetMs.toFixed(1)}ms took ` +
       `${durMs.toFixed(1)}ms (budget ${BUDGET_MS}ms)`,
     drillDown: [
       { label: 'Frame detail', tool: 'frames.get', args: { id: frame.id }, returns: 'Frame' },
@@ -90,33 +100,47 @@ function jankEvidence(frame: Frame, processName: string): Evidence {
 }
 
 /**
- * The `no_data` evidence for a window that contains no complete frames.
+ * The `no_data` evidence for a window that contains no actual frames.
  *
- * This is not an error: an idle UI legitimately produces zero frames
- * (Phase B measured 0 frames across 3 idle seconds). Returning an empty
- * `metrics` array with no evidence would be indistinguishable from a broken
- * query, so the evidence carries the explanation and a drill-down that lets an
- * agent confirm the emptiness itself.
+ * This is not an error, but it has two distinct causes that must not be
+ * conflated, because six zero metrics look identical either way:
+ *
+ * - `frames.length === 0` — nothing was captured at all. An idle UI legitimately
+ *   produces zero frames (Phase B measured 0 frames across 3 idle seconds), so
+ *   the explain says the UI may have been static.
+ * - `frames.length > 0` but every row is an expect frame (`type = 1`) — the
+ *   query worked and the trace has data, but no actual frame was rendered in
+ *   this window. Saying "no frames captured" would be false; the explain names
+ *   the expect-frame count instead.
+ *
+ * Returning an empty `metrics` array with no evidence (or six zeros with no
+ * evidence) would be indistinguishable from a broken query, so the evidence
+ * carries the explanation and a drill-down that lets an agent confirm it.
  */
-function noDataEvidence(ctx: AnalyzeContext): Evidence {
+function noDataEvidence(ctx: AnalyzeContext, expectFrames: number): Evidence {
   // First non-empty name: an empty `subject.process` would make the evidence id
   // and the explain text unattributable. Falls back to the package name.
   const process =
     ctx.app.processNames.find((name) => name !== '') ?? ctx.app.packageName;
+  const expectOnly = expectFrames > 0;
+  const rowWord = expectFrames === 1 ? 'row' : 'rows';
   return evidence({
     kind: 'no_data',
     severity: 'info',
     subject: { process },
     window: ctx.window,
-    signals: {},
-    explain: 'no frames captured in window; the UI may have been static (no redraw)',
+    signals: expectOnly ? { expectFrames } : {},
+    explain: expectOnly
+      ? `only expected frames in window (${expectFrames} ${rowWord}, type=1); ` +
+        'no actual frames were rendered'
+      : 'no frames captured in window; the UI may have been static (no redraw)',
     drillDown: [
       {
         label: 'All frames in window',
         tool: 'frames.all',
         args: { window: ctx.window },
         returns: 'Frame[]',
-        estRows: 0,
+        estRows: expectFrames,
       },
     ],
   });
@@ -161,7 +185,10 @@ function byEvidenceOrder(a: Evidence, b: Evidence): number {
  *   (`flag !== 2`): 161. **This is the jank denominator.** It is emitted
  *   separately because `stuttered / frame.count` (60/169 = 35.50%) differs
  *   from `frame.jank.rate` (60/161 = 37.27%) and a consumer recomputing the
- *   rate from `frame.count` would otherwise have no way to see why.
+ *   rate from `frame.count` would otherwise have no way to see why. Like the
+ *   jank denominator, this count **includes flag-3 (RS-App abnormal) frames**:
+ *   on the measured trace the 161 contains the 10 flag-3 rows. Only empty
+ *   frames are excluded.
  * - `frame.jank.rate` — `stuttered / rendered * 100` (37.27%). HapRay's
  *   `frame_analyzer_stuttered.py` skips expect frames and `flag = 2` frames
  *   before counting, so empty frames cannot dilute the rate: a frame with
@@ -172,7 +199,9 @@ function byEvidenceOrder(a: Evidence, b: Evidence): number {
  *   actual frames had nothing to draw". The 8 flag-2 **expect** frames are not
  *   counted: this metric is about actual frames only.
  * - `frame.avg.duration` — mean `dur` of rendered frames (35.836ms), not of
- *   actual frames (34.172ms): an empty frame's `dur` is not render cost.
+ *   actual frames (34.172ms): an empty frame's `dur` is not render cost. The
+ *   mean is over the same rendered set as the jank denominator, so it
+ *   **includes flag-3 (RS-App abnormal) frames** (10 on the measured trace).
  * - `frame.fps` — actual frames per second over the **frame span**, not
  *   `ctx.window` (5.917 fps over 28.562s). A caller-supplied window wider than
  *   the captured frames would systematically under-report fps. This is a
@@ -183,6 +212,15 @@ function byEvidenceOrder(a: Evidence, b: Evidence): number {
  * Every division is guarded so no metric is ever `NaN` or `Infinity`:
  * `JSON.stringify(NaN)` is `null`, which would silently turn a bad value into
  * a missing one.
+ *
+ * ## Zero-actual windows
+ *
+ * `metrics: []` (no frames at all) or six zero metrics (expect frames only)
+ * are both paired with a `no_data` evidence whose `explain` distinguishes the
+ * two cases. Zeros without an explanation are indistinguishable from a broken
+ * query, and "only expect frames" is a real, measured shape of the data (161
+ * of 169 expect rows on the measured trace have a NULL flag and are invisible
+ * here, but a window can still land on flagged expect rows).
  *
  * ## Determinism
  *
@@ -199,13 +237,20 @@ export class FrameAnalyzer implements Analyzer {
     const frames = ctx.frames.all(ctx.window);
 
     if (frames.length === 0) {
-      return { metrics: [], evidence: [noDataEvidence(ctx)] };
+      return { metrics: [], evidence: [noDataEvidence(ctx, 0)] };
     }
 
     const actual = frames.filter((frame) => frame.type === 0);
+    const expect = frames.filter((frame) => frame.type === 1);
     const rendered = actual.filter((frame) => frame.flag !== 2);
     const empty = actual.filter((frame) => frame.flag === 2);
     const stuttered = rendered.filter((frame) => frame.flag === 1);
+
+    // No actual frames but at least one expect frame: the six metrics below
+    // are honest zeros, but without evidence they are indistinguishable from a
+    // broken analyzer. The no_data item names the expect-frame count so the
+    // zeros are attributable.
+    const noData = actual.length === 0 ? noDataEvidence(ctx, expect.length) : undefined;
 
     // Span of the captured actual frames, not of ctx.window: a caller window
     // wider than the capture would under-report fps. `actual` preserves
@@ -274,10 +319,14 @@ export class FrameAnalyzer implements Analyzer {
       }
     }
 
+    // Trace-relative origin for the human-readable explain text. `frames` is
+    // ordered by ts, so its first entry is the earliest captured frame.
+    const originNs = frames[0].ts;
     const evidenceItems: Evidence[] = stuttered.map((frame) => {
       const name = processNames?.get(frame.ipid) ?? '';
-      return jankEvidence(frame, name === '' ? `ipid:${frame.ipid}` : name);
+      return jankEvidence(frame, name === '' ? `ipid:${frame.ipid}` : name, originNs);
     });
+    if (noData !== undefined) evidenceItems.push(noData);
 
     metrics.sort(byMetricId);
     evidenceItems.sort(byEvidenceOrder);

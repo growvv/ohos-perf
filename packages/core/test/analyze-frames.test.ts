@@ -163,4 +163,49 @@ describe('FrameAnalyzer', () => {
       empty.close();
     }
   });
+
+  it('reports jank time relative to the first frame, not device uptime', async () => {
+    // Frames start at 1_000_000_000ns and the stutter is at 1_300_000_000ns.
+    // 6382537.7ms-style absolute uptime is meaningless across captures; the
+    // explain string must carry the offset into the analyzed span.
+    const r = await new FrameAnalyzer().run(ctx());
+    const jank = r.evidence.filter((x) => x.kind === 'jank');
+    expect(jank).toHaveLength(1);
+    expect(jank[0].explain).toContain('at 300.0ms');
+    expect(jank[0].explain).not.toContain('1300.0ms');
+    expect(jank[0].signals.offsetMs).toBeCloseTo(300, 5);
+    // The window stays in the database's own (absolute) time base: it feeds
+    // the evidence id and the drill-down args.
+    expect(jank[0].window.startNs).toBe(1_300_000_000);
+    expect(jank[0].window.endNs).toBe(1_300_000_000 + 16_000_000);
+  });
+
+  it('emits no_data evidence when the window contains only expect frames', async () => {
+    // Six zero metrics alone cannot be told apart from a broken analyzer. The
+    // expect frames prove the query worked, so the no_data explain must say so.
+    const expectOnly = withDb('expect-only.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 100, 0, 17, 44, 94, 100000, '', 0, 1, 'expect', 0, 0, 0),
+        (1, 200, 0, 17, 44, 94, 100000, '', 0, 1, 'expect', 0, 0, 0)`);
+      d.exec(PROCESS_DDL);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const c = { ...ctx(), frames: new FrameQuery(expectOnly) };
+      const r = await new FrameAnalyzer().run(c);
+      // The six metrics are honest zeros, and all finite.
+      expect(r.metrics.find((m) => m.id === 'frame.count')!.value).toBe(0);
+      expect(r.metrics).toHaveLength(6);
+      for (const m of r.metrics) {
+        expect(Number.isFinite(m.value as number)).toBe(true);
+      }
+      const noData = r.evidence.filter((e) => e.kind === 'no_data');
+      expect(noData).toHaveLength(1);
+      expect(noData[0].explain).toMatch(/expect/i);
+      expect(noData[0].signals.expectFrames).toBe(2);
+    } finally {
+      expectOnly.close();
+    }
+  });
 });
