@@ -8,4 +8,5 @@ which hiperf	/bin/hiperf
 which hitrace	/bin/hitrace
 which hidumper	/bin/hidumper
 which uitest	/bin/uitest
-hiperf list hw	Supported events for hardware:\n
+hiperf list hw	event not support hw-cpu-cycles\nevent not support hw-instructions\nevent not support hw-cache-references\nevent not support hw-cache-misses\nevent not support hw-branch-instructions\nevent not support hw-branch-misses\nevent not support hw-bus-cycles\nevent not support hw-stalled-cycles-frontend\nevent not support hw-stalled-cycles-backend\nevent not support hw-ref-cpu-cycles\n\nSupported events for hardware:\n
+hiperf list	event not support hw-cpu-cycles\nevent not support hw-instructions\nevent not support hw-cache-references\nevent not support hw-cache-misses\nevent not support hw-branch-instructions\nevent not support hw-branch-misses\nevent not support hw-bus-cycles\nevent not support hw-stalled-cycles-frontend\nevent not support hw-stalled-cycles-backend\nevent not support hw-ref-cpu-cycles\n\nSupported events for hardware:\n

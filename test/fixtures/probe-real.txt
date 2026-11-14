@@ -1,3 +1,5 @@
+# NOTE: `hiperf list` here carries only the measured hardware section; the
+# software-event section was not captured on this device, so no names are invented.
 param get const.product.cpu.abilist	arm64-v8a
 param get const.product.name	HUAWEI Mate 60
 param get const.product.software.version	BRA-AL00 7.0.0.111(SP10C00E111R4P3)
@@ -9,4 +11,4 @@ which hitrace	/bin/hitrace
 which hidumper	/bin/hidumper
 which uitest	/bin/uitest
 hiperf list hw	Supported events for hardware:\n	hw-cpu-cycles\n	hw-instructions\n	hw-cache-references\n	hw-cache-misses\n	hw-branch-instructions\n	hw-branch-misses\n	hw-bus-cycles\n	hw-stalled-cycles-frontend\n	hw-stalled-cycles-backend\n
-hiperf list	Supported events for hardware:\n	hw-cpu-cycles\n	hw-instructions\n	hw-cache-references\n	hw-cache-misses\n	hw-branch-instructions\n	hw-branch-misses\n	hw-bus-cycles\n	hw-stalled-cycles-frontend\n	hw-stalled-cycles-backend\n\nSupported events for software:\n	sw-cpu-clock\n	sw-task-clock\n	sw-page-faults\n	sw-context-switches\n	sw-cpu-migrations\n	sw-page-faults-min\n	sw-page-faults-maj\n	sw-alignment-faults\n	sw-emulation-faults\n	sw-dummy\n	sw-bpf-output\n
+hiperf list	Supported events for hardware:\n	hw-cpu-cycles\n	hw-instructions\n	hw-cache-references\n	hw-cache-misses\n	hw-branch-instructions\n	hw-branch-misses\n	hw-bus-cycles\n	hw-stalled-cycles-frontend\n	hw-stalled-cycles-backend\n
