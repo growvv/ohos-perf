@@ -1,0 +1,11 @@
+param get const.product.cpu.abilist	x86_64
+param get const.product.name	emulator
+param get const.product.software.version	emulator 6.1.0.126(SP1DEVC00E120R4P11)
+param get const.ohos.fullname	OpenHarmony-6.1.1.125
+param get const.product.devicetype	phone
+which hiprofiler_cmd	MISSING
+which hiperf	/bin/hiperf
+which hitrace	/bin/hitrace
+which hidumper	/bin/hidumper
+which uitest	/bin/uitest
+hiperf list hw	Supported events for hardware:\n
