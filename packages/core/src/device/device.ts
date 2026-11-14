@@ -29,13 +29,10 @@ export interface ConnectOptions {
   hdcPath?: string;
   /** Explicit trace_streamer executable; otherwise the normal search runs. */
   streamerPath?: string;
-}
-
-/**
- * Injection points used by tests (and by callers that already own a transport).
- * Production callers leave both unset.
- */
-export interface ConnectOverrides {
+  /**
+   * Injection points for tests and callers that already own a transport.
+   * Production callers leave both unset.
+   */
   hdc?: Hdc;
   probe?: (runner: ProbeRunner) => Promise<ProbeSnapshot>;
 }
@@ -181,7 +178,7 @@ export class Device {
  * exactly what hdc said.
  */
 export async function connect(
-  opts: ConnectOptions & ConnectOverrides = {},
+  opts: ConnectOptions = {},
 ): Promise<Device> {
   const hdc = opts.hdc ?? new Hdc({ hdcPath: opts.hdcPath });
 

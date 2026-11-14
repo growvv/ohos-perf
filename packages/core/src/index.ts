@@ -25,7 +25,7 @@ export type { TimeRange, AppIdentity } from './types';
 
 // Transport
 export { Hdc } from './transport/hdc';
-export type { HdcOptions, HdcTarget, HdcResult } from './transport/hdc';
+export type { Env, HdcOptions, HdcTarget, HdcResult } from './transport/hdc';
 
 // Device and capabilities
 export { connect, Device } from './device/device';
@@ -46,7 +46,7 @@ export type {
   ProbeResult,
 } from './device/capability';
 export { runProbe } from './device/probe';
-export type { ProbeSnapshot, DeviceIdentity } from './device/probe';
+export type { ProbeSnapshot, DeviceIdentity, ProbeRunner } from './device/probe';
 
 // Collection
 export { HitraceCollector, HITRACE_DEFAULT_CATEGORIES } from './collectors/hitrace';

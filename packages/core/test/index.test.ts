@@ -33,7 +33,7 @@ describe('public surface', () => {
     // Type-only seams: erased at runtime by construction. Listing them
     // documents intent; only the value seams actually catch an `export *`
     // regression at runtime.
-    const typeSeams = ['HdcOp', 'HdcArgvParams', 'SpawnSpec', 'SpawnResult', 'ProbeRunner'];
+    const typeSeams = ['HdcOp', 'HdcArgvParams', 'SpawnSpec', 'SpawnResult'];
     for (const n of [...valueSeams, ...typeSeams]) {
       expect((api as any)[n]).toBeUndefined();
     }

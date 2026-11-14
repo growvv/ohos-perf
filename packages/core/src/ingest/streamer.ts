@@ -2,12 +2,13 @@ import { spawn } from 'node:child_process';
 import { existsSync, renameSync, rmSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { IngestError, StreamerNotFoundError } from '../errors';
+import type { Env } from '../transport/hdc';
 
 export interface StreamerOptions {
   /** Explicit trace_streamer executable. Checked first by resolvePath(). */
   streamerPath?: string;
   /** Environment used both for spawning and for OHOS_PERF_STREAMER / PATH lookup. */
-  env?: NodeJS.ProcessEnv;
+  env?: Env;
   /**
    * Override the built-in DevEco candidate list. Tests pass `[]` so the search
    * list is exactly the one they assert on.
@@ -26,7 +27,7 @@ export interface SpawnResult {
   stderr: string;
   /** Null when the process was terminated by a signal. */
   code: number | null;
-  signal?: NodeJS.Signals | null;
+  signal?: string | null;
 }
 
 /** Minimum trace_streamer version whose `-e` SQLite output we understand. */
@@ -74,7 +75,7 @@ function compareVersions(a: string, b: readonly [number, number, number]): numbe
 
 export class Streamer {
   private readonly opts: StreamerOptions;
-  private readonly env: NodeJS.ProcessEnv;
+  private readonly env: Env;
   private resolvedPath?: string;
   private parsedVersion?: string;
   /** Per-instance temp-name counter; deterministic across runs and processes. */

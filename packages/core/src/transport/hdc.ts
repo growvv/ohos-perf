@@ -3,11 +3,20 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { DeviceNotFoundError, HdcNotFoundError, OhosPerfError } from '../errors';
 
+/**
+ * Environment variables passed to spawned processes.
+ *
+ * Structurally identical to Node's `ProcessEnv` (`Record<string, string |
+ * undefined>`) but declared here so the published declarations do not depend on
+ * `@types/node` being installed in the consumer's project.
+ */
+export type Env = Record<string, string | undefined>;
+
 export interface HdcOptions {
   /** Explicit hdc executable. Checked first by resolvePath(). */
   hdcPath?: string;
   /** Environment used both for spawning and for OHOS_PERF_HDC / PATH lookup. */
-  env?: NodeJS.ProcessEnv;
+  env?: Env;
   /**
    * Override the built-in SDK candidate list. Tests pass `[]` so the search
    * list is exactly the one they assert on.
@@ -75,7 +84,7 @@ function hdcBinName(platform: NodeJS.Platform = process.platform): string {
 }
 
 /** SDK roots that ship hdc, in probe order. */
-function defaultCommonPaths(env: NodeJS.ProcessEnv): string[] {
+function defaultCommonPaths(env: Env): string[] {
   const bin = hdcBinName();
   const tail = ['openharmony', 'toolchains', bin];
   const paths: string[] = [];
@@ -117,7 +126,7 @@ function defaultCommonPaths(env: NodeJS.ProcessEnv): string[] {
 
 export class Hdc {
   private readonly opts: HdcOptions;
-  private readonly env: NodeJS.ProcessEnv;
+  private readonly env: Env;
   private resolvedPath?: string;
 
   constructor(opts: HdcOptions = {}) {
@@ -164,7 +173,7 @@ export class Hdc {
    * MSYS_NO_PATHCONV stops Git Bash from rewriting `/data/local/tmp/...` into
    * a Windows path before hdc ever sees it. Always on, never overridable.
    */
-  buildEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  buildEnv(base: Env): Env {
     return { ...base, MSYS_NO_PATHCONV: '1' };
   }
 
