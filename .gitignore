@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+
+# Spike artifacts (large binary captures, regenerable)
+spike/out/
+spike/work/
+spike/logs/
+
+# SDD workspace
+.superpowers/
