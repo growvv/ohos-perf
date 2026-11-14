@@ -32,7 +32,22 @@ const BEGIN_MARKER = 'OpenRecording done';
 const FINISH_MARKER = 'trace read done';
 
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * `durationMs` must be a finite positive number. Silently clamping 0, NaN or a
+ * negative value to zero would produce a zero-length capture that later reads
+ * as "the UI was static"; an unbounded value would hang the process. Rejecting
+ * is the only outcome the caller can act on.
+ */
+function assertDuration(durationMs: number): void {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new OhosPerfError(
+      `durationMs must be a finite number greater than 0 (got ${String(durationMs)})`,
+      { code: 'HITRACE_BAD_DURATION' },
+    );
+  }
 }
 
 /** stdout and stderr together; hitrace's diagnostics may land on either. */
@@ -50,15 +65,23 @@ function detail(text: string): string {
 }
 
 /**
- * Parse the byte count of `path` from `ls -l` output. Android's toybox and
- * GNU both put the size in the fifth field (after mode, links, owner, group),
- * but scanning from there for the first all-digit token tolerates the
- * date/time columns in either format.
+ * Parse the byte count of `path` from `ls -l` output.
+ *
+ * A line matches only when its **last** whitespace-separated token is exactly
+ * `path`. Substring matching would also accept `/x/trace.htrace.bak` and
+ * `/x/trace.htrace2`; the device directory accumulates files, so decoys are
+ * realistic and must not be read as this capture's output.
+ *
+ * Android's toybox and GNU both put the size in the fifth field (after mode,
+ * links, owner, group), but scanning from there for the first all-digit token
+ * tolerates the date/time columns in either format.
+ *
+ * Exported for direct unit testing; it is a pure function.
  */
-function parseSize(output: string, path: string): number | undefined {
+export function parseSize(output: string, path: string): number | undefined {
   for (const line of output.split(/\r?\n/)) {
-    if (!line.includes(path)) continue;
     const tokens = line.trim().split(/\s+/);
+    if (tokens.length < 5 || tokens[tokens.length - 1] !== path) continue;
     for (let i = 4; i < tokens.length; i++) {
       if (/^\d+$/.test(tokens[i])) return Number(tokens[i]);
     }
@@ -102,6 +125,12 @@ export class HitraceCollector implements Collector {
    *   4. finish and require `trace read done`;
    *   5. require the file to exist with size > 0 before transferring;
    *   6. recv (which validates its own `FileTransfer finish` marker).
+   *
+   * Nothing is transferred unless every check above passes, so a failed or
+   * empty capture can never overwrite `layout.traceFile` with stale data.
+   *
+   * `opts.durationMs` must be a finite number greater than 0; anything else
+   * throws `HITRACE_BAD_DURATION` before the device is touched.
    */
   async collect(
     hdc: Hdc,
@@ -109,6 +138,8 @@ export class HitraceCollector implements Collector {
     opts: TraceCollectOptions,
     layout: SceneLayout,
   ): Promise<void> {
+    assertDuration(opts.durationMs);
+
     const devicePath = DEVICE_TRACE_PATH;
 
     await hdc.shell(target, `rm -f ${devicePath}`);

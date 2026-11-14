@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { HitraceCollector, HITRACE_DEFAULT_CATEGORIES } from '../src/collectors/hitrace';
+import {
+  HitraceCollector,
+  HITRACE_DEFAULT_CATEGORIES,
+  parseSize,
+} from '../src/collectors/hitrace';
 
 describe('HitraceCollector', () => {
   it('declares the trace capabilities', () => {
@@ -35,6 +39,32 @@ describe('HitraceCollector', () => {
   });
 });
 
+describe('parseSize', () => {
+  const PATH = '/data/local/tmp/ohosperf_trace.htrace';
+
+  it('reads the size field of a standard ls -l line', () => {
+    expect(parseSize(`-rw-r--r-- 1 shell shell 1663638 2026-11-15 02:46 ${PATH}`, PATH))
+      .toBe(1663638);
+  });
+
+  it('does not match a path that merely starts with the target', () => {
+    // A directory that accumulates files will contain these decoys.
+    expect(
+      parseSize(
+        `-rw-r--r-- 1 shell shell 9 2026-11-15 02:46 ${PATH}.bak\n` +
+          `-rw-r--r-- 1 shell shell 1663638 2026-11-15 02:46 ${PATH}`,
+        PATH,
+      ),
+    ).toBe(1663638);
+    expect(parseSize(`-rw-r--r-- 1 shell shell 7 2026-11-15 02:46 ${PATH}2`, PATH))
+      .toBeUndefined();
+  });
+
+  it('returns undefined when the path is absent', () => {
+    expect(parseSize('ls: No such file or directory', PATH)).toBeUndefined();
+  });
+});
+
 // 用假 Hdc 驱动 collect()，断言失败路径不静默通过。
 class FakeHdc {
   calls: Array<{ kind: string; args: unknown[] }> = [];
@@ -59,39 +89,120 @@ function fakeLayout() {
   } as never;
 }
 
-it('throws when begin does not report OpenRecording done', async () => {
-  // 实测 B：hdc shell 退出码 0，但 hitrace 内部失败。
-  const hdc = new FakeHdc({
-    '--trace_begin': { stdout: 'error: OpenRecording failed, errorCode(1103)', stderr: '', code: 0 },
+function recvCalls(hdc: FakeHdc) {
+  return hdc.calls.filter((x) => x.kind === 'recv');
+}
+
+const DEVICE_PATH = '/data/local/tmp/ohosperf_trace.htrace';
+
+describe('HitraceCollector.collect failure paths', () => {
+  it('throws when begin does not report OpenRecording done', async () => {
+    // 实测 B：hdc shell 退出码 0，但 hitrace 内部失败。
+    const hdc = new FakeHdc({
+      '--trace_begin': { stdout: 'error: OpenRecording failed, errorCode(1103)', stderr: '', code: 0 },
+    });
+    const c = new HitraceCollector();
+    await expect(
+      c.collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout()),
+    ).rejects.toThrow(/OpenRecording|HITRACE_BEGIN_FAILED/);
+    // A failed begin must never pull anything back.
+    expect(recvCalls(hdc)).toEqual([]);
   });
-  const c = new HitraceCollector();
-  await expect(
-    c.collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout()),
-  ).rejects.toThrow(/OpenRecording|HITRACE_BEGIN_FAILED/);
+
+  it('throws when finish produces no file', async () => {
+    // 实测 C：finish 退出码 0、只有 Warning、文件不存在。
+    const hdc = new FakeHdc({
+      '--trace_begin': { stdout: 'OpenRecording done.', stderr: '', code: 0 },
+      '--trace_finish': { stdout: 'Warning: tracing on is closed, no trace can be read.', stderr: '', code: 0 },
+      'ls -l': { stdout: '', stderr: 'ls: No such file or directory', code: 0 },
+    });
+    const c = new HitraceCollector();
+    await expect(
+      c.collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout()),
+    ).rejects.toThrow(/HITRACE_NO_OUTPUT|no trace/);
+    expect(recvCalls(hdc)).toEqual([]);
+  });
+
+  it('throws when finish reports no marker', async () => {
+    const hdc = new FakeHdc({
+      '--trace_begin': { stdout: 'OpenRecording done.', stderr: '', code: 0 },
+      '--trace_finish': { stdout: 'error: StopRecording failed, errorCode(1104)', stderr: '', code: 0 },
+    });
+    const c = new HitraceCollector();
+    const err = await c
+      .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
+      .catch((e: { code?: string }) => e);
+    expect(err.code).toBe('HITRACE_FINISH_FAILED');
+    expect(recvCalls(hdc)).toEqual([]);
+  });
+
+  it('throws when the file exists but is empty', async () => {
+    const hdc = new FakeHdc({
+      '--trace_begin': { stdout: 'OpenRecording done.', stderr: '', code: 0 },
+      '--trace_finish': { stdout: 'trace read done', stderr: '', code: 0 },
+      'ls -l': { stdout: `-rw-r--r-- 1 shell shell 0 2026-11-15 02:46 ${DEVICE_PATH}`, stderr: '', code: 0 },
+    });
+    const c = new HitraceCollector();
+    const err = await c
+      .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
+      .catch((e: { code?: string }) => e);
+    expect(err.code).toBe('HITRACE_NO_OUTPUT');
+    expect(recvCalls(hdc)).toEqual([]);
+  });
+
+  it('removes the stale device file before beginning', async () => {
+    // 实测 D：固定路径会跨采集复用陈旧文件，必须先删。
+    const hdc = new FakeHdc({
+      '--trace_begin': { stdout: 'OpenRecording done.', stderr: '', code: 0 },
+      '--trace_finish': { stdout: 'trace read done, output: /data/local/tmp/ohosperf_trace.htrace', stderr: '', code: 0 },
+      'ls -l': { stdout: '-rw-r--r-- 1 shell shell 1024 /data/local/tmp/ohosperf_trace.htrace', stderr: '', code: 0 },
+    });
+    const c = new HitraceCollector();
+    await c.collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout());
+    const firstShell = hdc.calls.find((x) => x.kind === 'shell')!;
+    expect(String(firstShell.args[0])).toMatch(/^rm -f /);
+  });
 });
 
-it('throws when finish produces no file', async () => {
-  // 实测 C：finish 退出码 0、只有 Warning、文件不存在。
-  const hdc = new FakeHdc({
-    '--trace_begin': { stdout: 'OpenRecording done.', stderr: '', code: 0 },
-    '--trace_finish': { stdout: 'Warning: tracing on is closed, no trace can be read.', stderr: '', code: 0 },
-    'ls -l': { stdout: '', stderr: 'ls: No such file or directory', code: 0 },
+describe('HitraceCollector.collect success path', () => {
+  it('transfers only after the size check passes', async () => {
+    const hdc = new FakeHdc({
+      '--trace_begin': { stdout: 'OpenRecording done.', stderr: '', code: 0 },
+      '--trace_finish': { stdout: `trace read done, output: ${DEVICE_PATH}`, stderr: '', code: 0 },
+      'ls -l': { stdout: `-rw-r--r-- 1 shell shell 1024 2026-11-15 02:46 ${DEVICE_PATH}`, stderr: '', code: 0 },
+    });
+    const layout = fakeLayout();
+    const c = new HitraceCollector();
+    await c.collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, layout);
+
+    const recv = recvCalls(hdc);
+    expect(recv).toHaveLength(1);
+    expect(recv[0].args).toEqual([DEVICE_PATH, '/tmp/x/trace.htrace']);
+
+    // recv is the final call, and the size check directly precedes it.
+    const kinds = hdc.calls.map((x) => x.kind);
+    expect(kinds[kinds.length - 1]).toBe('recv');
+    const lastShell = [...hdc.calls].reverse().find((x) => x.kind === 'shell')!;
+    expect(String(lastShell.args[0])).toMatch(/^ls -l /);
   });
-  const c = new HitraceCollector();
-  await expect(
-    c.collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout()),
-  ).rejects.toThrow(/HITRACE_NO_OUTPUT|no trace/);
 });
 
-it('removes the stale device file before beginning', async () => {
-  // 实测 D：固定路径会跨采集复用陈旧文件，必须先删。
-  const hdc = new FakeHdc({
-    '--trace_begin': { stdout: 'OpenRecording done.', stderr: '', code: 0 },
-    '--trace_finish': { stdout: 'trace read done, output: /data/local/tmp/ohosperf_trace.htrace', stderr: '', code: 0 },
-    'ls -l': { stdout: '-rw-r--r-- 1 shell shell 1024 /data/local/tmp/ohosperf_trace.htrace', stderr: '', code: 0 },
+describe('HitraceCollector.collect duration validation', () => {
+  it.each([
+    ['zero', 0],
+    ['negative', -1],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects %s durationMs before touching the device', async (_label, durationMs) => {
+    const hdc = new FakeHdc({});
+    const c = new HitraceCollector();
+    const err = await c
+      .collect(hdc as never, 'dev', { app: 'x', durationMs }, fakeLayout())
+      .catch((e: { code?: string; message?: string }) => e);
+
+    expect(err.code).toBe('HITRACE_BAD_DURATION');
+    expect(err.message).toMatch(/durationMs/);
+    expect(hdc.calls).toEqual([]);
   });
-  const c = new HitraceCollector();
-  await c.collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout());
-  const firstShell = hdc.calls.find((x) => x.kind === 'shell')!;
-  expect(String(firstShell.args[0])).toMatch(/^rm -f /);
 });
