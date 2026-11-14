@@ -135,18 +135,28 @@ export class FrameQuery {
   }
 
   /**
-   * Pairs linked by `frame_maps`, ordered by `actual.ts`.
+   * Mappings from `frame_maps`, ordered by `src.ts`.
    *
-   * `src_row` / `dst_row` reference `frame_slice.id`. The type-0 row is the
-   * `actual` and the type-1 row is the `expect`. When both ends share a type
-   * the pair is still returned, anchored on the source row as `actual`
-   * (`frame_maps` in the measured trace links same-type app and
-   * render_service frames: 50 type-0 pairs and 50 type-1 pairs). Mappings
-   * whose rows cannot be resolved to a `Frame` — a missing id, or a NULL flag,
-   * which no `Frame` can represent — are skipped. An empty or absent
-   * `frame_maps` table yields `[]` instead of throwing.
+   * `src_row` / `dst_row` reference `frame_slice.id`. On the measured trace,
+   * `frame_maps` links **same-type frames across processes** — an app /
+   * sceneboard frame (`ipid=17` or `35`) and a render_service frame
+   * (`ipid=26`) — NOT an actual frame to its expectation. Both ends therefore
+   * share a `type` (50 type-0 and 50 type-1 mappings on the 249MB trace), and
+   * neither field implies "expected". The two ends also live in different
+   * `vsync` domains (e.g. app 3975 vs render_service 6130), so `vsync` is not
+   * a join key either.
+   *
+   * Both ends are resolved through the same `flag IS NOT NULL` set `all()`
+   * returns. A mapping is **dropped** when either end cannot become a `Frame`:
+   * its row is missing, or its flag is NULL — no `Frame` can represent a
+   * NULL-flag row. This is not an edge case: roughly half the measured
+   * mappings (50 of 100) point at NULL-flag expect frames and are dropped.
+   *
+   * Returns `[]` when `frame_maps` is absent or empty; never throws for that.
+   * The result is sorted by `src.ts` ascending; `Array#sort` is stable and the
+   * mappings are read `ORDER BY id`, so equal `ts` values keep mapping order.
    */
-  pairs(): Array<{ actual: Frame; expect?: Frame }> {
+  mapped(): Array<{ src: Frame; dst: Frame }> {
     if (!this.hasTable('frame_maps')) return [];
 
     const byId = new Map<number, Frame>();
@@ -156,23 +166,15 @@ export class FrameQuery {
       'SELECT id, src_row, dst_row FROM frame_maps ORDER BY id',
     );
 
-    const pairs: Array<{ actual: Frame; expect?: Frame }> = [];
+    const mapped: Array<{ src: Frame; dst: Frame }> = [];
     for (const mapping of mappings) {
       const src = mapping.src_row == null ? undefined : byId.get(mapping.src_row);
       const dst = mapping.dst_row == null ? undefined : byId.get(mapping.dst_row);
       if (!src || !dst) continue;
-
-      // Prefer the rendered (type 0) row as `actual`; otherwise the source
-      // anchors the pair. `expect` is the other end.
-      const srcIsActual = src.type === 0 || dst.type !== 0;
-      const actual = srcIsActual ? src : dst;
-      const expect = srcIsActual ? dst : src;
-      pairs.push({ actual, expect });
+      mapped.push({ src, dst });
     }
 
-    // Array#sort is stable; the mappings arrive in id order, so equal `ts`
-    // values keep their database order.
-    return pairs.sort((a, b) => a.actual.ts - b.actual.ts);
+    return mapped.sort((a, b) => a.src.ts - b.src.ts);
   }
 
   /**

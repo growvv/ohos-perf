@@ -146,89 +146,111 @@ describe('FrameQuery', () => {
   });
 });
 
-describe('FrameQuery.pairs', () => {
+describe('FrameQuery.mapped', () => {
   it('returns [] when frame_maps is absent instead of throwing', () => {
-    const noMaps = withDb('pairs-nomaps.db', (d) => {
+    const noMaps = withDb('mapped-nomaps.db', (d) => {
       d.exec(FRAME_DDL);
       d.exec(`INSERT INTO frame_slice VALUES
         (0, 100, 10, 17, 44, 94, 100000, '', 0, 0, 'actural', 0, 0, 0)`);
     });
     try {
-      expect(new FrameQuery(noMaps).pairs()).toEqual([]);
+      expect(new FrameQuery(noMaps).mapped()).toEqual([]);
     } finally {
       noMaps.close();
     }
   });
 
   it('returns [] when frame_maps is empty instead of throwing', () => {
-    const empty = withDb('pairs-empty.db', (d) => {
+    const empty = withDb('mapped-empty.db', (d) => {
       d.exec(FRAME_DDL);
       d.exec(`INSERT INTO frame_slice VALUES
         (0, 100, 10, 17, 44, 94, 100000, '', 0, 0, 'actural', 0, 0, 0)`);
       d.exec('CREATE TABLE frame_maps(id INT, src_row INT, dst_row INT)');
     });
     try {
-      expect(new FrameQuery(empty).pairs()).toEqual([]);
+      expect(new FrameQuery(empty).mapped()).toEqual([]);
     } finally {
       empty.close();
     }
   });
 
-  it('resolves mappings into actual/expect pairs and sorts by actual.ts', () => {
-    const paired = withDb('pairs.db', (d) => {
+  it('links same-type frames across processes and sorts by src.ts', () => {
+    const cross = withDb('mapped-cross.db', (d) => {
       d.exec(FRAME_DDL);
+      // ipid 17 = app, ipid 26 = render_service. Every mapping links rows of
+      // the same type, matching the measured trace. The two ends sit in
+      // separate vsync domains there (app 3975 vs render_service 6130), so the
+      // fixture gives them distinct vsync values too.
       d.exec(`INSERT INTO frame_slice VALUES
         (0, 100, 10, 17, 44, 94, 100000, '', 0, 0, 'actural', 0, 0, 0),
-        (1, 150, 10, 17, 44, 94, 100000, '', 0, 1, 'expect', 0, 0, 1),
-        (2, 200, 11, 17, 44, 95, 100000, '', 0, 0, 'actural', 1, 0, 2),
-        (3, 250, 11, 17, 44, 95, 100000, '', 0, 1, 'expect', NULL, 0, 3),
-        (4, 300, 12, 17, 44, 96, 100000, '', 0, 1, 'expect', 0, 0, 4),
-        (5,  50,  9, 17, 44, 93, 100000, '', 0, 0, 'actural', 0, 0, 5),
-        (6, 350, 12, 17, 44, 96, 100000, '', 0, 1, 'expect', 0, 0, 6)`);
+        (1, 150, 30, 26, 64, 95, 100000, '', 0, 0, 'actural', 1, 0, 1),
+        (2, 300, 11, 17, 44, 96, 100000, '', 0, 1, 'expect', 0, 0, 2),
+        (3, 350, 31, 26, 64, 97, 100000, '', 0, 1, 'expect', 0, 0, 3),
+        (4, 500, 12, 17, 44, 98, 100000, '', 0, 0, 'actural', 0, 0, 4),
+        (5, 550, 32, 26, 64, 99, 100000, '', 0, 0, 'actural', 0, 0, 5)`);
       d.exec('CREATE TABLE frame_maps(id INT, src_row INT, dst_row INT)');
+      // Deliberately out of ts order to prove the sort is explicit.
       d.exec(`INSERT INTO frame_maps VALUES
-        (0, 0, 1),
-        (1, 2, 0),
-        (2, 3, 4),
-        (3, 5, 4),
-        (4, 4, 2),
-        (5, 99, 0),
-        (6, 4, 6)`);
+        (0, 4, 5),
+        (1, 0, 1),
+        (2, 2, 3)`);
     });
     try {
-      const pairs = new FrameQuery(paired).pairs();
-      expect(pairs.map((p) => [p.actual.id, p.expect?.id])).toEqual([
-        [5, 4], // src actual, dst expect
-        [0, 1], // src actual, dst expect
-        [2, 0], // both type=0: src anchors actual, dst is the counterpart
-        [2, 4], // src expect, dst actual: actual is the dst row
-        [4, 6], // both type=1: src anchors actual, dst is the counterpart
+      const mapped = new FrameQuery(cross).mapped();
+      expect(mapped.map((m) => [m.src.id, m.dst.id])).toEqual([
+        [0, 1], // src.ts 100
+        [2, 3], // src.ts 300
+        [4, 5], // src.ts 500
       ]);
-      // Sorted by actual.ts (50, 100, 200, 200, 300); the 200/200 tie keeps
-      // frame_maps.id order (mapping 1 before mapping 4).
-      expect(pairs.map((p) => p.actual.ts)).toEqual([50, 100, 200, 200, 300]);
-      // Dropped rather than throwing:
-      //  (2, 3, 4) names row 3, whose flag is NULL and so has no Frame;
-      //  (5, 99, 0) names a row that does not exist.
+      // The two ends are the same type in different processes, not an
+      // actual/expect pair, and they are not joined by vsync either.
+      expect(mapped[0].src.ipid).toBe(17);
+      expect(mapped[0].dst.ipid).toBe(26);
+      expect(mapped[0].src.type).toBe(mapped[0].dst.type);
+      expect(mapped[0].src.vsync).not.toBe(mapped[0].dst.vsync);
+      expect(mapped[0].src).toEqual({
+        id: 0,
+        ts: 100,
+        vsync: 10,
+        ipid: 17,
+        itid: 44,
+        callstackId: 94,
+        dur: 100000,
+        src: '',
+        dst: 0,
+        type: 0,
+        typeDesc: 'actural',
+        flag: 0,
+        depth: 0,
+        frameNo: 0,
+      });
     } finally {
-      paired.close();
+      cross.close();
     }
   });
 
-  it('skips mappings that reference a null-flag frame', () => {
-    const paired = withDb('pairs-nullflag.db', (d) => {
+  it('skips mappings that reference a null-flag or missing row', () => {
+    const sparse = withDb('mapped-sparse.db', (d) => {
       d.exec(FRAME_DDL);
       d.exec(`INSERT INTO frame_slice VALUES
         (0, 100, 10, 17, 44, 94, 100000, '', 0, 0, 'actural', 0, 0, 0),
-        (1, 150, 10, 17, 44, 94, 100000, '', 0, 1, 'expect', NULL, 0, 1)`);
+        (1, 150, 10, 26, 64, 95, 100000, '', 0, 1, 'expect', NULL, 0, 1),
+        (2, 200, 11, 17, 44, 96, 100000, '', 0, 0, 'actural', 0, 0, 2),
+        (3, 250, 11, 26, 64, 97, 100000, '', 0, 0, 'actural', 0, 0, 3)`);
       d.exec('CREATE TABLE frame_maps(id INT, src_row INT, dst_row INT)');
-      d.exec('INSERT INTO frame_maps VALUES (0, 0, 1)');
+      d.exec(`INSERT INTO frame_maps VALUES
+        (0, 0, 1),
+        (1, 2, 3),
+        (2, 99, 3)`);
     });
     try {
-      // The expect side is the real-world NULL-flag case: it cannot be a Frame.
-      expect(new FrameQuery(paired).pairs()).toEqual([]);
+      // (0, 0, 1): dst row 1 has a NULL flag, so it has no Frame.
+      // (2, 99, 3): row 99 does not exist.
+      expect(new FrameQuery(sparse).mapped().map((m) => [m.src.id, m.dst.id])).toEqual([
+        [2, 3],
+      ]);
     } finally {
-      paired.close();
+      sparse.close();
     }
   });
 });
