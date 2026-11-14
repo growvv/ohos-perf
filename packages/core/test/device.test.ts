@@ -1,4 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Device, connect } from '../src/device/device';
 import { CapabilityMatrix } from '../src/device/capability';
 import { DeviceNotFoundError } from '../src/errors';
@@ -102,6 +106,48 @@ describe('Device', () => {
       target: 'gone-1', hdc: fakeHdc as any, probe: async () => probe as any,
     })).rejects.toBeInstanceOf(DeviceNotFoundError);
   });
+
+  it('says a requested target was seen but is not connected', async () => {
+    const fakeHdc = {
+      resolvePath: async () => '/hdc',
+      listTargets: async () => [
+        { id: 'real-1', connected: true, raw: 'real-1\tConnected' },
+        { id: 'gone-1', connected: false, raw: 'gone-1\tOffline' },
+      ],
+      listTargetsRaw: async () => ({ targets: [], raw: 'gone-1\t\tUSB\tOffline\tlocalhost\thdc' }),
+      tconn: async () => {},
+      shell: async () => ({ stdout: '', stderr: '', code: 0 }),
+    };
+    const err = await connect({
+      target: 'gone-1', hdc: fakeHdc as any, probe: async () => probe as any,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(DeviceNotFoundError);
+    // The caller can tell "your target is offline" from "nothing is attached".
+    expect((err as DeviceNotFoundError).code).toBe('TARGET_NOT_CONNECTED');
+    expect((err as DeviceNotFoundError).message).toContain('gone-1');
+    expect((err as DeviceNotFoundError).targetsOutput).toBe(
+      'gone-1\t\tUSB\tOffline\tlocalhost\thdc',
+    );
+  });
+
+  it('codes the no-targets case distinctly from a rejected requested target', async () => {
+    const fakeHdc = {
+      resolvePath: async () => '/hdc',
+      listTargets: async () => [
+        { id: '127.0.0.1:5555', connected: false, raw: '127.0.0.1:5555\tOffline' },
+      ],
+      listTargetsRaw: async () => ({ targets: [], raw: '127.0.0.1:5555\t\tTCP\tOffline\tlocalhost\thdc' }),
+      tconn: async () => {},
+      shell: async () => ({ stdout: '', stderr: '', code: 0 }),
+    };
+    const err = await connect({
+      hdc: fakeHdc as any, probe: async () => probe as any,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(DeviceNotFoundError);
+    expect((err as DeviceNotFoundError).code).toBe('NO_CONNECTED_TARGETS');
+  });
 });
 
 describe('CollectSession.ingest', () => {
@@ -112,8 +158,11 @@ describe('CollectSession.ingest', () => {
     const fakeStreamer = {
       convert: async (input: string, output: string) => {
         convertCalls.push(output);
-        // 写一个空库占位，模拟转换产物
+        // 写一个空库占位，模拟转换产物。真实的 Streamer.convert 先写临时文件
+        // 再原子 rename 覆盖 output，所以这里也先清掉旧文件，保持同样的替换语义。
         const { DatabaseSync } = await import('node:sqlite');
+        const { rmSync } = await import('node:fs');
+        rmSync(output, { force: true });
         const db = new DatabaseSync(output);
         db.exec('CREATE TABLE frame_slice(id INT)');
         db.close();
@@ -144,5 +193,80 @@ describe('CollectSession.ingest', () => {
     const scene2 = await s2.ingest();
     scene2.close();
     expect(convertCalls).toHaveLength(2);   // 第二次必须重新转换
+  });
+
+  it('keeps the previous scene when conversion fails', async () => {
+    // 转换失败（版本不符、磁盘满、坏 trace）比采集失败更常见。删除旧库必须
+    // 只在转换成功后才发生，否则一次失败的转换会让用户既没有旧库也没有新库。
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-device-fail-'));
+    try {
+      const traceDb = join(root, 'trace.db');
+      const db = new DatabaseSync(traceDb);
+      db.exec('CREATE TABLE frame_slice(id INT, ts INT)');
+      db.exec('INSERT INTO frame_slice VALUES (0, 42)');
+      db.close();
+
+      const collector = {
+        collect: async (_hdc: unknown, _t: string, _o: unknown, layout: any) => {
+          writeFileSync(layout.traceFile, 'fresh capture');
+        },
+      };
+      const streamer = {
+        convert: async () => {
+          throw new Error('conversion exploded');
+        },
+      };
+      const d = new Device('t1', probe as any, {
+        hdc: {} as any, streamer: streamer as any, collector: collector as any,
+      });
+
+      const session = await d.collect({ app: 'x', durationMs: 1, sceneRoot: root });
+      await expect(session.ingest()).rejects.toThrow(/conversion exploded/);
+
+      // The old database is still there and still queryable.
+      expect(existsSync(traceDb)).toBe(true);
+      const check = new DatabaseSync(traceDb, { readOnly: true });
+      expect(check.prepare('SELECT ts FROM frame_slice').all()).toEqual([{ ts: 42 }]);
+      check.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('replaces the previous scene only after a successful conversion', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-device-replace-'));
+    try {
+      const traceDb = join(root, 'trace.db');
+      const old = new DatabaseSync(traceDb);
+      old.exec('CREATE TABLE frame_slice(id INT, ts INT)');
+      old.exec('INSERT INTO frame_slice VALUES (0, 7)');
+      old.close();
+
+      const collector = {
+        collect: async (_hdc: unknown, _t: string, _o: unknown, layout: any) => {
+          writeFileSync(layout.traceFile, 'fresh capture');
+        },
+      };
+      const streamer = {
+        convert: async (_input: string, output: string) => {
+          // Real Streamer.convert replaces the output atomically; drop the old
+          // file first so the fixture has the same semantics.
+          rmSync(output, { force: true });
+          const db = new DatabaseSync(output);
+          db.exec('CREATE TABLE frame_slice(id INT, ts INT)');
+          db.exec('INSERT INTO frame_slice VALUES (0, 99)');
+          db.close();
+        },
+      };
+      const d = new Device('t1', probe as any, {
+        hdc: {} as any, streamer: streamer as any, collector: collector as any,
+      });
+
+      const scene = await d.collect({ app: 'x', durationMs: 1, sceneRoot: root }).then((s) => s.ingest());
+      expect(scene.query<{ ts: number }>('SELECT ts FROM frame_slice')).toEqual([{ ts: 99 }]);
+      scene.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
   });
 });

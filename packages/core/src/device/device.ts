@@ -8,7 +8,7 @@
  * and turn it into a queryable scene.
  */
 
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { HitraceCollector } from '../collectors/hitrace';
 import type { TraceCollectOptions } from '../collectors/types';
 import { buildMatrix, type CapabilityMatrix } from './capability';
@@ -57,6 +57,16 @@ export interface DeviceDeps {
   collector?: HitraceCollector;
 }
 
+/**
+ * A probed device.
+ *
+ * Construction is pure: no transport is resolved or spawned. `kind`, `abi`,
+ * `capabilities()` and `collect()`'s capability gate work from the snapshot
+ * alone, which is what makes a directly constructed Device useful for offline
+ * analysis and tests. `deps.hdc` is **required** for anything that talks to the
+ * device — {@link Device.shell} and {@link Device.collect} — and those throw
+ * `DEVICE_NO_HDC` when it is absent. `connect()` always supplies one.
+ */
 export class Device {
   readonly id: string;
   readonly kind: 'real' | 'emulator';
@@ -103,11 +113,18 @@ export class Device {
     }
 
     return {
+      /**
+       * Capture the trace, then convert and open it as a scene.
+       *
+       * The scene directory is created before the capture because hitrace's
+       * `recv` needs its destination to exist, and `ingestScene` only creates
+       * directories on its write path (after the capture). Consequence: a
+       * capture that fails can leave the directory behind, empty. It is never
+       * populated on the failure path.
+       */
       ingest: async (): Promise<Scene> => {
         const layout = createSceneLayout(opts.sceneRoot);
 
-        // hitrace's recv needs the destination directory to exist. ingestScene
-        // would create it, but only after the capture has already run.
         mkdirSync(layout.root, { recursive: true });
 
         const collector = this.deps.collector ?? new HitraceCollector();
@@ -123,16 +140,18 @@ export class Device {
           layout,
         );
 
-        // ingestScene() deliberately skips conversion when trace.db exists, so
-        // a database left by an earlier capture in this same sceneRoot would
-        // silently hide the trace that was just recorded. The database is an
-        // artifact of one capture, and this capture has not been converted
-        // yet; delete it so conversion is not skipped. This runs only after a
-        // successful capture, so a failed capture leaves the previous scene
-        // intact. Only the database is removed, never the directory.
-        if (existsSync(layout.traceDb)) rmSync(layout.traceDb, { force: true });
-
+        // Convert unconditionally instead of deleting a pre-existing trace.db.
+        // `ingestScene` skips conversion when trace.db exists, so reusing a
+        // sceneRoot would otherwise silently open the previous capture's
+        // database. `Streamer.convert` writes to a sibling temp path and
+        // renames over `layout.traceDb` only after a successful conversion, so
+        // an existing good database survives a failed conversion. Deleting it
+        // first would leave the caller with neither the old scene nor a new
+        // one. On success the fresh database is already in place, and
+        // `ingestScene` simply opens it.
         const streamer = this.deps.streamer ?? new Streamer();
+        await streamer.convert(layout.traceFile, layout.traceDb);
+
         return ingestScene(streamer, layout);
       },
     };
@@ -177,7 +196,21 @@ export async function connect(
 
   if (selected === undefined) {
     const { raw } = await hdc.listTargetsRaw();
-    throw new DeviceNotFoundError(raw);
+    // A caller who named a target and got an opaque "no device" error cannot
+    // tell whether the id was wrong or the device is merely offline, and
+    // retrying with the same id produces the same error. Distinguish the two
+    // cases in both the code and the message. `targetsOutput` stays raw.
+    const requestedSeen =
+      opts.target !== undefined && targets.some((t) => t.id === opts.target);
+    if (requestedSeen) {
+      const err = new DeviceNotFoundError(raw, { code: 'TARGET_NOT_CONNECTED' });
+      // DeviceNotFoundError's message is fixed by its signature, but the
+      // caller-facing text must name the rejected id.
+      err.message = `Requested target "${opts.target}" is present but not connected.` +
+        ` \`hdc list targets\` output: ${raw}`;
+      throw err;
+    }
+    throw new DeviceNotFoundError(raw, { code: 'NO_CONNECTED_TARGETS' });
   }
 
   // Best effort, never a gate: see above.
