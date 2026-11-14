@@ -1711,7 +1711,7 @@ Expected: PASS（若 trace.db 不存在则 skip）
 
 - [ ] **Step 3: 记录 fixture 来源**
 
-`test/fixtures/README.md` 说明两个探针 fixture 的来源（真机 `REDACTED-DEVICE-SERIAL`、模拟器 `127.0.0.1:10178`）与录制日期，以及 `emu_big.db` 的生成方式。
+`test/fixtures/README.md` 说明两个探针 fixture 的来源（真机 `REDACTED-DEVICE-SERIAL`、模拟器 `127.0.0.1:5555`——实测端口，不是早期文档写的 10178）与录制日期，以及 `emu_big.db` 的生成方式。
 
 - [ ] **Step 4: 全量测试与构建**
 
@@ -1734,6 +1734,7 @@ P0 完成的判据：
 1. `npx vitest run` 全部通过（约 50 个测试）。
 2. `npm run build -w @ohos-perf/core` 无错误，产出 `dist/index.js` 与 `dist/index.d.ts`。
 3. 在真机上执行 `ohos-perf doctor --json` 返回 `hdc.ok=true`、`streamer.ok=true`、能力矩阵中 `trace.frames` 与 `perf.pmu` 均为 `available: true`。
-4. 在模拟器（`127.0.0.1:10178`）上执行同样命令，`perf.pmu` 为 `available: false` 且 `reason` 含 `no hardware PMU events`，`mem.native_hook` 为 `available: false` 且 `reason` 含 `hiprofiler`。
+4. 在模拟器（**`127.0.0.1:5555`**，以 `hdc list targets -v` 实测为准；本文档早期写的 `10178` 是错的）上执行同样命令，`perf.pmu` 为 `available: false` 且 `reason` 含 `no hardware PMU events`，`mem.native_hook` 为 `available: false` 且 `reason` 含 `hiprofiler`。
+   - **2026-11-15 已实测通过**：模拟器 `127.0.0.1:5555`（x86_64）上 `perf.pmu` → `no hardware PMU events reported by hiperf list hw`；所有 hiprofiler 能力 → `hiprofiler not present on device (hiprofiler_cmd missing)`；`render.fps_live` 的 `fidelity` 为 `proxy`；共 9 项可用。同机真机 `REDACTED-DEVICE-SERIAL`（arm64-v8a）20 项全部可用，`perf.pmu` 为 `exact`。
 5. 对 `spike/out/emu_big.db` 运行帧分析，`frame.count > 0` 且所有指标的 `provenance.table` 为 `frame_slice`。
 6. 同一输入连续两次分析，`JSON.stringify` 结果完全相同。
