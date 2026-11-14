@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { OhosPerfError } from '../src/errors';
 import { openDb, tableRowCounts } from '../src/db/driver';
 
 let dir: string;
@@ -39,9 +40,8 @@ describe('openDb', () => {
     db.close();
   });
 
-  it('opens read-only by default', () => {
+  it('opens read-only', () => {
     const db = openDb(dbPath);
-    expect(db.mode).toBe('read-only');
     // A writable connection would succeed here; a read-only one must refuse.
     expect(() => db.query('INSERT INTO frame_slice VALUES (9, 900, 9)')).toThrow();
     db.close();
@@ -57,6 +57,21 @@ describe('openDb', () => {
     const db = openDb(dbPath);
     db.close();
     expect(() => db.close()).not.toThrow();
+  });
+
+  it('throws a wrapped error with the path and cause for an unopenable database', () => {
+    const missing = join(dir, 'does-not-exist', 'missing.db');
+    let thrown: unknown;
+    try {
+      openDb(missing);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(OhosPerfError);
+    const err = thrown as OhosPerfError;
+    expect(err.message).toContain(missing);
+    expect(err.code).toBe('DB_OPEN_FAILED');
+    expect(err.cause).toBeInstanceOf(Error);
   });
 });
 
@@ -91,59 +106,51 @@ describe('tableRowCounts', () => {
     expect(tableRowCounts(db)).toEqual({ frame_slice: 1 });
     db.close();
   });
-});
 
-describe('read-only fallback', () => {
-  it('retries without readOnly when the open error mentions readonly', async () => {
-    vi.resetModules();
-    const modes: boolean[] = [];
-    vi.doMock('../src/db/sqlite', () => ({
-      DatabaseSync: class {
-        constructor(_path: string, opts?: { readOnly?: boolean }) {
-          modes.push(Boolean(opts?.readOnly));
-          if (opts?.readOnly) {
-            throw new Error('unable to open database file: readonly');
-          }
-        }
-        prepare() {
-          return { all: () => [] };
-        }
-        close() {}
-      },
-    }));
+  it('counts a user table whose name starts with sqlitefoo but not sqlite internals', () => {
+    const path = join(dir, 'like-escape.db');
+    const d = new DatabaseSync(path);
+    // `_` is a LIKE wildcard: without ESCAPE this would also hide `sqlitefoo`.
+    d.exec('CREATE TABLE sqlitefoo(id INT)');
+    d.exec('INSERT INTO sqlitefoo VALUES (1), (2)');
+    d.exec('CREATE TABLE autoinc(id INTEGER PRIMARY KEY AUTOINCREMENT)');
+    d.exec('INSERT INTO autoinc DEFAULT VALUES');
+    d.close();
 
-    try {
-      const { openDb: openWithMock } = await import('../src/db/driver');
-      const db = openWithMock('ignored.db');
-      expect(db.mode).toBe('read-write');
-      expect(modes).toEqual([true, false]);
-      db.close();
-    } finally {
-      vi.doUnmock('../src/db/sqlite');
-      vi.resetModules();
-    }
+    const db = openDb(path);
+    const counts = tableRowCounts(db);
+    expect(counts).toEqual({ autoinc: 1, sqlitefoo: 2 });
+    expect(counts).not.toHaveProperty('sqlite_sequence');
+    db.close();
   });
 
-  it('rethrows unrelated open errors without retrying', async () => {
-    vi.resetModules();
-    const modes: boolean[] = [];
-    vi.doMock('../src/db/sqlite', () => ({
-      DatabaseSync: class {
-        constructor(_path: string, opts?: { readOnly?: boolean }) {
-          modes.push(Boolean(opts?.readOnly));
-          throw new Error('unable to open database file');
-        }
-        close() {}
-      },
-    }));
+  it('keeps integer-like table names in sorted order', () => {
+    const path = join(dir, 'numeric-names.db');
+    const d = new DatabaseSync(path);
+    d.exec('CREATE TABLE "10"(id INT)');
+    d.exec('CREATE TABLE "2"(id INT)');
+    d.exec('CREATE TABLE "9"(id INT)');
+    d.close();
 
-    try {
-      const { openDb: openWithMock } = await import('../src/db/driver');
-      expect(() => openWithMock('missing.db')).toThrow('unable to open database file');
-      expect(modes).toEqual([true]);
-    } finally {
-      vi.doUnmock('../src/db/sqlite');
-      vi.resetModules();
-    }
+    const db = openDb(path);
+    const counts = tableRowCounts(db);
+    expect(Object.keys(counts)).toEqual(['10', '2', '9']);
+    expect(JSON.stringify(counts)).toBe('{"10":0,"2":0,"9":0}');
+    db.close();
+  });
+
+  it('keeps a table literally named __proto__ as an own property', () => {
+    const path = join(dir, 'proto.db');
+    const d = new DatabaseSync(path);
+    d.exec('CREATE TABLE "__proto__"(id INT)');
+    d.exec('INSERT INTO "__proto__" VALUES (1)');
+    d.close();
+
+    const db = openDb(path);
+    const counts = tableRowCounts(db);
+    expect(Object.keys(counts)).toEqual(['__proto__']);
+    expect(Object.prototype.hasOwnProperty.call(counts, '__proto__')).toBe(true);
+    expect(counts['__proto__']).toBe(1);
+    db.close();
   });
 });
