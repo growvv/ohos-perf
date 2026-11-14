@@ -39,12 +39,21 @@ export interface HdcArgvParams {
   listTargets: Record<string, never>;
 }
 
-/** hdc writes `[Fail]...` diagnostics to stdout and still exits 0. */
-const FAIL_PREFIX = /^\[Fail\]/m;
+/**
+ * hdc writes `[Fail]...` diagnostics to stdout and still exits 0. Some builds
+ * decorate the prefix (`hdc: [Fail]...`), so allow that before the marker.
+ */
+const FAIL_PREFIX = /^[ \t]*(?:hdc:[ \t]*)?\[Fail\]/m;
 /** hdc emits these when the connect key does not name a live device. */
 const TARGET_MISSING = /Not match target founded|need connect-key|\[E001005\]/;
-/** Lines hdc prints when there is simply nothing to list. */
-const EMPTY_LISTING = /^\s*\[(Fail|Empty|Info|Warning)\]/;
+/** Positive completion markers. Without one, a transfer is not successful. */
+const SUCCESS_MARKER = {
+  recv: /FileTransfer finish/,
+  send: /FileTransfer finish/,
+  fport: /Forwardport result:[ \t]*OK/,
+} as const;
+/** Listing lines that mean "nothing to show" rather than "command failed". */
+const EMPTY_LISTING = /^[ \t]*\[(Empty|Info|Warning)\]/;
 
 /**
  * hdc on Windows joins drive-letter paths that use forward slashes onto the
@@ -104,11 +113,6 @@ function defaultCommonPaths(env: NodeJS.ProcessEnv): string[] {
     }
   }
   return paths;
-}
-
-function failLine(stdout: string): string {
-  const match = stdout.split(/\r?\n/).find((line) => FAIL_PREFIX.test(line));
-  return (match ?? stdout).trim();
 }
 
 export class Hdc {
@@ -196,18 +200,54 @@ export class Hdc {
 
   /** `hdc list targets -v`; only status `Connected` counts as usable. */
   async listTargets(): Promise<HdcTarget[]> {
-    const { stdout } = await this.run(this.buildArgv('listTargets', {}));
-    const targets: HdcTarget[] = [];
-    for (const line of stdout.split(/\r?\n/)) {
-      const raw = line.replace(/\r$/, '');
-      if (!raw.trim() || EMPTY_LISTING.test(raw)) continue;
-      // Real format: id \t \t transport \t status \t host \t server.
-      const fields = raw.split(/\t+/).map((f) => f.trim()).filter(Boolean);
-      const id = fields[0];
-      if (!id) continue;
-      targets.push({ id, connected: fields[2] === 'Connected', raw });
+    return (await this.listTargetsRaw()).targets;
+  }
+
+  /**
+   * Like listTargets(), but also returns the raw `hdc list targets -v` text so
+   * callers (DeviceNotFoundError.targetsOutput) do not need a second call.
+   *
+   * A genuine empty listing (`[Empty]`, no lines, or hdc's "Not match target
+   * founded") yields zero targets. Any other `[Fail]` line is a server error
+   * and throws, so "hdc is broken" is never mistaken for "no devices".
+   */
+  async listTargetsRaw(): Promise<{ targets: HdcTarget[]; raw: string }> {
+    const result = await this.run(this.buildArgv('listTargets', {}));
+    const raw = result.stdout;
+    if (result.code !== 0) {
+      throw new OhosPerfError(
+        `hdc list targets failed: exit code ${result.code}${failDetail(result) ? ` (${failDetail(result)})` : ''}`,
+        { code: 'HDC_LIST_TARGETS_FAILED' },
+      );
     }
-    return targets;
+
+    const targets: HdcTarget[] = [];
+    for (const line of raw.split(/\r?\n/)) {
+      const stripped = line.replace(/\r$/, '');
+      const trimmed = stripped.trim();
+      if (!trimmed || EMPTY_LISTING.test(stripped)) continue;
+
+      if (FAIL_PREFIX.test(stripped)) {
+        // Not an error: hdc simply has no target matching the connect key.
+        if (/Not match target founded/i.test(trimmed)) continue;
+        throw new OhosPerfError(`hdc list targets failed: ${trimmed}`, {
+          code: 'HDC_LIST_TARGETS_FAILED',
+        });
+      }
+
+      // Real format: id \t \t transport \t status \t host \t server. A line
+      // without tabs is not a target row and must not become a fake target.
+      if (!stripped.includes('\t')) continue;
+      const fields = stripped
+        .split(/\t+/)
+        .map((f) => f.trim())
+        .filter(Boolean);
+      const id = fields[0];
+      if (!id || fields.length < 2) continue;
+      const status = fields.length >= 3 ? fields[2] : fields[1];
+      targets.push({ id, connected: status === 'Connected', raw: stripped });
+    }
+    return { targets, raw };
   }
 
   /**
@@ -227,6 +267,14 @@ export class Hdc {
   async shell(target: string, cmd: string): Promise<HdcResult> {
     const result = await this.run(this.buildArgv('shell', { target, cmd }));
     this.assertTargetAlive(result.stdout);
+    // No success marker exists for shell: empty output is legitimate. A
+    // non-zero exit is still proof of failure.
+    if (result.code !== 0) {
+      throw new OhosPerfError(
+        `hdc shell failed: exit code ${result.code}${failDetail(result) ? ` (${failDetail(result)})` : ''}`,
+        { code: 'HDC_SHELL_FAILED' },
+      );
+    }
     return result;
   }
 
@@ -299,18 +347,58 @@ export class Hdc {
   }
 
   /**
-   * hdc exits 0 even when the transfer fails, so success is judged from the
-   * output text. Device-level failures surface as `[Fail]...` on stdout.
+   * hdc exits 0 even when a transfer fails, so success needs both:
+   *   1. exit code 0, and
+   *   2. a positive completion marker on stdout.
+   * Without the marker an empty/truncated/unrecognised response would read as
+   * success and leave a stale destination file behind.
+   *
+   * `[Fail]` on stdout always fails. `[Fail]` on stderr only fails when stdout
+   * has no success marker, so a benign stderr warning cannot mask a good
+   * transfer.
    */
   private assertSuccess(op: 'recv' | 'send' | 'fport', result: HdcResult): void {
     this.assertTargetAlive(result.stdout);
-    const combined = `${result.stdout}\n${result.stderr}`;
-    const failed =
-      FAIL_PREFIX.test(combined) || /Forwardport result:(?!\s*OK)/.test(combined);
-    if (failed) {
-      throw new OhosPerfError(`hdc ${op} failed: ${failLine(result.stdout) || failLine(result.stderr)}`, {
+
+    const stdoutOk = SUCCESS_MARKER[op].test(result.stdout);
+    const failOnStdout = FAIL_PREFIX.test(result.stdout);
+    const failOnStderrOnly = !stdoutOk && FAIL_PREFIX.test(result.stderr);
+
+    if (result.code !== 0 || failOnStdout || failOnStderrOnly || !stdoutOk) {
+      let detail: string;
+      if (result.code !== 0) {
+        const context = failDetail(result) || firstLine(result);
+        detail = `exit code ${result.code}${context ? ` (${context})` : ''}`;
+      } else {
+        detail = failDetail(result) || 'no success marker in output';
+      }
+      throw new OhosPerfError(`hdc ${op} failed: ${detail}`, {
         code: `HDC_${op.toUpperCase()}_FAILED`,
       });
     }
   }
+}
+
+/** First `[Fail]` line across stdout then stderr, or ''. */
+function failDetail(result: HdcResult): string {
+  for (const stream of [result.stdout, result.stderr]) {
+    const line = stream
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => FAIL_PREFIX.test(l));
+    if (line) return line;
+  }
+  return '';
+}
+
+/** First non-empty line across stdout then stderr, or ''. */
+function firstLine(result: HdcResult): string {
+  for (const stream of [result.stdout, result.stderr]) {
+    const line = stream
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    if (line) return line;
+  }
+  return '';
 }

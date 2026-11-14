@@ -85,19 +85,60 @@ describe('Hdc.listTargets', () => {
     const hdc = new StubHdc('[Empty]\r\n');
     await expect(hdc.listTargets()).resolves.toEqual([]);
   });
+
+  it('exposes the raw listing so DeviceNotFoundError can quote it', async () => {
+    const raw = '127.0.0.1:10178\t\tTCP\tOffline\tlocalhost\thdc\r\n';
+    const hdc = new StubHdc(raw);
+    await expect(hdc.listTargetsRaw()).resolves.toEqual({
+      targets: [
+        { id: '127.0.0.1:10178', connected: false, raw: '127.0.0.1:10178\t\tTCP\tOffline\tlocalhost\thdc' },
+      ],
+      raw,
+    });
+  });
+
+  it('throws on a server error instead of reporting zero devices', async () => {
+    const hdc = new StubHdc('[Fail]Connect server failed\r\n');
+    await expect(hdc.listTargets()).rejects.toThrow(/Connect server failed/);
+    await expect(hdc.listTargetsRaw()).rejects.toThrow(/list targets failed/);
+  });
+
+  it('throws when hdc exits non-zero even with a clean listing', async () => {
+    class ExitStub extends StubHdc {
+      protected override async run(): Promise<{ stdout: string; stderr: string; code: number }> {
+        return { stdout: 'REDACTED-DEVICE-SERIAL\t\tUSB\tConnected\tlocalhost\thdc\r\n', stderr: '', code: 3 };
+      }
+    }
+    await expect(new ExitStub('').listTargets()).rejects.toThrow(/exit code 3/);
+  });
+
+  it('does not synthesise a target from a non-tabular line', async () => {
+    const hdc = new StubHdc(
+      'hdc: cannot connect to server\r\n'
+      + 'REDACTED-DEVICE-SERIAL\t\tUSB\tConnected\tlocalhost\thdc\r\n',
+    );
+    const targets = await hdc.listTargets();
+    expect(targets.map((t) => t.id)).toEqual(['REDACTED-DEVICE-SERIAL']);
+  });
 });
 
 describe('Hdc command failure detection', () => {
   class StubHdc extends Hdc {
     readonly calls: string[][] = [];
-    constructor(private readonly output: string) {
+    constructor(
+      private readonly stdout: string,
+      private readonly stderr = '',
+      private readonly code = 0,
+    ) {
       super({ hdcPath: 'C:/fake/hdc.exe' });
     }
     protected override async run(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
       this.calls.push(args);
-      return { stdout: this.output, stderr: '', code: 0 };
+      return { stdout: this.stdout, stderr: this.stderr, code: this.code };
     }
   }
+
+  const RECV_OK = 'FileTransfer finish, Size:6, File count = 1, time:15ms rate:0.40kB/s\r\n';
 
   it('throws on recv failure even though hdc exits 0', async () => {
     const hdc = new StubHdc(
@@ -108,13 +149,66 @@ describe('Hdc command failure detection', () => {
   });
 
   it('resolves recv when hdc reports a finished transfer', async () => {
-    const hdc = new StubHdc('FileTransfer finish, Size:6, File count = 1, time:15ms rate:0.40kB/s\r\n');
+    const hdc = new StubHdc(RECV_OK);
     await expect(hdc.recv('t1', '/data/local/tmp/x', 'out/x')).resolves.toBeUndefined();
+  });
+
+  it('rejects recv when output lacks the positive completion marker', async () => {
+    // Guards the false-negative hole: absence of [Fail] is not success.
+    const empty = new StubHdc('');
+    await expect(empty.recv('t1', '/data/local/tmp/x', 'out/x')).rejects.toThrow(/no success marker/);
+
+    const garbage = new StubHdc('something unexpected happened\r\n');
+    await expect(garbage.recv('t1', '/data/local/tmp/x', 'out/x')).rejects.toThrow(/no success marker/);
+  });
+
+  it('rejects a non-zero exit even with a clean success marker', async () => {
+    const hdc = new StubHdc(RECV_OK, '', 2);
+    await expect(hdc.recv('t1', '/data/local/tmp/x', 'out/x')).rejects.toThrow(/exit code 2/);
+    await expect(hdc.send('t1', 'out/x', '/data/local/tmp/x')).rejects.toThrow(/exit code 2/);
+    await expect(hdc.fport('t1', 1, 2)).rejects.toThrow(/exit code 2/);
+    await expect(hdc.shell('t1', 'echo hi')).rejects.toThrow(/exit code 2/);
+  });
+
+  it('tolerates a decorated [Fail] prefix on stdout', async () => {
+    const hdc = new StubHdc('hdc: [Fail]Error opening file: no such file\r\n');
+    await expect(hdc.recv('t1', '/data/local/tmp/x', 'out/x')).rejects.toThrow(/recv failed/);
+  });
+
+  it('ignores a benign stderr line when stdout carries the success marker', async () => {
+    const hdc = new StubHdc(RECV_OK, '[Fail]noise from a helper\r\n');
+    await expect(hdc.recv('t1', '/data/local/tmp/x', 'out/x')).resolves.toBeUndefined();
+  });
+
+  it('fails on stderr [Fail] when stdout has no success marker', async () => {
+    const hdc = new StubHdc('', '[Fail]transfer aborted\r\n');
+    await expect(hdc.recv('t1', '/data/local/tmp/x', 'out/x')).rejects.toThrow(/transfer aborted/);
+  });
+
+  it('keeps shell success for empty output with exit 0', async () => {
+    const hdc = new StubHdc('');
+    await expect(hdc.shell('t1', 'true')).resolves.toEqual({ stdout: '', stderr: '', code: 0 });
   });
 
   it('throws on send failure even though hdc exits 0', async () => {
     const hdc = new StubHdc('[Fail]Error opening file: no such file or directory, path:out/x\r\n');
     await expect(hdc.send('t1', 'out/x', '/data/local/tmp/x')).rejects.toThrow(/send failed/);
+  });
+
+  it('resolves send when hdc reports a finished transfer', async () => {
+    const hdc = new StubHdc('FileTransfer finish, Size:3, File count = 1, time:19ms rate:0.16kB/s\r\n');
+    await expect(hdc.send('t1', 'out/x', '/data/local/tmp/x')).resolves.toBeUndefined();
+  });
+
+  it('resolves fport only on Forwardport result:OK', async () => {
+    const ok = new StubHdc('Forwardport result:OK\r\n');
+    await expect(ok.fport('t1', 19999, 19999)).resolves.toBeUndefined();
+
+    const noMarker = new StubHdc('some other output\r\n');
+    await expect(noMarker.fport('t1', 19999, 19999)).rejects.toThrow(/no success marker/);
+
+    const empty = new StubHdc('');
+    await expect(empty.fport('t1', 19999, 19999)).rejects.toThrow(/no success marker/);
   });
 
   it('throws on fport failure and keeps tconn best-effort', async () => {
