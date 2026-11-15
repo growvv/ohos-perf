@@ -112,6 +112,7 @@ export type {
   ThreadWakeupThread,
 } from './analyze/threads-wakeup';
 export { ThreadAnalyzer, computeThreadAnalysis } from './analyze/threads-score';
+export { MemoryAnalyzer } from './analyze/memory';
 export type {
   BelowThresholdPattern,
   CallchainSample,

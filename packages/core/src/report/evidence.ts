@@ -10,7 +10,8 @@ export type EvidenceKind =
   | 'degraded_capability'
   | 'fault_pattern'
   | 'binder_hotspot'
-  | 'thread_redundancy';
+  | 'thread_redundancy'
+  | 'memory_growth';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.

@@ -5,6 +5,7 @@ import { metric, type Metric } from '../report/metric';
 import { BinderAnalyzer } from './binder';
 import { FaultTreeAnalyzer } from './fault-tree';
 import { FrameAnalyzer } from './frames';
+import { MemoryAnalyzer } from './memory';
 import { ThreadAnalyzer } from './threads-score';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
@@ -163,5 +164,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new FaultTreeAnalyzer(),
     new BinderAnalyzer(),
     new ThreadAnalyzer(),
+    new MemoryAnalyzer(),
   ];
 }
