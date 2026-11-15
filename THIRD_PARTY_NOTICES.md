@@ -20,6 +20,7 @@ ArkAnalyzer-HapRay:
 | --- | --- |
 | `packages/core/src/analyze/binder.ts` | `hapray/analyze/ipc_binder_analyzer.py` |
 | `packages/core/src/analyze/fault-tree.ts` | `hapray/analyze/fault_tree_analyzer.py` |
+| `packages/core/src/analyze/threads-wakeup.ts` | `hapray/core/common/thread_wakeup_chain.py`, `hapray/core/common/frame/frame_wakeup_chain.py`, `hapray/core/common/frame/frame_utils.py`, `hapray/core/common/frame/frame_core_load_calculator.py` |
 | `packages/core/src/query/sched.ts` | `hapray/core/common/thread_wakeup_chain.py`, `hapray/core/common/frame/frame_wakeup_chain.py` |
 | `packages/core/src/query/callstack.ts` | `hapray/analyze/ipc_binder_analyzer.py`, `hapray/core/common/thread_wakeup_chain.py` |
 | `packages/core/src/query/perf.ts` | `hapray/core/common/thread_wakeup_chain.py`, `hapray/core/common/frame/frame_core_load_calculator.py` |

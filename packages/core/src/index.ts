@@ -98,6 +98,11 @@ export type {
   BinderThreadStat,
   BinderTransaction,
 } from './analyze/binder';
+export { analyzeThreadWakeup } from './analyze/threads-wakeup';
+export type {
+  ThreadWakeupResult,
+  ThreadWakeupThread,
+} from './analyze/threads-wakeup';
 export { runAnalyzers, defaultAnalyzers } from './analyze/engine';
 export { resolveAppIdentity } from './analyze/context';
 export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';

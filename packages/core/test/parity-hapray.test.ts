@@ -10,6 +10,10 @@ import {
   type BinderProcessStat,
   type BinderThreadStat,
 } from '../src/analyze/binder';
+import {
+  analyzeThreadWakeup,
+  type ThreadWakeupResult,
+} from '../src/analyze/threads-wakeup';
 
 /**
  * HapRay parity on the recorded traces.
@@ -220,6 +224,84 @@ function compareInterfaceStats(
   }
 }
 
+/** The snake_case `thread_wakeup_chain.py` payload as HapRay writes it. */
+interface GoldenWakeupThread {
+  itid: number;
+  tid: number | null;
+  thread_name: string | null;
+  pid: number | null;
+  process_name: string | null;
+  instruction_count: number;
+  is_system_thread: boolean;
+  wakeup_depth: number;
+  thread_states_count: number;
+  callchains_count: number;
+}
+
+interface GoldenWakeupResult {
+  thread_id: number;
+  thread_info: {
+    thread_name: string;
+    start_ts: number | null;
+    end_ts: number | null;
+  };
+  total_instructions: number;
+  wakeup_threads: GoldenWakeupThread[];
+}
+
+/**
+ * The committed goldens project `thread_states`/`callchains` to counts, so the
+ * arrays are compared by length only; every scalar field is exact.
+ */
+function compareThreadWakeups(
+  actual: ThreadWakeupResult[],
+  golden: GoldenWakeupResult[],
+): void {
+  const actualSorted = [...actual].sort((a, b) => a.threadId - b.threadId);
+  const goldenSorted = [...golden].sort((a, b) => a.thread_id - b.thread_id);
+  expect(actualSorted.map((row) => row.threadId)).toEqual(
+    goldenSorted.map((row) => row.thread_id),
+  );
+
+  for (let i = 0; i < goldenSorted.length; i++) {
+    const got = actualSorted[i];
+    const want = goldenSorted[i];
+    const label = `thread ${want.thread_id}`;
+    expect(got.threadInfo.threadName, `${label} threadName`)
+      .toBe(want.thread_info.thread_name);
+    expect(got.threadInfo.startTs, `${label} startTs`)
+      .toBe(want.thread_info.start_ts);
+    expect(got.threadInfo.endTs, `${label} endTs`)
+      .toBe(want.thread_info.end_ts);
+    expect(got.totalInstructions, `${label} totalInstructions`)
+      .toBe(want.total_instructions);
+    expect(got.wakeupThreads, `${label} wakeupThreads`)
+      .toHaveLength(want.wakeup_threads.length);
+
+    for (let j = 0; j < want.wakeup_threads.length; j++) {
+      const thread = got.wakeupThreads[j];
+      const expected = want.wakeup_threads[j];
+      const at = `${label} wakeup[${j}]`;
+      expect(thread.itid, `${at} itid`).toBe(expected.itid);
+      expect(thread.tid, `${at} tid`).toBe(expected.tid);
+      expect(thread.threadName, `${at} threadName`).toBe(expected.thread_name);
+      expect(thread.pid, `${at} pid`).toBe(expected.pid);
+      expect(thread.processName, `${at} processName`)
+        .toBe(expected.process_name);
+      expect(thread.instructionCount, `${at} instructionCount`)
+        .toBe(expected.instruction_count);
+      expect(thread.isSystemThread, `${at} isSystemThread`)
+        .toBe(expected.is_system_thread);
+      expect(thread.wakeupDepth, `${at} wakeupDepth`)
+        .toBe(expected.wakeup_depth);
+      expect(thread.threadStates, `${at} threadStates count`)
+        .toHaveLength(expected.thread_states_count);
+      expect(thread.callchains, `${at} callchains count`)
+        .toHaveLength(expected.callchains_count);
+    }
+  }
+}
+
 describe('HapRay parity', () => {
   describe('fault tree', () => {
     it.skipIf(!existsSync(EMU_DB))(
@@ -304,6 +386,49 @@ describe('HapRay parity', () => {
         expect(actual.processStats).toEqual([]);
         expect(actual.threadStats).toEqual([]);
         expect(actual.interfaceStats).toEqual([]);
+      },
+    );
+  });
+
+  describe('thread wakeup', () => {
+    it.skipIf(!existsSync(EMU_DB))(
+      'emu_big matches the thread-wakeup golden',
+      () => {
+        const actual = withDb(EMU_DB, (db) =>
+          analyzeThreadWakeup(db, { appPids: [16702] }),
+        );
+        compareThreadWakeups(
+          actual,
+          readGolden<GoldenWakeupResult[]>('thread-wakeup.emu_big.json'),
+        );
+
+        // Pinned counts and the app main thread's depth so a same-shape
+        // regression cannot hide behind the per-field comparison.
+        expect(actual).toHaveLength(21);
+        const main = actual.find((row) => row.threadId === 16702);
+        expect(main).toBeDefined();
+        expect(main?.wakeupThreads[0]?.wakeupDepth).toBe(0);
+        // No perf_sample rows on this trace: every instruction count is zero.
+        expect(actual.every((row) => row.totalInstructions === 0)).toBe(true);
+      },
+    );
+
+    it.skipIf(!existsSync(REAL_DB))(
+      'real_device matches the thread-wakeup golden',
+      () => {
+        const actual = withDb(REAL_DB, (db) =>
+          analyzeThreadWakeup(db, { appPids: [6115] }),
+        );
+        compareThreadWakeups(
+          actual,
+          readGolden<GoldenWakeupResult[]>('thread-wakeup.real_device.json'),
+        );
+
+        expect(actual).toHaveLength(18);
+        const main = actual.find((row) => row.threadId === 6115);
+        expect(main).toBeDefined();
+        expect(main?.wakeupThreads[0]?.wakeupDepth).toBe(0);
+        expect(actual.every((row) => row.totalInstructions === 0)).toBe(true);
       },
     );
   });
