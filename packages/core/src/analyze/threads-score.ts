@@ -286,24 +286,147 @@ export function calculateThreadMemoryEstimate(
   return threadCount * perThreadMemory;
 }
 
+/**
+ * The exact components of a finite IEEE-754 double:
+ * `value = (-1) ** negative * mantissa * 2 ** exponent` with a non-negative
+ * integer `mantissa`.
+ */
+interface ExactDouble {
+  negative: boolean;
+  mantissa: bigint;
+  exponent: number;
+}
+
+const FLOAT64_VIEW = new DataView(new ArrayBuffer(8));
+
+/** Decomposes a finite double without losing a bit. */
+function exactDouble(value: number): ExactDouble {
+  FLOAT64_VIEW.setFloat64(0, value, false);
+  const high = FLOAT64_VIEW.getUint32(0, false);
+  const low = FLOAT64_VIEW.getUint32(4, false);
+  const negative = (high >>> 31) === 1;
+  const exponentBits = (high >>> 20) & 0x7ff;
+  const fraction = (BigInt(high & 0xfffff) << 32n) | BigInt(low);
+  if (exponentBits === 0) {
+    // Subnormal (and zero): fraction * 2 ** -1074.
+    return { negative, mantissa: fraction, exponent: -1074 };
+  }
+  // Normal: (2 ** 52 + fraction) * 2 ** (exponentBits - 1075).
+  return {
+    negative,
+    mantissa: fraction | (1n << 52n),
+    exponent: exponentBits - 1075,
+  };
+}
+
+/** `numerator / denominator` rounded to an integer with ties going to even. */
+function divideRoundHalfEven(numerator: bigint, denominator: bigint): bigint {
+  const quotient = numerator / denominator;
+  const remainder = numerator % denominator;
+  const doubled = remainder * 2n;
+  if (doubled > denominator) return quotient + 1n;
+  if (doubled === denominator && (quotient & 1n) === 1n) return quotient + 1n;
+  return quotient;
+}
+
+/** Renders `quotient * 10 ** -digits` as a plain decimal string. */
+function decimalText(quotient: bigint, digits: number): string {
+  let text = quotient.toString();
+  if (digits > 0) {
+    if (text.length <= digits) {
+      text = `0.${'0'.repeat(digits - text.length)}${text}`;
+    } else {
+      const split = text.length - digits;
+      text = `${text.slice(0, split)}.${text.slice(split)}`;
+    }
+  } else if (digits < 0) {
+    text += '0'.repeat(-digits);
+  }
+  return text;
+}
+
+/**
+ * The exact decimal text CPython's `round(value, digits)` produces, including
+ * the sign of a rounded-to-zero negative value (`-0`).
+ */
+function roundedDecimalText(value: number, digits: number): string {
+  const { negative, mantissa, exponent } = exactDouble(value);
+  let numerator = mantissa;
+  let denominator = 1n;
+  // value * 10**digits = mantissa * 2**exponent * 2**digits * 5**digits.
+  if (digits >= 0) {
+    numerator *= 5n ** BigInt(digits);
+  } else {
+    denominator *= 5n ** BigInt(-digits);
+  }
+  const shift = exponent + digits;
+  if (shift >= 0) {
+    numerator <<= BigInt(shift);
+  } else {
+    denominator <<= BigInt(-shift);
+  }
+  const quotient = divideRoundHalfEven(numerator, denominator);
+  return `${negative ? '-' : ''}${decimalText(quotient, digits)}`;
+}
+
+/**
+ * Python `round(value, digits)` on the exact IEEE-754 value.
+ *
+ * CPython rounds the exact binary double to `digits` decimal places with
+ * ties-to-even, then parses the decimal text back to the nearest double. This
+ * reproduces the same pipeline with BigInt arithmetic: decompose the double
+ * exactly, round `value * 10 ** digits` as an exact rational, rebuild the
+ * decimal string, and let `Number` perform the final correctly rounded parse.
+ *
+ * This is deliberately not `Math.round(value * 10 ** digits) / 10 ** digits`:
+ * that rounds decimal ties away from zero and computes the scale in floating
+ * point. Here `round(30.25, 1)` is `30.2` (exact tie, even digit), `round(2.675,
+ * 2)` is `2.67` (the stored double is below 2.675), and `round(-2.5)` is `-2`.
+ *
+ * Exported for direct unit tests only; it is not part of the package API.
+ */
+export function roundToEven(value: number, digits = 0): number {
+  if (!Number.isFinite(value)) return value;
+  if (!Number.isInteger(digits)) {
+    throw new RangeError('roundToEven digits must be an integer');
+  }
+  return Number(roundedDecimalText(value, digits));
+}
+
+/**
+ * Python `f'{value:.0f}'`: fixed notation with correctly rounded zero decimals
+ * and ties-to-even (unlike `toFixed`, which rounds ties away from zero).
+ *
+ * Exported for direct unit tests only; it is not part of the package API.
+ */
+export function formatFixed0(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+  return roundedDecimalText(value, 0);
+}
+
+/**
+ * Python `f'{ratio:.0%}'`: multiply the double by 100 in floating point, then
+ * correctly round to zero decimals with ties-to-even and append `%`.
+ *
+ * Exported for direct unit tests only; it is not part of the package API.
+ */
+export function formatPercent0(ratio: number): string {
+  return `${formatFixed0(ratio * 100)}%`;
+}
+
 /** Python `round(x, 6)` as called on the summary ratio fields. */
 function round6(value: number): number {
-  return Math.round(value * 1e6) / 1e6;
+  return roundToEven(value, 6);
 }
 
 /** Python `round(x, 1)` as called on `avg_score` and `waiting_ratio`. */
 function round1(value: number): number {
-  return Math.round(value * 10) / 10;
+  return roundToEven(value, 1);
 }
 
 /** Python `round(x, 2)` as called on `estimated_memory_mb`. */
 function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/** Python `{value:.0f}` / `{ratio:.0%}` (the `%` suffix is added by callers). */
-function formatPercent0(ratio: number): number {
-  return Math.round(ratio * 100);
+  return roundToEven(value, 2);
 }
 
 /**
@@ -912,7 +1035,7 @@ function analyzeOptimizationOpportunities(
     else if (avgWaitingRatio > 0.85) bonus = 3;
     else if (avgWaitingRatio > 0.75) bonus = 2;
     if (bonus !== 0) {
-      scoreBreakdown[`waiting_ratio(${formatPercent0(avgWaitingRatio)}%)`] = bonus;
+      scoreBreakdown[`waiting_ratio(${formatPercent0(avgWaitingRatio)})`] = bonus;
       redundancyScore += bonus;
     }
 
@@ -922,7 +1045,7 @@ function analyzeOptimizationOpportunities(
     }
     if (zeroWakeupDepthRatio > 0.5) {
       scoreBreakdown[
-        `zero_wakeup_depth(${formatPercent0(zeroWakeupDepthRatio)}%)`
+        `zero_wakeup_depth(${formatPercent0(zeroWakeupDepthRatio)})`
       ] = 10;
       redundancyScore += 10;
     }
@@ -933,7 +1056,7 @@ function analyzeOptimizationOpportunities(
     else if (frequentImmediateSleepRatio > 0.3) bonus = 5;
     if (bonus !== 0) {
       scoreBreakdown[
-        `frequent_immediate_sleep(${formatPercent0(frequentImmediateSleepRatio)}%)`
+        `frequent_immediate_sleep(${formatPercent0(frequentImmediateSleepRatio)})`
       ] = bonus;
       redundancyScore += bonus;
     }
@@ -943,7 +1066,7 @@ function analyzeOptimizationOpportunities(
     else if (busyWaitingPatternRatio > 0.6) bonus = 7;
     else if (busyWaitingPatternRatio > 0.4) bonus = 5;
     if (bonus !== 0) {
-      scoreBreakdown[`busy_waiting(${formatPercent0(busyWaitingPatternRatio)}%)`] =
+      scoreBreakdown[`busy_waiting(${formatPercent0(busyWaitingPatternRatio)})`] =
         bonus;
       redundancyScore += bonus;
     }
@@ -953,7 +1076,7 @@ function analyzeOptimizationOpportunities(
     else if (highFrequencyTransitionsRatio > 0.6) bonus = 3;
     if (bonus !== 0) {
       scoreBreakdown[
-        `high_freq_transitions(${formatPercent0(highFrequencyTransitionsRatio)}%)`
+        `high_freq_transitions(${formatPercent0(highFrequencyTransitionsRatio)})`
       ] = bonus;
       redundancyScore += bonus;
     }
@@ -963,7 +1086,7 @@ function analyzeOptimizationOpportunities(
     else if (yieldCallRatio > 0.3) bonus = 11;
     else if (yieldCallRatio > 0.1) bonus = 7;
     if (bonus !== 0) {
-      scoreBreakdown[`yield_calls(${formatPercent0(yieldCallRatio)}%)`] = bonus;
+      scoreBreakdown[`yield_calls(${formatPercent0(yieldCallRatio)})`] = bonus;
       redundancyScore += bonus;
     }
 
@@ -973,7 +1096,7 @@ function analyzeOptimizationOpportunities(
     else if (highInstructionsLowWorkRatio > 0.1) bonus = 7;
     if (bonus !== 0) {
       scoreBreakdown[
-        `high_inst_low_work(${formatPercent0(highInstructionsLowWorkRatio)}%)`
+        `high_inst_low_work(${formatPercent0(highInstructionsLowWorkRatio)})`
       ] = bonus;
       redundancyScore += bonus;
     }
@@ -1439,17 +1562,6 @@ function byMetricId(a: Metric, b: Metric): number {
   return 0;
 }
 
-/** Sort order for evidence: `(kind, window.startNs, id)`. */
-function byEvidenceOrder(a: Evidence, b: Evidence): number {
-  if (a.kind < b.kind) return -1;
-  if (a.kind > b.kind) return 1;
-  if (a.window.startNs < b.window.startNs) return -1;
-  if (a.window.startNs > b.window.startNs) return 1;
-  if (a.id < b.id) return -1;
-  if (a.id > b.id) return 1;
-  return 0;
-}
-
 /**
  * Redundant-thread analyzer over the wakeup chain and thread-state tables.
  *
@@ -1463,6 +1575,10 @@ function byEvidenceOrder(a: Evidence, b: Evidence): number {
  * With zero redundant patterns the five metrics are still real measurements of
  * zero, so they are emitted alongside a single `no_data` evidence explaining
  * that the analysis found no pattern to report.
+ *
+ * Evidence is emitted in `redundant_threads` order (score descending, then
+ * display name ascending), one item per pattern. That order is deterministic;
+ * `runAnalyzers` re-sorts the merged evidence array for the final report.
  */
 export class ThreadAnalyzer implements Analyzer {
   readonly id = 'threads';
@@ -1484,7 +1600,6 @@ export class ThreadAnalyzer implements Analyzer {
         : [noPatternsEvidence(ctx)];
 
     metrics.sort(byMetricId);
-    evidenceItems.sort(byEvidenceOrder);
     return { metrics, evidence: evidenceItems };
   }
 }

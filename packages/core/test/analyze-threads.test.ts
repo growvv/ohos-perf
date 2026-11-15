@@ -10,7 +10,10 @@ import { CapabilityMatrix } from '../src/device/capability';
 import {
   ThreadAnalyzer,
   computeThreadAnalysis,
+  formatFixed0,
+  formatPercent0,
   perThreadRedundancyScore,
+  roundToEven,
   threadRedundancyFeatures,
 } from '../src/analyze/threads-score';
 import type { ThreadWakeupResult } from '../src/analyze/threads-wakeup';
@@ -70,6 +73,24 @@ function lowStates(): State[] {
   return states(20, 1_000_000);
 }
 
+/**
+ * Twenty short `R -> Running -> S` cycles whose per-thread score (35) stays
+ * below the multi threshold, but whose rate (60 states in 2ms) is high enough
+ * to count toward the high-frequency ratio. Five of eight such threads make
+ * every pattern-level ratio exactly 5/8, so Python's `:.0%` must format 0.625
+ * as `62%` (ties-to-even), not `63%`.
+ */
+function busyStates(): State[] {
+  const result: State[] = [];
+  for (let i = 0; i < 20; i++) {
+    const base = START + i * 2_100_000;
+    result.push({ ts: base, dur: 2_000_000, state: 'R' });
+    result.push({ ts: base + 2_000_000, dur: 100_000, state: 'Running' });
+    result.push({ ts: base + 2_100_000, dur: 1_000_000, state: 'S' });
+  }
+  return result;
+}
+
 const YIELD_CALLCHAIN = [
   {
     functions: [
@@ -116,6 +137,23 @@ function makeResult(opts: {
   };
 }
 
+/** A thread with no wakeup rows: `per_thread_redundancy_score` returns 15. */
+function makeBareResult(opts: {
+  threadId: number;
+  threadName: string;
+}): ThreadWakeupResult {
+  return {
+    threadId: opts.threadId,
+    threadInfo: {
+      threadName: opts.threadName,
+      startTs: null,
+      endTs: null,
+    },
+    totalInstructions: 0,
+    wakeupThreads: [],
+  };
+}
+
 /**
  * `zeta.work` is inserted first so the score tie with `ace.bg` proves the
  * public name-ascending tie-break rather than the insertion order.
@@ -125,8 +163,10 @@ function makeResult(opts: {
  * `thread_list` for statistics (unique_tid_count 2, redundant_count 0) while
  * its aggregate score (50) still clears the 40-point threshold.
  *
- * `solo_thread` is the only singleton and stays below the 60-point
- * single-thread threshold. The two `OS_system` threads score normally but are
+ * The below-threshold singletons are inserted as `zeta_solo`, then
+ * `solo_thread`, then `alpha_solo`: none reaches the 60-point single-thread
+ * threshold, and their non-alphabetical insertion order proves the public
+ * name-ascending sort. The two `OS_system` threads score normally but are
  * filtered from both output arrays.
  */
 function syntheticResults(): ThreadWakeupResult[] {
@@ -185,6 +225,7 @@ function syntheticResults(): ThreadWakeupResult[] {
       startTs: START,
       endTs: START + 2 * MS,
     }),
+    makeBareResult({ threadId: 4002, threadName: 'zeta_solo' }),
     makeResult({
       threadId: 4001,
       threadName: 'solo_thread',
@@ -196,6 +237,7 @@ function syntheticResults(): ThreadWakeupResult[] {
       startTs: null,
       endTs: null,
     }),
+    makeBareResult({ threadId: 4003, threadName: 'alpha_solo' }),
     makeResult({
       threadId: 9001,
       threadName: 'OS_system_1',
@@ -216,6 +258,27 @@ function syntheticResults(): ThreadWakeupResult[] {
     }),
   ];
 }
+
+describe('Python rounding helpers', () => {
+  it('rounds exact decimal ties to even on the stored binary value', () => {
+    // Every expected value below was verified against CPython 3.12.
+    expect(roundToEven(30.25, 1)).toBe(30.2);
+    expect(roundToEven(0.0078125, 6)).toBe(0.007812);
+    // 2.675 is stored below 2.675, so correct decimal rounding gives 2.67.
+    expect(roundToEven(2.675, 2)).toBe(2.67);
+    expect(roundToEven(-2.5)).toBe(-2);
+    expect(roundToEven(0.5)).toBe(0);
+    expect(roundToEven(1.5)).toBe(2);
+    expect(roundToEven(40000 / 120500, 6)).toBe(0.33195);
+  });
+
+  it('formats zero decimals and percentages like Python f-strings', () => {
+    expect(formatPercent0(0.625)).toBe('62%');
+    expect(formatFixed0(0.625 * 100)).toBe('62');
+    expect(formatFixed0(-2.5)).toBe('-2');
+    expect(formatPercent0(0.9009009)).toBe('90%');
+  });
+});
 
 describe('computeThreadAnalysis', () => {
   it('normalizes pattern keys, aggregates duplicates, and sorts by score then name', () => {
@@ -312,7 +375,18 @@ describe('computeThreadAnalysis', () => {
       redundant_instructions_ratio: 0.33195020746887965,
     });
 
+    // Insertion order is zeta_solo, solo_thread, alpha_solo; the public payload
+    // is name ascending regardless.
     expect(analysis.belowThresholdPatterns).toEqual([
+      {
+        thread_name: 'alpha_solo',
+        thread_name_variants: ['alpha_solo'],
+        total_thread_count: 1,
+        all_thread_ids: [4003],
+        redundant_count: 0,
+        max_score: 10,
+        avg_score: 15,
+      },
       {
         thread_name: 'solo_thread',
         thread_name_variants: ['solo_thread'],
@@ -322,6 +396,15 @@ describe('computeThreadAnalysis', () => {
         max_score: 10,
         avg_score: 30,
       },
+      {
+        thread_name: 'zeta_solo',
+        thread_name_variants: ['zeta_solo'],
+        total_thread_count: 1,
+        all_thread_ids: [4002],
+        redundant_count: 0,
+        max_score: 10,
+        avg_score: 15,
+      },
     ]);
 
     // OS_ patterns are ignored by both output arrays even though their
@@ -329,6 +412,47 @@ describe('computeThreadAnalysis', () => {
     const serialized = JSON.stringify(analysis);
     expect(serialized).not.toContain('OS_system');
     expect(analysis.summary.total_cpu_instructions).toBe(120500);
+  });
+
+  it('formats a 5/8 busy-wait ratio like Python (ties-to-even 62%)', () => {
+    const results: ThreadWakeupResult[] = [];
+    for (let i = 0; i < 5; i++) {
+      results.push(
+        makeResult({
+          threadId: 2001 + i,
+          threadName: `busy.pool_${i + 1}`,
+          totalInstructions: 0,
+          threadStates: busyStates(),
+          startTs: START,
+          endTs: START + 2 * MS,
+        }),
+      );
+    }
+    for (let i = 0; i < 3; i++) {
+      results.push(
+        makeBareResult({
+          threadId: 3001 + i,
+          threadName: `busy.pool_${i + 6}`,
+        }),
+      );
+    }
+
+    const analysis = computeThreadAnalysis(results);
+    expect(analysis.redundantThreadsSummary.redundant_threads).toHaveLength(1);
+    const [pattern] = analysis.redundantThreadsSummary.redundant_threads;
+    expect(pattern.thread_name).toBe('busy.pool_*');
+    expect(pattern.redundancy_score).toBe(45);
+    expect(pattern.waiting_ratio).toBe(32.3);
+    expect(pattern.estimated_memory_mb).toBe(8.19);
+    expect(pattern.score_breakdown).toEqual({
+      'thread_count(8)': 5,
+      zero_instructions: 10,
+      'zero_wakeup_depth(62%)': 10,
+      'frequent_immediate_sleep(62%)': 10,
+      'busy_waiting(62%)': 7,
+      'high_freq_transitions(62%)': 3,
+    });
+    expect(pattern.score_breakdown['busy_waiting(63%)']).toBeUndefined();
   });
 
   it('scores and summarizes a single thread with HapRay\'s exact fields', () => {
@@ -345,10 +469,16 @@ describe('computeThreadAnalysis', () => {
       wakeup_count: 20,
     });
 
-    const [mid] = syntheticResults().slice(4, 5);
-    expect(perThreadRedundancyScore(mid)).toBe(35);
-    const [solo] = syntheticResults().slice(6, 7);
-    expect(perThreadRedundancyScore(solo)).toBe(30);
+    const mid = syntheticResults().find(
+      (thread) => thread.threadInfo.threadName === 'mid.work_1',
+    );
+    expect(mid).toBeDefined();
+    expect(perThreadRedundancyScore(mid!)).toBe(35);
+    const solo = syntheticResults().find(
+      (thread) => thread.threadInfo.threadName === 'solo_thread',
+    );
+    expect(solo).toBeDefined();
+    expect(perThreadRedundancyScore(solo!)).toBe(30);
   });
 
   it('returns an all-zero analysis for empty input', () => {
@@ -543,6 +673,13 @@ describe('ThreadAnalyzer', () => {
     const result = await new ThreadAnalyzer().run(makeCtx());
     expect(result.evidence).toHaveLength(2);
     expect(new Set(result.evidence.map((item) => item.id)).size).toBe(2);
+    // One evidence per pattern, in redundant_threads order: the 68-point
+    // pattern precedes the 53-point one.
+    expect(result.evidence.map((item) => item.subject.thread)).toEqual([
+      'zeta.work_*',
+      'ace.bg_*',
+    ]);
+    expect(result.evidence.map((item) => item.signals.score)).toEqual([68, 53]);
 
     for (const item of result.evidence) {
       expect(item.kind).toBe('thread_redundancy');
