@@ -11,6 +11,7 @@ import {
   type CapabilityId,
   type CapabilityState,
 } from '../src/device/capability';
+import { FaultTreeAnalyzer } from '../src/analyze/fault-tree';
 import { FrameAnalyzer } from '../src/analyze/frames';
 import { defaultAnalyzers, runAnalyzers } from '../src/analyze/engine';
 import { resolveAppIdentity } from '../src/analyze/context';
@@ -239,10 +240,11 @@ describe('resolveAppIdentity', () => {
 });
 
 describe('defaultAnalyzers', () => {
-  it('starts with the frame analyzer', () => {
+  it('returns the frame and fault-tree analyzers in append order', () => {
     const analyzers = defaultAnalyzers();
-    expect(analyzers.map((a) => a.id)).toEqual(['frames']);
+    expect(analyzers.map((a) => a.id)).toEqual(['frames', 'fault-tree']);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
+    expect(analyzers[1]).toBeInstanceOf(FaultTreeAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

@@ -7,7 +7,8 @@ export type EvidenceKind =
   | 'empty_frame'
   | 'vsync_anomaly'
   | 'fps_baseline'
-  | 'degraded_capability';
+  | 'degraded_capability'
+  | 'fault_pattern';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.

@@ -1,3 +1,5 @@
+// Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.
+
 import type { QueryHandle } from '../db/driver';
 import { num, str } from './rows';
 

@@ -1,0 +1,740 @@
+// Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.
+
+import type { CapabilityId } from '../device/capability';
+import type { QueryHandle } from '../db/driver';
+import { num } from '../query/rows';
+import { evidence, type Evidence } from '../report/evidence';
+import { metric, type Metric, type MetricUnit } from '../report/metric';
+import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
+
+/**
+ * HapRay's fault-tree payload, with the exact nesting and key names of
+ * `fault_tree_analyzer.py:34-60`.
+ *
+ * `RS.ProcessedNodes.ts` is HapRay's own value: seconds since
+ * `trace_range.start_ts`, not a nanosecond timestamp. It is kept verbatim so
+ * the parity test compares the payload as HapRay produces it; the analyzer
+ * labels the metric `unit: 'none'` rather than pretending it is a duration in
+ * milliseconds. `soft_decoder` stays a boolean, like HapRay.
+ */
+export interface FaultTreeSignals {
+  arkui: {
+    animator: number;
+    HandleOnAreaChangeEvent: number;
+    HandleVisibleAreaChangeEvent: number;
+    GetDefaultDisplay: number;
+    MarshRSTransactionData: number;
+  };
+  RS: {
+    ProcessedNodes: { ts: number; count: number };
+    DisplayNodeSkipTimes: number;
+    UnMarshRSTransactionData: number;
+    AnimateSize: { nodeSizeSum: number; totalAnimationSizeSum: number };
+  };
+  av_codec: {
+    soft_decoder: boolean;
+    BroadcastControlInstructions: number;
+    VideoDecodingInputFrameCount: number;
+    VideoDecodingConsumptionFrame: number;
+  };
+  Audio: {
+    AudioWriteCB: number;
+    AudioReadCB: number;
+    AudioPlayCb: number;
+    AudioRecCb: number;
+  };
+}
+
+/** One counter query's result plus the number of source rows it counted. */
+interface Counter {
+  value: number;
+  rows: number;
+}
+
+/**
+ * The nested payload plus the row count behind every metric, keyed by metric
+ * id. `computeFaultTree` hides the second half; the analyzer needs it for
+ * `provenance.rows` without running every query twice.
+ */
+interface FaultTreeComputation {
+  signals: FaultTreeSignals;
+  rows: Map<string, number>;
+}
+
+/** `sqlite_master` probe for the optional `perf_sample` table. */
+function hasTable(db: QueryHandle, name: string): boolean {
+  return (
+    db.query<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [name],
+    ).length > 0
+  );
+}
+
+/** `trace_range.start_ts`, or `0` when the trace has no range row. */
+function traceStartNs(db: QueryHandle): number {
+  const [row] = db.query<{ start_ts: number | null }>(
+    'SELECT start_ts FROM trace_range LIMIT 1',
+  );
+  return num(row?.start_ts ?? null);
+}
+
+/**
+ * HapRay `_collect_app_invoke_times`: matching callstack rows owned by one of
+ * the app's process pids.
+ *
+ * `appPids` is checked before the statement is built: an empty list would
+ * otherwise produce `pid IN ()`, which is invalid/no-op SQL and hides a
+ * caller bug. HapRay interpolates the pids; this binds them as `?`.
+ */
+function countAppInvokes(
+  db: QueryHandle,
+  pattern: string,
+  appPids: number[],
+): Counter {
+  if (appPids.length === 0) return { value: 0, rows: 0 };
+  const placeholders = appPids.map(() => '?').join(', ');
+  const [row] = db.query<{ n: number | null }>(
+    `SELECT count(*) AS n FROM callstack
+WHERE name LIKE ?
+  AND callid IN (
+    SELECT id FROM thread
+    WHERE ipid IN (
+      SELECT ipid FROM process WHERE pid IN (${placeholders})
+    )
+  )`,
+    [pattern, ...appPids],
+  );
+  const value = num(row?.n ?? null);
+  return { value, rows: value };
+}
+
+/** HapRay `_collect_rs_invoke_times`: rows owned by `render_service`. */
+function countRenderServiceInvokes(db: QueryHandle, pattern: string): Counter {
+  const [row] = db.query<{ n: number | null }>(
+    `SELECT count(*) AS n FROM callstack
+WHERE name LIKE ?
+  AND callid IN (
+    SELECT id FROM thread
+    WHERE ipid IN (
+      SELECT ipid FROM process WHERE name = 'render_service'
+    )
+  )`,
+    [pattern],
+  );
+  const value = num(row?.n ?? null);
+  return { value, rows: value };
+}
+
+/**
+ * Callstack rows owned by `render_service` whose name matches `pattern`.
+ *
+ * `ORDER BY ts, id` replaces HapRay's undefined result order: the maximum
+ * `ProcessedNodes` count must resolve ties to the earliest `ts` deterministically.
+ */
+function renderServiceRows(
+  db: QueryHandle,
+  pattern: string,
+): Array<{ ts: number | null; name: string | null }> {
+  return db.query<{ ts: number | null; name: string | null }>(
+    `SELECT ts, name FROM callstack
+WHERE name LIKE ?
+  AND callid IN (
+    SELECT id FROM thread
+    WHERE ipid IN (
+      SELECT ipid FROM process WHERE name = 'render_service'
+    )
+  )
+ORDER BY ts, id`,
+    [pattern],
+  );
+}
+
+/**
+ * HapRay `_collect_rs_max_processed_node`.
+ *
+ * The row with the highest `ProcessedNodes: N` wins; equal counts keep the
+ * first row in `ts` order (HapRay's loop has the same strict `>` comparison but
+ * no ORDER BY, so its winner is undefined). `ts` stays HapRay's seconds-offset
+ * value and is `0` when no row parses or every count is 0.
+ */
+function collectProcessedNodes(db: QueryHandle): {
+  value: { ts: number; count: number };
+  rows: number;
+} {
+  const rows = renderServiceRows(db, '%ProcessedNodes%');
+  const startTs = traceStartNs(db);
+  let count = 0;
+  let ts = 0;
+  for (const row of rows) {
+    const match = /ProcessedNodes:\s*(\d+)/.exec(row.name ?? '');
+    if (!match) continue;
+    const nodes = Number.parseInt(match[1], 10);
+    if (nodes > count) {
+      count = nodes;
+      ts = (num(row.ts) - startTs) / 1e9;
+    }
+  }
+  return { value: { ts, count }, rows: rows.length };
+}
+
+/** HapRay `_collect_rs_animate_nodes`: sums every matching render_service row. */
+function collectAnimateSize(db: QueryHandle): {
+  value: { nodeSizeSum: number; totalAnimationSizeSum: number };
+  rows: number;
+} {
+  const rows = renderServiceRows(db, '%H:Animate [nodeSize, totalAnimationSize]%');
+  let nodeSizeSum = 0;
+  let totalAnimationSizeSum = 0;
+  for (const row of rows) {
+    const match = /\[(\d+),\s*(\d+)\]/.exec(row.name ?? '');
+    if (!match) continue;
+    nodeSizeSum += Number.parseInt(match[1], 10);
+    totalAnimationSizeSum += Number.parseInt(match[2], 10);
+  }
+  return { value: { nodeSizeSum, totalAnimationSizeSum }, rows: rows.length };
+}
+
+/** HapRay `_collect_av_codec_soft_decoder`; `rows` is the matched callstack count. */
+function collectSoftDecoder(db: QueryHandle): { value: boolean; rows: number } {
+  const [row] = db.query<{ n: number | null }>(
+    `SELECT count(*) AS n FROM callstack
+WHERE (name LIKE '%hevcdecoder%' OR name LIKE '%H:Fcodec%')
+  AND callid IN (
+    SELECT id FROM thread
+    WHERE ipid IN (
+      SELECT ipid FROM process WHERE name LIKE 'av_codec_servic%'
+    )
+  )`,
+  );
+  const n = num(row?.n ?? null);
+  return { value: n > 0, rows: n };
+}
+
+/**
+ * HapRay `_collect_broadcast_control_instructions`: a `perf_sample` sum.
+ *
+ * `perf_sample` exists only when a perf trace was ingested; HapRay catches the
+ * SQLite error and returns 0, so the guard reproduces that result without
+ * relying on an exception.
+ */
+function collectBroadcastControlInstructions(db: QueryHandle): Counter {
+  if (!hasTable(db, 'perf_sample')) return { value: 0, rows: 0 };
+  const [row] = db.query<{ total: number | null; n: number | null }>(
+    `SELECT sum(event_count) AS total, count(*) AS n
+FROM perf_sample
+WHERE callchain_id IN (
+  SELECT id
+  FROM thread
+  WHERE ipid IN (
+    SELECT ipid FROM process WHERE name LIKE '%av_session%'
+  )
+  AND name LIKE '%OS_AVSessionHdl%'
+)`,
+  );
+  return { value: num(row?.total ?? null), rows: num(row?.n ?? null) };
+}
+
+/** HapRay `_collect_video_decoding_input_frames`. */
+function collectVideoDecodingInputFrames(db: QueryHandle): Counter {
+  const [row] = db.query<{ n: number | null }>(
+    `SELECT count(name) AS n FROM callstack
+WHERE name LIKE '%OnQueueInputBuffer%'
+  AND callid IN (
+    SELECT id FROM thread
+    WHERE ipid IN (
+      SELECT ipid FROM process WHERE name LIKE 'av_codec_servic%'
+    )
+  )`,
+  );
+  const value = num(row?.n ?? null);
+  return { value, rows: value };
+}
+
+/** HapRay `_collect_video_decoding_consumption_frames`. */
+function collectVideoDecodingConsumptionFrames(db: QueryHandle): Counter {
+  const [row] = db.query<{ n: number | null }>(
+    `SELECT count(name) AS n FROM callstack
+WHERE (name LIKE '%OnRenderOutputBuffer%' OR name LIKE '%OnReleaseOutputBuffer%')
+  AND callid IN (
+    SELECT id FROM thread
+    WHERE ipid IN (
+      SELECT ipid FROM process WHERE name LIKE 'av_codec_servic%'
+    )
+  )`,
+  );
+  const value = num(row?.n ?? null);
+  return { value, rows: value };
+}
+
+/**
+ * HapRay `_collect_thread_event_count`: the audio counters.
+ *
+ * The predicate is ported verbatim, including its oddity: `perf_sample.callchain_id`
+ * is compared with `thread.id`, not with a thread id carried by the sample.
+ * Missing `perf_sample` yields 0 via {@link hasTable}, like HapRay's caught
+ * `sqlite3.Error`.
+ */
+function collectAudioThreadEvents(db: QueryHandle, threadPattern: string): Counter {
+  if (!hasTable(db, 'perf_sample')) return { value: 0, rows: 0 };
+  const [row] = db.query<{ total: number | null; n: number | null }>(
+    `SELECT sum(event_count) AS total, count(*) AS n
+FROM perf_sample
+WHERE callchain_id IN (
+  SELECT id
+  FROM thread
+  WHERE name LIKE ?
+)`,
+    [threadPattern],
+  );
+  return { value: num(row?.total ?? null), rows: num(row?.n ?? null) };
+}
+
+/**
+ * Runs HapRay's fault-tree queries and returns the nested payload.
+ *
+ * This is the public, payload-only form used by the parity test. The analyzer
+ * uses {@link computeFaultTreeDetailed}; both share one implementation, so the
+ * metrics and the parity fixture can never drift apart.
+ */
+export function computeFaultTree(
+  db: QueryHandle,
+  opts: { appPids: number[] },
+): FaultTreeSignals {
+  return computeFaultTreeDetailed(db, opts).signals;
+}
+
+function computeFaultTreeDetailed(
+  db: QueryHandle,
+  opts: { appPids: number[] },
+): FaultTreeComputation {
+  const appPids = opts.appPids;
+  const rows = new Map<string, number>();
+  const put = (id: string, counter: Counter): number => {
+    rows.set(id, counter.rows);
+    return counter.value;
+  };
+
+  const animator = countAppInvokes(db, '%ohos.animator%', appPids);
+  const areaChange = countAppInvokes(db, '%H:HandleOnAreaChangeEvent%', appPids);
+  const visibleAreaChange = countAppInvokes(
+    db,
+    '%H:HandleVisibleAreaChangeEvent%',
+    appPids,
+  );
+  const display = countAppInvokes(db, '%GetDefaultDisplay%', appPids);
+  const marsh = countAppInvokes(db, '%H:MarshRSTransactionData cmdCount%', appPids);
+
+  const processedNodes = collectProcessedNodes(db);
+  rows.set('fault.RS.ProcessedNodes.ts', processedNodes.rows);
+  rows.set('fault.RS.ProcessedNodes.count', processedNodes.rows);
+  const displayNodeSkip = countRenderServiceInvokes(db, '%DisplayNode skip|%');
+  const unmarsh = countRenderServiceInvokes(
+    db,
+    '%H:UnMarsh RSTransactionData: data size:%',
+  );
+  const animateSize = collectAnimateSize(db);
+  rows.set('fault.RS.AnimateSize.nodeSizeSum', animateSize.rows);
+  rows.set('fault.RS.AnimateSize.totalAnimationSizeSum', animateSize.rows);
+
+  const softDecoder = collectSoftDecoder(db);
+  const broadcast = collectBroadcastControlInstructions(db);
+  const videoInput = collectVideoDecodingInputFrames(db);
+  const videoConsumption = collectVideoDecodingConsumptionFrames(db);
+
+  const audioWrite = collectAudioThreadEvents(db, '%OS_AudioWriteCB%');
+  const audioRead = collectAudioThreadEvents(db, '%OS_AudioReadCB%');
+  const audioPlay = collectAudioThreadEvents(db, '%OS_AudioPlayCb%');
+  const audioRec = collectAudioThreadEvents(db, '%OS_AudioRecCb%');
+
+  const signals: FaultTreeSignals = {
+    arkui: {
+      animator: put('fault.arkui.animator', animator),
+      HandleOnAreaChangeEvent: put('fault.arkui.HandleOnAreaChangeEvent', areaChange),
+      HandleVisibleAreaChangeEvent: put(
+        'fault.arkui.HandleVisibleAreaChangeEvent',
+        visibleAreaChange,
+      ),
+      GetDefaultDisplay: put('fault.arkui.GetDefaultDisplay', display),
+      MarshRSTransactionData: put('fault.arkui.MarshRSTransactionData', marsh),
+    },
+    RS: {
+      ProcessedNodes: processedNodes.value,
+      DisplayNodeSkipTimes: put('fault.RS.DisplayNodeSkipTimes', displayNodeSkip),
+      UnMarshRSTransactionData: put('fault.RS.UnMarshRSTransactionData', unmarsh),
+      AnimateSize: animateSize.value,
+    },
+    av_codec: {
+      soft_decoder: softDecoder.value,
+      BroadcastControlInstructions: put(
+        'fault.av_codec.BroadcastControlInstructions',
+        broadcast,
+      ),
+      VideoDecodingInputFrameCount: put(
+        'fault.av_codec.VideoDecodingInputFrameCount',
+        videoInput,
+      ),
+      VideoDecodingConsumptionFrame: put(
+        'fault.av_codec.VideoDecodingConsumptionFrame',
+        videoConsumption,
+      ),
+    },
+    Audio: {
+      AudioWriteCB: put('fault.Audio.AudioWriteCB', audioWrite),
+      AudioReadCB: put('fault.Audio.AudioReadCB', audioRead),
+      AudioPlayCb: put('fault.Audio.AudioPlayCb', audioPlay),
+      AudioRecCb: put('fault.Audio.AudioRecCb', audioRec),
+    },
+  };
+  rows.set('fault.av_codec.soft_decoder', softDecoder.rows);
+
+  return { signals, rows };
+}
+
+/** Every metric this analyzer emits; order is fixed, the caller re-sorts by id. */
+function faultMetrics(
+  signals: FaultTreeSignals,
+  rows: Map<string, number>,
+  ctx: AnalyzeContext,
+): Metric[] {
+  const s = signals;
+  const specs: Array<{ id: string; value: number; unit: MetricUnit; table: string }> = [
+    { id: 'fault.arkui.animator', value: s.arkui.animator, unit: 'count', table: 'callstack' },
+    {
+      id: 'fault.arkui.HandleOnAreaChangeEvent',
+      value: s.arkui.HandleOnAreaChangeEvent,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.arkui.HandleVisibleAreaChangeEvent',
+      value: s.arkui.HandleVisibleAreaChangeEvent,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.arkui.GetDefaultDisplay',
+      value: s.arkui.GetDefaultDisplay,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.arkui.MarshRSTransactionData',
+      value: s.arkui.MarshRSTransactionData,
+      unit: 'count',
+      table: 'callstack',
+    },
+    // HapRay's seconds-offset value, not a duration: `none`, not `ms`.
+    {
+      id: 'fault.RS.ProcessedNodes.ts',
+      value: s.RS.ProcessedNodes.ts,
+      unit: 'none',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.RS.ProcessedNodes.count',
+      value: s.RS.ProcessedNodes.count,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.RS.DisplayNodeSkipTimes',
+      value: s.RS.DisplayNodeSkipTimes,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.RS.UnMarshRSTransactionData',
+      value: s.RS.UnMarshRSTransactionData,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.RS.AnimateSize.nodeSizeSum',
+      value: s.RS.AnimateSize.nodeSizeSum,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.RS.AnimateSize.totalAnimationSizeSum',
+      value: s.RS.AnimateSize.totalAnimationSizeSum,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.av_codec.soft_decoder',
+      value: s.av_codec.soft_decoder ? 1 : 0,
+      unit: 'none',
+      table: 'callstack',
+    },
+    // The broadcast counter is a perf_sample sum, not a callstack count.
+    {
+      id: 'fault.av_codec.BroadcastControlInstructions',
+      value: s.av_codec.BroadcastControlInstructions,
+      unit: 'count',
+      table: 'perf_sample',
+    },
+    {
+      id: 'fault.av_codec.VideoDecodingInputFrameCount',
+      value: s.av_codec.VideoDecodingInputFrameCount,
+      unit: 'count',
+      table: 'callstack',
+    },
+    {
+      id: 'fault.av_codec.VideoDecodingConsumptionFrame',
+      value: s.av_codec.VideoDecodingConsumptionFrame,
+      unit: 'count',
+      table: 'callstack',
+    },
+    { id: 'fault.Audio.AudioWriteCB', value: s.Audio.AudioWriteCB, unit: 'count', table: 'perf_sample' },
+    { id: 'fault.Audio.AudioReadCB', value: s.Audio.AudioReadCB, unit: 'count', table: 'perf_sample' },
+    { id: 'fault.Audio.AudioPlayCb', value: s.Audio.AudioPlayCb, unit: 'count', table: 'perf_sample' },
+    { id: 'fault.Audio.AudioRecCb', value: s.Audio.AudioRecCb, unit: 'count', table: 'perf_sample' },
+  ];
+
+  return specs.map((spec) =>
+    metric({
+      id: spec.id,
+      value: spec.value,
+      unit: spec.unit,
+      fidelity: 'exact',
+      provenance: {
+        collector: 'hitrace+streamer',
+        table: spec.table,
+        rows: rows.get(spec.id) ?? 0,
+        device: ctx.deviceId,
+      },
+    }),
+  );
+}
+
+/** One non-zero fault-tree signal, ready to become evidence. */
+interface FaultSignal {
+  category: 'arkui' | 'RS' | 'av_codec' | 'Audio';
+  name: string;
+  count: number;
+  process: string;
+  /** Exact HapRay `LIKE` pattern(s) for a `callstack.matching` drill-down. */
+  patterns: string[];
+}
+
+/** First non-empty app process name, matching the other analyzers. */
+function appProcessName(ctx: AnalyzeContext): string {
+  return ctx.app.processNames.find((name) => name !== '') ?? ctx.app.packageName;
+}
+
+/**
+ * Collects the non-zero signals in the same order as HapRay's result object.
+ *
+ * Nested HapRay values become one signal per summed leaf: `ProcessedNodes`
+ * contributes its node count (its `ts` is provenance, not a count), while
+ * `AnimateSize` contributes `nodeSizeSum` and `totalAnimationSizeSum`
+ * separately so neither sum is lost. Only signals with a single callstack-name
+ * `LIKE` pattern get a drill-down; multi-pattern and perf_sample-sourced
+ * counters have no exact `callstack.matching` query, so their `patterns` stay
+ * empty rather than pointing an agent at the wrong table.
+ */
+function faultSignals(signals: FaultTreeSignals, appProcess: string): FaultSignal[] {
+  const list: FaultSignal[] = [];
+  const push = (
+    category: FaultSignal['category'],
+    name: string,
+    count: number,
+    process: string,
+    ...patterns: string[]
+  ): void => {
+    if (count === 0) return;
+    list.push({ category, name, count, process, patterns });
+  };
+
+  push('arkui', 'animator', signals.arkui.animator, appProcess, '%ohos.animator%');
+  push(
+    'arkui',
+    'HandleOnAreaChangeEvent',
+    signals.arkui.HandleOnAreaChangeEvent,
+    appProcess,
+    '%H:HandleOnAreaChangeEvent%',
+  );
+  push(
+    'arkui',
+    'HandleVisibleAreaChangeEvent',
+    signals.arkui.HandleVisibleAreaChangeEvent,
+    appProcess,
+    '%H:HandleVisibleAreaChangeEvent%',
+  );
+  push(
+    'arkui',
+    'GetDefaultDisplay',
+    signals.arkui.GetDefaultDisplay,
+    appProcess,
+    '%GetDefaultDisplay%',
+  );
+  push(
+    'arkui',
+    'MarshRSTransactionData',
+    signals.arkui.MarshRSTransactionData,
+    appProcess,
+    '%H:MarshRSTransactionData cmdCount%',
+  );
+
+  push(
+    'RS',
+    'ProcessedNodes',
+    signals.RS.ProcessedNodes.count,
+    'render_service',
+    '%ProcessedNodes%',
+  );
+  push(
+    'RS',
+    'DisplayNodeSkipTimes',
+    signals.RS.DisplayNodeSkipTimes,
+    'render_service',
+    '%DisplayNode skip|%',
+  );
+  push(
+    'RS',
+    'UnMarshRSTransactionData',
+    signals.RS.UnMarshRSTransactionData,
+    'render_service',
+    '%H:UnMarsh RSTransactionData: data size:%',
+  );
+  push(
+    'RS',
+    'AnimateSize.nodeSizeSum',
+    signals.RS.AnimateSize.nodeSizeSum,
+    'render_service',
+    '%H:Animate [nodeSize, totalAnimationSize]%',
+  );
+  push(
+    'RS',
+    'AnimateSize.totalAnimationSizeSum',
+    signals.RS.AnimateSize.totalAnimationSizeSum,
+    'render_service',
+    '%H:Animate [nodeSize, totalAnimationSize]%',
+  );
+
+  // `soft_decoder` is a boolean: a true value is one non-zero signal, false is
+  // the zero case the brief says to skip.
+  if (signals.av_codec.soft_decoder) {
+    list.push({
+      category: 'av_codec',
+      name: 'soft_decoder',
+      count: 1,
+      process: 'av_codec_service',
+      patterns: [],
+    });
+  }
+  push(
+    'av_codec',
+    'BroadcastControlInstructions',
+    signals.av_codec.BroadcastControlInstructions,
+    'av_codec_service',
+  );
+  push(
+    'av_codec',
+    'VideoDecodingInputFrameCount',
+    signals.av_codec.VideoDecodingInputFrameCount,
+    'av_codec_service',
+    '%OnQueueInputBuffer%',
+  );
+  push(
+    'av_codec',
+    'VideoDecodingConsumptionFrame',
+    signals.av_codec.VideoDecodingConsumptionFrame,
+    'av_codec_service',
+  );
+
+  push('Audio', 'AudioWriteCB', signals.Audio.AudioWriteCB, appProcess);
+  push('Audio', 'AudioReadCB', signals.Audio.AudioReadCB, appProcess);
+  push('Audio', 'AudioPlayCb', signals.Audio.AudioPlayCb, appProcess);
+  push('Audio', 'AudioRecCb', signals.Audio.AudioRecCb, appProcess);
+
+  return list;
+}
+
+function faultEvidence(
+  signals: FaultTreeSignals,
+  ctx: AnalyzeContext,
+): Evidence[] {
+  return faultSignals(signals, appProcessName(ctx)).map((signal) =>
+    evidence({
+      kind: 'fault_pattern',
+      severity: 'info',
+      subject: { process: signal.process },
+      window: ctx.window,
+      signals: { category: signal.category, count: signal.count },
+      explain: `${signal.category} ${signal.name}: ${signal.count}`,
+      drillDown: signal.patterns.map((pattern) => ({
+        label: 'Matching callstack rows',
+        tool: 'callstack.matching',
+        args: { pattern },
+        returns: 'CallstackEvent[]',
+      })),
+      // One evidence per (category, signal); without this, every signal in the
+      // same window would share an id and a dedupe would drop all but one.
+      key: `${signal.category}:${signal.name}`,
+    }),
+  );
+}
+
+/** Zero-metrics evidence for a context assembled without the raw handle. */
+function missingDbEvidence(ctx: AnalyzeContext): Evidence {
+  return evidence({
+    kind: 'no_data',
+    severity: 'info',
+    subject: { process: appProcessName(ctx) },
+    window: ctx.window,
+    signals: {},
+    explain:
+      'trace database handle (ctx.db) was not provided; fault-tree analysis skipped',
+    drillDown: [],
+  });
+}
+
+/** Plain lexicographic order; locale-independent so output is byte-stable. */
+function byMetricId(a: Metric, b: Metric): number {
+  if (a.id < b.id) return -1;
+  if (a.id > b.id) return 1;
+  return 0;
+}
+
+/** Sort order for evidence: `(kind, window.startNs, id)`. */
+function byEvidenceOrder(a: Evidence, b: Evidence): number {
+  if (a.kind < b.kind) return -1;
+  if (a.kind > b.kind) return 1;
+  if (a.window.startNs < b.window.startNs) return -1;
+  if (a.window.startNs > b.window.startNs) return 1;
+  if (a.id < b.id) return -1;
+  if (a.id > b.id) return 1;
+  return 0;
+}
+
+/**
+ * Fault-tree analyzer over raw `callstack` / `perf_sample` SQL.
+ *
+ * The engine gates this analyzer on `trace.binder`; `ctx.db` is still checked
+ * because the handle is optional on `AnalyzeContext` (Task 10 supplies it, but
+ * older callers and unit tests do not). Without it the analyzer emits one
+ * `no_data` evidence naming `ctx.db` and no metrics, instead of pretending the
+ * zero values are measurements.
+ */
+export class FaultTreeAnalyzer implements Analyzer {
+  readonly id = 'fault-tree';
+  readonly requires: CapabilityId[] = ['trace.binder'];
+
+  async run(ctx: AnalyzeContext): Promise<AnalyzeResult> {
+    if (ctx.db === undefined) {
+      return { metrics: [], evidence: [missingDbEvidence(ctx)] };
+    }
+
+    const { signals, rows } = computeFaultTreeDetailed(ctx.db, {
+      appPids: ctx.app.pids,
+    });
+    const metrics = faultMetrics(signals, rows, ctx);
+    const evidenceItems = faultEvidence(signals, ctx);
+
+    metrics.sort(byMetricId);
+    evidenceItems.sort(byEvidenceOrder);
+    return { metrics, evidence: evidenceItems };
+  }
+}

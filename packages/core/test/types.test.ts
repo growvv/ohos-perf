@@ -74,12 +74,13 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 /** The runtime value exports of `@ohos-perf/core`; `index.test.ts` exercises them at runtime. */
 const VALUE_EXPORTS = [
   'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device', 'DeviceNotFoundError',
-  'FrameAnalyzer', 'FrameQuery', 'HITRACE_DEFAULT_CATEGORIES', 'Hdc', 'HdcNotFoundError',
-  'HitraceCollector', 'IngestError', 'InstantQuery', 'OhosPerfError', 'PerfQuery',
-  'ProcessQuery', 'Scene', 'SchedQuery', 'StartupQuery', 'Streamer',
-  'StreamerNotFoundError', 'ThreadQuery', 'ThreadStateQuery', 'buildMatrix', 'connect',
-  'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ingestScene', 'metric', 'openDb',
-  'resolveAppIdentity', 'runAnalyzers', 'runProbe', 'tableRowCounts',
+  'FaultTreeAnalyzer', 'FrameAnalyzer', 'FrameQuery', 'HITRACE_DEFAULT_CATEGORIES',
+  'Hdc', 'HdcNotFoundError', 'HitraceCollector', 'IngestError', 'InstantQuery',
+  'OhosPerfError', 'PerfQuery', 'ProcessQuery', 'Scene', 'SchedQuery', 'StartupQuery',
+  'Streamer', 'StreamerNotFoundError', 'ThreadQuery', 'ThreadStateQuery', 'buildMatrix',
+  'computeFaultTree', 'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence',
+  'ingestScene', 'metric', 'openDb', 'resolveAppIdentity', 'runAnalyzers', 'runProbe',
+  'tableRowCounts',
 ];
 
 // This test checks the built declarations, not src. `dist/` is gitignored, so

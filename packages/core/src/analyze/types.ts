@@ -1,4 +1,5 @@
 import type { CapabilityId, CapabilityMatrix } from '../device/capability';
+import type { QueryHandle } from '../db/driver';
 import type { BinderQuery } from '../query/binder';
 import type { CallstackQuery } from '../query/callstack';
 import type { FrameQuery } from '../query/frames';
@@ -25,8 +26,16 @@ import type { AppIdentity, TimeRange } from '../types';
  * declare a capability requirement that guarantees its handle is present, but
  * the type stays optional until every caller supplies it. `procfs` and
  * `metadata` are deliberately absent until their types exist.
+ *
+ * `db` is the raw trace database handle. It exists for analyzers whose SQL the
+ * typed query layer does not expose yet (the fault tree joins `process`,
+ * `thread`, `callstack` and `perf_sample` in ways no query class covers). It is
+ * optional because callers built before it existed still compile; an analyzer
+ * that requires it must emit a `no_data` evidence when it is absent rather
+ * than reporting its zero values as measurements.
  */
 export interface AnalyzeContext {
+  db?: QueryHandle;
   frames: FrameQuery;
   processes: ProcessQuery;
   threads?: ThreadQuery;

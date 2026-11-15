@@ -2,6 +2,7 @@ import type { CapabilityState } from '../device/capability';
 import { OhosPerfError } from '../errors';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
+import { FaultTreeAnalyzer } from './fault-tree';
 import { FrameAnalyzer } from './frames';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
@@ -155,5 +156,5 @@ export async function runAnalyzers(
  * affecting another run.
  */
 export function defaultAnalyzers(): Analyzer[] {
-  return [new FrameAnalyzer()];
+  return [new FrameAnalyzer(), new FaultTreeAnalyzer()];
 }
