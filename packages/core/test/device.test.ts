@@ -464,6 +464,52 @@ describe('CollectSession.ingest with procfs and cold start', () => {
     }
   });
 
+  it('restores the previous procfs.jsonl when hitrace fails but procfs succeeded', async () => {
+    // A hitrace failure rejects the pair after the procfs collector has already
+    // written this attempt's samples. The old scene must stay coherent: new
+    // memory data beside an old trace.db would be reported as exact.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-hitrace-fail-procfs-'));
+    try {
+      const oldSamples = 'old samples\n';
+      writeFileSync(join(root, 'procfs.jsonl'), oldSamples);
+
+      const h = collectHarness({ failHitrace: true });
+      h.procfs.collect = async (_h, _t, _o, layout) => {
+        writeFileSync(layout.procfsFile, 'new samples\n');
+        return [{ ts: 9, pid: 42, status: { vmRssBytes: 1, vmHwmBytes: 1, threads: 1 } }];
+      };
+      const d = fakeDevice(h);
+      await expect(
+        d.collect({ app: 'com.demo', durationMs: 1000, sceneRoot: root, procfs: true })
+          .then((s) => s.ingest()),
+      ).rejects.toThrow(/hitrace exploded/);
+
+      expect(readFileSync(join(root, 'procfs.jsonl'), 'utf8')).toBe(oldSamples);
+      expect(existsSync(join(root, 'scene.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('removes a new procfs.jsonl when hitrace fails and the old scene had none', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-hitrace-fail-procfs2-'));
+    try {
+      const h = collectHarness({ failHitrace: true });
+      h.procfs.collect = async (_h, _t, _o, layout) => {
+        writeFileSync(layout.procfsFile, 'new samples\n');
+        return [{ ts: 9, pid: 42, status: { vmRssBytes: 1, vmHwmBytes: 1, threads: 1 } }];
+      };
+      const d = fakeDevice(h);
+      await expect(
+        d.collect({ app: 'com.demo', durationMs: 1000, sceneRoot: root, procfs: true })
+          .then((s) => s.ingest()),
+      ).rejects.toThrow(/hitrace exploded/);
+      expect(existsSync(join(root, 'procfs.jsonl'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('forwards a custom procfs intervalMs and records no pids without procfs', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-interval-'));
     try {

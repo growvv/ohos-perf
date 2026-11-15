@@ -207,25 +207,35 @@ export class Device {
         };
 
         let procfsSamples: ProcfsSample[] | undefined;
-        if (wantsProcfs) {
-          const procfs = this.deps.procfs ?? new ProcfsCollector();
-          const intervalMs =
-            typeof opts.procfs === 'object' ? opts.procfs.intervalMs : undefined;
-          // Both collectors start in the same tick and receive the same
-          // duration. Promise.all rejects with the first failure: a partial
-          // scene must never be presented as complete.
-          const [, samples] = await Promise.all([
-            collector.collect(hdc, this.id, traceOpts, layout),
-            procfs.collect(
-              hdc,
-              this.id,
-              { app: opts.app, durationMs: opts.durationMs, intervalMs },
-              layout,
-            ),
-          ]);
-          procfsSamples = samples;
-        } else {
-          await collector.collect(hdc, this.id, traceOpts, layout);
+        try {
+          if (wantsProcfs) {
+            const procfs = this.deps.procfs ?? new ProcfsCollector();
+            const intervalMs =
+              typeof opts.procfs === 'object' ? opts.procfs.intervalMs : undefined;
+            // Both collectors start in the same tick and receive the same
+            // duration. Promise.all rejects with the first failure: a partial
+            // scene must never be presented as complete.
+            const [, samples] = await Promise.all([
+              collector.collect(hdc, this.id, traceOpts, layout),
+              procfs.collect(
+                hdc,
+                this.id,
+                { app: opts.app, durationMs: opts.durationMs, intervalMs },
+                layout,
+              ),
+            ]);
+            procfsSamples = samples;
+          } else {
+            await collector.collect(hdc, this.id, traceOpts, layout);
+          }
+        } catch (err) {
+          // A hitrace failure rejects the pair while the procfs collector may
+          // already have written this attempt's samples. The old scene must
+          // stay coherent, so put the previous file back (or remove the new
+          // one). This mirrors the conversion-failure path and never masks the
+          // capture error.
+          if (wantsProcfs) restorePreviousProcfs(layout.procfsFile, previousProcfs);
+          throw err;
         }
 
         // Convert unconditionally instead of deleting a pre-existing trace.db.
