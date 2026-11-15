@@ -146,6 +146,21 @@ export class ProcessQuery {
   }
 
   /**
+   * The process row whose **`pid`** is `pid`, or `undefined` if none exists.
+   *
+   * Like {@link byName}, duplicate matches resolve to the lowest `id` so output
+   * is deterministic (D5). This is the safe pid→ipid step: never compare a pid
+   * against `thread.ipid` or another ipid column directly.
+   */
+  byPid(pid: number): ProcessInfo | undefined {
+    const [row] = this.db.query<ProcessRow>(
+      `${SELECT_PROCESS} WHERE pid = ? ORDER BY id LIMIT 1`,
+      [pid],
+    );
+    return row ? toProcess(row) : undefined;
+  }
+
+  /**
    * One `pid` per requested name, **in the order the names were given**;
    * unknown names are skipped (so the result may be shorter than `names`).
    *

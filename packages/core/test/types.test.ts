@@ -73,10 +73,11 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 
 /** The runtime value exports of `@ohos-perf/core`; `index.test.ts` exercises them at runtime. */
 const VALUE_EXPORTS = [
-  'CapabilityMatrix', 'Device', 'DeviceNotFoundError', 'FrameAnalyzer', 'FrameQuery',
-  'HITRACE_DEFAULT_CATEGORIES', 'Hdc', 'HdcNotFoundError', 'HitraceCollector',
-  'IngestError', 'OhosPerfError', 'ProcessQuery', 'Scene', 'Streamer',
-  'StreamerNotFoundError', 'ThreadQuery', 'buildMatrix', 'connect',
+  'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device', 'DeviceNotFoundError',
+  'FrameAnalyzer', 'FrameQuery', 'HITRACE_DEFAULT_CATEGORIES', 'Hdc', 'HdcNotFoundError',
+  'HitraceCollector', 'IngestError', 'InstantQuery', 'OhosPerfError', 'PerfQuery',
+  'ProcessQuery', 'Scene', 'SchedQuery', 'StartupQuery', 'Streamer',
+  'StreamerNotFoundError', 'ThreadQuery', 'ThreadStateQuery', 'buildMatrix', 'connect',
   'createSceneLayout', 'evidence', 'ingestScene', 'metric', 'openDb', 'runProbe',
   'tableRowCounts',
 ];

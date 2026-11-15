@@ -67,6 +67,23 @@ export { FrameQuery } from './query/frames';
 export type { Frame, FrameStats, FrameFlag, FrameType } from './query/frames';
 export { ProcessQuery, ThreadQuery } from './query/process';
 export type { ProcessInfo, ThreadInfo } from './query/process';
+export { InstantQuery, SchedQuery } from './query/sched';
+export type { SchedSlice, WakeupEvent } from './query/sched';
+export { ThreadStateQuery } from './query/thread-state';
+export type { ThreadState } from './query/thread-state';
+export { CallstackQuery } from './query/callstack';
+export type { CallstackEvent, CallstackEventWithArgs } from './query/callstack';
+export { PerfQuery } from './query/perf';
+export type {
+  PerfCallchain,
+  PerfFunction,
+  PerfSampleRow,
+  PerfThread,
+} from './query/perf';
+export { BinderQuery } from './query/binder';
+export type { BinderEvent } from './query/binder';
+export { StartupQuery } from './query/startup';
+export type { StartupRecord } from './query/startup';
 
 // Analysis
 export { FrameAnalyzer } from './analyze/frames';
