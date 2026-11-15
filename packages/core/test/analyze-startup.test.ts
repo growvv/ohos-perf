@@ -231,6 +231,56 @@ describe('StartupAnalyzer', () => {
     expect(byId(result).get('startup.duration')).toMatchObject({ value: 1000 });
   });
 
+  it('ignores a process row whose ipid is NULL', async () => {
+    // The query layer maps a NULL `ipid` to 0. Numeric 0 means "absent", so
+    // neither the app pid nor a startup row with ipid 0 may be attributed.
+    const db = withDb('branch1-null-ipid.db', (d) => {
+      d.exec(PROCESS_DDL);
+      d.exec(`INSERT INTO process VALUES (0, 0, 4999, 'com.demo', 0, 0, 1, 0, 0)`);
+      d.exec(STARTUP_DDL);
+      d.exec(`INSERT INTO app_startup VALUES
+        (0, 1, 0, 44, 1000000000, 2500000000, 7, 'null-ipid')`);
+    });
+
+    const result = await new StartupAnalyzer().run(makeCtx(db));
+
+    expect(result.metrics).toEqual([]);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0].kind).toBe('startup');
+  });
+
+  it('drops a startup row whose start_time is NULL (0)', async () => {
+    const db = withDb('branch1-zero-start.db', (d) => {
+      d.exec(PROCESS_DDL);
+      d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)`);
+      d.exec(STARTUP_DDL);
+      d.exec(`INSERT INTO app_startup VALUES
+        (0, 1, 17, 44, 0, 2500000000, 7, 'null-start'),
+        (1, 2, 17, 45, 1000000000, 2000000000, 8, 'packed')`);
+    });
+
+    const result = await new StartupAnalyzer().run(makeCtx(db));
+    const metrics = byId(result);
+    expect(metrics.get('startup.count')).toMatchObject({ value: 1 });
+    expect(metrics.get('startup.duration')).toMatchObject({ value: 1000 });
+  });
+
+  it('uses the maximum end_time even when it is not the last row by start_time', async () => {
+    // The longest end belongs to the first row. A `lastRow.endTime -
+    // firstRow.startTime` implementation would report 1000 ms, not 2500.
+    const db = withDb('branch1-span.db', (d) => {
+      d.exec(PROCESS_DDL);
+      d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)`);
+      d.exec(STARTUP_DDL);
+      d.exec(`INSERT INTO app_startup VALUES
+        (0, 1, 17, 44, 1000000000, 3500000000, 7, 'long'),
+        (1, 2, 17, 45, 2500000000, 3000000000, 8, 'short')`);
+    });
+
+    const result = await new StartupAnalyzer().run(makeCtx(db));
+    expect(byId(result).get('startup.duration')).toMatchObject({ value: 2500 });
+  });
+
   it('derives an approximate duration from the marker and first actual frame', async () => {
     const db = fallbackDb('branch2.db', [
       // An actual frame before the marker and an expect frame after it must
@@ -264,6 +314,24 @@ describe('StartupAnalyzer', () => {
     });
     expect('window' in duration).toBe(false);
     expect(result.evidence).toEqual([]);
+  });
+
+  it('reports no_data instead of a negative duration for a corrupt frame', async () => {
+    // The first actual frame after the marker ends before it (negative dur).
+    // A negative startup time must never be reported as a measurement.
+    const db = fallbackDb('branch2-negative-dur.db', [
+      frame(0, 1_200_000_000, -500_000_000, 0),
+    ]);
+
+    const result = await new StartupAnalyzer().run(
+      makeCtx(db, { metadata: metadata({ startedAtNs: STARTED_AT_NS }) }),
+    );
+
+    expect(result.metrics).toEqual([]);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0].kind).toBe('startup');
+    expect(result.evidence[0].explain).toContain('invalid duration');
+    expect(result.evidence[0].explain).toContain('startedAtNs');
   });
 
   it('derives the fallback without ctx.startup being supplied', async () => {
@@ -442,5 +510,14 @@ describe('scene metadata', () => {
     const l = layout('meta-marker-zero');
     writeSceneMetadata(l, metadata({ startedAtNs: 0 }));
     expect(readSceneMetadata(l)).toEqual(metadata({ startedAtNs: 0 }));
+  });
+
+  it('round-trips an empty device id', () => {
+    // Only the type is required, so a write must never produce a file that the
+    // reader refuses.
+    const l = layout('meta-empty-device');
+    const meta = metadata({ deviceId: '' });
+    writeSceneMetadata(l, meta);
+    expect(readSceneMetadata(l)).toEqual(meta);
   });
 });

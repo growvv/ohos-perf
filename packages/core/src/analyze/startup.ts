@@ -23,7 +23,9 @@ function appIpids(ctx: AnalyzeContext): number[] {
   const seen = new Set<number>();
   for (const pid of ctx.app.pids) {
     const ipid = ctx.processes.byPid(pid)?.ipid;
-    if (ipid === undefined || !Number.isFinite(ipid) || !Number.isInteger(ipid)) {
+    // `ipid` 0 is a NULL column, not a process: the query layer maps NULL to 0,
+    // and `app_startup` rows with a NULL/0 ipid would otherwise be attributed.
+    if (ipid === undefined || !Number.isInteger(ipid) || ipid <= 0) {
       continue;
     }
     if (seen.has(ipid)) continue;
@@ -59,15 +61,32 @@ function startupMetric(
   });
 }
 
+/**
+ * Why no startup duration could be measured.
+ *
+ * `invalid-frame` is separate from `no-frame` so a corrupt `frame_slice.dur`
+ * (negative, which would otherwise be emitted as a negative measurement) is
+ * reported as bad data rather than as a missing frame.
+ */
+type NoStartupReason = 'no-marker' | 'no-frame' | 'invalid-frame';
+
 /** Zero-metrics evidence for a scene with neither startup rows nor a marker. */
-function noStartupEvidence(ctx: AnalyzeContext, markerPresent: boolean): Evidence {
-  const explain = markerPresent
-    ? 'scene metadata carried a startedAtNs start marker, but no usable actual' +
+function noStartupEvidence(ctx: AnalyzeContext, reason: NoStartupReason): Evidence {
+  const explain = {
+    'invalid-frame':
+      'scene metadata carried a startedAtNs start marker and an actual frame' +
+      ' followed it, but that frame has an invalid duration (negative or' +
+      ' non-finite); app_startup has no rows for the app, so startup duration' +
+      ' cannot be derived',
+    'no-frame':
+      'scene metadata carried a startedAtNs start marker, but no usable actual' +
       ' frame followed it; app_startup has no rows for the app, so startup' +
-      ' duration cannot be derived'
-    : 'no startup data: app_startup has no rows for the app and scene metadata' +
+      ' duration cannot be derived',
+    'no-marker':
+      'no startup data: app_startup has no rows for the app and scene metadata' +
       ' carries no startedAtNs start marker; capture a cold start with the' +
-      ' hitrace startup categories or record a start marker to measure startup';
+      ' hitrace startup categories or record a start marker to measure startup',
+  }[reason];
   return evidence({
     kind: 'startup',
     severity: 'info',
@@ -81,17 +100,6 @@ function noStartupEvidence(ctx: AnalyzeContext, markerPresent: boolean): Evidenc
 
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
 function byMetricId(a: Metric, b: Metric): number {
-  if (a.id < b.id) return -1;
-  if (a.id > b.id) return 1;
-  return 0;
-}
-
-/** Sort order for evidence: `(kind, window.startNs, id)`. */
-function byEvidenceOrder(a: Evidence, b: Evidence): number {
-  if (a.kind < b.kind) return -1;
-  if (a.kind > b.kind) return 1;
-  if (a.window.startNs < b.window.startNs) return -1;
-  if (a.window.startNs > b.window.startNs) return 1;
   if (a.id < b.id) return -1;
   if (a.id > b.id) return 1;
   return 0;
@@ -158,7 +166,9 @@ export class StartupAnalyzer implements Analyzer {
       const frame = ctx.frames.actual().find((candidate) => candidate.ts >= marker);
       if (frame !== undefined) {
         const duration = (frame.ts + frame.dur - marker) / NS_PER_MS;
-        if (Number.isFinite(duration)) {
+        // A negative duration means the frame ended before the marker: the row
+        // is corrupt, and emitting it would report a negative startup time.
+        if (Number.isFinite(duration) && duration >= 0) {
           return {
             metrics: [
               startupMetric(
@@ -183,10 +193,11 @@ export class StartupAnalyzer implements Analyzer {
             evidence: [],
           };
         }
+        return { metrics: [], evidence: [noStartupEvidence(ctx, 'invalid-frame')] };
       }
-      return { metrics: [], evidence: [noStartupEvidence(ctx, true)] };
+      return { metrics: [], evidence: [noStartupEvidence(ctx, 'no-frame')] };
     }
 
-    return { metrics: [], evidence: [noStartupEvidence(ctx, false)] };
+    return { metrics: [], evidence: [noStartupEvidence(ctx, 'no-marker')] };
   }
 }

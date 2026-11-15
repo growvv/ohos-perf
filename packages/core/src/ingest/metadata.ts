@@ -84,9 +84,10 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
 
   if (!isRecord(parsed) || parsed.version !== 1) return undefined;
   if (!isApp(parsed.app) || !isNumberArray(parsed.pids)) return undefined;
-  if (typeof parsed.deviceId !== 'string' || parsed.deviceId === '') {
-    return undefined;
-  }
+  // Only the type is required: an empty device id is unusual but valid, and
+  // rejecting it would make `writeSceneMetadata` able to produce a file that
+  // `readSceneMetadata` refuses.
+  if (typeof parsed.deviceId !== 'string') return undefined;
   if (parsed.capture !== undefined && !isCapture(parsed.capture)) {
     return undefined;
   }
