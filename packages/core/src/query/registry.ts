@@ -6,6 +6,7 @@ import type {
   CapabilityId, CapabilityMatrix, CapabilityState,
 } from '../device/capability';
 import { OhosPerfError } from '../errors';
+import type { DrillDownHandle } from '../report/evidence';
 import type { AppIdentity } from '../types';
 import { CallstackQuery } from './callstack';
 import { FrameQuery } from './frames';
@@ -398,4 +399,13 @@ export function runNamedQuery(
     total,
     truncated,
   };
+}
+
+/** Resolve one `Evidence.drillDown` handle into rows. */
+export function runDrillDown(
+  ctx: QueryContext,
+  handle: DrillDownHandle,
+  opts: { limit?: number } = {},
+): NamedQueryResult {
+  return runNamedQuery(ctx, handle.tool, handle.args, opts);
 }

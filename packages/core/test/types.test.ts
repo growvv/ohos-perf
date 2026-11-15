@@ -91,7 +91,8 @@ const VALUE_EXPORTS = [
   'gpuPlugin', 'ingestScene', 'lookupQuery',
   'metric', 'nativehookPlugin', 'openDb', 'queryDefinitions', 'readSceneMetadata',
   'resolveAppIdentity', 'resolveQueryLimit',
-  'runAnalyzers', 'runNamedQuery', 'runProbe', 'tableRowCounts', 'unknownQueryError',
+  'runAnalyzers', 'runDrillDown', 'runNamedQuery', 'runProbe', 'tableRowCounts',
+  'unknownQueryError',
   'writeSceneMetadata', 'xpowerPlugin',
 ];
 
