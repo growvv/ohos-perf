@@ -71,10 +71,14 @@ Metric ids emitted by the P1 analyzers:
 | `mem.*` | memory | `mem.rss.*`, `mem.pss.*` |
 | `startup.*` | startup | `startup.count`, `startup.duration` |
 
-The HapRay-parity analyzers (binder, threads, fault tree) are tested against
-golden outputs from ArkAnalyzer-HapRay revision `9386e4e`. Memory (procfs) and
-startup have no HapRay equivalent on the emulator; their tests pin the parser,
-aggregation and marker fallback instead, and no parity is claimed for them.
+The recorded traces pin field-level output for the binder, threads and fault-tree
+analyzers against golden outputs from ArkAnalyzer-HapRay revision `9386e4e`.
+The threads scorer additionally has a synthetic HapRay golden that exercises the
+redundancy-scoring path, which the recorded traces cannot: they contain no
+redundant patterns and no perf samples, so their thread goldens are all-zero.
+Memory (procfs) and startup have no HapRay equivalent on the emulator; their
+tests pin the parser, aggregation and marker fallback instead, and no parity is
+claimed for them.
 
 Not implemented yet: hiperf, hiprofiler, hidumper and uitest collectors,
 baseline comparison, and the agent-skill adapter.
@@ -216,9 +220,12 @@ TypeScript 编写。它把设备能力探测、hitrace 采集、trace_streamer �
 
 当前 P0 与 P1 均已实现：hdc 传输、能力矩阵、hitrace / procfs 采集、入库、类型化查询、
 帧 / 故障树 / binder / 线程 / 内存 / 启动分析、降级指标引擎，以及
-`doctor` / `caps` / `collect` / `analyze` 四个命令。binder、线程与故障树分析器已与
-HapRay 修订 `9386e4e` 做了对齐测试；内存与启动分析没有 HapRay 对应实现。
-hiperf、hiprofiler、hidumper、uitest 采集器、基线对比与 skill 适配器仍待实现。
+`doctor` / `caps` / `collect` / `analyze` 四个命令。录制的真实 trace 已将 binder、
+线程与故障树分析器的逐字段输出与 HapRay 修订 `9386e4e` 对齐；线程评分另有一个
+由 HapRay 生成的合成 golden，专门覆盖冗余评分路径——真实 trace 既没有冗余线程模式
+也没有 perf 采样，其线程 golden 全为零值。内存与启动分析没有 HapRay 对应实现，
+不声称对齐。hiperf、hiprofiler、hidumper、uitest 采集器、基线对比与 skill 适配器
+仍待实现。
 
 ## License
 

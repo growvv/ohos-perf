@@ -1,0 +1,112 @@
+{
+ "redundant_threads_summary": {
+  "redundancy_types": {
+   "normal": "未命中下述唤醒模式，多为高等待或混合行为。",
+   "frequent_immediate_sleep": "被频繁唤醒但立即进入等待，典型无效调度。",
+   "never_woken": "从未被唤醒，可能未被使用或孤立线程。",
+   "busy_waiting": "短运行周期占比高或状态切换极频繁（跑一下就睡、跑一下就睡）。",
+   "busy_wait": "高指令数但运行占比极低或含大量yield，属忙等浪费CPU。"
+  },
+  "total_redundant_thread_patterns": 1,
+  "total_redundant_threads": 19,
+  "total_cpu_instructions": 1500,
+  "total_redundant_instructions": 0,
+  "redundant_instructions_ratio": 0.0,
+  "redundant_threads": [
+   {
+    "thread_name": "idle_worker",
+    "thread_name_variants": [
+     "idle_worker"
+    ],
+    "type": "never_woken",
+    "type_label": "从未被唤醒，可能未被使用或孤立线程。",
+    "total_thread_count": 20,
+    "redundant_count": 19,
+    "redundant_instructions": 0,
+    "redundant_instructions_ratio": 0.0,
+    "estimated_memory_mb": 19.45,
+    "redundancy_score": 50,
+    "score_breakdown": {
+     "thread_count(19)": 25,
+     "waiting_ratio(100%)": 5,
+     "zero_instructions": 10,
+     "zero_wakeup_depth(100%)": 10
+    },
+    "redundancy_level": "low",
+    "leak_score": 70,
+    "leak_level": "medium",
+    "waiting_ratio": 100.0,
+    "wakeup_pattern": "never_woken",
+    "all_thread_ids": [
+     100,
+     101,
+     102,
+     103,
+     104,
+     105,
+     106,
+     107,
+     108,
+     109,
+     110,
+     111,
+     112,
+     113,
+     114,
+     115,
+     116,
+     117,
+     118,
+     119
+    ],
+    "redundant_thread_ids": [
+     101,
+     102,
+     103,
+     104,
+     105,
+     106,
+     107,
+     108,
+     109,
+     110,
+     111,
+     112,
+     113,
+     114,
+     115,
+     116,
+     117,
+     118,
+     119
+    ],
+    "callchain_sample": []
+   }
+  ]
+ },
+ "summary": {
+  "total_memory_savings_mb": 7.1640625,
+  "total_cpu_savings_instructions": 0,
+  "high_priority_patterns_count": 0,
+  "total_cpu_instructions": 1500,
+  "total_redundant_instructions": 0,
+  "redundant_instructions_ratio": 0.0
+ },
+ "below_threshold_patterns": [
+  {
+   "thread_name": "render_helper",
+   "thread_name_variants": [
+    "render_helper"
+   ],
+   "total_thread_count": 3,
+   "all_thread_ids": [
+    200,
+    201,
+    202
+   ],
+   "redundant_count": 2,
+   "max_score": 15,
+   "avg_score": 75.0
+  }
+ ]
+}

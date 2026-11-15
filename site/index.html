@@ -157,6 +157,11 @@
         <h3 data-en="Built to be called by agents" data-zh="为被 Agent 调用而设计">Built to be called by agents</h3>
         <p data-en="The CLI speaks stable JSON, and the library exposes the same operations. That is the seam a skill or an agent needs — no screen-scraping, no parsing prose." data-zh="CLI 输出稳定的 JSON，库暴露同样的操作。这正是 skill 或 agent 需要的接缝：不用截屏，不用解析自然语言。">The CLI speaks stable JSON, and the library exposes the same operations. That is the seam a skill or an agent needs — no screen-scraping, no parsing prose.</p>
       </article>
+      <article class="card reveal">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h6m4 0h6M8 8v8m8-8v8"/><circle cx="12" cy="12" r="2"/></svg></div>
+        <h3 data-en="Scored against HapRay" data-zh="与 HapRay 对拍">Scored against HapRay</h3>
+        <p data-en="Recorded traces pin field-level output for binder, threads and fault tree against HapRay rev 9386e4e. The threads scorer also has a synthetic HapRay golden that exercises the redundancy-scoring path, which the recorded traces cannot: they contain no redundant patterns and no perf samples, so their thread goldens are all-zero. Memory and startup claim no parity." data-zh="录制的真实 trace 已将 binder、线程与故障树分析器的逐字段输出与 HapRay 修订 9386e4e 对齐。线程评分另有一个由 HapRay 生成的合成 golden，专门覆盖冗余评分路径——真实 trace 既无冗余线程模式也无 perf 采样，其线程 golden 全为零值。内存与启动不声称对齐。">Recorded traces pin field-level output for binder, threads and fault tree against HapRay rev 9386e4e. The threads scorer also has a synthetic HapRay golden that exercises the redundancy-scoring path, which the recorded traces cannot: they contain no redundant patterns and no perf samples, so their thread goldens are all-zero. Memory and startup claim no parity.</p>
+      </article>
     </div>
   </div>
 </section>
