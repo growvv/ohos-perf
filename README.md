@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1, P2 and P3 are complete**: 626 tests, two workspace typechecks and two builds,
+**P1, P2 and P3 are complete**: 670 tests, two workspace typechecks and two builds,
 all green on the declared minimum Node (`22.13.0`). On a clean checkout — where
 the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures
-and any attached device are absent — `npm test` reports **602 passed, 24
-skipped (1 file skipped)**; with both fixtures present and a device attached
-all 626 pass. The fixture-dependent suites are
-`e2e-offline`, `parity-hapray`, `analyze-thread-wakeup`,
+and any attached device are absent — `npm test` reports **644 passed, 26
+skipped (2 files skipped)**; with both fixtures present and a device attached
+all 670 pass. The fixture-dependent suites are
+`e2e-offline`, `drilldown-e2e`, `parity-hapray`, `analyze-thread-wakeup`,
 `query-binder-startup`, `query-callstack-perf`, `query-sched-state` and the CLI
 `index` end-to-end tests.
 
@@ -145,7 +145,7 @@ node packages/cli/dist/index.js query ./scene frames.get \
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
-npm test        # 626 tests; 602 pass + 24 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 670 tests; 644 pass + 26 skip on a clean checkout (no device, spike/out/ absent)
 ```
 
 ## Library
