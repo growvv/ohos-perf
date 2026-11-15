@@ -200,13 +200,13 @@ Append `new FaultTreeAnalyzer()` to `defaultAnalyzers()`; export the analyzer an
   - `transactions: BinderTransaction[]` (`transactionId: string | number`, `caller/callee: { pid: number | null; tid: number | null; procName: string | null; threadName: string | null }`, `requestTs/responseTs: number | null`, `latencyMs: number | null`)
   - `processStats`, `threadStats`, `interfaceStats` exactly mirroring `ipc_binder_analyzer.py` field names/types; `qps`/`avgIntervalMs` are `number | null`.
   - `BinderAnalyzer implements Analyzer` (`id: 'binder'`, `requires: ['trace.binder']`); it calls `computeBinderAnalysis(ctx.db, ...)` and, when `ctx.db` is absent, returns one `no_data` evidence and no metrics.
-- Metrics: `binder.transactions.count`, `binder.latency.avg`, `binder.latency.max`, `binder.process.pairs`, `binder.thread.pairs`, `binder.interfaces.count`; unit `count`/`ms`; exact fidelity; provenance table `'callstack'`.
+- Metrics: `binder.transactions.count` (every transaction with a transaction id, including orphans), `binder.latency.avg`, `binder.latency.max`, `binder.process.pairs`, `binder.thread.pairs`, `binder.interfaces.count`; unit `count`/`ms`; exact fidelity; provenance table `'callstack'`. The latency/pair/interface metrics are emitted only when at least one completed request/response pair exists; otherwise emit `binder.transactions.count` plus one `no_data` evidence explaining that no transaction could be paired. Never emit 0 latency for unpaired traffic.
 - Evidence: top 5 process pairs by count, then key ascending, kind `binder_hotspot`, severity `info`, subject `{ process: callerProc }`, signals `{ calleeProc, count, avgLatencyMs, maxLatencyMs, qps }`; drillDown `{ tool: 'binder.processStats', args: { callerProc, calleeProc }, returns: 'BinderProcessStat' }`.
 
 - [ ] **Step 1: Write failing unit tests**
 
 Synthetic DB: two request/response pairs for txn 1 and 2, one orphan request for txn 3, one event without `transaction id`, one response with only `destination process`. Assert: only txns 1/2 have latency; transaction 3 included with `latencyMs: null`; the no-id event is absent from transactions; process/thread/interface aggregates sum to 2; null latency never enters aggregates; empty app pids filters everything without throwing.
-Use `MINI` callstack names `H:IPC Send` / `H:IPC Reply` (classifier keywords: request includes `send`/`request`; response includes `reply`/`response`; response wins on both).
+Use HapRay's real classifier keywords: request names contain `binder transaction` (including `binder transaction async`); response names contain `binder reply` or `binder async rcv`; response wins when a name contains both. Use `H:binder transaction` / `H:binder reply` in the fixture, and add one name containing both to pin the response-wins rule.
 
 - [ ] **Step 2: Run, see fail**
 
@@ -220,7 +220,7 @@ Port `ipc_binder_analyzer.py:120-725` function by function. Preserve:
 - request = earliest request event, response = latest response event per txn (Python `min`/`max` on ts);
 - `latency = (response.ts - request.ts) / 1e6`, only when both exist;
 - both aggregations use `mean` over latencies and QPS over request timestamps; Python `round` is only applied at report time, not in the stats — do not round inside `computeBinderAnalysis`.
-- Sorting: count desc, then caller/callee (or code) ascending; this is the only deliberate difference from Python's unstable tie order.
+- Sorting: stats count desc, then caller/callee (or code) ascending; `transactions` by `(requestTs ?? 0, String(transactionId))` ascending. These are the only deliberate differences from Python's unstable tie order.
 - `code`: integer encoded as `0x<hex>` in interface stats, string codes kept as-is.
 `computeBinderAnalysis` must never emit `NaN`: guard every mean.
 
@@ -285,7 +285,7 @@ Compare `analyzeThreadWakeup` to `thread-wakeup.emu_big.json` and `.real_device.
 - Modify: `packages/core/src/analyze/engine.ts`, `packages/core/src/report/evidence.ts` (kind `thread_redundancy`), `packages/core/src/index.ts`, `packages/core/test/parity-hapray.test.ts`
 
 **Interfaces:**
-- Produces: `computeThreadAnalysis(results: ThreadWakeupResult[]): ThreadAnalysis` with `redundantThreadsSummary` (same keys as HapRay, including `redundancyTypes`), `summary`, `belowThresholdPatterns`; `ThreadAnalyzer implements Analyzer` (`id: 'threads'`, `requires: ['trace.sched', 'trace.thread_state']`). It obtains `ThreadWakeupResult[]` via `analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids, timeRange: ctx.window })`; when `ctx.db` is absent, it returns one `no_data` evidence and no metrics.
+- Produces: `computeThreadAnalysis(results: ThreadWakeupResult[]): ThreadAnalysis` with `redundantThreadsSummary` (same keys as HapRay, including `redundancyTypes`), `summary`, `belowThresholdPatterns`; `ThreadAnalyzer implements Analyzer` (`id: 'threads'`, `requires: ['trace.sched', 'trace.thread_state']`). It obtains `ThreadWakeupResult[]` via `analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids })` — deliberately **not** `timeRange: ctx.window`, because the CLI window is `0..MAX_SAFE_INTEGER` and HapRay derives its range from `trace_range`; passing the open window would change thread-state counts. When `ctx.db` is absent, it returns one `no_data` evidence and no metrics.
 - Metrics: `thread.patterns.count`, `thread.redundant.count`, `thread.instructions.total`, `thread.redundant.instructions`, `thread.redundant.instructions.ratio` (value is HapRay's 0–1 ratio × 100, unit `%`). Fidelity exact except the ratio: `'exact'`.
 - Evidence: one `thread_redundancy` per pattern in `redundantThreadsSummary.redundantThreads`, severity `warn`, subject `{ process: <analyzed app name>, thread: thread_name }`, window `ctx.window`, signals `{ score, redundantCount, waitingRatio, instructions }`, explain from the pattern's `type_label`; drillDown `{ tool: 'threads.pattern', args: { threadName }, returns: 'ThreadPattern' }`. If there are no patterns, emit one `no_data` evidence (not zero metrics only).
 
@@ -434,7 +434,7 @@ Append to defaults; export; `npm test`; commit.
   6. convert and open the scene as today.
 - CLI: `ohos-perf collect --app <pkg> --duration <seconds> --out <dir> [--procfs] [--cold-start <ability>] [--json]`; duration parses seconds (`10` or `10s`) to ms and rejects `0`/negative; output JSON `{ sceneDir, device: { id, kind } }`, human output `scene  <dir>`.
 - CLI `analyze`: build the full context (all queries, `db: scene.traceDb`, procfs samples from `layout.procfsFile`, metadata from `layout.metadataFile`, `resolveAppIdentity` from `--app`), run `defaultAnalyzers()`, and keep `--json` byte-stable. Replace the hand-built one-capability matrix with an offline matrix derived from table presence: `trace.frames`, `trace.sched`, `trace.binder`, `trace.thread_state` when those tables exist, `startup.app_startup` when `app_startup` exists, `mem.procfs` only when `procfs.jsonl` exists; every available state uses collector `'hitrace'` (or `'procfs'`) and fidelity `'exact'`. Without this, every new analyzer degrades in CLI runs.
-- Docs: README P1 status, metric id list, `collect` quickstart; site capability/feature copy no longer says binder/threads/memory/startup are P1.
+- Docs: README P1 status, metric id list, `collect` quickstart; site capability/feature copy no longer says binder/threads/memory/startup are P1. Replace `LICENSES/Apache-2.0.txt` with the full canonical Apache-2.0 text including section 4(a)-(d) and the APPENDIX — the Task 3 copy came from TypeScript's condensed variant and is incomplete; the full text is available at `node_modules/expect-type/LICENSE` (drop its first copyright line).
 
 - [ ] **Step 1: Write failing collect tests**
 
