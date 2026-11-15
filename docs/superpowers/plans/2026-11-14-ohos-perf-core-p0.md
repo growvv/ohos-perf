@@ -977,9 +977,11 @@ describe('FrameQuery', () => {
     expect(q.all({ startNs: 200, endNs: 350 }).map((f) => f.id)).toEqual([2]);
   });
 
-  it('computes stats with HapRay-compatible counts', () => {
+  it('computes stats over the same row set as all()', () => {
     const q = new FrameQuery(db);
-    // 口径对齐 HapRay get_frame_statistics：同样排除 flag 为 NULL 的行
+    // 行集对齐 HapRay get_frame_statistics：同样排除 flag 为 NULL 的行。
+    // 2026-11-15 更正：flag 分桶只统计 actual(type=0)，与指标口径一致；
+    // HapRay 的分桶不区分 type（本 trace 上 empty 为 16），此处刻意不同。
     expect(q.stats()).toEqual({
       total: 3, actual: 3, expect: 0, stuttered: 1, empty: 1, normal: 1,
     });
@@ -1566,7 +1568,7 @@ Expected: PASS（3 tests）
 
 - [ ] **Step 5: 全量测试**
 
-Run: `npx vitest run`
+Run: `npm test`
 Expected: 全部 PASS
 
 - [ ] **Step 6: 提交**
@@ -1731,7 +1733,7 @@ git commit -m "test: add offline end-to-end verification on recorded trace"
 
 P0 完成的判据：
 
-1. `npx vitest run` 全部通过（约 50 个测试）。
+1. `npm test` 全部通过（会先构建两个包，干净检出也能跑）（约 50 个测试）。
 2. `npm run build -w @ohos-perf/core` 无错误，产出 `dist/index.js` 与 `dist/index.d.ts`。
 3. 在真机上执行 `ohos-perf doctor --json` 返回 `hdc.ok=true`、`streamer.ok=true`、能力矩阵中 `trace.frames` 与 `perf.pmu` 均为 `available: true`。
 4. 在模拟器上执行同样命令，`perf.pmu` 为 `available: false` 且 `reason` 含 `no hardware PMU events`，`mem.native_hook` 为 `available: false` 且 `reason` 含 `hiprofiler`。端口以当时的 `hdc list targets -v` 为准——不要从任何文档抄端口，本仓库先后观测到过 `10178`（2026-11-14 采集快照时）和 `5555`（2026-11-15 验收时）两个不同会话的地址。

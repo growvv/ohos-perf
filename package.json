@@ -2,7 +2,7 @@
   "name": "ohos-perf-workspace",
   "private": true,
   "workspaces": ["packages/*"],
-  "engines": { "node": ">=22.13.0" },
+  "engines": { "node": "^22.13.0 || >=23.4.0" },
   "scripts": {
     "build": "npm run build -w @ohos-perf/core",
     "test": "npm run build -w @ohos-perf/core && npm run build -w @ohos-perf/cli && vitest run"

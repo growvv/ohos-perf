@@ -80,12 +80,13 @@ describe('FrameQuery', () => {
     expect(q.actual({ startNs: 350, endNs: 1000 }).map((f) => f.id)).toEqual([3]);
   });
 
-  it('computes stats with HapRay-compatible counts', () => {
+  it('computes stats over the same row set as all(), with actual-only buckets', () => {
     const q = new FrameQuery(db);
-    // Same `flag IS NOT NULL` filter as all(), mirroring HapRay
+    // Same `flag IS NOT NULL` filter as all(), so the row set matches HapRay
     // get_frame_statistics -> get_frames_data. Row 1 is counted nowhere.
     // Row 4 is an expect frame with flag 0, so it is in total/expect but not
-    // in the normal bucket: flag buckets are actual (type 0) frames only.
+    // in the normal bucket: flag buckets are actual (type 0) frames only,
+    // deliberately diverging from HapRay's type-agnostic buckets (see stats()).
     expect(q.stats()).toEqual({
       total: 4, actual: 3, expect: 1, stuttered: 1, empty: 1, normal: 1,
     });
@@ -113,6 +114,27 @@ describe('FrameQuery', () => {
       expect(stats.empty).toBe(1);
       expect(stats).toEqual({
         total: 3, actual: 2, expect: 1, stuttered: 0, empty: 1, normal: 1,
+      });
+    } finally {
+      mixed.close();
+    }
+  });
+
+  it('excludes expect rows from the stuttered bucket (expect + flag 1)', () => {
+    // No such row exists on the measured trace, but the type filter is load
+    // bearing: without it a future capture that flags an expect frame would
+    // inflate stuttered and the jank rate. Pin the shape explicitly.
+    const mixed = withDb('expect-flag1.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 100, 10, 17, 44, 94, 100000, '', 0, 0, 'actural', 1, 0, 0),
+        (1, 200, 11, 17, 44, 95, 100000, '', 0, 1, 'expect', 1, 0, 1)`);
+    });
+    try {
+      const q = new FrameQuery(mixed);
+      expect(q.stuttered().map((f) => f.id)).toEqual([0]);
+      expect(q.stats()).toEqual({
+        total: 2, actual: 1, expect: 1, stuttered: 1, empty: 0, normal: 0,
       });
     } finally {
       mixed.close();

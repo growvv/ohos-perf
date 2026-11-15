@@ -193,7 +193,7 @@ describe.skipIf(!existsSync(distDts))('published type surface', () => {
 
   it('the built module exports exactly the documented value surface', async () => {
     // Compare the literal against the built module itself. Asserting the
-    // literal against its own length/uniqeness would let a new accidental value
+    // literal against its own length/uniqueness would let a new accidental value
     // export ship unnoticed.
     const mod = await import(pathToFileURL(join(coreDir, 'dist/index.js')).href);
     expect(Object.keys(mod).sort()).toEqual([...VALUE_EXPORTS].sort());

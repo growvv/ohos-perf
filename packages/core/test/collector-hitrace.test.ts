@@ -50,6 +50,18 @@ describe('HitraceCollector', () => {
     expect(() => c.beginCommand({ app: 'x', durationMs: 1, categories: [] }))
       .toThrow(/HITRACE_BAD_CATEGORIES|categories/);
   });
+
+  it('rejects a bad bufferKb in beginCommand', () => {
+    // collect() validates independently; beginCommand() is public and
+    // interpolates the value into the device command, so it needs its own gate.
+    const c = new HitraceCollector();
+    expect(() => c.beginCommand({ app: 'x', durationMs: 1, bufferKb: 0 }))
+      .toThrow(/HITRACE_BAD_BUFFER|bufferKb/);
+    expect(() => c.beginCommand({ app: 'x', durationMs: 1, bufferKb: 1.5 }))
+      .toThrow(/HITRACE_BAD_BUFFER|bufferKb/);
+    expect(c.beginCommand({ app: 'x', durationMs: 1, bufferKb: 8192 }))
+      .toBe('hitrace --trace_begin -b 8192 ' + HITRACE_DEFAULT_CATEGORIES.join(' '));
+  });
 });
 
 describe('parseSize', () => {

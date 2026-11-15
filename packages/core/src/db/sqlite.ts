@@ -11,7 +11,6 @@
  * explain the real requirement. `process.getBuiltinModule` exists since Node
  * 22.3.0, so this guard is safe to call on every Node the package can run on.
  */
-import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
 import { OhosPerfError } from '../errors';
 
 type DatabaseSyncModule = typeof import('node:sqlite');
@@ -23,10 +22,11 @@ let cached: DatabaseSyncCtor | undefined;
  * Returns the `node:sqlite` `DatabaseSync` constructor, or throws
  * `RUNTIME_UNSUPPORTED` when the running Node does not provide it.
  *
- * A semver `engines` range cannot express the 23.0-23.3 gap (the module was
- * unavailable there and returned in 23.4), so this runtime check is what
- * actually protects consumers. Callers must not wrap this error: it carries
- * the version guidance, not a database-open failure.
+ * The manifests express the same supported set as `^22.13.0 || >=23.4.0`
+ * (23.0-23.3 never shipped the module). `engines` is advisory in npm, though:
+ * it only warns, and only under `engine-strict`. This runtime check is what
+ * actually turns the gap into a clear error. Callers must not wrap this
+ * error: it carries the version guidance, not a database-open failure.
  */
 export function loadDatabaseSync(): DatabaseSyncCtor {
   if (cached) return cached;

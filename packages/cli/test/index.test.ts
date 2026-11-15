@@ -28,6 +28,28 @@ const cliDist = join(here, '../dist/index.js');
 const cliPkg = join(here, '../package.json');
 const spikeDb = join(here, '../../../spike/out/emu_big.db');
 
+/**
+ * Drop the warnings Node itself prints for `node:sqlite`.
+ *
+ * Node 22.13 through 25.x (all inside the supported `^22.13.0 || >=23.4.0`
+ * range) prints an `ExperimentalWarning` plus a `--trace-warnings` hint on
+ * stderr the first time the builtin loads; measured on 22.13, 23.4, 24.0 and
+ * 25.0, absent on 26.13. That is a property of the runtime, not of the CLI,
+ * so assertions about the CLI's own stderr must ignore exactly those two
+ * lines. Anything else stays visible.
+ */
+function cliStderr(stderr: string): string {
+  return stderr
+    .split(/\r?\n/)
+    .filter(
+      (line) =>
+        !/^\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature/.test(line) &&
+        !/^\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)$/.test(line),
+    )
+    .join('\n')
+    .trim();
+}
+
 const distExists = existsSync(cliDist);
 if (!distExists) {
   // Visible skip: a silent one would hide that the entry point is untested.
@@ -122,7 +144,7 @@ describe.skipIf(!distExists)('cli entry point', () => {
     const r = run(['--help']);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('Usage: ohos-perf');
-    expect(r.stderr).toBe('');
+    expect(cliStderr(r.stderr)).toBe('');
   });
 
   it('exits non-zero on an unknown command, with the error on stderr', () => {
@@ -167,7 +189,7 @@ describe.skipIf(!distExists)('cli entry point', () => {
       copyFileSync(spikeDb, join(dir, 'trace.db'));
       const r = run(['analyze', dir, '--json']);
       expect(r.status).toBe(0);
-      expect(r.stderr).toBe('');
+      expect(cliStderr(r.stderr)).toBe('');
       const result = JSON.parse(r.stdout) as {
         metrics: Array<{ id: string; value: number }>;
         evidence: Array<{ kind: string }>;

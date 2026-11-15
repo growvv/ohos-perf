@@ -199,14 +199,19 @@ export class FrameQuery {
   }
 
   /**
-   * Counts over the same set `all()` returns, mirroring HapRay's
+   * Counts over the same row set `all()` returns. That row set matches HapRay's
    * `get_frame_statistics` (which calls `get_frames_data` and therefore also
    * drops NULL-flag rows).
    *
-   * `stuttered`/`empty`/`normal` bucket **actual (type 0) frames only**,
-   * matching the analyzer metrics: flag semantics describe rendered frames,
-   * and an expect row is a prediction. `total`, `actual` and `expect` keep
-   * their row-count meanings. See `FrameStats` for the full invariant.
+   * The **flag buckets are deliberately not HapRay-compatible**:
+   * `stuttered`/`empty`/`normal` count actual (type 0) frames only, matching
+   * the analyzer metrics, because flag semantics describe rendered frames and
+   * an expect row is a prediction. HapRay buckets type-agnostically, so on the
+   * measured trace its `empty_frames` would be 16 (8 actual + 8 expect) while
+   * `frame.empty.rate` and this `empty` are 8. Do not "restore parity" by
+   * dropping the type filters: that reintroduces the 16-vs-8 split. `total`,
+   * `actual` and `expect` keep their row-count meanings. See `FrameStats` for
+   * the full invariant.
    */
   stats(range?: TimeRange): FrameStats {
     const frames = this.all(range);
