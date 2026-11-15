@@ -176,6 +176,19 @@ describe('procfs JSONL serialization', () => {
     expect(readProcfsSamples(path)).toEqual([valid]);
   });
 
+  it('overwrites the file, so a second write replaces the first', () => {
+    const dir = makeDir();
+    const path = join(dir, 'procfs.jsonl');
+    const a: ProcfsSample = { ts: 1, pid: 10, status: STATUS };
+    const b: ProcfsSample = { ts: 2, pid: 20, status: STATUS };
+
+    writeProcfsSamples(path, [a]);
+    writeProcfsSamples(path, [b]);
+
+    expect(readFileSync(path, 'utf8')).toBe(`${JSON.stringify(b)}\n`);
+    expect(readProcfsSamples(path)).toEqual([b]);
+  });
+
   it('writes an empty file for an empty sample list', () => {
     const dir = makeDir();
     const path = join(dir, 'empty.jsonl');
@@ -348,7 +361,7 @@ describe('ProcfsCollector.collect', () => {
     expect(sleeps).toEqual([100]);
   });
 
-  it('rewrites a stale capture instead of appending to it', async () => {
+  it('clears a stale capture before writing a successful run', async () => {
     const dir = makeDir();
     const layout = createSceneLayout(dir);
     const stale =
@@ -371,7 +384,9 @@ describe('ProcfsCollector.collect', () => {
     );
 
     expect(samples).toHaveLength(1);
-    // Exactly the new JSONL: no stale line survives, and nothing was appended.
+    // The collector unlinked the previous file before sampling, so only this
+    // run's line remains. (The writer's own truncate-vs-append behavior is
+    // proved directly in the JSONL serialization suite.)
     expect(readFileSync(layout.procfsFile, 'utf8')).toBe(`${JSON.stringify(samples[0])}\n`);
     expect(readFileSync(layout.procfsFile, 'utf8')).not.toContain('"pid":1');
   });
