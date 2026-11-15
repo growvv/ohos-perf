@@ -132,7 +132,7 @@ node packages/cli/dist/index.js analyze ./scene --app com.example.app --json
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
-npm test        # 621 tests; 598 pass + 23 skip on a clean checkout (spike/out/ absent)
+npm test        # 623 tests; 599 pass + 24 skip on a clean checkout (no device, spike/out/ absent)
 ```
 
 ## Library
