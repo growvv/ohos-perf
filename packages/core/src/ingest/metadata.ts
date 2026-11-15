@@ -68,9 +68,10 @@ export function writeSceneMetadata(layout: SceneLayout, meta: SceneMetadata): vo
  * A missing file, invalid JSON, a non-object document, a `version` other than
  * `1`, or a document missing the required fields all yield `undefined`: a
  * partially valid description would be worse than none. `startedAtNs` is
- * optional, but a negative or non-finite value is dropped from the result
- * (the file itself is never rewritten) so consumers can treat "no marker" as
- * one case.
+ * optional, but a non-positive (including zero) or non-finite value is dropped
+ * from the result (the file itself is never rewritten) so consumers can treat
+ * "no marker" as one case. Uptime 0 addresses the trace origin, not the capture
+ * start, so accepting it would only produce a nonsense startup duration.
  */
 export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefined {
   if (!existsSync(layout.metadataFile)) return undefined;
@@ -108,7 +109,7 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
       collectors: [...parsed.capture.collectors],
     };
   }
-  if (isFiniteNumber(parsed.startedAtNs) && parsed.startedAtNs >= 0) {
+  if (isFiniteNumber(parsed.startedAtNs) && parsed.startedAtNs > 0) {
     metadata.startedAtNs = parsed.startedAtNs;
   }
   return metadata;

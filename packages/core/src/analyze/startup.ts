@@ -39,7 +39,9 @@ function appIpids(ctx: AnalyzeContext): number[] {
 function startMarkerNs(ctx: AnalyzeContext): number | undefined {
   const startedAtNs = ctx.metadata?.startedAtNs;
   if (startedAtNs === undefined) return undefined;
-  if (!Number.isFinite(startedAtNs) || startedAtNs < 0) return undefined;
+  // Uptime 0 addresses the trace origin, not the capture start; using it as a
+  // marker can only produce a nonsense duration, so it is not a valid marker.
+  if (!Number.isFinite(startedAtNs) || startedAtNs <= 0) return undefined;
   return startedAtNs;
 }
 
@@ -124,7 +126,8 @@ function byMetricId(a: Metric, b: Metric): number {
  *    absent inputs, so a zero is never reported as a measurement.
  *
  * `startedAtNs` is device uptime nanoseconds, the same base as trace `ts`;
- * a negative or non-finite value is ignored rather than used.
+ * a non-positive (including zero) or non-finite value is ignored rather than
+ * used — uptime 0 addresses the trace origin, not the capture start.
  */
 export class StartupAnalyzer implements Analyzer {
   readonly id = 'startup';

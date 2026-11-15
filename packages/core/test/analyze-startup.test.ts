@@ -394,6 +394,7 @@ describe('StartupAnalyzer', () => {
   it.each([
     ['metadata is absent', undefined],
     ['startedAtNs is absent', metadata()],
+    ['startedAtNs is zero', metadata({ startedAtNs: 0 })],
     ['startedAtNs is negative', metadata({ startedAtNs: -1 })],
     ['startedAtNs is NaN', metadata({ startedAtNs: Number.NaN })],
     ['startedAtNs is Infinity', metadata({ startedAtNs: Number.POSITIVE_INFINITY })],
@@ -410,6 +411,22 @@ describe('StartupAnalyzer', () => {
     expect(result.evidence[0].kind).toBe('startup');
     expect(result.evidence[0].explain).toContain('app_startup');
     expect(result.evidence[0].explain).toContain('startedAtNs');
+  });
+
+  it('treats a zero start marker as no marker, not a duration', async () => {
+    // A frame follows uptime 0, so an accepted marker would derive a huge
+    // approximate duration (the M3 defect). With the marker dropped, the
+    // analyzer reports the no-marker evidence instead.
+    const db = fallbackDb('branch2-zero-marker.db', [
+      frame(0, 1_200_000_000, 50_000_000, 0),
+    ]);
+    const result = await new StartupAnalyzer().run(
+      makeCtx(db, { metadata: metadata({ startedAtNs: 0 }) }),
+    );
+    expect(result.metrics).toEqual([]);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0].kind).toBe('startup');
+    expect(result.evidence[0].explain).toContain('no startup data');
   });
 
   it('uses the first non-empty app process name, falling back to the package', async () => {
@@ -506,10 +523,13 @@ describe('scene metadata', () => {
     }
   });
 
-  it('keeps a valid zero start marker', () => {
+  it('drops a zero start marker (uptime 0 addresses the trace origin, not the capture start)', () => {
     const l = layout('meta-marker-zero');
     writeSceneMetadata(l, metadata({ startedAtNs: 0 }));
-    expect(readSceneMetadata(l)).toEqual(metadata({ startedAtNs: 0 }));
+    const read = readSceneMetadata(l);
+    // The metadata is still valid; only the non-marker field is discarded.
+    expect(read).toEqual(metadata());
+    expect(read !== undefined && 'startedAtNs' in read).toBe(false);
   });
 
   it('round-trips an empty device id', () => {
