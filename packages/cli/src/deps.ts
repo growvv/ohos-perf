@@ -230,6 +230,31 @@ export function realDeps(
         const samples = procfsDeclared
           ? readProcfsSamples(layout.procfsFile)
           : [];
+        // `collect` writes scene.json precisely so a later `analyze` does not
+        // need to be told the app again; a scene whose descriptor names the app
+        // must not be analyzed as `unknown`. An explicit --app always wins.
+        // resolveAppIdentity stays the single pid-resolution path: only when the
+        // descriptor's name resolves to no process do we fall back to the pids
+        // recorded at capture time (deduplicated and sorted for byte-stability).
+        let appIdentity;
+        if (app !== undefined) {
+          appIdentity = resolveAppIdentity(processes, app);
+        } else if (metadata !== undefined) {
+          const resolved = resolveAppIdentity(processes, metadata.app.packageName);
+          appIdentity =
+            resolved.pids.length === 0 && metadata.pids.length > 0
+              ? {
+                  packageName: metadata.app.packageName,
+                  pids: [...new Set(metadata.pids)].sort((a, b) => a - b),
+                  processNames:
+                    metadata.app.processNames.length > 0
+                      ? [...metadata.app.processNames]
+                      : [metadata.app.packageName],
+                }
+              : resolved;
+        } else {
+          appIdentity = resolveAppIdentity(processes, 'unknown');
+        }
         const context = {
           db,
           frames: new FrameQuery(db),
@@ -244,7 +269,7 @@ export function realDeps(
           startup: new StartupQuery(db),
           ...(samples.length > 0 ? { procfs: samples } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
-          app: resolveAppIdentity(processes, app ?? 'unknown'),
+          app: appIdentity,
           // The whole database: a CLI run has no capture window to honour.
           window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
           caps: offlineCapabilities(db, samples),

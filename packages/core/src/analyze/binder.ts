@@ -857,6 +857,26 @@ function unpairedEvidence(ctx: AnalyzeContext): Evidence {
   });
 }
 
+/**
+ * Evidence for a run whose app was never identified.
+ *
+ * With no app pid the event filter keeps nothing, so a zero transaction count
+ * is a statement about the missing identity, not about binder traffic.
+ */
+function noAppPidEvidence(ctx: AnalyzeContext): Evidence {
+  return evidence({
+    kind: 'no_data',
+    severity: 'info',
+    subject: { process: appProcessName(ctx) },
+    window: ctx.window,
+    signals: {},
+    explain:
+      'no app pid was identified (analyze --app <packageName>, or a scene.json written by ohos-perf collect); binder analysis skipped',
+    drillDown: [],
+    key: 'binder:no-app-pid',
+  });
+}
+
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
 function byMetricId(a: Metric, b: Metric): number {
   if (a.id < b.id) return -1;
@@ -890,6 +910,12 @@ export class BinderAnalyzer implements Analyzer {
   async run(ctx: AnalyzeContext): Promise<AnalyzeResult> {
     if (ctx.db === undefined) {
       return { metrics: [], evidence: [missingDbEvidence(ctx)] };
+    }
+    // An unidentified app filters every binder event out; a zero count is a
+    // statement about the missing identity, not a measurement of traffic.
+    // This replaces the misleading unpairedEvidence path for this case.
+    if (ctx.app.pids.length === 0) {
+      return { metrics: [], evidence: [noAppPidEvidence(ctx)] };
     }
 
     const analysis = computeBinderAnalysis(ctx.db, { appPids: ctx.app.pids });

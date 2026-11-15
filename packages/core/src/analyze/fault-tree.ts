@@ -691,6 +691,26 @@ function missingDbEvidence(ctx: AnalyzeContext): Evidence {
   });
 }
 
+/**
+ * Evidence for a run whose app was never identified.
+ *
+ * Without an app pid, every `countAppInvokes` counter is an unmeasurable zero,
+ * not a finding. Report the cause instead of emitting those zeros as metrics.
+ */
+function noAppPidEvidence(ctx: AnalyzeContext): Evidence {
+  return evidence({
+    kind: 'no_data',
+    severity: 'info',
+    subject: { process: appProcessName(ctx) },
+    window: ctx.window,
+    signals: {},
+    explain:
+      'no app pid was identified (analyze --app <packageName>, or a scene.json written by ohos-perf collect); app-scoped fault-tree metrics skipped',
+    drillDown: [],
+    key: 'fault-tree:no-app-pid',
+  });
+}
+
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
 function byMetricId(a: Metric, b: Metric): number {
   if (a.id < b.id) return -1;
@@ -717,6 +737,12 @@ function byEvidenceOrder(a: Evidence, b: Evidence): number {
  * older callers and unit tests do not). Without it the analyzer emits one
  * `no_data` evidence naming `ctx.db` and no metrics, instead of pretending the
  * zero values are measurements.
+ *
+ * With no app pid the app-scoped (`fault.arkui.*`, `fault.av_codec.*`,
+ * `fault.Audio.*`) counters would all be unmeasurable zeros, so only the
+ * render-service (`fault.RS.*`) metrics are emitted, alongside one `no_data`
+ * evidence explaining how to identify the app. `ctx.db` stays checked first:
+ * a missing handle is a different, already-tested cause.
  */
 export class FaultTreeAnalyzer implements Analyzer {
   readonly id = 'fault-tree';
@@ -730,6 +756,19 @@ export class FaultTreeAnalyzer implements Analyzer {
     const { signals, rows } = computeFaultTreeDetailed(ctx.db, {
       appPids: ctx.app.pids,
     });
+
+    // An unidentified app has no pids to scope the app-invoke counters to, so
+    // those zeros are not measurements. Keep the render-service metrics (whose
+    // queries never used appPids) computed exactly as today, drop every
+    // app-scoped metric, and report the cause instead of a confident zero.
+    if (ctx.app.pids.length === 0) {
+      const metrics = faultMetrics(signals, rows, ctx).filter((m) =>
+        m.id.startsWith('fault.RS.'),
+      );
+      metrics.sort(byMetricId);
+      return { metrics, evidence: [noAppPidEvidence(ctx)] };
+    }
+
     const metrics = faultMetrics(signals, rows, ctx);
     const evidenceItems = faultEvidence(signals, ctx);
 

@@ -440,4 +440,14 @@ describe('BinderAnalyzer', () => {
     expect(result.evidence[0].kind).toBe('no_data');
     expect(result.evidence[0].explain).toMatch(/pair/i);
   });
+
+  it('returns zero metrics and one no_data naming the app pid when it is unidentified', async () => {
+    const result = await new BinderAnalyzer().run(makeCtx({ pids: [] }));
+    expect(result.metrics).toEqual([]);
+    expect(result.evidence).toHaveLength(1);
+    const [e] = result.evidence;
+    expect(e.kind).toBe('no_data');
+    expect(e.explain).toMatch(/no app pid/);
+    expect(e.explain).toMatch(/binder analysis skipped/i);
+  });
 });

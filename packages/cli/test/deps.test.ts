@@ -28,6 +28,45 @@ function createTraceDb(path: string): void {
   db.close();
 }
 
+/**
+ * A trace database with every table the offline matrix gates on, so no
+ * analyzer degrades and the app identity actually reaches the three
+ * app-scoped analyzers. All data tables are empty except one frame row (so
+ * frames never emits its own `no_data`) and a `trace_range` row (fault-tree
+ * reads it unguarded). `processRows` is an optional VALUES body for `process`,
+ * e.g. `(0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)`.
+ */
+function createFullTraceDb(path: string, processRows?: string): void {
+  const db = new DatabaseSync(path);
+  db.exec(`CREATE TABLE frame_slice(id INT, ts INT, vsync INT, ipid INT, itid INT,
+    callstack_id INT, dur INT, src TEXT, dst INT, type INT, type_desc TEXT,
+    flag INT, depth INT, frame_no INT)`);
+  db.exec(`INSERT INTO frame_slice VALUES
+    (0, 1000, 0, 17, 44, 0, 16000000, '', 0, 0, 'actural', 0, 0, 0)`);
+  db.exec(`CREATE TABLE process(id INT, ipid INT, pid INT, name TEXT, start_ts INT,
+    switch_count INT, thread_count INT, slice_count INT, mem_count INT)`);
+  if (processRows !== undefined) db.exec(`INSERT INTO process VALUES ${processRows}`);
+  db.exec(`CREATE TABLE thread(id INT, itid INT, tid INT, name TEXT, start_ts INT,
+    end_ts INT, ipid INT, is_main_thread INT, switch_count INT)`);
+  db.exec(`CREATE TABLE callstack(id INT, ts INT, dur INT, callid INT,
+    cat TEXT, name TEXT, depth INT, cookie INT, parent_id INT, argsetid INT,
+    chainId TEXT, spanId TEXT, parentSpanId TEXT, flag TEXT, trace_level TEXT,
+    trace_tag TEXT, custom_category TEXT, custom_args TEXT, child_callid INT)`);
+  db.exec('CREATE TABLE args(id INT, key INT, datatype INT, value INT, argset INT)');
+  db.exec('CREATE TABLE data_dict(id INT, data TEXT)');
+  db.exec('CREATE TABLE trace_range(start_ts INT, end_ts INT)');
+  db.exec('INSERT INTO trace_range VALUES (0, 10000000000)');
+  db.exec(`CREATE TABLE sched_slice(id INT, ts INT, dur INT, ts_end INT, cpu INT,
+    itid INT, ipid INT, end_state TEXT, priority INT, arg_setid INT)`);
+  db.exec(`CREATE TABLE instant(ts INT, name TEXT, ref INT, wakeup_from INT,
+    ref_type TEXT, value REAL)`);
+  db.exec(`CREATE TABLE thread_state(ts INT, dur INT, cpu INT, itid INT, tid INT,
+    pid INT, state TEXT, arg_setid INT)`);
+  db.exec(`CREATE TABLE app_startup(id INT, call_id INT, ipid INT, tid INT,
+    start_time INT, end_time INT, start_name INT, packed_name TEXT)`);
+  db.close();
+}
+
 /** A scene whose database returns no rows; used to observe the layout only. */
 function emptyScene(): Scene {
   return {
@@ -367,6 +406,86 @@ describe('realDeps().analyze', () => {
     const ids = await analyzeWithMeta(undefined);
     expect(ids).not.toContain('memory.degraded');
     expect(ids.some((id) => id.startsWith('mem.'))).toBe(true);
+  });
+
+  // I1: scene.json is the identity source when --app is omitted.
+  it('resolves the app from scene.json exactly as an explicit --app does', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-appmeta-'));
+    try {
+      createFullTraceDb(
+        join(parent, 'trace.db'),
+        "(0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)",
+      );
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+      }));
+
+      const fromScene = await realDeps('0.0.0').analyze(parent);
+      // A separate directory with no scene.json, app supplied explicitly.
+      const plain = mkdtempSync(join(tmpdir(), 'ohosperf-appplain-'));
+      try {
+        createFullTraceDb(
+          join(plain, 'trace.db'),
+          "(0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)",
+        );
+        const fromApp = await realDeps('0.0.0').analyze(plain, 'com.demo');
+        expect(fromScene.metrics.map((m) => [m.id, m.value])).toEqual(
+          fromApp.metrics.map((m) => [m.id, m.value]),
+        );
+      } finally {
+        rmSync(plain, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      }
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('uses scene.json pids when the named app is absent from process', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-appmeta-pids-'));
+    try {
+      // No process row for com.ghost, but the descriptor carries a real pid.
+      createFullTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.ghost', processNames: ['com.ghost'] },
+        pids: [42], deviceId: 't1',
+      }));
+
+      const result = await realDeps('0.0.0').analyze(parent);
+      const ids = result.metrics.map((m) => m.id);
+      // Binder ran with pids [42] instead of taking the no-app-pid branch.
+      expect(ids).toContain('binder.transactions.count');
+      const evidence = result.evidence as unknown as ReadonlyArray<{ explain: string }>;
+      const noAppPid = evidence.filter((e) => /no app pid/.test(e.explain));
+      expect(noAppPid).toEqual([]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('emits three no-app-pid no_data items with no scene.json and no --app', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-appmeta-none-'));
+    try {
+      createFullTraceDb(join(parent, 'trace.db'));
+      const result = await realDeps('0.0.0').analyze(parent);
+
+      const evidence = result.evidence as unknown as ReadonlyArray<{ explain: string }>;
+      const noAppPid = evidence.filter((e) => /no app pid/.test(e.explain));
+      expect(noAppPid).toHaveLength(3);
+      const explains = noAppPid.map((e) => e.explain).sort();
+      expect(explains.some((text) => /fault-tree metrics skipped/.test(text))).toBe(true);
+      expect(explains.some((text) => /binder analysis skipped/.test(text))).toBe(true);
+      expect(explains.some((text) => /thread analysis skipped/.test(text))).toBe(true);
+
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).not.toContain('binder.transactions.count');
+      expect(ids.some((id) => /^fault\.(arkui|av_codec|Audio)\./.test(id))).toBe(false);
+      expect(ids.some((id) => id.startsWith('thread.'))).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
   });
 });
 

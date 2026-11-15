@@ -1555,6 +1555,26 @@ function noPatternsEvidence(ctx: AnalyzeContext): Evidence {
   });
 }
 
+/**
+ * Evidence for a run whose app was never identified.
+ *
+ * With no app pid the wakeup analysis returns no threads, so five zero metrics
+ * would be confident zeros about an absent subject rather than measurements.
+ */
+function noAppPidEvidence(ctx: AnalyzeContext): Evidence {
+  return evidence({
+    kind: 'no_data',
+    severity: 'info',
+    subject: { process: appProcessName(ctx) },
+    window: ctx.window,
+    signals: {},
+    explain:
+      'no app pid was identified (analyze --app <packageName>, or a scene.json written by ohos-perf collect); thread analysis skipped',
+    drillDown: [],
+    key: 'threads:no-app-pid',
+  });
+}
+
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
 function byMetricId(a: Metric, b: Metric): number {
   if (a.id < b.id) return -1;
@@ -1597,6 +1617,12 @@ export class ThreadAnalyzer implements Analyzer {
   async run(ctx: AnalyzeContext): Promise<AnalyzeResult> {
     if (ctx.db === undefined) {
       return { metrics: [], evidence: [missingDbEvidence(ctx)] };
+    }
+    // An unidentified app yields no wakeup threads; the five zero metrics that
+    // would follow are confident zeros about an absent subject, not a finding.
+    // This takes precedence over the no-pattern branch below.
+    if (ctx.app.pids.length === 0) {
+      return { metrics: [], evidence: [noAppPidEvidence(ctx)] };
     }
 
     const analysis = computeThreadAnalysis(

@@ -157,12 +157,16 @@ describe('computeFaultTree', () => {
   });
 });
 
-function makeCtx(deviceId = 'emu-test', withDb = true): AnalyzeContext {
+function makeCtx(
+  deviceId = 'emu-test',
+  withDb = true,
+  pids: number[] = [4999],
+): AnalyzeContext {
   return {
     frames: new FrameQuery(db),
     processes: new ProcessQuery(db),
     ...(withDb ? { db } : {}),
-    app: { packageName: 'com.demo', pids: [4999], processNames: ['com.demo'] },
+    app: { packageName: 'com.demo', pids, processNames: ['com.demo'] },
     window: { startNs: START, endNs: START + 9_000_000_000 },
     caps: new CapabilityMatrix([
       {
@@ -300,5 +304,36 @@ describe('FaultTreeAnalyzer', () => {
     expect(e.subject.process).toBe('com.demo');
     expect(e.explain).toMatch(/ctx\.db/);
     expect(e.explain).toMatch(/trace database/i);
+  });
+
+  it('keeps render-service metrics and one no_data when no app pid is identified', async () => {
+    const result = await new FaultTreeAnalyzer().run(makeCtx('emu-test', true, []));
+    const byId = new Map(result.metrics.map((m) => [m.id, m]));
+
+    // The render-service (app-independent) metrics are still real measurements.
+    expect([...byId.keys()].sort()).toEqual(
+      [
+        'fault.RS.AnimateSize.nodeSizeSum',
+        'fault.RS.AnimateSize.totalAnimationSizeSum',
+        'fault.RS.DisplayNodeSkipTimes',
+        'fault.RS.ProcessedNodes.count',
+        'fault.RS.ProcessedNodes.ts',
+        'fault.RS.UnMarshRSTransactionData',
+      ].sort(),
+    );
+    expect(byId.get('fault.RS.ProcessedNodes.ts')!.value).toBe(2);
+    expect(byId.get('fault.RS.ProcessedNodes.count')!.value).toBe(42);
+    expect(byId.get('fault.RS.AnimateSize.nodeSizeSum')!.value).toBe(3);
+    expect(byId.get('fault.RS.AnimateSize.totalAnimationSizeSum')!.value).toBe(5);
+
+    // No app-scoped counter is reported as a confident zero.
+    for (const id of byId.keys()) {
+      expect(id).not.toMatch(/^fault\.(arkui|av_codec|Audio)\./);
+    }
+
+    const noData = result.evidence.filter((e) => e.kind === 'no_data');
+    expect(noData).toHaveLength(1);
+    expect(noData[0].explain).toMatch(/no app pid/);
+    expect(noData[0].explain).toMatch(/analyze --app/);
   });
 });

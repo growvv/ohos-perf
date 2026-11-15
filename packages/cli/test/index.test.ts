@@ -9,6 +9,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -209,6 +210,34 @@ describe.skipIf(!distExists)('cli entry point', () => {
       expect(metric('frame.rendered.count')).toBe(161);
       expect(metric('frame.jank.rate')).toBe(37.267080745341616);
       expect(result.evidence.filter((e) => e.kind === 'jank')).toHaveLength(60);
+      // Only trace.db was copied: no scene.json and no --app means the app was
+      // never identified, so binder must be absent, not a confident zero.
+      expect(result.metrics.some((m) => m.id === 'binder.transactions.count')).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // I1: a scene.json written by collect supplies the app without --app.
+  it.skipIf(!existsSync(spikeDb))('analyzes a real scene from its scene.json without --app', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-index-'));
+    try {
+      mkdirSync(dir, { recursive: true });
+      copyFileSync(spikeDb, join(dir, 'trace.db'));
+      writeFileSync(join(dir, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'pbench.baseline', processNames: ['pbench.baseline'] },
+        pids: [16702], deviceId: 'offline',
+      }));
+      const r = run(['analyze', dir, '--json']);
+      expect(r.status).toBe(0);
+      expect(cliStderr(r.stderr)).toBe('');
+      const result = JSON.parse(r.stdout) as {
+        metrics: Array<{ id: string; value: number }>;
+      };
+      const metric = (id: string) => result.metrics.find((m) => m.id === id)?.value;
+      expect(metric('binder.transactions.count')).toBe(372);
+      expect(metric('fault.arkui.HandleOnAreaChangeEvent')).toBe(51);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

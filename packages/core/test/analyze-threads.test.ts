@@ -724,7 +724,9 @@ describe('ThreadAnalyzer', () => {
   });
 
   it('emits zero metrics and one no_data evidence when no pattern is redundant', async () => {
-    const result = await new ThreadAnalyzer().run(makeCtx({ pids: [] }));
+    // A non-empty app pid that is absent from the process table yields no
+    // wakeup threads, so the analysis still reaches the no-pattern branch.
+    const result = await new ThreadAnalyzer().run(makeCtx({ pids: [9999] }));
     expect(result.metrics).toHaveLength(5);
     for (const entry of result.metrics) expect(entry.value).toBe(0);
     expect(result.evidence).toHaveLength(1);
@@ -732,6 +734,18 @@ describe('ThreadAnalyzer', () => {
     expect(result.evidence[0].severity).toBe('info');
     expect(result.evidence[0].subject.process).toBe('com.demo');
     expect(result.evidence[0].explain).toMatch(/redundant/i);
+  });
+
+  it('returns zero metrics and one no_data naming the app pid when it is unidentified', async () => {
+    const result = await new ThreadAnalyzer().run(makeCtx({ pids: [] }));
+    expect(result.metrics).toEqual([]);
+    expect(result.evidence).toHaveLength(1);
+    const [item] = result.evidence;
+    expect(item.kind).toBe('no_data');
+    expect(item.severity).toBe('info');
+    expect(item.subject.process).toBe('com.demo');
+    expect(item.explain).toMatch(/no app pid/);
+    expect(item.explain).toMatch(/thread analysis skipped/i);
   });
 
   it('returns one no_data evidence and no metrics without ctx.db', async () => {
