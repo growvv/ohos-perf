@@ -12,6 +12,8 @@ describe('doctorReport', () => {
     expect(r.hdc.error).toContain('no hdc');
     expect(r.streamer.ok).toBe(true);
     expect(r.device).toBeUndefined();
+    // The probe ran and failed; that must be distinguishable from "never asked".
+    expect(r.probeError).toBe('no device');
     expect(r.capabilities).toEqual([]);
   });
 
@@ -31,6 +33,7 @@ describe('doctorReport', () => {
     });
     expect(r.hdc.ok).toBe(true);
     expect(r.device?.id).toBe('t1');
+    expect(r.probeError).toBeUndefined();
     expect(r.capabilities.map((c) => c.id)).toEqual(['perf.pmu', 'ui.tree']);
   });
 

@@ -25,15 +25,23 @@ export interface DoctorDeps {
 /**
  * Result of a toolchain/device check.
  *
- * `device` is absent when no device could be probed; `capabilities` is then
- * empty. That is not a toolchain failure: the caller decides the exit code
- * from `hdc.ok` alone (see the `doctor` command), because "no device attached"
- * is an environmental state, while "hdc is not installed" is not.
+ * `device` is absent when no result could be obtained from the device probe;
+ * `capabilities` is then empty, and `probeError` says why. That is not a
+ * toolchain failure: the caller decides the exit code from `hdc.ok` alone
+ * (see the `doctor` command), because an unreachable device is an
+ * environmental state, while "hdc is not installed" is not.
+ *
+ * `probeError` is set only when the probe actually ran and failed. It cannot
+ * distinguish "no device attached" from "the probe threw" — both end in the
+ * same catch — so callers must render the message rather than claim the
+ * device was never probed (that claim was false for the second case).
  */
 export interface DoctorReport {
   hdc: { ok: boolean; path?: string; error?: string };
   streamer: { ok: boolean; path?: string; version?: string; error?: string };
   device?: { id: string; kind: string; abi: string };
+  /** Set when hdc is present but the device probe itself failed. */
+  probeError?: string;
   capabilities: CapabilityState[];
 }
 
@@ -93,19 +101,21 @@ export async function doctorReport(deps: DoctorDeps): Promise<DoctorReport> {
   }
 
   // The device and its matrix are one probe: a device whose capabilities
-  // cannot be read is not reported at all, because `capabilities: []` already
-  // means "nothing was probed" and the report has no error field for it.
+  // cannot be read is not reported at all, and the failure is recorded so the
+  // caller does not have to pretend no probe ever happened.
   let device: DoctorReport['device'];
   let capabilities: CapabilityState[] = [];
+  let probeError: string | undefined;
   try {
     const connected = await deps.connectDevice();
     const matrix = await connected.capabilities();
     device = { id: connected.id, kind: connected.kind, abi: connected.abi };
     capabilities = [...matrix.all()].sort(byId);
-  } catch {
+  } catch (err) {
     device = undefined;
     capabilities = [];
+    probeError = safeMessage(err);
   }
 
-  return { hdc, streamer, device, capabilities };
+  return { hdc, streamer, device, probeError, capabilities };
 }

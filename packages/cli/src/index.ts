@@ -35,7 +35,11 @@ function ignoreEpipe(stream: NodeJS.WriteStream): void {
     // Do NOT exit here: `emit()` has already computed the exit code, and
     // `process.exit(0)` would turn a failed analysis into success.
     if (err.code === 'EPIPE') return;
-    throw err;
+    // A non-EPIPE stream failure is a real problem. Throwing here would escape
+    // `parseAsync(...).catch` and print a raw Node stack; report it in the
+    // same one-line form as every other CLI error instead.
+    process.stderr.write(`${safeMessage(err)}\n`);
+    process.exitCode = 1;
   });
 }
 

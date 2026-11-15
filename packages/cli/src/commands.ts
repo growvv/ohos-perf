@@ -27,6 +27,11 @@ export interface CapsReport {
   /**
    * Set when hdc is present but the device probe failed. Distinguishes
    * "we could not ask" from "we asked and the answer was empty".
+   *
+   * Invariant: `probeError` is set only when the probe failed, and in that case
+   * `capabilities` is empty — a failed probe has no matrix. `realDeps()`
+   * upholds this; injected fakes must too, or human and `--json` output will
+   * disagree (human mode reports the error, JSON reports the phantom matrix).
    */
   probeError?: string;
   capabilities: CapabilityState[];
@@ -120,11 +125,17 @@ export async function runDoctor(deps: CliDeps, opts: { json?: boolean }): Promis
     const hint = streamer.truncated ? '  (use --json for the full search path list)' : '';
     stdout += `streamer FAIL  ${streamer.text}${hint}\n`;
   }
-  stdout +=
-    report.device === undefined
-      ? 'device   none attached\n'
-      : `device   ${report.device.id} (${report.device.kind}, ${report.device.abi})\n`;
-  stdout += formatCapabilities(report.capabilities);
+  if (report.probeError !== undefined) {
+    // Same event as `caps`' "capabilities unavailable: …", same verdict
+    // source. "none attached" would be a lie when the probe actually ran.
+    stdout += `device   probe failed: ${report.probeError}\n`;
+  } else if (report.device === undefined) {
+    stdout += 'device   none attached\n';
+  } else {
+    stdout += `device   ${report.device.id} (${report.device.kind}, ${report.device.abi})\n`;
+  }
+  // A failed probe has no matrix to print; the "no device probed" line would be false.
+  stdout += report.probeError !== undefined ? '' : formatCapabilities(report.capabilities);
 
   return { stdout, stderr: '', exitCode };
 }

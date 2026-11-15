@@ -65,6 +65,21 @@ describe('runDoctor', () => {
     expect(JSON.parse(r.stdout).device).toBeUndefined();
   });
 
+  it('says the device probe failed, not that no device is attached', async () => {
+    // "Nothing plugged in" and "the probe threw" collapse into the same
+    // catch in `doctorReport`; either way the human report must say what
+    // happened instead of claiming a device was never probed.
+    const r = await runDoctor(
+      deps({ doctor: { connectDevice: async () => { throw new Error('probe exploded'); } } }),
+      {},
+    );
+    expect(r.exitCode).toBe(0); // still environmental, not a toolchain failure
+    expect(r.stdout).toContain('device   probe failed: probe exploded');
+    expect(r.stdout).not.toContain('none attached');
+    // A failed probe has no matrix; the "no device probed" line would be false.
+    expect(r.stdout).not.toContain('no capabilities (no device probed)');
+  });
+
   it('exits 0 when capabilities are merely degraded', async () => {
     const r = await runDoctor(
       deps({

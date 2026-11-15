@@ -35,7 +35,10 @@ export const manifestPath = join(here, '../package.json');
 export function packageVersion(path: string = manifestPath): string {
   try {
     const pkg = JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown };
-    return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
+    // An empty or whitespace-only version is metadata we do not have: printing
+    // it would make `--version` emit a blank line and still exit 0.
+    const version = typeof pkg.version === 'string' ? pkg.version.trim() : '';
+    return version === '' ? '0.0.0' : version;
   } catch {
     // A missing or malformed manifest must not make the CLI unusable:
     // the version is metadata, and `--help`/`doctor` still work without it.

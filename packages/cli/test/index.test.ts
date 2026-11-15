@@ -1,9 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createTraceDb } from './helpers/trace-db';
 
 /**
  * Tests for the executable entry point (`src/index.ts`).
@@ -24,6 +34,17 @@ if (!distExists) {
   console.warn(
     `[cli] ${cliDist} is missing; the entry-point tests are skipped. ` +
       'Run `npm run build -w @ohos-perf/cli` first.',
+  );
+}
+
+if (!existsSync(spikeDb)) {
+  // `spike/out/` is gitignored, so a clean checkout never has this fixture.
+  // The test itself uses `it.skipIf` (vitest then reports it as skipped, not
+  // passed); this warning says how to get the fixture back.
+  console.warn(
+    `[cli] ${spikeDb} is missing; the real-scene end-to-end test is skipped. ` +
+      'Generate it by converting a recorded capture with trace_streamer: ' +
+      '`trace_streamer <capture.htrace> -e spike/out/emu_big.db`.',
   );
 }
 
@@ -60,6 +81,17 @@ function runWithClosedPipe(
     child.on('error', reject);
     child.on('close', (status, signal) => resolve({ status, signal }));
   });
+}
+
+/** Newest mtime under `dir`, recursively. */
+function newestMtime(dir: string): number {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) newest = Math.max(newest, newestMtime(full));
+    else newest = Math.max(newest, statSync(full).mtimeMs);
+  }
+  return newest;
 }
 
 describe.skipIf(!distExists)('cli entry point', () => {
@@ -112,13 +144,12 @@ describe.skipIf(!distExists)('cli entry point', () => {
   });
 
   it('exits 0 when a successful run has its stdout pipe closed', async () => {
-    if (!existsSync(spikeDb)) {
-      console.warn(`[cli] ${spikeDb} is missing; skipping the closed-pipe success path.`);
-      return;
-    }
+    // A synthetic two-frame trace, not the 17.9 MB spike DB: this test is the
+    // only coverage of the stdout EPIPE handler, so it must run on every
+    // machine, including a clean checkout where `spike/out/` is absent.
     const dir = mkdtempSync(join(tmpdir(), 'ohosperf-index-'));
     try {
-      copyFileSync(spikeDb, join(dir, 'trace.db'));
+      createTraceDb(join(dir, 'trace.db'));
       const r = await runWithClosedPipe(['analyze', dir, '--json'], 'stdout');
       expect(r).toEqual({ status: 0, signal: null });
     } finally {
@@ -126,11 +157,10 @@ describe.skipIf(!distExists)('cli entry point', () => {
     }
   });
 
-  it('analyzes a real scene end to end', () => {
-    if (!existsSync(spikeDb)) {
-      console.warn(`[cli] ${spikeDb} is missing; skipping the end-to-end analysis.`);
-      return;
-    }
+  // The only test that validates the whole chain against a real 17.9 MB
+  // recording, so it keeps the fixture dependency; `it.skipIf` makes vitest
+  // report it as skipped (a bare `return` would report it as passed).
+  it.skipIf(!existsSync(spikeDb))('analyzes a real scene end to end', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ohosperf-index-'));
     try {
       mkdirSync(dir, { recursive: true });
@@ -150,5 +180,21 @@ describe.skipIf(!distExists)('cli entry point', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('the bundle is not older than the sources it was built from', () => {
+    // These tests spawn `dist/index.js`, and every entry-point assertion is
+    // therefore only as fresh as the last build. A stale bundle once hid a
+    // deleted exit-code propagation. `git checkout` can bump a source mtime
+    // without changing its content, which fails this test in the safe
+    // direction: it asks for a rebuild, never lets a stale bundle pass.
+    const distMtime = statSync(cliDist).mtimeMs;
+    const srcMtime = newestMtime(join(here, '../src'));
+    expect(
+      distMtime,
+      'packages/cli/dist/index.js is older than packages/cli/src — run ' +
+        '`npm run build -w @ohos-perf/cli` before testing. A stale bundle makes ' +
+        'every entry-point assertion validate the previous build.',
+    ).toBeGreaterThanOrEqual(srcMtime);
   });
 });

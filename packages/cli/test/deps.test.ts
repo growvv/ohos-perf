@@ -65,6 +65,27 @@ describe('packageVersion', () => {
     expect(packageVersion(join(tmpdir(), 'ohosperf-no-such-dir', 'package.json'))).toBe('0.0.0');
   });
 
+  it('falls back to 0.0.0 when the version is empty or whitespace', () => {
+    // `typeof version === 'string'` alone would let `--version` print a blank
+    // line; an empty version is metadata we do not have, not a version.
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-emptyversion-'));
+    try {
+      const empty = join(dir, 'empty.json');
+      writeFileSync(empty, JSON.stringify({ version: '' }));
+      expect(packageVersion(empty)).toBe('0.0.0');
+
+      const blank = join(dir, 'blank.json');
+      writeFileSync(blank, JSON.stringify({ version: '   ' }));
+      expect(packageVersion(blank)).toBe('0.0.0');
+
+      const padded = join(dir, 'padded.json');
+      writeFileSync(padded, JSON.stringify({ version: ' 7.7.7 ' }));
+      expect(packageVersion(padded)).toBe('7.7.7');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('falls back to 0.0.0 when the manifest is malformed or has no version', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ohosperf-badmanifest-'));
     try {
