@@ -184,6 +184,14 @@ export class Device {
             );
           }
         }
+        if (wantsHiprofiler && pluginNames.length === 0) {
+          // An explicitly empty list is a request for a session that records
+          // nothing; only an omitted list gets the ftrace default.
+          throw new OhosPerfError(
+            'hiprofiler requires at least one plugin (omit plugins to use ftrace)',
+            { code: 'COLLECT_BAD_PLUGIN' },
+          );
+        }
         const bufferPages = opts.hiprofiler?.bufferPages;
         if (
           bufferPages !== undefined &&

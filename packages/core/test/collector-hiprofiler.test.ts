@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -41,6 +41,8 @@ class FakeHdc {
 
   async recv(_t: string, device: string, local: string): Promise<void> {
     this.calls.push({ kind: 'recv', args: [device, local] });
+    // A real transfer creates the destination file.
+    writeFileSync(local, 'trace bytes');
   }
 }
 
@@ -101,8 +103,9 @@ describe('HiprofilerCollector', () => {
 
     expect(sessionShell(hdc)).toHaveLength(1);
     expect(hdc.calls.filter((c) => c.kind === 'recv')).toEqual([
-      { kind: 'recv', args: [DEVICE_OUTPUT_PATH, layout.traceFile] },
+      { kind: 'recv', args: [DEVICE_OUTPUT_PATH, `${layout.traceFile}.partial`] },
     ]);
+    expect(readFileSync(layout.traceFile, 'utf8')).toBe('trace bytes');
     expect(killShell(hdc)).toHaveLength(1);
     expect(existsSync(join(layout.root, 'hiprofiler.cfg'))).toBe(false);
     rmSync(layout.root, { recursive: true, force: true });
@@ -157,6 +160,55 @@ describe('HiprofilerCollector', () => {
     ).rejects.toThrow(/hdc shell failed/);
     expect(killShell(hdc)).toHaveLength(1);
     expect(existsSync(layout.traceFile)).toBe(false);
+    rmSync(layout.root, { recursive: true, force: true });
+  });
+
+  it('receives into a temp file so a failed transfer leaves no trace behind', async () => {
+    const hdc = new FakeHdc({ 'hiprofiler_cmd -c': SESSION_OK, 'ls -l': LS_OK });
+    // Simulate a target that drops after hdc created (and truncated) the
+    // destination: the partial bytes must never become the scene's trace.
+    hdc.recv = async (_t: string, _device: string, local: string) => {
+      writeFileSync(local, 'partial bytes');
+      throw new Error('connection reset');
+    };
+    const layout = fakeLayout();
+    await expect(
+      new HiprofilerCollector().collect(hdc as never, 'dev', opts, layout as never),
+    ).rejects.toThrow(/connection reset/);
+    expect(existsSync(layout.traceFile)).toBe(false);
+    expect(existsSync(`${layout.traceFile}.partial`)).toBe(false);
+    rmSync(layout.root, { recursive: true, force: true });
+  });
+
+  it('keeps the previous trace file when the transfer fails', async () => {
+    const hdc = new FakeHdc({ 'hiprofiler_cmd -c': SESSION_OK, 'ls -l': LS_OK });
+    hdc.recv = async (_t: string, _device: string, local: string) => {
+      writeFileSync(local, 'partial bytes');
+      throw new Error('connection reset');
+    };
+    const layout = fakeLayout();
+    writeFileSync(layout.traceFile, 'old scene trace');
+    await expect(
+      new HiprofilerCollector().collect(hdc as never, 'dev', opts, layout as never),
+    ).rejects.toThrow(/connection reset/);
+    expect(readFileSync(layout.traceFile, 'utf8')).toBe('old scene trace');
+    expect(existsSync(`${layout.traceFile}.partial`)).toBe(false);
+    rmSync(layout.root, { recursive: true, force: true });
+  });
+
+  it('rejects an empty plugin list before touching the device', async () => {
+    const hdc = new FakeHdc();
+    const layout = fakeLayout();
+    let error: unknown;
+    try {
+      await new HiprofilerCollector().collect(
+        hdc as never, 'dev', { ...opts, plugins: [] }, layout as never,
+      );
+    } catch (err) {
+      error = err;
+    }
+    expect((error as OhosPerfError).code).toBe('HIPROFILER_BAD_PLUGIN');
+    expect(hdc.calls).toHaveLength(0);
     rmSync(layout.root, { recursive: true, force: true });
   });
 

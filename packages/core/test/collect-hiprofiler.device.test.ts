@@ -96,7 +96,7 @@ describe.skipIf(HDC === undefined)('hiprofiler on an attached device', () => {
         );
         expect(rows[0].n).toBeGreaterThan(0);
         const meta = readSceneMetadata(createSceneLayout(root));
-        expect(meta.capture?.collectors).toEqual(['hiprofiler']);
+        expect(meta?.capture?.collectors).toEqual(['hiprofiler']);
       } finally {
         scene.close();
       }

@@ -918,6 +918,16 @@ describe('CollectSession.ingest through hiprofiler', () => {
         code: 'HIPROFILER_BAD_BUFFER',
       });
 
+      const noPlugins = await h.device().collect({
+        app: 'com.example',
+        durationMs: 1000,
+        sceneRoot: root,
+        hiprofiler: { plugins: [] },
+      });
+      await expect(noPlugins.ingest()).rejects.toMatchObject({
+        code: 'COLLECT_BAD_PLUGIN',
+      });
+
       expect(h.commands).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });

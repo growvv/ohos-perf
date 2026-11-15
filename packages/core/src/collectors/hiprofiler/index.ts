@@ -7,7 +7,7 @@
  * to the same SQLite schema as a hitrace capture.
  */
 
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CapabilityId } from '../../device/capability';
 import { OhosPerfError } from '../../errors';
@@ -108,6 +108,13 @@ export class HiprofilerCollector implements Collector {
     layout: SceneLayout,
   ): Promise<void> {
     assertDuration(opts.durationMs);
+    if (opts.plugins.length === 0) {
+      // A session with no plugins records nothing; the daemon would either
+      // reject it or complete with an empty trace that reads as a quiet app.
+      throw new OhosPerfError('hiprofiler requires at least one plugin', {
+        code: 'HIPROFILER_BAD_PLUGIN',
+      });
+    }
     const config = buildHiprofilerConfig({
       plugins: opts.plugins,
       ...(opts.bufferPages === undefined ? {} : { bufferPages: opts.bufferPages }),
@@ -141,7 +148,22 @@ export class HiprofilerCollector implements Collector {
         );
       }
 
-      await hdc.recv(target, DEVICE_OUTPUT_PATH, layout.traceFile);
+      // Receive to a sibling temp path and rename only after the transfer
+      // completes: hdc truncates/creates the destination before streaming, so
+      // a dropped target would otherwise leave a partial `.htrace` that a
+      // later `ingestScene` converts as if the capture had completed. The
+      // rename also preserves a previous scene's trace on failure.
+      const partial = `${layout.traceFile}.partial`;
+      try {
+        await hdc.recv(target, DEVICE_OUTPUT_PATH, partial);
+        renameSync(partial, layout.traceFile);
+      } finally {
+        try {
+          rmSync(partial, { force: true });
+        } catch {
+          // Best effort: never replace the transfer failure.
+        }
+      }
     } finally {
       await this.killBestEffort(hdc, target);
       try {
