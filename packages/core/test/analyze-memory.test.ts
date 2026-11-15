@@ -278,9 +278,12 @@ describe('MemoryAnalyzer', () => {
     expect(result.evidence).toEqual([]);
   });
 
-  it('keeps input order for equal timestamps (stable sort)', async () => {
-    // The comparator returns 0 for equal ts, and Array.prototype.sort is
-    // stable (ES2019+), so the first/last selection follows input order.
+  it('preserves input order for equal timestamps (ES2019 stable sort)', async () => {
+    // The comparator returns 0 for equal ts; a reversed comparator would also
+    // return 0, so this test does not distinguish comparator direction. What
+    // it pins is stability: ES2019+ Array.prototype.sort preserves input order
+    // for equal keys, so first/last follow input order. Reversal of the ts
+    // order itself is guarded by the shuffled-ts test below.
     const growth = await new MemoryAnalyzer().run(
       makeCtx({ procfs: [sample(7, mb(100)), sample(7, mb(150))] }),
     );
@@ -341,7 +344,82 @@ describe('MemoryAnalyzer', () => {
     expect(result.metrics).toEqual([]);
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0].kind).toBe('no_data');
+    // Samples were supplied; the message must say they carried no usable
+    // finite RSS value, not that procfs was absent.
+    expect(result.evidence[0].explain).toMatch(/no usable finite RSS/i);
+    expect(result.evidence[0].explain).not.toMatch(/were not provided/i);
     expect(result.evidence[0].explain).toContain('ohos-perf collect --procfs');
+  });
+
+  it('keeps the RSS mean finite when the exact sum would overflow', async () => {
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({
+        procfs: [sample(1, Number.MAX_VALUE), sample(2, Number.MAX_VALUE)],
+      }),
+    );
+
+    for (const entry of result.metrics) {
+      expect(Number.isFinite(entry.value as number)).toBe(true);
+    }
+    // The mean of two MAX_VALUE samples is exactly MAX_VALUE; the exact sum
+    // would be Infinity and serialize as null.
+    expect(byId(result).get('mem.rss.mean')).toMatchObject({
+      value: Number.MAX_VALUE,
+    });
+    expect(result.evidence).toEqual([]);
+  });
+
+  it('keeps the RSS mean finite when the scaled fallback also overflows', async () => {
+    // Three equal MAX_VALUE samples overflow both the exact sum and the
+    // divide-first sum (rounding), so the running-mean fallback is exercised.
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({
+        procfs: [
+          sample(1, Number.MAX_VALUE),
+          sample(2, Number.MAX_VALUE),
+          sample(3, Number.MAX_VALUE),
+        ],
+      }),
+    );
+
+    expect(byId(result).get('mem.rss.mean')).toMatchObject({
+      value: Number.MAX_VALUE,
+    });
+    for (const entry of result.metrics) {
+      expect(Number.isFinite(entry.value as number)).toBe(true);
+    }
+  });
+
+  it('keeps the PSS mean finite when the exact sum would overflow', async () => {
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({
+        procfs: [
+          sample(1, mb(100), Number.MAX_VALUE),
+          sample(2, mb(120), Number.MAX_VALUE),
+        ],
+      }),
+    );
+
+    for (const entry of result.metrics) {
+      expect(Number.isFinite(entry.value as number)).toBe(true);
+    }
+    expect(byId(result).get('mem.pss.mean')).toMatchObject({
+      value: Number.MAX_VALUE,
+      provenance: { collector: 'procfs', rows: 2, device: 'emu-memory' },
+    });
+  });
+
+  it('omits growth evidence when its delta or percent would be non-finite', async () => {
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({ procfs: [sample(1, 1), sample(2, Number.MAX_VALUE)] }),
+    );
+
+    // deltaBytes is finite here but growthPercent overflows; either being
+    // non-finite suppresses the evidence entirely.
+    expect(result.evidence).toEqual([]);
+    for (const entry of result.metrics) {
+      expect(Number.isFinite(entry.value as number)).toBe(true);
+    }
   });
 
   it('ignores a non-finite PSS value and emits no NaN', async () => {
