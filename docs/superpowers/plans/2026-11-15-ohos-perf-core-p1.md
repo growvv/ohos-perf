@@ -45,7 +45,7 @@ CREATE TABLE trace_range (start_ts INT, end_ts INT);
 CREATE TABLE frame_slice (id INT, ts INT, vsync INT, ipid INT, itid INT, callstack_id INT, dur INT, src TEXT, dst INT, type INT, type_desc TEXT, flag INT, depth INT, frame_no INT);
 ```
 
-Notes: `instant` and `thread_state` have **no `id` column** (order by `ts` plus a stable secondary key). `args.key` and `args.value` are `data_dict` ids; `datatype = 1` marks `value` as an id to resolve through `data_dict`, while `key` is **always** resolved through `data_dict`. `perf_sample.thread_id` joins `perf_thread.thread_id`, not `thread.id`.
+Notes: `instant` has **no `id` column** and is ordered by `ts, ref, wakeup_from`. `thread_state` does have an `id` but the accessor deliberately ignores it and orders by `ts, itid, state`; per-thread state arrays stay `ts`-ascending, which is what HapRay's consumer observes. `args.key` and `args.value` are `data_dict` ids; `datatype = 1` marks `value` as an id to resolve through `data_dict`, while `key` is **always** resolved through `data_dict`. `perf_sample.thread_id` joins `perf_thread.thread_id`, not `thread.id`.
 
 ## Review Focus
 
@@ -176,7 +176,7 @@ Expected: FAIL.
 - [ ] **Step 3: Port the analyzer**
 
 Port `fault_tree_analyzer.py:112-417` query by query. Substitute app pids with `?` placeholders; when `appPids` is empty, return 0 for app-scoped counters without executing `IN ()`. `ProcessedNodes.ts` is `(row.ts - trace_range.start_ts) / 1e9` for the row with the **maximum** count (ties keep the first by `ts`). `AnimateSize` sums every matching render_service row. `tableRowCounts` is not needed; use the row count returned by each query for `provenance.rows`.
-`THIRD_PARTY_NOTICES.md` names ArkAnalyzer-HapRay, its Apache-2.0 license, the upstream URL, the rev, and the ported files; copy the Apache-2.0 text into `LICENSES/Apache-2.0.txt`. Add the header to `fault-tree.ts`.
+`THIRD_PARTY_NOTICES.md` names ArkAnalyzer-HapRay, its Apache-2.0 license, the upstream URL, the rev, and the ported files; copy the Apache-2.0 text into `LICENSES/Apache-2.0.txt`. Add the header to `fault-tree.ts` and to the Task 1 query files that carry ported SQL (`sched.ts`, `callstack.ts`, `perf.ts`, `binder.ts`).
 
 - [ ] **Step 4: Add parity test**
 
