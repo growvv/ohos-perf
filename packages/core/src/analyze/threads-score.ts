@@ -1,6 +1,7 @@
 // Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.
 
 import type { CapabilityId } from '../device/capability';
+import { OhosPerfError } from '../errors';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric, type MetricUnit } from '../report/metric';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
@@ -1588,6 +1589,30 @@ function noAppPidEvidence(ctx: AnalyzeContext): Evidence {
   });
 }
 
+/**
+ * Evidence for a trace whose tables yield no time range.
+ *
+ * The wakeup analysis needs a range to scope its queries; a scene with no
+ * `trace_range`, `frame_slice`, `callstack_events` or `trace` row cannot
+ * supply one. `analyzeThreadWakeup` reports that as `THREAD_NO_TIME_RANGE`,
+ * which is right for a direct caller — but an analyzer must degrade, not
+ * throw, on missing input (spec §9), so `run` converts exactly that code.
+ */
+function noTimeRangeEvidence(ctx: AnalyzeContext): Evidence {
+  return evidence({
+    kind: 'no_data',
+    severity: 'info',
+    subject: { process: appProcessName(ctx) },
+    window: ctx.window,
+    signals: {},
+    explain:
+      'the trace carries no time range (no trace_range, frame_slice,' +
+      ' callstack_events or trace rows); thread wakeup analysis skipped',
+    drillDown: [],
+    key: 'threads:no-time-range',
+  });
+}
+
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
 function byMetricId(a: Metric, b: Metric): number {
   if (a.id < b.id) return -1;
@@ -1638,7 +1663,19 @@ export class ThreadAnalyzer implements Analyzer {
       return { metrics: [], evidence: [noAppPidEvidence(ctx)] };
     }
 
-    const results = analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids });
+    // A scene with no time-range table at all passes the capability gate (the
+    // wakeup tables are present) but cannot scope its queries. The pure
+    // function reports that as THREAD_NO_TIME_RANGE; the analyzer degrades
+    // instead of throwing, and any other error still propagates.
+    let results: ThreadWakeupResult[];
+    try {
+      results = analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids });
+    } catch (err) {
+      if (err instanceof OhosPerfError && err.code === 'THREAD_NO_TIME_RANGE') {
+        return { metrics: [], evidence: [noTimeRangeEvidence(ctx)] };
+      }
+      throw err;
+    }
     const analysis = computeThreadAnalysis(results);
     // `rows` is the number of wakeup results the scorer actually analyzed.
     const metrics = threadMetrics(analysis, results.length, ctx);

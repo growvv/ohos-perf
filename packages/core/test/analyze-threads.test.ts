@@ -762,4 +762,60 @@ describe('ThreadAnalyzer', () => {
     expect(item.explain).toMatch(/thread/i);
     expect(item.drillDown).toEqual([]);
   });
+
+  it('degrades to no_data when the trace has no time-range table', async () => {
+    // A scene with the wakeup tables but none of the range sources
+    // (trace_range, frame_slice, callstack_events, trace) passes the
+    // capability gate and then cannot scope a query. The pure function throws
+    // THREAD_NO_TIME_RANGE; the analyzer must degrade instead, per spec §9.
+    const noRangeDir = mkdtempSync(join(tmpdir(), 'ohosperf-binder-norange-'));
+    const path = join(noRangeDir, 't.db');
+    const raw = new DatabaseSync(path);
+    raw.exec(DB_DDL);
+    raw.exec(`
+      INSERT INTO process VALUES (0, 10, 5000, 'com.demo', 0, 0, 1, 0, 0);
+      INSERT INTO thread VALUES (500, 500, 5001, 'ace.bg_1', 0, 0, 10, 0, 0);
+      INSERT INTO thread_state VALUES (${START}, ${MS}, 0, 500, 5001, 5000, 'S', 0);
+    `);
+    raw.close();
+    const noRangeDb = openDb(path);
+    try {
+      const ctx = { ...makeCtx(), db: noRangeDb, frames: new FrameQuery(noRangeDb) };
+      const result = await new ThreadAnalyzer().run(ctx);
+      expect(result.metrics).toEqual([]);
+      expect(result.evidence).toHaveLength(1);
+      const [item] = result.evidence;
+      expect(item.kind).toBe('no_data');
+      expect(item.severity).toBe('info');
+      expect(item.explain).toMatch(/no time range/);
+      expect(item.drillDown).toEqual([]);
+    } finally {
+      noRangeDb.close();
+      rmSync(noRangeDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('still propagates errors other than THREAD_NO_TIME_RANGE', async () => {
+    // The conversion is code-specific: a genuine schema error must surface.
+    const brokenDir = mkdtempSync(join(tmpdir(), 'ohosperf-binder-broken-'));
+    const path = join(brokenDir, 't.db');
+    const raw = new DatabaseSync(path);
+    raw.exec(`
+      CREATE TABLE process(id INT, ipid INT, pid INT, name TEXT, start_ts INT,
+        switch_count INT, thread_count INT, slice_count INT, mem_count INT);
+      INSERT INTO process VALUES (0, 10, 5000, 'com.demo', 0, 0, 1, 0, 0);
+      CREATE TABLE trace_range(start_ts INT, end_ts INT);
+      INSERT INTO trace_range VALUES (${START}, ${START + 100 * MS});
+      CREATE TABLE thread(id INT, itid INT, tid INT);
+    `);
+    raw.close();
+    const brokenDb = openDb(path);
+    try {
+      const ctx = { ...makeCtx(), db: brokenDb, frames: new FrameQuery(brokenDb) };
+      await expect(new ThreadAnalyzer().run(ctx)).rejects.toThrow(/no such column/i);
+    } finally {
+      brokenDb.close();
+      rmSync(brokenDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });
