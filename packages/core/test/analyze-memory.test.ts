@@ -207,6 +207,15 @@ describe('MemoryAnalyzer', () => {
       provenance: { collector: 'procfs', rows: 3, device: 'emu-memory' },
     });
     expect(metrics.get('mem.samples')).toMatchObject({ value: 3 });
+
+    // PSS metrics carry the same exact/no-window contract as the RSS pair.
+    for (const id of ['mem.pss.peak', 'mem.pss.mean']) {
+      expect(metrics.get(id)).toMatchObject({
+        fidelity: 'exact',
+        provenance: { collector: 'procfs', device: 'emu-memory' },
+      });
+      expect('window' in metrics.get(id)!).toBe(false);
+    }
   });
 
   it('omits PSS metrics entirely when no sample carries smaps', async () => {
@@ -237,6 +246,137 @@ describe('MemoryAnalyzer', () => {
       expect(result.evidence).toEqual([]);
     },
   );
+
+  it('reports growth percent with two decimals, not integer percent', async () => {
+    // 100 MiB -> 133.33 MiB is a 33.3333...% increase; the formula rounds to
+    // two decimals, so 33.33. An integer-percent regression would yield 33.
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({
+        procfs: [sample(1, mb(100)), sample(2, Math.round(133.33 * MB))],
+      }),
+    );
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0].signals).toEqual({
+      firstRssBytes: 104857600,
+      lastRssBytes: 139806638,
+      deltaBytes: 34949038,
+      growthPercent: 33.33,
+    });
+  });
+
+  it('reports peak equal to mean for a single sample and no growth', async () => {
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({ procfs: [sample(1, mb(120), mb(90))] }),
+    );
+
+    const metrics = byId(result);
+    expect(metrics.get('mem.rss.peak')).toMatchObject({ value: mb(120) });
+    expect(metrics.get('mem.rss.mean')).toMatchObject({ value: mb(120) });
+    expect(metrics.get('mem.pss.peak')).toMatchObject({ value: mb(90) });
+    expect(metrics.get('mem.pss.mean')).toMatchObject({ value: mb(90) });
+    expect(metrics.get('mem.samples')).toMatchObject({ value: 1 });
+    expect(result.evidence).toEqual([]);
+  });
+
+  it('keeps input order for equal timestamps (stable sort)', async () => {
+    // The comparator returns 0 for equal ts, and Array.prototype.sort is
+    // stable (ES2019+), so the first/last selection follows input order.
+    const growth = await new MemoryAnalyzer().run(
+      makeCtx({ procfs: [sample(7, mb(100)), sample(7, mb(150))] }),
+    );
+    expect(growth.evidence[0].signals).toEqual({
+      firstRssBytes: mb(100),
+      lastRssBytes: mb(150),
+      deltaBytes: mb(50),
+      growthPercent: 50,
+    });
+
+    const shrinking = await new MemoryAnalyzer().run(
+      makeCtx({ procfs: [sample(7, mb(150)), sample(7, mb(100))] }),
+    );
+    expect(shrinking.evidence).toEqual([]);
+  });
+
+  it('drops non-finite RSS values without emitting NaN', async () => {
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({
+        procfs: [
+          sample(1, Number.NaN),
+          sample(2, mb(100)),
+          sample(3, Number.POSITIVE_INFINITY),
+          sample(4, mb(150)),
+        ],
+      }),
+    );
+
+    for (const entry of result.metrics) {
+      expect(Number.isFinite(entry.value as number)).toBe(true);
+    }
+    const metrics = byId(result);
+    expect(metrics.get('mem.rss.peak')).toMatchObject({
+      value: mb(150),
+      provenance: { collector: 'procfs', rows: 2, device: 'emu-memory' },
+    });
+    expect(metrics.get('mem.rss.mean')).toMatchObject({ value: mb(125) });
+    // mem.samples describes capture volume, not the finite series.
+    expect(metrics.get('mem.samples')).toMatchObject({ value: 4 });
+    expect(result.evidence[0].signals).toEqual({
+      firstRssBytes: mb(100),
+      lastRssBytes: mb(150),
+      deltaBytes: mb(50),
+      growthPercent: 50,
+    });
+  });
+
+  it('takes the no_data branch when every RSS value is non-finite', async () => {
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({
+        procfs: [
+          sample(1, Number.NaN),
+          sample(2, Number.POSITIVE_INFINITY),
+        ],
+      }),
+    );
+
+    expect(result.metrics).toEqual([]);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0].kind).toBe('no_data');
+    expect(result.evidence[0].explain).toContain('ohos-perf collect --procfs');
+  });
+
+  it('ignores a non-finite PSS value and emits no NaN', async () => {
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({
+        procfs: [
+          sample(1, mb(100), Number.NaN),
+          sample(2, mb(120), mb(60)),
+        ],
+      }),
+    );
+
+    for (const entry of result.metrics) {
+      expect(Number.isFinite(entry.value as number)).toBe(true);
+    }
+    const metrics = byId(result);
+    expect(metrics.get('mem.pss.peak')).toMatchObject({
+      value: mb(60),
+      provenance: { collector: 'procfs', rows: 1, device: 'emu-memory' },
+    });
+    expect(metrics.get('mem.pss.mean')).toMatchObject({ value: mb(60) });
+  });
+
+  it('omits PSS metrics when every smaps value is non-finite', async () => {
+    const result = await new MemoryAnalyzer().run(
+      makeCtx({
+        procfs: [sample(1, mb(100), Number.NaN), sample(2, mb(120), Number.NaN)],
+      }),
+    );
+    expect(result.metrics.map((entry) => entry.id)).toEqual([
+      'mem.rss.mean',
+      'mem.rss.peak',
+      'mem.samples',
+    ]);
+  });
 
   it('sorts a copy of the samples by ts and never mutates the context array', async () => {
     const first = sample(1, mb(100), mb(80));

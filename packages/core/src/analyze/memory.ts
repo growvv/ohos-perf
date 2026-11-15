@@ -1,4 +1,3 @@
-import type { ProcfsSample } from '../collectors/procfs';
 import type { CapabilityId } from '../device/capability';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric, type MetricUnit } from '../report/metric';
@@ -10,32 +9,34 @@ function appProcessName(ctx: AnalyzeContext): string {
 }
 
 /**
- * `Math.round(sum / count)`; the empty guard keeps an unmeasurable mean from
- * surfacing as `NaN`. The caller only reaches this with a non-empty list, but
- * the guard is local so the helper cannot produce a non-finite value.
+ * `Math.round(sum / count)` over a series that is already free of non-finite
+ * values; the empty guard keeps an unmeasurable mean from surfacing as `NaN`.
  */
-function meanBytes(
-  samples: ProcfsSample[],
-  select: (sample: ProcfsSample) => number,
-): number {
-  if (samples.length === 0) return 0;
+function meanBytes(values: number[]): number {
+  if (values.length === 0) return 0;
   let total = 0;
-  for (const sample of samples) total += select(sample);
-  return Math.round(total / samples.length);
+  for (const value of values) total += value;
+  return Math.round(total / values.length);
 }
 
-/** Maximum of the selected field; 0 when the list is empty. */
-function peakBytes(
-  samples: ProcfsSample[],
-  select: (sample: ProcfsSample) => number,
-): number {
-  if (samples.length === 0) return 0;
-  let peak = select(samples[0]);
-  for (let i = 1; i < samples.length; i++) {
-    const value = select(samples[i]);
-    if (value > peak) peak = value;
+/** Maximum of a finite series; 0 when the list is empty. */
+function peakBytes(values: number[]): number {
+  if (values.length === 0) return 0;
+  let peak = values[0];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] > peak) peak = values[i];
   }
   return peak;
+}
+
+/**
+ * The finite members of a series, in input order.
+ *
+ * The plan's global rule is that a metric never carries `NaN`/`Infinity`; a
+ * malformed capture value is dropped rather than poisoning the whole series.
+ */
+function finiteValues(values: number[]): number[] {
+  return values.filter((value) => Number.isFinite(value));
 }
 
 function memoryMetric(
@@ -59,52 +60,32 @@ function memoryMetric(
 }
 
 /**
- * The RSS metrics always exist for a non-empty capture; the PSS pair only when
- * at least one sample carried `smaps_rollup` data.
+ * The RSS metrics for a non-empty finite series; the PSS pair only when at
+ * least one sample carried a finite `smaps_rollup.pssBytes`.
  *
  * PSS is computed over the smaps-bearing samples alone, so a missing
  * `smaps_rollup` never turns into a zero measurement. `rows` counts the
- * observations feeding each metric: every sample for RSS and `mem.samples`,
- * the smaps-bearing subset for PSS.
+ * observations feeding each metric: the finite RSS values for the RSS pair,
+ * the finite PSS values for the PSS pair, and every captured sample for
+ * `mem.samples` — that metric describes capture volume, not the filtered
+ * measurement series, so it stays the unfiltered `ctx.procfs` length.
  */
-function memoryMetrics(samples: ProcfsSample[], ctx: AnalyzeContext): Metric[] {
+function memoryMetrics(
+  rssValues: number[],
+  pssValues: number[],
+  sampleCount: number,
+  ctx: AnalyzeContext,
+): Metric[] {
   const metrics: Metric[] = [
-    memoryMetric(
-      'mem.rss.peak',
-      peakBytes(samples, (sample) => sample.status.vmRssBytes),
-      'bytes',
-      samples.length,
-      ctx,
-    ),
-    memoryMetric(
-      'mem.rss.mean',
-      meanBytes(samples, (sample) => sample.status.vmRssBytes),
-      'bytes',
-      samples.length,
-      ctx,
-    ),
-    memoryMetric('mem.samples', samples.length, 'count', samples.length, ctx),
+    memoryMetric('mem.rss.peak', peakBytes(rssValues), 'bytes', rssValues.length, ctx),
+    memoryMetric('mem.rss.mean', meanBytes(rssValues), 'bytes', rssValues.length, ctx),
+    memoryMetric('mem.samples', sampleCount, 'count', sampleCount, ctx),
   ];
 
-  const withSmaps = samples.filter((sample) => sample.smaps !== undefined);
-  if (withSmaps.length > 0) {
-    const pssBytes = (sample: ProcfsSample): number =>
-      sample.smaps?.pssBytes ?? 0;
+  if (pssValues.length > 0) {
     metrics.push(
-      memoryMetric(
-        'mem.pss.peak',
-        peakBytes(withSmaps, pssBytes),
-        'bytes',
-        withSmaps.length,
-        ctx,
-      ),
-      memoryMetric(
-        'mem.pss.mean',
-        meanBytes(withSmaps, pssBytes),
-        'bytes',
-        withSmaps.length,
-        ctx,
-      ),
+      memoryMetric('mem.pss.peak', peakBytes(pssValues), 'bytes', pssValues.length, ctx),
+      memoryMetric('mem.pss.mean', meanBytes(pssValues), 'bytes', pssValues.length, ctx),
     );
   }
   return metrics;
@@ -185,9 +166,14 @@ function byEvidenceOrder(a: Evidence, b: Evidence): number {
  * analyzer emits one `no_data` evidence naming the collection command and no
  * metrics, rather than reporting zeros as measurements.
  *
- * Samples are copied and sorted by `ts` ascending (stable for equal
- * timestamps), so first/last and the means do not depend on capture order and
- * the context array is never mutated. Growth is reported only when the last
+ * Samples are copied and sorted by `ts` ascending, so first/last and the means
+ * do not depend on capture order and the context array is never mutated.
+ * `Array.prototype.sort` is stable (ES2019+), so equal timestamps keep their
+ * input order; the first and last finite RSS values in that order define the
+ * growth check. Non-finite `vmRssBytes`/`pssBytes` values are dropped before
+ * any arithmetic: a series with no finite RSS at all takes the same `no_data`
+ * branch, and a series with no finite PSS omits the PSS metrics, so no metric
+ * can carry `NaN` or `Infinity`. Growth is reported only when the last finite
  * RSS strictly exceeds the first; a flat or shrinking series produces no
  * evidence at all.
  */
@@ -197,13 +183,26 @@ export class MemoryAnalyzer implements Analyzer {
 
   async run(ctx: AnalyzeContext): Promise<AnalyzeResult> {
     const samples = [...(ctx.procfs ?? [])].sort((a, b) => a.ts - b.ts);
-    if (samples.length === 0) {
+    const rssValues = finiteValues(
+      samples.map((sample) => sample.status.vmRssBytes),
+    );
+    if (rssValues.length === 0) {
       return { metrics: [], evidence: [missingProcfsEvidence(ctx)] };
     }
 
-    const firstRssBytes = samples[0].status.vmRssBytes;
-    const lastRssBytes = samples[samples.length - 1].status.vmRssBytes;
-    const metrics = memoryMetrics(samples, ctx);
+    const pssValues = finiteValues(
+      samples
+        .filter((sample) => sample.smaps !== undefined)
+        .map((sample) => sample.smaps?.pssBytes ?? Number.NaN),
+    );
+    const firstRssBytes = rssValues[0];
+    const lastRssBytes = rssValues[rssValues.length - 1];
+    const metrics = memoryMetrics(
+      rssValues,
+      pssValues,
+      samples.length,
+      ctx,
+    );
     const evidenceItems =
       lastRssBytes > firstRssBytes
         ? [growthEvidence(firstRssBytes, lastRssBytes, ctx)]
