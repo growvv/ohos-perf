@@ -16,9 +16,8 @@ export interface ProcfsStatus {
 /**
  * `/proc/<pid>/smaps_rollup` fields this collector needs.
  *
- * `pssBytes` is converted from kB. `privateDirtyBytes` and `swapPssBytes` are
- * kept as the device reports them (kB): the task specifies the x1024 conversion
- * for VmRSS, VmHWM and Pss only.
+ * Every kB-valued field is converted to bytes, so all three `*Bytes` names
+ * describe their unit.
  */
 export interface SmapsRollup {
   pssBytes: number;
@@ -92,8 +91,8 @@ export function parseSmapsRollup(text: string): SmapsRollup | undefined {
   }
   return {
     pssBytes: pssKb * 1024,
-    privateDirtyBytes: privateDirtyKb,
-    swapPssBytes: swapPssKb,
+    privateDirtyBytes: privateDirtyKb * 1024,
+    swapPssBytes: swapPssKb * 1024,
   };
 }
 

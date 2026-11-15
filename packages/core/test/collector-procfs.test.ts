@@ -59,12 +59,11 @@ const STATUS: ProcfsSample['status'] = {
   threads: 42,
 };
 
-// `privateDirtyBytes` / `swapPssBytes` are left in kB: the task requires a
-// x1024 conversion only for VmRSS, VmHWM and Pss.
+// Every kB-valued field is converted, so each `*Bytes` name is accurate.
 const SMAPS: NonNullable<ProcfsSample['smaps']> = {
   pssBytes: 100000 * 1024,
-  privateDirtyBytes: 40000,
-  swapPssBytes: 5000,
+  privateDirtyBytes: 40000 * 1024,
+  swapPssBytes: 5000 * 1024,
 };
 
 describe('parseProcfsStatus', () => {
