@@ -64,6 +64,7 @@ describe('createSceneLayout', () => {
       perfFile: join(dir, 'perf.data'),
       traceDb: join(dir, 'trace.db'),
       perfDb: join(dir, 'perf.db'),
+      procfsFile: join(dir, 'procfs.jsonl'),
     });
   });
 
@@ -71,6 +72,10 @@ describe('createSceneLayout', () => {
     const l = createSceneLayout('/scenes/run-1');
     expect(l.traceFile).toBe(join('/scenes/run-1', 'trace.htrace'));
     expect(l.traceDb).toBe(join('/scenes/run-1', 'trace.db'));
+  });
+
+  it('places the procfs capture next to the trace', () => {
+    expect(createSceneLayout('/x').procfsFile).toBe(join('/x', 'procfs.jsonl'));
   });
 });
 
@@ -132,6 +137,7 @@ describe('ingestScene', () => {
       root,
       traceFile,
       traceDb: join(root, 'trace.db'),
+      procfsFile: join(root, 'procfs.jsonl'),
     };
     const { streamer, calls } = fakeStreamer();
 
@@ -151,6 +157,7 @@ describe('ingestScene', () => {
       root,
       traceFile: join(root, 'trace.htrace'),
       traceDb: dbPath,
+      procfsFile: join(root, 'procfs.jsonl'),
     };
     const { streamer, calls } = fakeStreamer();
 

@@ -50,6 +50,14 @@ export type { ProbeSnapshot, DeviceIdentity, ProbeRunner } from './device/probe'
 
 // Collection
 export { HitraceCollector, HITRACE_DEFAULT_CATEGORIES } from './collectors/hitrace';
+export {
+  ProcfsCollector,
+  parseProcfsStatus,
+  parseSmapsRollup,
+  readProcfsSamples,
+  writeProcfsSamples,
+} from './collectors/procfs';
+export type { ProcfsSample, ProcfsStatus, SmapsRollup } from './collectors/procfs';
 export type { Collector, TraceCollectOptions } from './collectors/types';
 
 // Ingestion

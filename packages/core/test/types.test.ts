@@ -77,6 +77,8 @@ const VALUE_EXPORTS = [
   'DeviceNotFoundError', 'FaultTreeAnalyzer', 'FrameAnalyzer', 'FrameQuery',
   'HITRACE_DEFAULT_CATEGORIES', 'Hdc', 'HdcNotFoundError', 'HitraceCollector',
   'IngestError', 'InstantQuery', 'OhosPerfError', 'PerfQuery', 'ProcessQuery', 'Scene',
+  'ProcfsCollector', 'parseProcfsStatus', 'parseSmapsRollup', 'readProcfsSamples',
+  'writeProcfsSamples',
   'SchedQuery', 'StartupQuery', 'Streamer', 'StreamerNotFoundError',
   'ThreadAnalyzer', 'ThreadQuery',
   'ThreadStateQuery', 'analyzeThreadWakeup', 'buildMatrix', 'computeBinderAnalysis',

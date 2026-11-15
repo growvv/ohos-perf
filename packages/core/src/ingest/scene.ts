@@ -5,9 +5,9 @@ import { IngestError } from '../errors';
 import type { Streamer } from './streamer';
 
 /**
- * Artifact paths of one captured scene. The four file names are fixed: a scene
+ * Artifact paths of one captured scene. The file names are fixed: a scene
  * directory is self-describing and later stages locate `trace.htrace` /
- * `trace.db` without being told.
+ * `trace.db` / `procfs.jsonl` without being told.
  */
 export interface SceneLayout {
   root: string;
@@ -15,6 +15,7 @@ export interface SceneLayout {
   perfFile?: string;
   traceDb: string;
   perfDb?: string;
+  procfsFile: string;
 }
 
 export function createSceneLayout(root: string): SceneLayout {
@@ -24,6 +25,7 @@ export function createSceneLayout(root: string): SceneLayout {
     perfFile: join(root, 'perf.data'),
     traceDb: join(root, 'trace.db'),
     perfDb: join(root, 'perf.db'),
+    procfsFile: join(root, 'procfs.jsonl'),
   };
 }
 

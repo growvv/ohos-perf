@@ -1,4 +1,5 @@
 import type { CapabilityId, CapabilityMatrix } from '../device/capability';
+import type { ProcfsSample } from '../collectors/procfs';
 import type { QueryHandle } from '../db/driver';
 import type { BinderQuery } from '../query/binder';
 import type { CallstackQuery } from '../query/callstack';
@@ -24,8 +25,10 @@ import type { AppIdentity, TimeRange } from '../types';
  * The additional query fields are optional so the context can be assembled
  * incrementally while analyzers that need them are added: an analyzer may
  * declare a capability requirement that guarantees its handle is present, but
- * the type stays optional until every caller supplies it. `procfs` and
- * `metadata` are deliberately absent until their types exist.
+ * the type stays optional until every caller supplies it. `procfs` is present
+ * only when a procfs capture accompanied the trace (the memory analyzer
+ * reports `no_data` without it); `metadata` is deliberately absent until its
+ * type exists.
  *
  * `db` is the raw trace database handle. It exists for analyzers whose SQL the
  * typed query layer does not expose yet (the fault tree joins `process`,
@@ -46,6 +49,7 @@ export interface AnalyzeContext {
   perf?: PerfQuery;
   binder?: BinderQuery;
   startup?: StartupQuery;
+  procfs?: ProcfsSample[];
   app: AppIdentity;
   window: TimeRange;
   caps: CapabilityMatrix;
