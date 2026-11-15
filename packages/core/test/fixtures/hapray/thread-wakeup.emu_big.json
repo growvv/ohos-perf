@@ -1,0 +1,485 @@
+[
+ {
+  "thread_id": 20129,
+  "thread_info": {
+   "thread_name": "OS_FFRT_Delay",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 43,
+    "tid": 20129,
+    "thread_name": "OS_FFRT_Delay",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 343,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 16702,
+  "thread_info": {
+   "thread_name": "pbench.baseline",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 44,
+    "tid": 16702,
+    "thread_name": "pbench.baseline",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 1741,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20162,
+  "thread_info": {
+   "thread_name": "ace.bg.4",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 102,
+    "tid": 20162,
+    "thread_name": "ace.bg.4",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 1662,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20165,
+  "thread_info": {
+   "thread_name": "ace.bg.7",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 106,
+    "tid": 20165,
+    "thread_name": "ace.bg.7",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 1717,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20164,
+  "thread_info": {
+   "thread_name": "ace.bg.6",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 117,
+    "tid": 20164,
+    "thread_name": "ace.bg.6",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 1924,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20166,
+  "thread_info": {
+   "thread_name": "ace.bg.8",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 118,
+    "tid": 20166,
+    "thread_name": "ace.bg.8",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 1741,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20135,
+  "thread_info": {
+   "thread_name": "OS_FFRT_3_0",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 129,
+    "tid": 20135,
+    "thread_name": "OS_FFRT_3_0",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 161,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20413,
+  "thread_info": {
+   "thread_name": "OS_FFRT_4_0",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 134,
+    "tid": 20413,
+    "thread_name": "OS_FFRT_4_0",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 103,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20138,
+  "thread_info": {
+   "thread_name": "OS_EVENT_POLL",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 135,
+    "tid": 20138,
+    "thread_name": "OS_EVENT_POLL",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 245,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20159,
+  "thread_info": {
+   "thread_name": "ace.bg.1",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 143,
+    "tid": 20159,
+    "thread_name": "ace.bg.1",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 2122,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20160,
+  "thread_info": {
+   "thread_name": "ace.bg.2",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 144,
+    "tid": 20160,
+    "thread_name": "ace.bg.2",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 1684,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20161,
+  "thread_info": {
+   "thread_name": "ace.bg.3",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 145,
+    "tid": 20161,
+    "thread_name": "ace.bg.3",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 1681,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20417,
+  "thread_info": {
+   "thread_name": "OS_FFRT_5_2",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 148,
+    "tid": 20417,
+    "thread_name": "OS_FFRT_5_2",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 58,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20181,
+  "thread_info": {
+   "thread_name": "OS_FFRT_2_1",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 149,
+    "tid": 20181,
+    "thread_name": "OS_FFRT_2_1",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 285,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20163,
+  "thread_info": {
+   "thread_name": "ace.bg.5",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 151,
+    "tid": 20163,
+    "thread_name": "ace.bg.5",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 2073,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20418,
+  "thread_info": {
+   "thread_name": "OS_FFRT_5_3",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 155,
+    "tid": 20418,
+    "thread_name": "OS_FFRT_5_3",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 75,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20128,
+  "thread_info": {
+   "thread_name": "OS_FFRT_2_0",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 204,
+    "tid": 20128,
+    "thread_name": "OS_FFRT_2_0",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 221,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20121,
+  "thread_info": {
+   "thread_name": "OS_DfxWatchdog",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 329,
+    "tid": 20121,
+    "thread_name": "OS_DfxWatchdog",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 97,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20137,
+  "thread_info": {
+   "thread_name": "OS_hdcRegister",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 337,
+    "tid": 20137,
+    "thread_name": "OS_hdcRegister",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 18,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 20151,
+  "thread_info": {
+   "thread_name": "OS_IPC_3_20151",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 346,
+    "tid": 20151,
+    "thread_name": "OS_IPC_3_20151",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 133,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 21050,
+  "thread_info": {
+   "thread_name": "OS_FFRT_3_1",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 1046,
+    "tid": 21050,
+    "thread_name": "OS_FFRT_3_1",
+    "pid": 16702,
+    "process_name": "pbench.baseline",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 5,
+    "callchains_count": 0
+   }
+  ]
+ }
+]

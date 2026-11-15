@@ -1,0 +1,144 @@
+{
+ "redundant_threads_summary": {
+  "redundancy_types": {
+   "normal": "未命中下述唤醒模式，多为高等待或混合行为。",
+   "frequent_immediate_sleep": "被频繁唤醒但立即进入等待，典型无效调度。",
+   "never_woken": "从未被唤醒，可能未被使用或孤立线程。",
+   "busy_waiting": "短运行周期占比高或状态切换极频繁（跑一下就睡、跑一下就睡）。",
+   "busy_wait": "高指令数但运行占比极低或含大量yield，属忙等浪费CPU。"
+  },
+  "total_redundant_thread_patterns": 0,
+  "total_redundant_threads": 0,
+  "total_cpu_instructions": 0,
+  "total_redundant_instructions": 0,
+  "redundant_instructions_ratio": 0,
+  "redundant_threads": []
+ },
+ "summary": {
+  "total_memory_savings_mb": 0,
+  "total_cpu_savings_instructions": 0,
+  "high_priority_patterns_count": 0,
+  "total_cpu_instructions": 0,
+  "total_redundant_instructions": 0,
+  "redundant_instructions_ratio": 0
+ },
+ "below_threshold_patterns": [
+  {
+   "thread_name": "pbench.baseline",
+   "thread_name_variants": [
+    "pbench.baseline"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    16702
+   ],
+   "redundant_count": 0,
+   "max_score": 22,
+   "avg_score": 35
+  },
+  {
+   "thread_name": "ace.bg.4",
+   "thread_name_variants": [
+    "ace.bg.4"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    20162
+   ],
+   "redundant_count": 0,
+   "max_score": 20,
+   "avg_score": 25
+  },
+  {
+   "thread_name": "ace.bg.7",
+   "thread_name_variants": [
+    "ace.bg.7"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    20165
+   ],
+   "redundant_count": 0,
+   "max_score": 20,
+   "avg_score": 25
+  },
+  {
+   "thread_name": "ace.bg.6",
+   "thread_name_variants": [
+    "ace.bg.6"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    20164
+   ],
+   "redundant_count": 0,
+   "max_score": 20,
+   "avg_score": 25
+  },
+  {
+   "thread_name": "ace.bg.8",
+   "thread_name_variants": [
+    "ace.bg.8"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    20166
+   ],
+   "redundant_count": 0,
+   "max_score": 20,
+   "avg_score": 25
+  },
+  {
+   "thread_name": "ace.bg.1",
+   "thread_name_variants": [
+    "ace.bg.1"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    20159
+   ],
+   "redundant_count": 0,
+   "max_score": 20,
+   "avg_score": 25
+  },
+  {
+   "thread_name": "ace.bg.2",
+   "thread_name_variants": [
+    "ace.bg.2"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    20160
+   ],
+   "redundant_count": 0,
+   "max_score": 20,
+   "avg_score": 25
+  },
+  {
+   "thread_name": "ace.bg.3",
+   "thread_name_variants": [
+    "ace.bg.3"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    20161
+   ],
+   "redundant_count": 0,
+   "max_score": 20,
+   "avg_score": 25
+  },
+  {
+   "thread_name": "ace.bg.5",
+   "thread_name_variants": [
+    "ace.bg.5"
+   ],
+   "total_thread_count": 1,
+   "all_thread_ids": [
+    20163
+   ],
+   "redundant_count": 0,
+   "max_score": 20,
+   "avg_score": 25
+  }
+ ]
+}

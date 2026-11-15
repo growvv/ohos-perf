@@ -1,0 +1,416 @@
+[
+ {
+  "thread_id": 6115,
+  "thread_info": {
+   "thread_name": "erviceAbility:1",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 13,
+    "tid": 6115,
+    "thread_name": "erviceAbility:1",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": false,
+    "wakeup_depth": 0,
+    "thread_states_count": 1314,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6196,
+  "thread_info": {
+   "thread_name": "OS_EVENT_POLL",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 87,
+    "tid": 6196,
+    "thread_name": "OS_EVENT_POLL",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 492,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 5959,
+  "thread_info": {
+   "thread_name": "OS_FFRT_3_41004",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 118,
+    "tid": 5959,
+    "thread_name": "OS_FFRT_3_41004",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 3,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6334,
+  "thread_info": {
+   "thread_name": "hiprofilerd",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 186,
+    "tid": 6334,
+    "thread_name": "hiprofilerd",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 29,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 5056,
+  "thread_info": {
+   "thread_name": "OS_IPC_538_5056",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 208,
+    "tid": 5056,
+    "thread_name": "OS_IPC_538_5056",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 72,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6174,
+  "thread_info": {
+   "thread_name": "OS_FFRT_Delay",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 358,
+    "tid": 6174,
+    "thread_name": "OS_FFRT_Delay",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 15,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6195,
+  "thread_info": {
+   "thread_name": "OS_hdcRegister",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 475,
+    "tid": 6195,
+    "thread_name": "OS_hdcRegister",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 3,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6178,
+  "thread_info": {
+   "thread_name": "OS_GC_Thread",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 484,
+    "tid": 6178,
+    "thread_name": "OS_GC_Thread",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 48,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6177,
+  "thread_info": {
+   "thread_name": "OS_GC_Thread",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 485,
+    "tid": 6177,
+    "thread_name": "OS_GC_Thread",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 51,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6179,
+  "thread_info": {
+   "thread_name": "OS_GC_Thread",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 486,
+    "tid": 6179,
+    "thread_name": "OS_GC_Thread",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 53,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6176,
+  "thread_info": {
+   "thread_name": "OS_GC_Thread",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 487,
+    "tid": 6176,
+    "thread_name": "OS_GC_Thread",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 53,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6143,
+  "thread_info": {
+   "thread_name": "OS_DfxWatchdog",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 552,
+    "tid": 6143,
+    "thread_name": "OS_DfxWatchdog",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 6,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6390,
+  "thread_info": {
+   "thread_name": "OS_FFRT_0_278",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 617,
+    "tid": 6390,
+    "thread_name": "OS_FFRT_0_278",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 5,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6391,
+  "thread_info": {
+   "thread_name": "OS_FFRT_0_279",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 618,
+    "tid": 6391,
+    "thread_name": "OS_FFRT_0_279",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 13,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6392,
+  "thread_info": {
+   "thread_name": "OS_FFRT_0_280",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 619,
+    "tid": 6392,
+    "thread_name": "OS_FFRT_0_280",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 7,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6393,
+  "thread_info": {
+   "thread_name": "OS_FFRT_0_281",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 620,
+    "tid": 6393,
+    "thread_name": "OS_FFRT_0_281",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 5,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 6394,
+  "thread_info": {
+   "thread_name": "OS_FFRT_0_282",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 621,
+    "tid": 6394,
+    "thread_name": "OS_FFRT_0_282",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 5,
+    "callchains_count": 0
+   }
+  ]
+ },
+ {
+  "thread_id": 5905,
+  "thread_info": {
+   "thread_name": "OS_IPC_540_5905",
+   "start_ts": null,
+   "end_ts": null
+  },
+  "total_instructions": 0,
+  "wakeup_threads": [
+   {
+    "itid": 637,
+    "tid": 5905,
+    "thread_name": "OS_IPC_540_5905",
+    "pid": 6115,
+    "process_name": "erviceAbility:1",
+    "instruction_count": 0,
+    "is_system_thread": true,
+    "wakeup_depth": 0,
+    "thread_states_count": 31,
+    "callchains_count": 0
+   }
+  ]
+ }
+]

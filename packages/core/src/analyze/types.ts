@@ -1,6 +1,12 @@
 import type { CapabilityId, CapabilityMatrix } from '../device/capability';
+import type { BinderQuery } from '../query/binder';
+import type { CallstackQuery } from '../query/callstack';
 import type { FrameQuery } from '../query/frames';
-import type { ProcessQuery } from '../query/process';
+import type { PerfQuery } from '../query/perf';
+import type { ProcessQuery, ThreadQuery } from '../query/process';
+import type { InstantQuery, SchedQuery } from '../query/sched';
+import type { StartupQuery } from '../query/startup';
+import type { ThreadStateQuery } from '../query/thread-state';
 import type { Evidence } from '../report/evidence';
 import type { Metric } from '../report/metric';
 import type { AppIdentity, TimeRange } from '../types';
@@ -13,10 +19,24 @@ import type { AppIdentity, TimeRange } from '../types';
  * `window` is the caller's requested interval, `caps` is the device capability
  * matrix (the engine decides whether `requires` is satisfied before calling
  * `run`), and `deviceId` is copied into every metric's provenance.
+ *
+ * The additional query fields are optional so the context can be assembled
+ * incrementally while analyzers that need them are added: an analyzer may
+ * declare a capability requirement that guarantees its handle is present, but
+ * the type stays optional until every caller supplies it. `procfs` and
+ * `metadata` are deliberately absent until their types exist.
  */
 export interface AnalyzeContext {
   frames: FrameQuery;
   processes: ProcessQuery;
+  threads?: ThreadQuery;
+  sched?: SchedQuery;
+  instant?: InstantQuery;
+  threadStates?: ThreadStateQuery;
+  callstacks?: CallstackQuery;
+  perf?: PerfQuery;
+  binder?: BinderQuery;
+  startup?: StartupQuery;
   app: AppIdentity;
   window: TimeRange;
   caps: CapabilityMatrix;

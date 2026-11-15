@@ -1,0 +1,33 @@
+{
+ "arkui": {
+  "animator": 0,
+  "HandleOnAreaChangeEvent": 0,
+  "HandleVisibleAreaChangeEvent": 0,
+  "GetDefaultDisplay": 4,
+  "MarshRSTransactionData": 0
+ },
+ "RS": {
+  "ProcessedNodes": {
+   "ts": 0.04111198,
+   "count": 84
+  },
+  "DisplayNodeSkipTimes": 4,
+  "UnMarshRSTransactionData": 1,
+  "AnimateSize": {
+   "nodeSizeSum": 79,
+   "totalAnimationSizeSum": 87
+  }
+ },
+ "av_codec": {
+  "soft_decoder": false,
+  "BroadcastControlInstructions": 0,
+  "VideoDecodingInputFrameCount": 0,
+  "VideoDecodingConsumptionFrame": 0
+ },
+ "Audio": {
+  "AudioWriteCB": 0,
+  "AudioReadCB": 0,
+  "AudioPlayCb": 0,
+  "AudioRecCb": 0
+ }
+}

@@ -78,8 +78,8 @@ const VALUE_EXPORTS = [
   'HitraceCollector', 'IngestError', 'InstantQuery', 'OhosPerfError', 'PerfQuery',
   'ProcessQuery', 'Scene', 'SchedQuery', 'StartupQuery', 'Streamer',
   'StreamerNotFoundError', 'ThreadQuery', 'ThreadStateQuery', 'buildMatrix', 'connect',
-  'createSceneLayout', 'evidence', 'ingestScene', 'metric', 'openDb', 'runProbe',
-  'tableRowCounts',
+  'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ingestScene', 'metric', 'openDb',
+  'resolveAppIdentity', 'runAnalyzers', 'runProbe', 'tableRowCounts',
 ];
 
 // This test checks the built declarations, not src. `dist/` is gitignored, so

@@ -87,6 +87,8 @@ export type { StartupRecord } from './query/startup';
 
 // Analysis
 export { FrameAnalyzer } from './analyze/frames';
+export { runAnalyzers, defaultAnalyzers } from './analyze/engine';
+export { resolveAppIdentity } from './analyze/context';
 export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';
 
 // Reports
