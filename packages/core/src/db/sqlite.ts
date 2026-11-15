@@ -24,8 +24,9 @@ let cached: DatabaseSyncCtor | undefined;
  *
  * The manifests express the same supported set as `^22.13.0 || >=23.4.0`
  * (23.0-23.3 never shipped the module). `engines` is advisory in npm, though:
- * it only warns, and only under `engine-strict`. This runtime check is what
- * actually turns the gap into a clear error. Callers must not wrap this
+ * a violation only warns, and `--engine-strict` turns that warning into an
+ * install error. This runtime check is what actually turns the gap into a
+ * clear error. Callers must not wrap this
  * error: it carries the version guidance, not a database-open failure.
  */
 export function loadDatabaseSync(): DatabaseSyncCtor {

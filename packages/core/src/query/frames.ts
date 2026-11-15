@@ -208,7 +208,8 @@ export class FrameQuery {
    * the analyzer metrics, because flag semantics describe rendered frames and
    * an expect row is a prediction. HapRay buckets type-agnostically, so on the
    * measured trace its `empty_frames` would be 16 (8 actual + 8 expect) while
-   * `frame.empty.rate` and this `empty` are 8. Do not "restore parity" by
+   * `frame.empty.rate` (4.7337%) and this `empty` share the numerator 8. Do
+   * not "restore parity" by
    * dropping the type filters: that reintroduces the 16-vs-8 split. `total`,
    * `actual` and `expect` keep their row-count meanings. See `FrameStats` for
    * the full invariant.

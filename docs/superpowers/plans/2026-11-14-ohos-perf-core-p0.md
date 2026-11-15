@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Node 版本下限：`>=22.13.0`（`node:sqlite` 内置）。实测环境 Node v26.13.0。
+- Node 版本下限：`^22.13.0 || >=23.4.0`（`node:sqlite` 内置；23.0–23.3 不支持）。实测环境 Node v26.13.0。
 - 禁止原生编译依赖。SQLite 只用 `node:sqlite`。
 - 不打包 `trace_streamer`（17MB，授权不明）。只做路径搜索 + 版本校验，最低版本 `4.3.0`（实测 4.3.7）。
 - 时间戳单位：`frame_slice.ts`、`trace_range.start_ts` 等全部为**纳秒**。
@@ -1717,7 +1717,7 @@ Expected: PASS（若 trace.db 不存在则 skip）
 
 - [ ] **Step 4: 全量测试与构建**
 
-Run: `npx vitest run && npm run build -w @ohos-perf/core`
+Run: `npm test`
 Expected: 全部 PASS，`packages/core/dist/` 生成
 
 - [ ] **Step 5: 提交**
