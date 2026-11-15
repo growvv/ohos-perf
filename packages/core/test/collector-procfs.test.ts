@@ -245,7 +245,7 @@ describe('ProcfsCollector.collect', () => {
     // Ordered log across both injected seams and the fake device, so clock
     // reads can be proven to precede the cat commands they time.
     const events: string[] = [];
-    const { hdc, calls } = fakeHdc((cmd) => {
+    const { hdc } = fakeHdc((cmd) => {
       events.push(cmd);
       if (cmd === 'pidof com.demo') return ok('742\n');
       if (cmd === 'cat /proc/742/status') return ok(STATUS_TEXT);
@@ -289,7 +289,6 @@ describe('ProcfsCollector.collect', () => {
       'now',
       'cat /proc/742/status', 'cat /proc/742/smaps_rollup',
     ]);
-    expect(calls).toEqual(events.filter((event) => event !== 'now' && !event.startsWith('sleep:')));
     expect(layout.procfsFile).toBe(join(dir, 'procfs.jsonl'));
     expect(readProcfsSamples(layout.procfsFile)).toEqual(samples);
   });
@@ -347,6 +346,34 @@ describe('ProcfsCollector.collect', () => {
 
     expect(samples.map((s) => s.ts)).toEqual([0, 2_147_483_647]);
     expect(sleeps).toEqual([100]);
+  });
+
+  it('rewrites a stale capture instead of appending to it', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    const stale =
+      '{"ts":999,"pid":1,"status":{"vmRssBytes":9,"vmHwmBytes":9,"threads":9}}\n';
+    writeFileSync(layout.procfsFile, stale);
+    const fake = clock([0]);
+    const { hdc } = fakeHdc((cmd) => {
+      if (cmd === 'pidof com.demo') return ok('742\n');
+      if (cmd === 'cat /proc/742/status') return ok(STATUS_TEXT);
+      if (cmd === 'cat /proc/742/smaps_rollup') return ok(SMAPS_TEXT);
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+    const c = new ProcfsCollector({ now: fake.now, sleep: async () => {} });
+
+    const samples = await c.collect(
+      hdc,
+      'dev',
+      { app: 'com.demo', durationMs: 1, intervalMs: 100 },
+      layout,
+    );
+
+    expect(samples).toHaveLength(1);
+    // Exactly the new JSONL: no stale line survives, and nothing was appended.
+    expect(readFileSync(layout.procfsFile, 'utf8')).toBe(`${JSON.stringify(samples[0])}\n`);
+    expect(readFileSync(layout.procfsFile, 'utf8')).not.toContain('"pid":1');
   });
 
   it('keeps sampling after a failed attempt and counts only successes', async () => {
@@ -530,6 +557,21 @@ describe('ProcfsCollector pid resolution failures', () => {
       c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1000 }, layout),
     ).rejects.toThrow('device disconnected');
   });
+
+  it('removes an existing capture before pidof resolution fails', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    writeFileSync(layout.procfsFile, '{"stale":true}\n');
+    const { hdc } = fakeHdc(() => ok(''));
+    const c = new ProcfsCollector({ now: () => 0, sleep: async () => {} });
+
+    const err = await rejection(
+      c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1000 }, layout),
+    );
+
+    expect(err.code).toBe('PROCFS_NO_PID');
+    expect(existsSync(layout.procfsFile)).toBe(false);
+  });
 });
 
 describe('ProcfsCollector with the Hdc.shell throw contract', () => {
@@ -628,6 +670,42 @@ describe('ProcfsCollector with the Hdc.shell throw contract', () => {
       c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1000 }, layout),
     ).rejects.toBe(failure);
   });
+
+  it('throws PROCFS_NO_SAMPLES when every status call throws HDC_SHELL_FAILED', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    const fake = clock([0, 500, 1000]);
+    const { hdc } = fakeHdc((cmd) => {
+      if (cmd === 'pidof com.demo') return ok('742\n');
+      throw shellFailure('hdc shell failed: exit code 1 (cat: permission denied)');
+    });
+    const c = new ProcfsCollector({ now: fake.now, sleep: async () => {} });
+
+    const err = await rejection(
+      c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1000, intervalMs: 500 }, layout),
+    );
+
+    expect(err.code).toBe('PROCFS_NO_SAMPLES');
+    expect(err.message).toContain('permission denied');
+    expect(existsSync(layout.procfsFile)).toBe(false);
+  });
+
+  it('propagates a non-HDC_SHELL_FAILED error from smaps_rollup', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    const failure = new OhosPerfError('spawn failed', { code: 'HDC_SPAWN_FAILED' });
+    const { hdc } = fakeHdc((cmd) => {
+      if (cmd === 'pidof com.demo') return ok('742\n');
+      if (cmd === 'cat /proc/742/status') return ok(STATUS_TEXT);
+      throw failure;
+    });
+    const c = new ProcfsCollector({ now: () => 0, sleep: async () => {} });
+
+    await expect(
+      c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1 }, layout),
+    ).rejects.toBe(failure);
+    expect(existsSync(layout.procfsFile)).toBe(false);
+  });
 });
 
 describe('ProcfsCollector validation', () => {
@@ -647,6 +725,24 @@ describe('ProcfsCollector validation', () => {
       expect(calls).toEqual([]);
     },
   );
+
+  it('does not touch an existing capture when validation fails', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    const original =
+      '{"ts":0,"pid":1,"status":{"vmRssBytes":1,"vmHwmBytes":2,"threads":3}}\n';
+    writeFileSync(layout.procfsFile, original);
+    const { hdc, calls } = fakeHdc(() => ok('742\n'));
+    const c = new ProcfsCollector({ now: () => 0, sleep: async () => {} });
+
+    const err = await rejection(
+      c.collect(hdc, 'dev', { app: 'com.demo; rm -rf /', durationMs: 1000 }, layout),
+    );
+
+    expect(err.code).toBe('PROCFS_BAD_APP');
+    expect(calls).toEqual([]);
+    expect(readFileSync(layout.procfsFile, 'utf8')).toBe(original);
+  });
 
   it.each([
     ['zero', 0],
