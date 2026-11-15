@@ -35,9 +35,14 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 is complete**: 531 tests (515 on a clean checkout, 16 use the gitignored
-`spike/out/emu_big.db` fixture), three typechecks, and a full suite that is
-green on the declared minimum Node (`22.13.0`).
+**P1 is complete**: 543 tests, two workspace typechecks and two builds, all
+green on the declared minimum Node (`22.13.0`). On a clean checkout — where the
+gitignored `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures are
+absent — `npm test` reports **521 passed, 22 skipped (2 files skipped)**; with
+both fixtures present all 543 pass. The fixture-dependent suites are
+`e2e-offline`, `parity-hapray`, `analyze-thread-wakeup`,
+`query-binder-startup`, `query-callstack-perf`, `query-sched-state` and the CLI
+`index` end-to-end tests.
 
 Implemented today:
 
@@ -115,7 +120,7 @@ node packages/cli/dist/index.js analyze ./scene --app com.example.app --json
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
-npm test        # 531 root tests (16 need the optional spike/out/emu_big.db fixture)
+npm test        # 543 tests; 521 pass + 22 skip on a clean checkout (spike/out/ absent)
 ```
 
 ## Library
@@ -157,7 +162,16 @@ Measured on 2026-11-14:
 
 A missing capability is a value with a `reason` — never a silent zero. See
 [`packages/core/src/device/capability.ts`](packages/core/src/device/capability.ts)
-for the full rule set.
+for the full rule set. Offline `analyze` builds its own matrix from the tables
+present in `trace.db` (and `procfs.jsonl`); when `scene.json` exists, its
+`capture.collectors` decides whether memory samples are trusted, so a re-capture
+without `--procfs` can never report the previous capture's `mem.*` as exact.
+
+Known limitation: `trace.binder` is keyed on the `callstack` table alone, as
+specified by the capability table. A synthetic database with `callstack` but
+without the other core `trace_streamer` tables (`process`, `thread`,
+`trace_range`) would pass the gate and then fail in the analyzer; real
+`trace_streamer` databases always contain them.
 
 ## Architecture
 

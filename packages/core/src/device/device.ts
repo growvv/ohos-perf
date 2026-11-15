@@ -8,7 +8,7 @@
  * and turn it into a queryable scene.
  */
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, unlinkSync } from 'node:fs';
 import { HitraceCollector } from '../collectors/hitrace';
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import type { TraceCollectOptions } from '../collectors/types';
@@ -138,7 +138,10 @@ export class Device {
         const hdc = this.requireHdc();
 
         // Validation happens before any device call: a bad request must not
-        // leave a half-started capture behind.
+        // leave a half-started capture behind. The app name is interpolated
+        // into `pidof`, `aa start` and the hitrace command, so it is checked
+        // here rather than inside ProcfsCollector (which would run only after
+        // hitrace had already begun).
         const wantsProcfs = opts.procfs !== undefined && opts.procfs !== false;
         if (wantsProcfs && (opts.app === undefined || opts.app === '')) {
           throw new OhosPerfError(
@@ -146,12 +149,19 @@ export class Device {
             { code: 'COLLECT_APP_REQUIRED' },
           );
         }
+        if ((wantsProcfs || opts.coldStart !== undefined) && !BARE_NAME.test(opts.app)) {
+          throw new OhosPerfError(
+            `app must be a bare name matching ${String(BARE_NAME)}` +
+              ` (got ${JSON.stringify(opts.app)})`,
+            { code: 'COLLECT_BAD_APP' },
+          );
+        }
         if (opts.coldStart !== undefined) {
           const { ability } = opts.coldStart;
-          if (!BARE_NAME.test(ability) || !BARE_NAME.test(opts.app)) {
+          if (!BARE_NAME.test(ability)) {
             throw new OhosPerfError(
-              `cold start requires a bare ability and app name matching ${String(BARE_NAME)}` +
-                ` (got ability ${JSON.stringify(ability)}, app ${JSON.stringify(opts.app)})`,
+              `cold start requires a bare ability name matching ${String(BARE_NAME)}` +
+                ` (got ${JSON.stringify(ability)})`,
               { code: 'COLLECT_BAD_COLD_START' },
             );
           }
@@ -211,6 +221,31 @@ export class Device {
           await collector.collect(hdc, this.id, traceOpts, layout);
         }
 
+        // Convert unconditionally instead of deleting a pre-existing trace.db.
+        // `ingestScene` skips conversion when trace.db exists, so reusing a
+        // sceneRoot would otherwise silently open the previous capture's
+        // database. `Streamer.convert` writes to a sibling temp path and
+        // renames over `layout.traceDb` only after a successful conversion, so
+        // an existing good database survives a failed conversion. Deleting it
+        // first would leave the caller with neither the old scene nor a new
+        // one. On success the fresh database is already in place, and
+        // `ingestScene` simply opens it.
+        //
+        // scene.json is scene metadata, not capture metadata: write it only
+        // after conversion succeeds. On a failed conversion the untouched old
+        // scene.json keeps describing the old trace.db, so the scene directory
+        // stays coherent instead of pairing new metadata with an old database.
+        const streamer = this.deps.streamer ?? new Streamer();
+        await streamer.convert(layout.traceFile, layout.traceDb);
+
+        // A re-capture into the same sceneRoot without --procfs must not leave
+        // the previous capture's memory samples behind: analyze would otherwise
+        // report `mem.*` as exact for a capture that never sampled memory. This
+        // is a scene mutation, so it belongs on the success path with the
+        // metadata write; a failed conversion leaves the whole old scene intact.
+        // ENOENT is the normal case and is ignored.
+        if (!wantsProcfs) removeStaleProcfs(layout.procfsFile);
+
         writeSceneMetadata(layout, {
           version: 1,
           app: { packageName: opts.app, processNames: [opts.app] },
@@ -228,18 +263,6 @@ export class Device {
           },
         });
 
-        // Convert unconditionally instead of deleting a pre-existing trace.db.
-        // `ingestScene` skips conversion when trace.db exists, so reusing a
-        // sceneRoot would otherwise silently open the previous capture's
-        // database. `Streamer.convert` writes to a sibling temp path and
-        // renames over `layout.traceDb` only after a successful conversion, so
-        // an existing good database survives a failed conversion. Deleting it
-        // first would leave the caller with neither the old scene nor a new
-        // one. On success the fresh database is already in place, and
-        // `ingestScene` simply opens it.
-        const streamer = this.deps.streamer ?? new Streamer();
-        await streamer.convert(layout.traceFile, layout.traceDb);
-
         return ingestScene(streamer, layout);
       },
     };
@@ -253,6 +276,19 @@ export class Device {
       );
     }
     return this.deps.hdc;
+  }
+}
+
+/**
+ * Remove another capture's `procfs.jsonl` from a scene that did not sample
+ * memory. Only ENOENT is ignored; any other filesystem error is a real failure
+ * and must not leave stale samples silently in place.
+ */
+function removeStaleProcfs(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch (err) {
+    if ((err as { code?: string }).code !== 'ENOENT') throw err;
   }
 }
 

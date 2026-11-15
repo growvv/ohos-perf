@@ -121,7 +121,9 @@ const TABLE_RULES: ReadonlyArray<{
  *
  * `procfs.jsonl` is special: it is a scene artifact, not a database table, and
  * is available only when the file yields at least one valid sample. The caller
- * passes the samples it already read so the file is parsed once.
+ * passes the samples it already read (after applying the scene.json
+ * `capture.collectors` gate) so the file is parsed once and `mem.procfs` cannot
+ * be claimed for a capture that did not sample memory.
  */
 export function offlineCapabilities(
   db: CapabilityMatrixDb,
@@ -208,8 +210,18 @@ export function realDeps(
       try {
         const db = scene.traceDb;
         const processes = new ProcessQuery(db);
-        const samples = readProcfsSamples(layout.procfsFile);
         const metadata = readSceneMetadata(layout);
+        // A scene written by Device.collect always has scene.json, and its
+        // `capture.collectors` is the authority on which collectors actually
+        // ran. Re-collecting into the same directory without --procfs can leave
+        // a stale procfs.jsonl; ignoring it prevents `mem.*` exact metrics for
+        // a capture that never sampled memory. Hand-built/legacy scenes with no
+        // metadata keep working from the file alone.
+        const procfsDeclared = metadata === undefined ||
+          (metadata.capture?.collectors.includes('procfs') ?? false);
+        const samples = procfsDeclared
+          ? readProcfsSamples(layout.procfsFile)
+          : [];
         const context = {
           db,
           frames: new FrameQuery(db),

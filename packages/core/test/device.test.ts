@@ -208,6 +208,13 @@ describe('CollectSession.ingest', () => {
       db.exec('CREATE TABLE frame_slice(id INT, ts INT)');
       db.exec('INSERT INTO frame_slice VALUES (0, 42)');
       db.close();
+      // scene.json describes the previous capture; a failed conversion must
+      // not overwrite it with the new capture's metadata (fix round 1, item 3).
+      writeFileSync(join(root, 'scene.json'), JSON.stringify({
+        version: 1, app: { packageName: 'old.app', processNames: ['old.app'] },
+        pids: [7], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace'] },
+      }));
 
       const collector = {
         collect: async (_hdc: unknown, _t: string, _o: unknown, layout: any) => {
@@ -231,6 +238,10 @@ describe('CollectSession.ingest', () => {
       const check = new DatabaseSync(traceDb, { readOnly: true });
       expect(check.prepare('SELECT ts FROM frame_slice').all()).toEqual([{ ts: 42 }]);
       check.close();
+      // And scene.json still describes that old scene, not the failed capture.
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.app.packageName).toBe('old.app');
+      expect(meta.capture.collectors).toEqual(['hitrace']);
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -501,7 +512,7 @@ describe('CollectSession.ingest with procfs and cold start', () => {
     }
   });
 
-  it('rejects a cold start whose app name is not a bare name', async () => {
+  it('rejects a cold start whose app name is not a bare name (COLLECT_BAD_APP)', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-bad-app-'));
     try {
       const h = collectHarness();
@@ -510,8 +521,108 @@ describe('CollectSession.ingest with procfs and cold start', () => {
         app: 'com.demo; rm -rf /', durationMs: 1000, sceneRoot: root,
         coldStart: { ability: 'EntryAbility' },
       });
-      await expect(session.ingest()).rejects.toMatchObject({ code: 'COLLECT_BAD_COLD_START' });
+      // The app is validated before the ability, so the app code wins.
+      await expect(session.ingest()).rejects.toMatchObject({ code: 'COLLECT_BAD_APP' });
       expect(h.commands).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  // Fix round 1, item 2: the app name is interpolated into `pidof`, `aa start`
+  // and hitrace, so it must be validated before the very first device call.
+  it('rejects an unsafe app for --procfs with COLLECT_BAD_APP before any device call', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-bad-procfs-app-'));
+    try {
+      const h = collectHarness();
+      const d = fakeDevice(h);
+      const session = await d.collect({
+        app: 'bad;name', durationMs: 1000, sceneRoot: root, procfs: true,
+      });
+      await expect(session.ingest()).rejects.toMatchObject({ code: 'COLLECT_BAD_APP' });
+      expect(h.commands).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('names the offending app in the COLLECT_BAD_APP message', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-bad-procfs-app2-'));
+    try {
+      const h = collectHarness();
+      const d = fakeDevice(h);
+      const session = await d.collect({
+        app: 'bad;name', durationMs: 1000, sceneRoot: root, procfs: true,
+      });
+      const err = (await session.ingest().catch((e: unknown) => e)) as Error;
+      expect(err).toMatchObject({ code: 'COLLECT_BAD_APP' });
+      expect(err.message).toContain('bad;name');
+      expect(h.commands).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  // Fix round 1, item 1: a re-capture without --procfs must not leave the
+  // previous capture's procfs.jsonl in the scene directory.
+  it('unlinks a stale procfs.jsonl when this capture did not request procfs', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-stale-'));
+    try {
+      writeFileSync(join(root, 'procfs.jsonl'), '{"ts":1,"pid":9,"status":{}}\n');
+      const h = collectHarness();
+      const d = fakeDevice(h);
+      const scene = await d.collect({ app: 'com.demo', durationMs: 1000, sceneRoot: root })
+        .then((s) => s.ingest());
+      scene.close();
+      expect(existsSync(join(root, 'procfs.jsonl'))).toBe(false);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hitrace']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  // Fix round 1, item 6: Promise.all must reject with the procfs failure even
+  // when hitrace resolves; an allSettled regression would hide it.
+  it('rejects when procfs fails while hitrace resolves', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-procfs-fail-'));
+    try {
+      const h = collectHarness();
+      h.procfs.collect = async () => { throw new Error('procfs exploded'); };
+      const d = fakeDevice(h);
+      await expect(
+        d.collect({ app: 'com.demo', durationMs: 1000, sceneRoot: root, procfs: true })
+          .then((s) => s.ingest()),
+      ).rejects.toThrow(/procfs exploded/);
+      expect(existsSync(join(root, 'scene.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  // Fix round 1, item 3: metadata is written only after a successful
+  // conversion, so a failure leaves scene.json describing the previous capture.
+  it('keeps the previous scene.json when conversion fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-conv-fail-'));
+    try {
+      writeFileSync(join(root, 'scene.json'), JSON.stringify({
+        version: 1, app: { packageName: 'old.app', processNames: ['old.app'] },
+        pids: [7], deviceId: 't1', capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace', 'procfs'] },
+      }));
+      writeFileSync(join(root, 'procfs.jsonl'), 'old samples\n');
+      const h = collectHarness();
+      h.streamer.convert = async () => { throw new Error('conversion exploded'); };
+      const d = fakeDevice(h);
+      await expect(
+        d.collect({ app: 'new.app', durationMs: 1000, sceneRoot: root })
+          .then((s) => s.ingest()),
+      ).rejects.toThrow(/conversion exploded/);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.app.packageName).toBe('old.app');
+      expect(meta.capture.collectors).toEqual(['hitrace', 'procfs']);
+      // Every scene artifact is untouched on the failure path, including a
+      // stale procfs.jsonl from the previous capture.
+      expect(readFileSync(join(root, 'procfs.jsonl'), 'utf8')).toBe('old samples\n');
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

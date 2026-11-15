@@ -26,4 +26,24 @@ describe('parseDurationSeconds', () => {
       expect(() => parseDurationSeconds(bad)).toThrow(new RegExp(bad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     }
   });
+
+  it('rejects a duration whose millisecond value overflows the hitrace limit', () => {
+    for (const bad of ['1' + '0'.repeat(306), '3e9', '999999999999']) {
+      expect(() => parseDurationSeconds(bad), `value ${bad}`).toThrow(/duration/);
+      expect(() => parseDurationSeconds(bad)).toThrow(bad);
+    }
+  });
+
+  it('rejects sub-millisecond and fractional-millisecond durations', () => {
+    for (const bad of ['0.0001', '1.0005', '0.0000001']) {
+      expect(() => parseDurationSeconds(bad), `value ${bad}`).toThrow(/duration/);
+      expect(() => parseDurationSeconds(bad)).toThrow(bad);
+    }
+  });
+
+  it('accepts whole-millisecond values including 10s', () => {
+    expect(parseDurationSeconds('10s')).toBe(10_000);
+    expect(parseDurationSeconds('0.001')).toBe(1);
+    expect(parseDurationSeconds('2147483.647')).toBe(2_147_483_647);
+  });
 });

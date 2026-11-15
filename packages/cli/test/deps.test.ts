@@ -4,7 +4,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';import { fileURLToPath } from 'node:url';
 import type { Scene, SceneLayout } from '@ohos-perf/core';
-import { manifestPath, packageVersion, realDeps } from '../src/deps';
+import {
+  manifestPath, offlineCapabilities, packageVersion, realDeps,
+  type CapabilityMatrixDb,
+} from '../src/deps';
 
 /** The manifest as an independent reader sees it, not through `deps.ts`. */
 const manifest = JSON.parse(
@@ -210,7 +213,7 @@ describe('realDeps().analyze', () => {
   });
 
   it('reads scene.json metadata when it is valid', async () => {
-    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-'));
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-meta-'));
     try {
       createTraceDb(join(parent, 'trace.db'));
       writeFileSync(join(parent, 'scene.json'), JSON.stringify({
@@ -223,6 +226,97 @@ describe('realDeps().analyze', () => {
       const a = await realDeps('0.0.0').analyze(parent);
       const b = await realDeps('0.0.0').analyze(parent);
       expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  // Fix round 1, item 1: a scene.json written by Device.collect is the
+  // authority on which collectors ran. A stale procfs.jsonl must be ignored
+  // when it says hitrace only; hand-built scenes without metadata still work.
+  const procfsSample =
+    `${JSON.stringify({ ts: 1, pid: 42, status: { vmRssBytes: 2048, vmHwmBytes: 2048, threads: 1 } })}\n`;
+
+  function writeMeta(parent: string, collectors: string[]): void {
+    writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+      version: 1,
+      app: { packageName: 'com.demo', processNames: ['com.demo'] },
+      pids: [], deviceId: 't1',
+      capture: { startedAtMs: 1, durationMs: 2, collectors },
+    }));
+  }
+
+  it('ignores a stale procfs.jsonl when scene.json lists only hitrace', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-stale-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'procfs.jsonl'), procfsSample);
+      writeMeta(parent, ['hitrace']);
+      const result = await realDeps('0.0.0').analyze(parent);
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).toContain('memory.degraded');
+      expect(ids.some((id) => id.startsWith('mem.'))).toBe(false);
+      // mem.procfs is absent from the matrix, so the degraded reason names it.
+      const degraded = result.evidence.filter((e) => e.kind === 'degraded_capability');
+      expect(degraded.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('runs memory when scene.json lists hitrace and procfs', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-meta-procfs-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'procfs.jsonl'), procfsSample);
+      writeMeta(parent, ['hitrace', 'procfs']);
+      const result = await realDeps('0.0.0').analyze(parent);
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).not.toContain('memory.degraded');
+      expect(ids.some((id) => id.startsWith('mem.'))).toBe(true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('trusts procfs.jsonl when scene.json is absent', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-legacy-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'procfs.jsonl'), procfsSample);
+      const result = await realDeps('0.0.0').analyze(parent);
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).not.toContain('memory.degraded');
+      expect(ids.some((id) => id.startsWith('mem.'))).toBe(true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  // Fix round 1, item 6: trace.sched needs BOTH sched_slice and instant.
+  it('does not claim trace.sched when only one of its tables exists', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-sched-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      // Add sched_slice only; instant is absent.
+      const db = new DatabaseSync(join(parent, 'trace.db'));
+      db.exec('CREATE TABLE sched_slice(id INT, ts INT)');
+      db.close();
+      const result = await realDeps('0.0.0').analyze(parent);
+      // threads requires sched+thread_state; with trace.sched absent the
+      // analyzer must degrade rather than run against a half-present signal.
+      expect(result.metrics.map((m) => m.id)).toContain('threads.degraded');
+      // Assert the matrix directly too: `instant` alone is not enough, and
+      // `sched_slice` alone (the case built above) is not enough either.
+      const fakeDb = (names: string[]): CapabilityMatrixDb => ({
+        query: <T = Record<string, unknown>>(): T[] =>
+          names.map((name) => ({ name })) as unknown as T[],
+      });
+      const matrix = offlineCapabilities(fakeDb(['sched_slice', 'frame_slice']), []);
+      expect(matrix.has('trace.sched')).toBe(false);
+      expect(matrix.get('trace.sched')).toBeUndefined();
+      const both = offlineCapabilities(fakeDb(['sched_slice', 'instant']), []);
+      expect(both.has('trace.sched')).toBe(true);
     } finally {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
