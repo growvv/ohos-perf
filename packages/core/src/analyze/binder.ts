@@ -808,7 +808,10 @@ function binderEvidence(analysis: BinderAnalysis, ctx: AnalyzeContext): Evidence
         count: stat.count,
         avgLatencyMs: stat.avgLatency,
         maxLatencyMs: stat.maxLatency,
-        qps: stat.qps,
+        // `qps` is omitted, never null or 0, when a pair has no measurable
+        // rate (a single request timestamp). The stat field itself still
+        // exposes `null`; evidence signals stay null-free by contract.
+        ...(stat.qps === null ? {} : { qps: stat.qps }),
       },
       explain: `${stat.callerProc} -> ${stat.calleeProc}: ${stat.count} binder transactions`,
       drillDown: [

@@ -15,6 +15,8 @@ const MS = 1_000_000;
 
 let dir: string;
 let db: QueryHandle;
+let singleDir: string;
+let singleDb: QueryHandle;
 
 const DDL = `
   CREATE TABLE process(id INT, ipid INT, pid INT, name TEXT);
@@ -77,18 +79,52 @@ function seed(d: DatabaseSync): void {
   `);
 }
 
+/**
+ * One completed pair only: with a single request timestamp the process stat's
+ * `qps`/`avgIntervalMs` must stay `null`, which pins the evidence rule that a
+ * null rate is omitted from `signals` rather than emitted.
+ */
+function seedSinglePair(d: DatabaseSync): void {
+  d.exec(DDL);
+  d.exec(`
+    INSERT INTO process VALUES
+      (0, 100, 5000, 'com.demo'),
+      (1, 200, 6000, 'render_service');
+    INSERT INTO thread VALUES
+      (10, 5000, 'main', 100),
+      (20, 6001, 'RSThread', 200);
+    INSERT INTO data_dict VALUES
+      (1, 'transaction id'), (2, 'calling tid'), (4, 'destination process');
+    INSERT INTO args VALUES
+      (1, 1, 0, 7, 1), (2, 2, 0, 5000, 1),
+      (3, 1, 0, 7, 2), (4, 4, 0, 5000, 2);
+    INSERT INTO callstack VALUES
+      (1, ${START}, 0, 10, 'binder', 'H:binder transaction', 1),
+      (2, ${START + MS}, 0, 20, 'binder', 'H:binder reply', 2);
+  `);
+}
+
 beforeAll(() => {
-  dir = mkdtempSync(join(tmpdir(), 'ohosperf-binder-'));
+  dir = mkdtempSync(join(tmpdir(), 'ohosperf-binder-main-'));
   const path = join(dir, 't.db');
   const d = new DatabaseSync(path);
   seed(d);
   d.close();
   db = openDb(path);
+
+  singleDir = mkdtempSync(join(tmpdir(), 'ohosperf-binder-single-'));
+  const singlePath = join(singleDir, 't.db');
+  const s = new DatabaseSync(singlePath);
+  seedSinglePair(s);
+  s.close();
+  singleDb = openDb(singlePath);
 });
 
 afterAll(() => {
   db.close();
+  singleDb.close();
   rmSync(dir, { recursive: true, force: true });
+  rmSync(singleDir, { recursive: true, force: true });
 });
 
 const NULL_ENDPOINT = {
@@ -99,13 +135,23 @@ const NULL_ENDPOINT = {
 };
 
 function makeCtx(
-  opts: { deviceId?: string; withDb?: boolean; pids?: number[] } = {},
+  opts: {
+    deviceId?: string;
+    withDb?: boolean;
+    pids?: number[];
+    handle?: QueryHandle;
+  } = {},
 ): AnalyzeContext {
-  const { deviceId = 'emu-binder', withDb = true, pids = [5000] } = opts;
+  const {
+    deviceId = 'emu-binder',
+    withDb = true,
+    pids = [5000],
+    handle = db,
+  } = opts;
   return {
-    frames: new FrameQuery(db),
-    processes: new ProcessQuery(db),
-    ...(withDb ? { db } : {}),
+    frames: new FrameQuery(handle),
+    processes: new ProcessQuery(handle),
+    ...(withDb ? { db: handle } : {}),
     app: { packageName: 'com.demo', pids, processNames: ['com.demo'] },
     window: { startNs: START, endNs: START + 9 * MS },
     caps: new CapabilityMatrix([
@@ -334,6 +380,8 @@ describe('BinderAnalyzer', () => {
       maxLatencyMs: 2,
     });
     expect(hotspot.signals.qps).toBeCloseTo(2 / 0.003, 9);
+    // Evidence signals are never null: undefined measurements are omitted.
+    expect(Object.values(hotspot.signals)).not.toContain(null);
     expect(hotspot.drillDown).toEqual([
       {
         label: 'Binder process pair',
@@ -344,6 +392,28 @@ describe('BinderAnalyzer', () => {
     ]);
     // The pair key is hash material only; it is not part of the object.
     expect('key' in hotspot).toBe(false);
+  });
+
+  it('omits a null qps signal instead of emitting null or zero', async () => {
+    // One completed pair means one request timestamp, so the stat's qps is
+    // genuinely null; the evidence must drop the key instead of carrying it.
+    const analysis = computeBinderAnalysis(singleDb, { appPids: [5000] });
+    expect(analysis.processStats).toHaveLength(1);
+    expect(analysis.processStats[0].qps).toBeNull();
+    expect(analysis.processStats[0].avgIntervalMs).toBeNull();
+
+    const result = await new BinderAnalyzer().run(makeCtx({ handle: singleDb }));
+    expect(result.evidence).toHaveLength(1);
+    const [hotspot] = result.evidence;
+    expect(hotspot.kind).toBe('binder_hotspot');
+    expect(hotspot.signals).toEqual({
+      calleeProc: 'render_service',
+      count: 1,
+      avgLatencyMs: 1,
+      maxLatencyMs: 1,
+    });
+    expect('qps' in hotspot.signals).toBe(false);
+    expect(Object.values(hotspot.signals)).not.toContain(null);
   });
 
   it('returns one no_data evidence and no metrics without ctx.db', async () => {

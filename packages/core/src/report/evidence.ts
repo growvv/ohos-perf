@@ -32,13 +32,7 @@ export interface Evidence {
   severity: 'info' | 'warn' | 'critical';
   subject: { process: string; thread?: string; frameNo?: number; pid?: number };
   window: TimeRange;
-  /**
-   * Scalar observations behind the evidence. `null` is allowed for a
-   * measurement that is genuinely undefined (for example binder QPS over a
-   * single transaction); omitting the key instead would read as "not
-   * collected" and `0` would read as a measured zero.
-   */
-  signals: Record<string, number | string | null>;
+  signals: Record<string, number | string>;
   explain: string;
   drillDown: DrillDownHandle[];
 }
