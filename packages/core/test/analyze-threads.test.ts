@@ -673,13 +673,16 @@ describe('ThreadAnalyzer', () => {
     const result = await new ThreadAnalyzer().run(makeCtx());
     expect(result.evidence).toHaveLength(2);
     expect(new Set(result.evidence.map((item) => item.id)).size).toBe(2);
-    // One evidence per pattern, in redundant_threads order: the 68-point
-    // pattern precedes the 53-point one.
-    expect(result.evidence.map((item) => item.subject.thread)).toEqual([
-      'zeta.work_*',
+    // One evidence per pattern, in the AnalyzeResult contract order
+    // `(kind, window.startNs, id)`, not the score-descending pattern order.
+    const orderKeys = result.evidence.map(
+      (item) => `${item.kind}|${item.window.startNs}|${item.id}`,
+    );
+    expect(orderKeys).toEqual([...orderKeys].sort());
+    expect(result.evidence.map((item) => item.subject.thread).sort()).toEqual([
       'ace.bg_*',
+      'zeta.work_*',
     ]);
-    expect(result.evidence.map((item) => item.signals.score)).toEqual([68, 53]);
 
     for (const item of result.evidence) {
       expect(item.kind).toBe('thread_redundancy');

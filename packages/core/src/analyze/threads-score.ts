@@ -1562,6 +1562,17 @@ function byMetricId(a: Metric, b: Metric): number {
   return 0;
 }
 
+/** Sort order for evidence: `(kind, window.startNs, id)`. */
+function byEvidenceOrder(a: Evidence, b: Evidence): number {
+  if (a.kind < b.kind) return -1;
+  if (a.kind > b.kind) return 1;
+  if (a.window.startNs < b.window.startNs) return -1;
+  if (a.window.startNs > b.window.startNs) return 1;
+  if (a.id < b.id) return -1;
+  if (a.id > b.id) return 1;
+  return 0;
+}
+
 /**
  * Redundant-thread analyzer over the wakeup chain and thread-state tables.
  *
@@ -1576,9 +1587,8 @@ function byMetricId(a: Metric, b: Metric): number {
  * zero, so they are emitted alongside a single `no_data` evidence explaining
  * that the analysis found no pattern to report.
  *
- * Evidence is emitted in `redundant_threads` order (score descending, then
- * display name ascending), one item per pattern. That order is deterministic;
- * `runAnalyzers` re-sorts the merged evidence array for the final report.
+ * Evidence is emitted in the `AnalyzeResult` contract order
+ * `(kind, window.startNs, id)`, like every other analyzer.
  */
 export class ThreadAnalyzer implements Analyzer {
   readonly id = 'threads';
@@ -1600,6 +1610,7 @@ export class ThreadAnalyzer implements Analyzer {
         : [noPatternsEvidence(ctx)];
 
     metrics.sort(byMetricId);
+    evidenceItems.sort(byEvidenceOrder);
     return { metrics, evidence: evidenceItems };
   }
 }
