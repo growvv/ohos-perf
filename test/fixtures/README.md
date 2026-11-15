@@ -10,12 +10,16 @@ e2e test is broken.
 | File | Device | Platform | Recorded |
 | --- | --- | --- | --- |
 | `probe-real.txt` | HUAWEI Mate 60 (`BRA-AL00`), serial `REDACTED-DEVICE-SERIAL` | `BRA-AL00 7.0.0.111(SP10C00E111R4P3)` / OpenHarmony-7.0.0.111, arm64-v8a | 2026-11-14 |
-| `probe-emulator.txt` | Emulator at `127.0.0.1:5555` | emulator 6.1.0.126(SP1DEVC00E120R4P11) / OpenHarmony-6.1.1.125, x86_64 | 2026-11-14 |
+| `probe-emulator.txt` | HarmonyOS emulator (`127.0.0.1:10178` at capture time) | emulator 6.1.0.126(SP1DEVC00E120R4P11) / OpenHarmony-6.1.1.125, x86_64 | 2026-11-14 |
 
-The design document (`design/2026-11-14-ohos-perf-core-design.md`) still shows
-`127.0.0.1:10178`. That port is stale: `hdc list targets -v` on 2026-11-15
-reports the emulator at **`127.0.0.1:5555`**, and that is the port these
-fixtures and the task brief use.
+Port note, because the numbers differ across this repository's documents:
+`spike/logs/probe_emulator.log` records the capture session as
+`PROBE TARGET: 127.0.0.1:10178`, so that is what this snapshot came from. A
+later session on 2026-11-15 enumerated a running emulator at
+`127.0.0.1:5555` via `hdc list targets -v`. Both are real observations of
+different sessions; neither the fixture nor the e2e test connects to a device,
+so the port only matters when you re-capture. Check `hdc list targets -v` on
+the machine in front of you rather than trusting any number written here.
 
 Format: one probe per line, `command<TAB>stdout`. A literal `\n` in a stdout
 field is unescaped back to a newline by the fixture runner in
