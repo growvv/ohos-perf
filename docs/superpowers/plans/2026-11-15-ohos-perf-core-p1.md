@@ -265,6 +265,7 @@ Expected: FAIL.
 - [ ] **Step 3: Port the call graph**
 
 Keep the same constants (`search_start = frame_start - 50_000_000`, `max_depth = 20`, max 50 chain ids / 20 callchains per thread). Use a `Map<number, Array<[number, number]>>` for the instant cache and sort candidates by `ts` descending; prefer app-process wakers when `appPid` matches. Instruction calculation is the binary-search sum over `perf_sample` event counts, split by `isSystemThread`; with no samples both maps are empty and every count is 0.
+Thread states use HapRay's overlap predicate `ts < rangeEnd AND ts + COALESCE(dur, 0) > rangeStart` and per-itid `ts` ordering — do **not** call `ThreadStateQuery.forItids(itids, range)`, whose inclusive `ts >= start AND ts <= end` filter is a different predicate (it happens to match on these traces, but the port must be faithful).
 Time range: explicit `opts.timeRange` wins; otherwise mimic HapRay's fallback chain `trace_range → frame_slice → callstack_events → trace` (the last two named tables may not exist in our fixtures; skip absent tables), with `frame_slice` extended by `max(ts + COALESCE(dur, 0))`; if none, throw `THREAD_NO_TIME_RANGE`.
 `threadInfo.startTs/endTs` come from the `thread` row via `ThreadQuery`, mapping its `0`-means-absent values to `null`; both `thread.start_ts` and `thread.end_ts` are NULL on every row of both fixture traces, so they serialize as `null`, matching HapRay (whose query never selects them). Do not substitute `0`.
 
