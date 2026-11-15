@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ohos-perf — HarmonyOS performance, made measurable</title>
+<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace collection, trace ingest, frame metrics, an evidence graph and a CLI. Deterministic, evidence-backed, zero native dependencies.">
+<meta property="og:title" content="ohos-perf — HarmonyOS performance, made measurable">
+<meta property="og:description" content="Capability probing, hitrace capture, trace ingest, frame metrics and an evidence graph in one TypeScript toolkit.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://growvv.github.io/ohos-perf/">
+<meta property="og:image" content="https://growvv.github.io/ohos-perf/assets/poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main" data-en="Skip to content" data-zh="跳到正文">Skip to content</a>
+
+<div class="bg" aria-hidden="true"></div>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="ohos-perf home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <defs>
+          <linearGradient id="mg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <path d="M16 2.8 27.4 9.4v13.2L16 29.2 4.6 22.6V9.4Z" fill="none" stroke="url(#mg)" stroke-width="1.6"/>
+        <path d="M9 16h3.2l2-4.4 3.6 8.8 2-4.4H23" fill="none" stroke="url(#mg)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>ohos-perf</span>
+    </a>
+    <nav class="links" aria-label="Main">
+      <a href="#features" data-en="Features" data-zh="能力">Features</a>
+      <a href="#capabilities" data-en="Capabilities" data-zh="能力矩阵">Capabilities</a>
+      <a href="#architecture" data-en="Architecture" data-zh="架构">Architecture</a>
+      <a href="#demo" data-en="Demo" data-zh="演示">Demo</a>
+      <a href="#quickstart" data-en="Quickstart" data-zh="快速开始">Quickstart</a>
+    </nav>
+    <div class="nav-cta">
+      <button class="lang" id="lang" type="button" aria-label="Switch language">
+        <span class="lang-en">中</span><span class="lang-zh">EN</span>
+      </button>
+      <a class="btn btn-small" href="https://github.com/growvv/ohos-perf" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        <span data-en="Star" data-zh="Star">Star</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+<section class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow reveal">
+        <span class="dot"></span>
+        <span data-en="P0 is shipped — 291 tests, two independent reviews" data-zh="P0 已交付 — 291 个测试，两轮独立评审">P0 is shipped — 291 tests, two independent reviews</span>
+      </p>
+      <h1 class="reveal">
+        <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
+        <span class="grad" data-en="made measurable." data-zh="从此可度量。">made measurable.</span>
+      </h1>
+      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace capture, trace ingest, typed queries, frame metrics and a CLI — in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测、hitrace 采集、trace 入库、类型化查询、帧指标与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
+        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace capture, trace ingest, typed queries, frame metrics and a CLI — in one TypeScript toolkit with zero native dependencies.
+      </p>
+      <div class="cta-row reveal">
+        <a class="btn btn-primary" href="#quickstart">
+          <span data-en="Get started" data-zh="快速开始">Get started</span>
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4 10h11M11 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/growvv/ohos-perf" target="_blank" rel="noopener">
+          <span data-en="View source" data-zh="查看源码">View source</span>
+        </a>
+      </div>
+      <p class="meta reveal">
+        <span data-en="Node ^22.13.0 || >=23.4.0" data-zh="Node ^22.13.0 || >=23.4.0">Node ^22.13.0 || >=23.4.0</span>
+        <span class="sep">·</span>
+        <span data-en="ESM · TypeScript" data-zh="ESM · TypeScript">ESM · TypeScript</span>
+        <span class="sep">·</span>
+        <span data-en="MIT" data-zh="MIT 许可">MIT</span>
+      </p>
+    </div>
+
+    <div class="hero-terminal reveal" aria-label="Real CLI output">
+      <div class="window">
+        <div class="window-bar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="window-title">ohos-perf — analyze</span>
+        </div>
+        <pre class="term"><code><span class="p">$</span> <span class="c">ohos-perf analyze ./scene --json</span>
+{
+  <span class="k">"metrics"</span>: [
+    { <span class="k">"id"</span>: <span class="s">"frame.count"</span>,   <span class="k">"value"</span>: <span class="n">169</span> },
+    { <span class="k">"id"</span>: <span class="s">"frame.jank.rate"</span>, <span class="k">"value"</span>: <span class="n">37.267080745341616</span>,
+      <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
+      <span class="k">"provenance"</span>: { <span class="k">"table"</span>: <span class="s">"frame_slice"</span>, <span class="k">"rows"</span>: <span class="n">177</span> } },
+    { <span class="k">"id"</span>: <span class="s">"frame.fps"</span>,    <span class="k">"value"</span>: <span class="n">5.9170002419317855</span>,
+      <span class="k">"fidelity"</span>: <span class="s">"approximate"</span> }
+  ],
+  <span class="k">"evidence"</span>: [ <span class="cm">/* 60 jank items, 60 distinct ids */</span> ]
+}</code></pre>
+        <p class="terminal-note" data-en="Excerpt from a real 17.9 MB trace recorded on a HarmonyOS emulator. Every metric carries provenance: collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的 17.9 MB 真实 trace。每个指标都带 provenance：采集器、表、行数、设备。">Excerpt from a real 17.9 MB trace recorded on a HarmonyOS emulator. Every metric carries provenance: collector, table, rows, device.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="stats reveal">
+      <div class="stat"><b>20</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
+      <div class="stat"><b>8</b><span data-en="architecture layers" data-zh="层架构">architecture layers</span></div>
+      <div class="stat"><b>291</b><span data-en="tests, 53 of them CLI" data-zh="个测试，其中 53 个 CLI 测试">tests, 53 of them CLI</span></div>
+      <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="features">
+  <div class="wrap">
+    <p class="eyebrow reveal" data-en="Why ohos-perf" data-zh="为什么是 ohos-perf">Why ohos-perf</p>
+    <h2 class="reveal" data-en="Closed tools give you answers. This gives you the data." data-zh="封闭工具给你结论，我们给你数据。">Closed tools give you answers. This gives you the data.</h2>
+    <p class="section-lead reveal" data-en="HapRay and DevEco are excellent at producing a verdict. But their pipelines are opaque, and the emulator cannot produce every signal. ohos-perf exposes each stage as a typed API — and when a signal is unavailable or approximate, it says so instead of inventing a number." data-zh="HapRay 和 DevEco 擅长给出结论，但流水线是封闭的，模拟器也拿不全所有信号。ohos-perf 把每一层都暴露成类型化 API；当某个信号不可用或只是近似时，它会明确说明，而不是编一个数字。">
+      HapRay and DevEco are excellent at producing a verdict. But their pipelines are opaque, and the emulator cannot produce every signal. ohos-perf exposes each stage as a typed API — and when a signal is unavailable or approximate, it says so instead of inventing a number.
+    </p>
+
+    <div class="grid features">
+      <article class="card reveal">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2.4"/></svg></div>
+        <h3 data-en="Capability matrix, not guesswork" data-zh="能力矩阵，而不是猜">Capability matrix, not guesswork</h3>
+        <p data-en="One probe produces 20 verdicts. Each one records availability, the reason when missing, the evidence command and its output, and the fidelity you should expect." data-zh="一次探测产生 20 个判定。每个判定记录可用性、缺失原因、证据命令及其输出，以及你应该预期的保真度。">One probe produces 20 verdicts. Each one records availability, the reason when missing, the evidence command and its output, and the fidelity you should expect.</p>
+      </article>
+      <article class="card reveal">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 7h14M5 17h14"/><circle cx="12" cy="12" r="2.2"/></svg></div>
+        <h3 data-en="Deterministic by contract" data-zh="确定性的输出契约">Deterministic by contract</h3>
+        <p data-en="The same input produces byte-identical JSON across runs. Metrics are sorted by id; evidence is sorted by (kind, window, id). Diffs in CI are meaningful." data-zh="同一输入跨次运行产生字节一致的 JSON：指标按 id 排序，证据按 (kind, window, id) 排序。CI 里的 diff 因此是有意义的。">The same input produces byte-identical JSON across runs. Metrics are sorted by id; evidence is sorted by (kind, window, id). Diffs in CI are meaningful.</p>
+      </article>
+      <article class="card reveal">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="7" r="2.4"/><circle cx="12" cy="18" r="2.4"/><path d="m8 7 8-.4M7.4 8.2l3.4 7.6M16.6 9l-3 6.8"/></svg></div>
+        <h3 data-en="Every number is traceable" data-zh="每个数字都可追溯">Every number is traceable</h3>
+        <p data-en="Metrics carry provenance (collector, table, rows scanned, device) and evidence carries drill-down ids. A claim you cannot trace back to frame_slice is a claim you should not ship." data-zh="指标带 provenance（采集器、表、扫描行数、设备），证据带可下钻的 id。一个无法追溯回 frame_slice 的结论，不该被写进报告。">Metrics carry provenance (collector, table, rows scanned, device) and evidence carries drill-down ids. A claim you cannot trace back to frame_slice is a claim you should not ship.</p>
+      </article>
+      <article class="card reveal">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v6c0 4.4 3.4 7.4 8 8 4.6-.6 8-3.6 8-8V7Z"/><path d="m8.5 12 2.3 2.3 4.7-4.8"/></svg></div>
+        <h3 data-en="Honest about the floor" data-zh="对下限保持诚实">Honest about the floor</h3>
+        <p data-en="Fidelity is exact, approximate or proxy — never silently upgraded. On an emulator, missing PMU and hiprofiler support is reported with a reason, not a zero." data-zh="保真度只有 exact、approximate、proxy 三档，绝不悄悄升级。在模拟器上，缺失的 PMU 与 hiprofiler 会带着原因被报告，而不是给一个 0。">Fidelity is exact, approximate or proxy — never silently upgraded. On an emulator, missing PMU and hiprofiler support is reported with a reason, not a zero.</p>
+      </article>
+      <article class="card reveal">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4 4 8l4 4M16 4l4 4-4 4M14 4l-4 16"/></svg></div>
+        <h3 data-en="TypeScript all the way down" data-zh="全链路 TypeScript">TypeScript all the way down</h3>
+        <p data-en="Typed queries over 88 tables, an ESM package with a checked public surface, and Node's built-in SQLite. No native build step, no Python, no bundled binary." data-zh="对 88 张表的类型化查询，经过完整性校验的 ESM 公共接口，以及 Node 内置 SQLite。没有原生编译、没有 Python、不打包外部二进制。">Typed queries over 88 tables, an ESM package with a checked public surface, and Node's built-in SQLite. No native build step, no Python, no bundled binary.</p>
+      </article>
+      <article class="card reveal">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7 9 2.5 2L7 13m5 0h4"/></svg></div>
+        <h3 data-en="Built to be called by agents" data-zh="为被 Agent 调用而设计">Built to be called by agents</h3>
+        <p data-en="The CLI speaks stable JSON, and the library exposes the same operations. That is the seam a skill or an agent needs — no screen-scraping, no parsing prose." data-zh="CLI 输出稳定的 JSON，库暴露同样的操作。这正是 skill 或 agent 需要的接缝：不用截屏，不用解析自然语言。">The CLI speaks stable JSON, and the library exposes the same operations. That is the seam a skill or an agent needs — no screen-scraping, no parsing prose.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="capabilities">
+  <div class="wrap">
+    <p class="eyebrow reveal" data-en="Capability matrix" data-zh="能力矩阵">Capability matrix</p>
+    <h2 class="reveal" data-en="Know what the device can actually give you." data-zh="先知道这台设备到底能给你什么。">Know what the device can actually give you.</h2>
+    <p class="section-lead reveal" data-en="Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports all 20 capabilities; the HarmonyOS emulator reports 9. Both numbers are first-class results — the missing ones carry a reason." data-zh="实测，而非假设。一台 OpenHarmony 7.0.0.111 的 Mate 60 报告 20 项全部可用；鸿蒙模拟器报告 9 项。两个数字都是一等结果——缺失项会带上原因。">
+      Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports all 20 capabilities; the HarmonyOS emulator reports 9. Both numbers are first-class results — the missing ones carry a reason.
+    </p>
+
+    <div class="table-wrap reveal">
+      <table class="caps">
+        <thead>
+          <tr>
+            <th data-en="Capability" data-zh="能力">Capability</th>
+            <th data-en="Collector" data-zh="采集器">Collector</th>
+            <th class="center" data-en="Emulator" data-zh="模拟器">Emulator</th>
+            <th class="center" data-en="Real device" data-zh="真机">Real device</th>
+            <th data-en="Fidelity" data-zh="保真度">Fidelity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>trace.frames</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>trace.sched</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>trace.binder</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>trace.thread_state</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>render.vsync</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>perf.samples</code></td><td><span class="badge hiperf">hiperf</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>perf.pmu</code></td><td><span class="badge hiperf">hiperf</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>mem.procfs</code></td><td><span class="badge procfs">procfs</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>mem.native_hook</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>mem.gpu</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>power.xpower</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>net.io</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>disk.io</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>js.heap</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>coverage</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>startup.app_startup</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>render.fps_live</code></td><td><span class="badge hidumper">hidumper</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span> <span class="fid proxy">proxy on emu</span></td></tr>
+          <tr><td><code>render.hitch</code></td><td><span class="badge hidumper">hidumper</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>ui.tree</code></td><td><span class="badge uitest">uitest</span></td><td class="center maybe">†</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>ui.gesture</code></td><td><span class="badge uitest">uitest</span></td><td class="center maybe">†</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="footnote reveal" data-en="Measured on 2026-11-14. † uitest was verified separately with `uitest dumpLayout` (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Emulator rows marked — report a reason through the matrix; they are never silently zero." data-zh="实测于 2026-11-14。† uitest 曾用 `uitest dumpLayout` 单独验证（输出 117 KB）；但生成矩阵所用的探针快照没有该命令，因此模拟器一列保持保守。标 — 的行会在矩阵里给出原因，而不是静默给 0。">
+      Measured on 2026-11-14. † uitest was verified separately with <code>uitest dumpLayout</code> (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Emulator rows marked — report a reason through the matrix; they are never silently zero.
+    </p>
+  </div>
+</section>
+
+<section class="section" id="architecture">
+  <div class="wrap">
+    <p class="eyebrow reveal" data-en="Architecture" data-zh="架构">Architecture</p>
+    <h2 class="reveal" data-en="Eight layers. Each one usable on its own." data-zh="八层架构，每层都能单独使用。">Eight layers. Each one usable on its own.</h2>
+    <p class="section-lead reveal" data-en="Start from the transport, or start from a metric. Every layer is a typed seam, so an agent, a CLI command and a library caller walk the same path." data-zh="你可以从传输层开始，也可以直接从一个指标开始。每一层都是类型化接缝，agent、CLI 与库调用者走的是同一条路。">Start from the transport, or start from a metric. Every layer is a typed seam, so an agent, a CLI command and a library caller walk the same path.</p>
+
+    <ol class="layers">
+      <li class="reveal"><span class="ln">L7</span><div><h3>API / CLI / Skill</h3><p data-en="Programmatic API, `ohos-perf` CLI, and the seam for an agent skill adapter." data-zh="编程 API、`ohos-perf` CLI，以及 agent skill 适配器的接缝。">Programmatic API, <code>ohos-perf</code> CLI, and the seam for an agent skill adapter.</p></div></li>
+      <li class="reveal"><span class="ln">L6</span><div><h3>Report</h3><p data-en="Metric and Evidence models, provenance, fidelity, stable ordering." data-zh="Metric 与 Evidence 模型、provenance、保真度、稳定排序。">Metric and Evidence models, provenance, fidelity, stable ordering.</p></div></li>
+      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Frame analyzer today — count, jank rate, empty rate, fps; vsync, memory and startup analyzers are the P1 surface." data-zh="当前是帧分析器：帧数、卡顿率、空帧率、fps；vsync、内存与启动分析器是 P1 的扩展面。">Frame analyzer today; jank, empty-frame, vsync, memory and startup analyzers are the P1 surface.</p></div></li>
+      <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Typed accessors over the 88 tables trace_streamer produces, starting with frames, processes and threads." data-zh="对 trace_streamer 产出的 88 张表做类型化访问，目前覆盖帧、进程与线程。">Typed accessors over the 88 tables trace_streamer produces, starting with frames, processes and threads.</p></div></li>
+      <li class="reveal"><span class="ln">L3</span><div><h3>Ingest</h3><p data-en="trace_streamer wrapper, scene artifact layout, read-only database handle." data-zh="trace_streamer 封装、场景产物布局、只读数据库句柄。">trace_streamer wrapper, scene artifact layout, read-only database handle.</p></div></li>
+      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace capture today; hiperf, hidumper, procfs and uitest are probed and queued." data-zh="当前实现 hitrace 采集；hiperf、hidumper、procfs 与 uitest 已被探测并排队。">hitrace capture today; hiperf, hidumper, procfs and uitest are probed and queued.</p></div></li>
+      <li class="reveal"><span class="ln">L1</span><div><h3>Device</h3><p data-en="Device model, one-shot capability probe, cached CapabilityMatrix." data-zh="设备模型、一次性能力探测、缓存的 CapabilityMatrix。">Device model, one-shot capability probe, cached CapabilityMatrix.</p></div></li>
+      <li class="reveal"><span class="ln">L0</span><div><h3>Transport</h3><p data-en="hdc client: shell, port forwarding, file send/recv, target listing, connect." data-zh="hdc 客户端：shell、端口转发、文件收发、目标枚举与连接。">hdc client: shell, port forwarding, file send/recv, target listing, connect.</p></div></li>
+    </ol>
+  </div>
+</section>
+
+<section class="section alt" id="demo">
+  <div class="wrap">
+    <p class="eyebrow reveal" data-en="Demo" data-zh="演示">Demo</p>
+    <h2 class="reveal" data-en="From a device to a report in one flow." data-zh="从设备到报告，一条链路。">From a device to a report in one flow.</h2>
+    <div class="video-frame reveal">
+      <video id="promo" controls muted loop playsinline preload="metadata" poster="assets/poster.jpg" width="1920" height="1080">
+        <source src="assets/promo.mp4" type="video/mp4">
+        <p data-en="Your browser does not support the video tag." data-zh="你的浏览器不支持 video 标签。">Your browser does not support the video tag.</p>
+      </video>
+    </div>
+    <p class="footnote reveal" data-en="24-second overview. No audio. The numbers come from the recorded emulator trace in the test fixtures." data-zh="24 秒概览，无音轨。数字来自测试夹具里那段真实模拟器 trace。">24-second overview. No audio. The numbers come from the recorded emulator trace in the test fixtures.</p>
+  </div>
+</section>
+
+<section class="section" id="code">
+  <div class="wrap">
+    <p class="eyebrow reveal" data-en="Use it" data-zh="使用">Use it</p>
+    <h2 class="reveal" data-en="Two entry points, same engine." data-zh="两个入口，同一个引擎。">Two entry points, same engine.</h2>
+    <div class="code-grid">
+      <div class="reveal">
+        <h3 class="code-title"><span data-en="As a library" data-zh="作为库">As a library</span></h3>
+        <div class="codewrap">
+          <button class="copy" type="button" data-copy="lib-code" data-en="Copy" data-zh="复制">Copy</button>
+          <pre class="code"><code id="lib-code"><span class="k">import</span> { connect, FrameQuery, ProcessQuery, FrameAnalyzer } <span class="k">from</span> <span class="s">'@ohos-perf/core'</span>;
+
+<span class="cm">// One probe → identity, 20 capability verdicts, evidence.</span>
+<span class="k">const</span> device = <span class="k">await</span> connect();
+<span class="k">const</span> caps = <span class="k">await</span> device.capabilities();
+
+<span class="cm">// Capture, convert with trace_streamer, open trace.db.</span>
+<span class="k">const</span> scene = <span class="k">await</span> device.collect({
+  app: <span class="s">'com.example.app'</span>,
+  durationMs: <span class="n">10_000</span>,
+  sceneRoot: <span class="s">'scenes/demo'</span>,
+}).ingest();
+
+<span class="cm">// Typed queries + metrics with provenance and fidelity.</span>
+<span class="k">const</span> result = <span class="k">await new</span> FrameAnalyzer().run({
+  frames: <span class="k">new</span> FrameQuery(scene.traceDb),
+  processes: <span class="k">new</span> ProcessQuery(scene.traceDb),
+  app: { packageName: <span class="s">'com.example.app'</span>, pids: [], processNames: [] },
+  window: { startNs: <span class="n">0</span>, endNs: Number.MAX_SAFE_INTEGER },
+  caps,
+  deviceId: device.id,
+});
+
+console.log(result.metrics, result.evidence);
+scene.close();</code></pre>
+        </div>
+      </div>
+      <div class="reveal">
+        <h3 class="code-title"><span data-en="As a CLI" data-zh="作为 CLI">As a CLI</span></h3>
+        <div class="codewrap">
+          <button class="copy" type="button" data-copy="cli-code" data-en="Copy" data-zh="复制">Copy</button>
+          <pre class="code"><code id="cli-code"><span class="cm"># Probe the attached device.</span>
+ohos-perf doctor
+
+<span class="cm"># Machine-readable capability matrix.</span>
+ohos-perf caps --json
+
+<span class="cm"># Analyze an existing scene directory.</span>
+ohos-perf analyze ./scene --json
+
+<span class="cm"># Exit codes are real: a failed analysis is 1.</span>
+<span class="p">$</span> ohos-perf analyze ./missing; <span class="k">echo</span> $?
+<span class="n">1</span></code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="quickstart">
+  <div class="wrap">
+    <p class="eyebrow reveal" data-en="Quickstart" data-zh="快速开始">Quickstart</p>
+    <h2 class="reveal" data-en="Clone, build, analyze." data-zh="克隆、构建、分析。">Clone, build, analyze.</h2>
+    <p class="section-lead reveal" data-en="The packages are not on npm yet — install from source. Node ^22.13.0 || >=23.4.0, and an hdc + trace_streamer from a DevEco Studio installation." data-zh="包尚未发布到 npm——请从源码安装。需要 Node ^22.13.0 || >=23.4.0，以及 DevEco Studio 附带的 hdc 与 trace_streamer。">The packages are not on npm yet — install from source. Node <code>^22.13.0 || &gt;=23.4.0</code>, and an <code>hdc</code> + <code>trace_streamer</code> from a DevEco Studio installation.</p>
+
+    <div class="quick-grid">
+      <div class="steps reveal">
+        <div class="step"><span class="num">1</span><div><h4 data-en="Clone and install" data-zh="克隆并安装">Clone and install</h4><p data-en="One workspace, two packages: core and CLI." data-zh="一个 workspace，两个包：core 与 CLI。">One workspace, two packages: core and CLI.</p></div></div>
+        <div class="step"><span class="num">2</span><div><h4 data-en="Build both packages" data-zh="构建两个包">Build both packages</h4><p data-en="`npm test` also builds them first, so a clean checkout is never red." data-zh="`npm test` 会先构建再测试，干净检出不会红。"><code>npm test</code> also builds them first, so a clean checkout is never red.</p></div></div>
+        <div class="step"><span class="num">3</span><div><h4 data-en="Run against a device" data-zh="对真机运行">Run against a device</h4><p data-en="`doctor` tells you what the attached device can do before you capture anything." data-zh="`doctor` 会在采集前告诉你这台设备能做什么。"><code>doctor</code> tells you what the attached device can do before you capture anything.</p></div></div>
+        <div class="step"><span class="num">4</span><div><h4 data-en="Analyze offline" data-zh="离线分析">Analyze offline</h4><p data-en="No device? Point the analyzer at an existing trace.db and get the same metrics." data-zh="没有设备？把分析器指向已有的 trace.db，得到同样的指标。">No device? Point the analyzer at an existing <code>trace.db</code> and get the same metrics.</p></div></div>
+      </div>
+      <div class="codewrap reveal">
+        <button class="copy" type="button" data-copy="quick-code" data-en="Copy" data-zh="复制">Copy</button>
+        <pre class="code"><code id="quick-code"><span class="p">$</span> git clone https://github.com/growvv/ohos-perf.git
+<span class="p">$</span> <span class="k">cd</span> ohos-perf
+<span class="p">$</span> npm install
+<span class="p">$</span> npm run build
+<span class="p">$</span> npm run build -w @ohos-perf/cli
+
+<span class="cm"># Probe the attached device (real or emulator).</span>
+<span class="p">$</span> node packages/cli/dist/index.js doctor
+
+<span class="cm"># Analyze a scene directory offline.</span>
+<span class="p">$</span> node packages/cli/dist/index.js analyze ./scene --json
+
+<span class="cm"># Run the suite: 238 core + 53 CLI tests.</span>
+<span class="p">$</span> npm test</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <div class="foot-brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M16 2.8 27.4 9.4v13.2L16 29.2 4.6 22.6V9.4Z" fill="none" stroke="url(#mg)" stroke-width="1.6"/>
+        <path d="M9 16h3.2l2-4.4 3.6 8.8 2-4.4H23" fill="none" stroke="url(#mg)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <strong>ohos-perf</strong>
+        <p data-en="HarmonyOS performance, made measurable." data-zh="鸿蒙性能，从此可度量。">HarmonyOS performance, made measurable.</p>
+      </div>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/growvv/ohos-perf" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/growvv/ohos-perf/blob/master/design/2026-11-14-ohos-perf-core-design.md" target="_blank" rel="noopener" data-en="Design" data-zh="设计文档">Design</a>
+      <a href="https://github.com/growvv/ohos-perf/blob/master/docs/superpowers/plans/2026-11-14-ohos-perf-core-p0.md" target="_blank" rel="noopener" data-en="Plan" data-zh="计划">Plan</a>
+      <a href="https://github.com/growvv/ohos-perf/blob/master/LICENSE" target="_blank" rel="noopener">MIT</a>
+    </div>
+  </div>
+  <div class="wrap footer-fine">
+    <p data-en="Not affiliated with Huawei or the OpenHarmony project. Device names are used for identification only." data-zh="与华为及 OpenHarmony 项目无隶属关系。设备名称仅用于标识。">Not affiliated with Huawei or the OpenHarmony project. Device names are used for identification only.</p>
+  </div>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://growvv.github.io/ohos-perf/sitemap.xml
