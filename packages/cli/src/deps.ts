@@ -300,6 +300,14 @@ export function realDeps(
         sceneRoot: sceneDir,
         ...(req.procfs === true ? { procfs: true } : {}),
         ...(req.coldStart !== undefined ? { coldStart: { ability: req.coldStart } } : {}),
+        ...(req.hiprofiler === undefined
+          ? {}
+          : {
+              hiprofiler:
+                req.hiprofiler.plugins === undefined
+                  ? {}
+                  : { plugins: req.hiprofiler.plugins },
+            }),
       });
       const scene = await session.ingest();
       try {

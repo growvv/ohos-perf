@@ -128,6 +128,85 @@ describe('command wiring', () => {
     });
   });
 
+  it('collect forwards --hiprofiler and --plugins as plugin names', async () => {
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', '10', '--out', 'scene1',
+        '--hiprofiler', '--plugins', 'gpu,xpower'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' } };
+        },
+      },
+    );
+    expect(seen).toEqual([{
+      app: 'com.demo',
+      durationMs: 10_000,
+      out: 'scene1',
+      hiprofiler: { plugins: ['gpu', 'xpower'] },
+    }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('collect requests hiprofiler with its default plugin list when --plugins is absent', async () => {
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', '10', '--out', 'scene1', '--hiprofiler'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' } };
+        },
+      },
+    );
+    expect(seen).toEqual([{
+      app: 'com.demo',
+      durationMs: 10_000,
+      out: 'scene1',
+      hiprofiler: {},
+    }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('collect rejects an unknown plugin with one stderr line and empty stdout', async () => {
+    let called = false;
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', '10', '--out', 'scene1',
+        '--hiprofiler', '--plugins', 'gpu,nope'],
+      {
+        collect: async () => {
+          called = true;
+          return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' } };
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stdout).toBe('');
+    expect(emitted[0].stderr.trim().split('\n')).toHaveLength(1);
+    expect(emitted[0].stderr).toContain('nope');
+  });
+
+  it('collect rejects --plugins without --hiprofiler', async () => {
+    let called = false;
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', '10', '--out', 'scene1',
+        '--plugins', 'gpu'],
+      {
+        collect: async () => {
+          called = true;
+          return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' } };
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stdout).toBe('');
+    expect(emitted[0].stderr).toContain('--hiprofiler');
+  });
+
   it('collect rejects an invalid --duration before calling deps.collect', async () => {
     let called = false;
     const { emitted } = await parse(

@@ -48,8 +48,11 @@ Implemented today:
 
 - `hdc` transport: shell, port forwarding, file send/recv, target listing
 - one-shot capability probe → 20 verdicts with evidence
-- collectors: hitrace (marker checks, stale-file protection, stop-on-failure)
-  and procfs (`/proc` memory/thread sampling with `pidof` resolution)
+- collectors: hitrace (marker checks, stale-file protection, stop-on-failure),
+  procfs (`/proc` memory/thread sampling with `pidof` resolution), and
+  hiprofiler (`hiprofiler_cmd` sessions with the ftrace, nativehook, gpu and
+  xpower plugins ported from HapRay; the `.htrace` converts through the same
+  `trace_streamer` path)
 - `trace_streamer` wrapper and scene layout, with `scene.json` metadata
   (device-uptime start marker, pids, collector list)
 - typed queries over the 88-table trace database: frames, processes, threads,
@@ -80,8 +83,8 @@ Memory (procfs) and startup have no HapRay equivalent on the emulator; their
 tests pin the parser, aggregation and marker fallback instead, and no parity is
 claimed for them.
 
-Not implemented yet: hiperf, hiprofiler, hidumper and uitest collectors,
-baseline comparison, and the agent-skill adapter.
+Not implemented yet: hiperf, hidumper and uitest collectors, baseline
+comparison, and the agent-skill adapter.
 
 ## Requirements
 
@@ -107,12 +110,17 @@ node packages/cli/dist/index.js caps --json     # machine-readable matrix
 ```
 
 Capture a scene (add `--procfs` for memory samples, `--cold-start` to launch an
-ability first):
+ability first, or `--hiprofiler --plugins …` to record through hiprofiler):
 
 ```bash
 node packages/cli/dist/index.js collect \
   --app com.example.app --duration 10s --out ./scene --procfs \
   --cold-start EntryAbility --json
+
+# hiprofiler plugins: ftrace (default), gpu, xpower, nativehook
+node packages/cli/dist/index.js collect \
+  --app com.example.app --duration 10s --out ./hipro-scene \
+  --hiprofiler --plugins gpu,xpower,nativehook --json
 ```
 
 Analyze it offline — no device or toolchain needed:
@@ -124,7 +132,7 @@ node packages/cli/dist/index.js analyze ./scene --app com.example.app --json
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
-npm test        # 574 tests; 551 pass + 23 skip on a clean checkout (spike/out/ absent)
+npm test        # 621 tests; 598 pass + 23 skip on a clean checkout (spike/out/ absent)
 ```
 
 ## Library
@@ -188,7 +196,7 @@ L6  Report                 Metric · Evidence · provenance · fidelity
 L5  Analyze                frames · fault tree · binder · threads · memory · startup
 L4  Query                  typed accessors over 88 trace tables
 L3  Ingest                 trace_streamer wrapper · scene layout · scene.json · db handle
-L2  Collectors             hitrace · procfs (hiperf/hidumper/uitest still missing)
+L2  Collectors             hitrace · procfs · hiprofiler (hiperf/hidumper/uitest missing)
 L1  Device                 device model · capability probe · matrix
 L0  Transport              hdc client
 ```

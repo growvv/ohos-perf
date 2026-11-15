@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDurationSeconds } from '../src/collect';
+import { parseDurationSeconds, parsePluginList } from '../src/collect';
 
 /**
  * Duration parsing is a pure rule: `collect.ts` owns it so `program.ts` can
@@ -61,6 +61,25 @@ describe('parseDurationSeconds', () => {
     for (const bad of ['0.0001', '1.0005', '0.0000001']) {
       expect(() => parseDurationSeconds(bad), `value ${bad}`).toThrow(/duration/);
       expect(() => parseDurationSeconds(bad)).toThrow(bad);
+    }
+  });
+});
+
+describe('parsePluginList', () => {
+  it('splits, trims and deduplicates names', () => {
+    expect(parsePluginList(' gpu, xpower ,gpu ')).toEqual(['gpu', 'xpower']);
+  });
+
+  it('rejects an unknown plugin', () => {
+    expect(() => parsePluginList('gpu,nope')).toThrow(/nope/);
+    expect(() => parsePluginList('gpu,nope')).toThrow(
+      /ftrace, gpu, xpower, nativehook/,
+    );
+  });
+
+  it('rejects empty elements instead of silently skipping them', () => {
+    for (const bad of ['', ',', 'gpu,', ',gpu', 'gpu,,xpower']) {
+      expect(() => parsePluginList(bad), `value ${JSON.stringify(bad)}`).toThrow();
     }
   });
 });

@@ -31,7 +31,7 @@
 
     if (meta) {
       meta.content = zh
-        ? '面向鸿蒙性能分析的 TypeScript 工具包：能力探测、hitrace 与 procfs 采集、trace 入库、类型化查询、六个分析器（帧、故障树、binder、线程、内存、启动）与 CLI。确定性、可追溯、零原生依赖。'
+        ? '面向鸿蒙性能分析的 TypeScript 工具包：能力探测、hitrace、procfs 与 hiprofiler 采集、trace 入库、类型化查询、六个分析器（帧、故障树、binder、线程、内存、启动）与 CLI。确定性、可追溯、零原生依赖。'
         : metaEn;
     }
 

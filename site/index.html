@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ohos-perf — HarmonyOS performance, made measurable</title>
-<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace and procfs capture, trace ingest, typed queries, six analyzers (frames, fault tree, binder, threads, memory, startup) and a CLI. Deterministic, evidence-backed, zero native dependencies.">
+<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace, procfs and hiprofiler capture, trace ingest, typed queries, six analyzers (frames, fault tree, binder, threads, memory, startup) and a CLI. Deterministic, evidence-backed, zero native dependencies.">
 <meta property="og:title" content="ohos-perf — HarmonyOS performance, made measurable">
-<meta property="og:description" content="Capability probing, hitrace and procfs capture, trace ingest, typed queries over 88 tables, six analyzers with HapRay-verified parity, and a CLI in one TypeScript toolkit.">
+<meta property="og:description" content="Capability probing, hitrace/procfs/hiprofiler capture, trace ingest, typed queries over 88 tables, six analyzers with HapRay-verified parity, and a CLI in one TypeScript toolkit.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://growvv.github.io/ohos-perf/">
 <meta property="og:image" content="https://growvv.github.io/ohos-perf/assets/poster.jpg">
@@ -59,13 +59,13 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1 is complete — six analyzers, HapRay-verified parity, 574 tests" data-zh="P1 已完成 — 六个分析器、经 HapRay 对拍的输出、574 个测试">P1 is complete — six analyzers, HapRay-verified parity, 574 tests</span>
+        <span data-en="P1 and P2 are complete — six analyzers, hiprofiler collection, 621 tests" data-zh="P1 与 P2 已完成 — 六个分析器、hiprofiler 采集、621 个测试">P1 and P2 are complete — six analyzers, hiprofiler collection, 621 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
         <span class="grad" data-en="made measurable." data-zh="从此可度量。">made measurable.</span>
       </h1>
-      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace and procfs capture, trace ingest, typed queries, six analyzers — frames, fault tree, binder, threads, memory, startup — and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测、hitrace 与 procfs 采集、trace 入库、类型化查询、六个分析器（帧、故障树、binder、线程、内存、启动）与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
+      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace, procfs and hiprofiler capture, trace ingest, typed queries, six analyzers — frames, fault tree, binder, threads, memory, startup — and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测、hitrace、procfs 与 hiprofiler 采集、trace 入库、类型化查询、六个分析器（帧、故障树、binder、线程、内存、启动）与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
         ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace and procfs capture, trace ingest, typed queries, six analyzers — frames, fault tree, binder, threads, memory, startup — and a CLI, in one TypeScript toolkit with zero native dependencies.
       </p>
       <div class="cta-row reveal">
@@ -122,7 +122,7 @@
     <div class="stats reveal">
       <div class="stat"><b>20</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
       <div class="stat"><b>6</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>574</b><span data-en="tests pass with spike fixtures; 551 + 23 skipped on a clean checkout" data-zh="个测试在含 spike 夹具时通过；干净检出为 551 通过 + 23 跳过">tests pass with spike fixtures; 551 + 23 skipped on a clean checkout</span></div>
+      <div class="stat"><b>621</b><span data-en="tests pass with spike fixtures; 598 + 23 skipped on a clean checkout" data-zh="个测试在含 spike 夹具时通过；干净检出为 598 通过 + 23 跳过">tests pass with spike fixtures; 598 + 23 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -299,7 +299,7 @@
       <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Six analyzers: frames, fault tree, binder, threads, memory and startup, with a capability matrix that degrades what the trace cannot support." data-zh="六个分析器：帧、故障树、binder、线程、内存与启动；能力矩阵会让 trace 不支持的分析器显式降级。">Six analyzers: frames, fault tree, binder, threads, memory and startup, with a capability matrix that degrades what the trace cannot support.</p></div></li>
       <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Ten typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup and perf." data-zh="十个类型化查询类，覆盖 trace_streamer 产出的 88 张表：帧、进程、线程、调度、瞬时事件、调用栈、binder、线程状态、启动与 perf。">Ten typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup and perf.</p></div></li>
       <li class="reveal"><span class="ln">L3</span><div><h3>Ingest</h3><p data-en="trace_streamer wrapper, scene artifact layout, read-only database handle." data-zh="trace_streamer 封装、场景产物布局、只读数据库句柄。">trace_streamer wrapper, scene artifact layout, read-only database handle.</p></div></li>
-      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace and procfs capture today, including `--procfs` memory sampling and `--cold-start` launch capture; hiperf, hiprofiler, hidumper and uitest collectors are still missing." data-zh="当前实现 hitrace 与 procfs 采集，含 `--procfs` 内存采样与 `--cold-start` 启动采集；hiperf、hiprofiler、hidumper 与 uitest 采集器仍待补齐。">hitrace and procfs capture today, including <code>--procfs</code> memory sampling and <code>--cold-start</code> launch capture; hiperf, hiprofiler, hidumper and uitest collectors are still missing.</p></div></li>
+      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace, procfs and hiprofiler capture today: `--procfs` memory sampling, `--cold-start` launch capture, and `--hiprofiler --plugins gpu,xpower,nativehook` sessions whose `.htrace` converts through the same trace_streamer path; hiperf, hidumper and uitest collectors are still missing." data-zh="当前实现 hitrace、procfs 与 hiprofiler 采集：`--procfs` 内存采样、`--cold-start` 启动采集，以及 `--hiprofiler --plugins gpu,xpower,nativehook` 会话（`.htrace` 走同一条 trace_streamer 入库路径）；hiperf、hidumper 与 uitest 采集器仍待补齐。">hitrace, procfs and hiprofiler capture today: <code>--procfs</code> memory sampling, <code>--cold-start</code> launch capture, and <code>--hiprofiler --plugins gpu,xpower,nativehook</code> sessions whose <code>.htrace</code> converts through the same <code>trace_streamer</code> path; hiperf, hidumper and uitest collectors are still missing.</p></div></li>
       <li class="reveal"><span class="ln">L1</span><div><h3>Device</h3><p data-en="Device model, one-shot capability probe, cached CapabilityMatrix." data-zh="设备模型、一次性能力探测、缓存的 CapabilityMatrix。">Device model, one-shot capability probe, cached CapabilityMatrix.</p></div></li>
       <li class="reveal"><span class="ln">L0</span><div><h3>Transport</h3><p data-en="hdc client: shell, port forwarding, file send/recv, target listing, connect." data-zh="hdc 客户端：shell、端口转发、文件收发、目标枚举与连接。">hdc client: shell, port forwarding, file send/recv, target listing, connect.</p></div></li>
     </ol>
@@ -423,7 +423,7 @@ ohos-perf analyze ./scene --json
 <span class="cm"># Run all six analyzers over the scene, offline.</span>
 <span class="p">$</span> node packages/cli/dist/index.js analyze ./scene --json
 
-<span class="cm"># Run the suite: 551 pass + 23 skip on a clean checkout; 574 with spike fixtures.</span>
+<span class="cm"># Run the suite: 598 pass + 23 skip on a clean checkout; 621 with spike fixtures.</span>
 <span class="p">$</span> npm test</code></pre>
       </div>
     </div>

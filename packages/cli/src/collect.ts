@@ -1,4 +1,8 @@
-import { OhosPerfError } from '@ohos-perf/core';
+import {
+  HIPROFILER_PLUGIN_NAMES,
+  OhosPerfError,
+  type HiprofilerPluginName,
+} from '@ohos-perf/core';
 
 /** Node's setTimeout (and hitrace's own duration gate) clamp above this to 1 ms. */
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -51,4 +55,37 @@ export function parseDurationSeconds(raw: string): number {
     throw bad('duration is not a positive whole number of milliseconds within the 32-bit limit');
   }
   return durationMs;
+}
+
+/**
+ * Parse `--plugins gpu,xpower` into the names `Device.collect` accepts.
+ *
+ * Names are validated here, before any device is touched, so a typo cannot
+ * start a session with a plugin the daemon does not know. An empty list and
+ * empty elements are rejected rather than silently skipped: `--plugins ,`
+ * reads as "I chose plugins" and must not fall back to the default.
+ */
+export function parsePluginList(raw: string): HiprofilerPluginName[] {
+  const names = raw.split(',').map((name) => name.trim());
+  if (names.length === 0 || names.some((name) => name === '')) {
+    throw new OhosPerfError(
+      `invalid --plugins ${JSON.stringify(raw)}: expected a comma-separated list of ` +
+        HIPROFILER_PLUGIN_NAMES.join(', '),
+      { code: 'COLLECT_BAD_PLUGIN' },
+    );
+  }
+  const plugins: HiprofilerPluginName[] = [];
+  for (const name of names) {
+    if (!(HIPROFILER_PLUGIN_NAMES as readonly string[]).includes(name)) {
+      throw new OhosPerfError(
+        `unknown hiprofiler plugin ${JSON.stringify(name)};` +
+          ` expected one of ${HIPROFILER_PLUGIN_NAMES.join(', ')}`,
+        { code: 'COLLECT_BAD_PLUGIN' },
+      );
+    }
+    if (!plugins.includes(name as HiprofilerPluginName)) {
+      plugins.push(name as HiprofilerPluginName);
+    }
+  }
+  return plugins;
 }

@@ -612,6 +612,32 @@ describe('realDeps().analyze', () => {
 });
 
 describe('realDeps().collect', () => {
+  it('forwards the hiprofiler plugin list to device.collect', async () => {
+    const seen: unknown[] = [];
+    const deps = realDeps('0.0.0', {
+      collectDevice: async () => ({
+        id: 't1',
+        kind: 'emulator',
+        collect: async (opts: unknown) => {
+          seen.push(opts);
+          return { ingest: async () => ({ close: () => {} } as unknown as Scene) };
+        },
+      }),
+    });
+    await deps.collect({
+      app: 'com.demo',
+      durationMs: 10_000,
+      out: 'hipro-scene',
+      hiprofiler: { plugins: ['gpu', 'xpower'] },
+    });
+    expect(seen).toEqual([{
+      app: 'com.demo',
+      durationMs: 10_000,
+      sceneRoot: resolve('hipro-scene'),
+      hiprofiler: { plugins: ['gpu', 'xpower'] },
+    }]);
+  });
+
   it('resolves the output directory and closes the scene', async () => {
     const seen: unknown[] = [];
     let closed = false;

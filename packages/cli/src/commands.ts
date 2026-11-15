@@ -1,4 +1,4 @@
-import type { CapabilityState } from '@ohos-perf/core';
+import type { CapabilityState, HiprofilerPluginName } from '@ohos-perf/core';
 import { doctorReport, safeMessage, type DoctorDeps } from './doctor';
 
 /**
@@ -60,6 +60,8 @@ export interface CollectRequest {
   out: string;
   procfs?: boolean;
   coldStart?: string;
+  /** Capture through hiprofiler; an empty object selects Device's default. */
+  hiprofiler?: { plugins?: readonly HiprofilerPluginName[] };
 }
 
 /** What a successful `collect` returns to the renderer. */

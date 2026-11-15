@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import type { HiprofilerPluginName } from '@ohos-perf/core';
 import {
   runAnalyze,
   runCaps,
@@ -8,7 +9,7 @@ import {
   type CliDeps,
   type CliResult,
 } from './commands';
-import { parseDurationSeconds } from './collect';
+import { parseDurationSeconds, parsePluginList } from './collect';
 
 /**
  * Commander wiring, kept free of `process`.
@@ -86,6 +87,11 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .requiredOption('--out <dir>', 'scene output directory')
     .option('--procfs', 'also sample /proc memory state for the app')
     .option('--cold-start <ability>', 'launch this ability before capturing')
+    .option('--hiprofiler', 'capture through hiprofiler instead of hitrace')
+    .option(
+      '--plugins <list>',
+      'hiprofiler plugins, comma-separated: ftrace, gpu, xpower, nativehook',
+    )
     .option('--json', 'print the result as JSON')
     .action(async (opts: {
       app: string;
@@ -93,6 +99,8 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       out: string;
       procfs?: boolean;
       coldStart?: string;
+      hiprofiler?: boolean;
+      plugins?: string;
       json?: boolean;
     }) => {
       // Validation lives in the action (not a commander option parser) so a bad
@@ -105,12 +113,37 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
         return;
       }
+
+      // `--plugins` only means something to hiprofiler. Accepting it silently
+      // without `--hiprofiler` would capture through hitrace and quietly drop
+      // the user's request.
+      if (opts.plugins !== undefined && opts.hiprofiler !== true) {
+        io.emit({
+          stdout: '',
+          stderr: 'invalid --plugins: --hiprofiler is required\n',
+          exitCode: 1,
+        });
+        return;
+      }
+      let hiprofilerRequest: { plugins?: readonly HiprofilerPluginName[] } | undefined;
+      if (opts.hiprofiler === true) {
+        try {
+          hiprofilerRequest = opts.plugins === undefined
+            ? {}
+            : { plugins: parsePluginList(opts.plugins) };
+        } catch (err) {
+          io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+          return;
+        }
+      }
+
       io.emit(await runCollect(deps, {
         app: opts.app,
         durationMs,
         out: opts.out,
         ...(opts.procfs === true ? { procfs: true } : {}),
         ...(opts.coldStart !== undefined ? { coldStart: opts.coldStart } : {}),
+        ...(hiprofilerRequest === undefined ? {} : { hiprofiler: hiprofilerRequest }),
       }, { json: opts.json }));
     });
 
