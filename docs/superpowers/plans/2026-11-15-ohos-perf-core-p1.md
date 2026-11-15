@@ -17,6 +17,7 @@
 - **License:** HapRay is Apache-2.0. Every file with ported logic carries a header `Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.` Add `THIRD_PARTY_NOTICES.md` and `LICENSES/Apache-2.0.txt` in Task 3. The rest of the project stays MIT.
 - Every metric carries `provenance` (collector, table, rows, device) and `fidelity`; never emit `NaN`/`Infinity`/`null` values.
 - Analyzers are pure: no IO, no `Date.now()`, no randomness. All arrays sorted explicitly; group-by iteration must not depend on insertion order for observable output.
+- Evidence ids hash only kind/subject/window. When multiple evidence items in one analyzer can share those (per-signal, per-pair, per-analyzer-degradation), pass a unique `key` to `evidence()`; it is hashed but not stored in the output.
 - Missing capability is a degraded metric (`id: '<analyzer>.degraded'`), never a silent empty result and never a throw.
 - Read-only databases: never create indexes or write to a scene's `trace.db`.
 - Real-trace tests use `spike/out/emu_big.db` and `spike/out/real_device.db` (gitignored) and `it.skipIf` when absent; their HapRay goldens are committed.
@@ -111,7 +112,7 @@ git commit -m "feat: add P1 trace query layer"
 
 **Files:**
 - Create: `packages/core/src/analyze/engine.ts`, `packages/core/src/analyze/context.ts`, `packages/core/test/analyze-engine.test.ts`, `packages/core/test/fixtures/hapray/*.json`, `scripts/parity/hapray_reference.py`, `scripts/parity/README.md`
-- Modify: `packages/core/src/analyze/types.ts`, `packages/core/src/index.ts`
+- Modify: `packages/core/src/analyze/types.ts`, `packages/core/src/report/evidence.ts`, `packages/core/src/index.ts`
 - Test: `packages/core/test/parity-fixtures.test.ts`
 
 **Interfaces:**
@@ -121,10 +122,11 @@ git commit -m "feat: add P1 trace query layer"
   - `resolveAppIdentity(processes: ProcessQuery, packageName: string): AppIdentity` — exact `byName`, `pids: [pid]` when found else `[]`; `processNames` is `[packageName]`.
   - `defaultAnalyzers(): Analyzer[]` — initially `[new FrameAnalyzer()]`; later tasks append.
 - Golden files: `fault-tree.emu_big.json`, `binder.emu_big.json`, `threads.emu_big.json`, `thread-wakeup.emu_big.json`, `fault-tree.real_device.json`, `threads.real_device.json`, `thread-wakeup.real_device.json`. The first four (plus `fault-tree.real_device.json`, `threads.real_device.json`) are the `step1` payload, not the outer `{step1: ...}` wrapper; the two `thread-wakeup.*` files are already bare arrays (HapRay's `ThreadWakeup` output) and are copied as-is. `binder.real_device.json` is `{}`.
+- `evidence()` gains an optional `key?: string` that is appended to the hash material only when present, so existing evidence ids stay byte-identical. The engine passes `key: analyzer.id`; later analyzers pass their per-item discriminator.
 
 - [ ] **Step 1: Write failing engine tests**
 
-Use three fake analyzers: one available, one requiring `mem.native_hook` (unavailable), one requiring `perf.pmu` (unavailable with a reason). Assert: degraded metric id/value/unit/fidelity and `degraded.reason` contains the capability id and device reason; a `degraded_capability` evidence exists; available metrics are merged and sorted by id; two analyzers emitting the same id throw `DUPLICATE_METRIC_ID`; the input context and analyzer objects are not mutated.
+Use three fake analyzers: one available, one requiring `mem.native_hook` (unavailable), one requiring `perf.pmu` (unavailable with a reason). Assert: degraded metric id/value/unit/fidelity and `degraded.reason` contains the capability id and device reason; two `degraded_capability` evidence items exist and their ids are distinct (same subject and window, different `key`); available metrics are merged and sorted by id; two analyzers emitting the same id throw `DUPLICATE_METRIC_ID`; the input context and analyzer objects are not mutated.
 
 - [ ] **Step 2: Run, see fail**
 
