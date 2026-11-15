@@ -747,6 +747,7 @@ function binderMetric(
   id: string,
   value: number,
   unit: MetricUnit,
+  rows: number,
   ctx: AnalyzeContext,
 ): Metric {
   return metric({
@@ -757,6 +758,7 @@ function binderMetric(
     provenance: {
       collector: 'hitrace+streamer',
       table: 'callstack',
+      rows,
       device: ctx.deviceId,
     },
   });
@@ -772,9 +774,12 @@ function binderMetric(
  * evidence as a measurement.
  */
 function binderMetrics(analysis: BinderAnalysis, ctx: AnalyzeContext): Metric[] {
+  // One count for the whole metric family: the transactions the statistics
+  // were computed over. Computed once, never recomputed per metric.
+  const rows = analysis.transactions.length;
   const completed = analysis.transactions.filter((tx) => tx.latencyMs !== null);
   const metrics = [
-    binderMetric('binder.transactions.count', analysis.transactions.length, 'count', ctx),
+    binderMetric('binder.transactions.count', analysis.transactions.length, 'count', rows, ctx),
   ];
   if (completed.length === 0) return metrics;
 
@@ -786,11 +791,11 @@ function binderMetrics(analysis: BinderAnalysis, ctx: AnalyzeContext): Metric[] 
     if (latency > max) max = latency;
   }
   metrics.push(
-    binderMetric('binder.latency.avg', total / latencies.length, 'ms', ctx),
-    binderMetric('binder.latency.max', max, 'ms', ctx),
-    binderMetric('binder.process.pairs', analysis.processStats.length, 'count', ctx),
-    binderMetric('binder.thread.pairs', analysis.threadStats.length, 'count', ctx),
-    binderMetric('binder.interfaces.count', analysis.interfaceStats.length, 'count', ctx),
+    binderMetric('binder.latency.avg', total / latencies.length, 'ms', rows, ctx),
+    binderMetric('binder.latency.max', max, 'ms', rows, ctx),
+    binderMetric('binder.process.pairs', analysis.processStats.length, 'count', rows, ctx),
+    binderMetric('binder.thread.pairs', analysis.threadStats.length, 'count', rows, ctx),
+    binderMetric('binder.interfaces.count', analysis.interfaceStats.length, 'count', rows, ctx),
   );
   return metrics;
 }

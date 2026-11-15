@@ -13,6 +13,10 @@ export type MetricUnit = 'ms' | 'fps' | '%' | 'count' | 'bytes' | 'none';
  * `collector` names the pipeline that produced the value, `table`/`rows` pin it
  * to a concrete database table and row count when one exists, and `device`
  * identifies the device class the value describes.
+ *
+ * `rows` is the number of observations that fed the metric, so a consumer can
+ * compare confidence across analyzers. Omit it only when the metric is not
+ * derived from a countable row set (a `degraded` proxy, or a whole-trace ratio).
  */
 export interface Provenance {
   collector: string;

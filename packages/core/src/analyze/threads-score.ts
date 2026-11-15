@@ -1440,6 +1440,7 @@ function threadMetric(
   id: string,
   value: number,
   unit: MetricUnit,
+  rows: number,
   ctx: AnalyzeContext,
 ): Metric {
   return metric({
@@ -1449,6 +1450,7 @@ function threadMetric(
     fidelity: 'exact',
     provenance: {
       collector: 'hitrace+streamer',
+      rows,
       device: ctx.deviceId,
     },
   });
@@ -1461,37 +1463,46 @@ function threadMetric(
  * `total_redundant_thread_patterns` / `total_redundant_threads`; all five are
  * exact. The ratio is the 0-1 payload ratio scaled to a percentage.
  */
-function threadMetrics(analysis: ThreadAnalysis, ctx: AnalyzeContext): Metric[] {
+function threadMetrics(
+  analysis: ThreadAnalysis,
+  rows: number,
+  ctx: AnalyzeContext,
+): Metric[] {
   const summary = analysis.redundantThreadsSummary;
   return [
     threadMetric(
       'thread.patterns.count',
       summary.total_redundant_thread_patterns,
       'count',
+      rows,
       ctx,
     ),
     threadMetric(
       'thread.redundant.count',
       summary.total_redundant_threads,
       'count',
+      rows,
       ctx,
     ),
     threadMetric(
       'thread.instructions.total',
       summary.total_cpu_instructions,
       'count',
+      rows,
       ctx,
     ),
     threadMetric(
       'thread.redundant.instructions',
       summary.total_redundant_instructions,
       'count',
+      rows,
       ctx,
     ),
     threadMetric(
       'thread.redundant.instructions.ratio',
       analysis.summary.redundant_instructions_ratio * 100,
       '%',
+      rows,
       ctx,
     ),
   ];
@@ -1627,10 +1638,10 @@ export class ThreadAnalyzer implements Analyzer {
       return { metrics: [], evidence: [noAppPidEvidence(ctx)] };
     }
 
-    const analysis = computeThreadAnalysis(
-      analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids }),
-    );
-    const metrics = threadMetrics(analysis, ctx);
+    const results = analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids });
+    const analysis = computeThreadAnalysis(results);
+    // `rows` is the number of wakeup results the scorer actually analyzed.
+    const metrics = threadMetrics(analysis, results.length, ctx);
     const patterns = analysis.redundantThreadsSummary.redundant_threads;
     const evidenceItems =
       patterns.length > 0

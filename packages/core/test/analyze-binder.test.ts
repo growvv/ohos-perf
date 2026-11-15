@@ -359,6 +359,8 @@ describe('BinderAnalyzer', () => {
       expect(m.provenance).toEqual({
         collector: 'hitrace+streamer',
         table: 'callstack',
+        // Five transactions fed every statistic in this family.
+        rows: 5,
         device: 'emu-binder',
       });
     }

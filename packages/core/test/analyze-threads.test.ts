@@ -664,6 +664,8 @@ describe('ThreadAnalyzer', () => {
       expect(entry.fidelity).toBe('exact');
       expect(entry.provenance).toEqual({
         collector: 'hitrace+streamer',
+        // Four wakeup results fed every thread metric.
+        rows: 4,
         device: 'emu-threads',
       });
     }
