@@ -333,7 +333,7 @@ Add `new ThreadAnalyzer()` to defaults; export; `npm test`; commit.
 
 - [ ] **Step 1: Write failing tests**
 
-Parser fixtures: realistic `status` text with `VmRSS: 123456 kB`, `VmHWM: 234567 kB`, `Threads: 42`; `smaps_rollup` with `Pss`, `Private_Dirty`, `SwapPss`; missing fields → `undefined`. Collector fake Hdc sequence: pidof `"742\n"`, 3 status/smaps responses, `now` stepping 0/500/1000, sleep recording; duration 1000/interval 500 → 2–3 samples at expected ts and pid. Rejection cases: `app: 'com.demo; rm -rf /'` → `PROCFS_BAD_APP`; interval 99 → `PROCFS_BAD_INTERVAL`; empty pidof → `PROCFS_NO_PID`; all cat calls failing → `PROCFS_NO_SAMPLES`. Missing `smaps_rollup` → samples without `smaps`.
+Parser fixtures: realistic `status` text with `VmRSS: 123456 kB`, `VmHWM: 234567 kB`, `Threads: 42`; `smaps_rollup` with `Pss`, `Private_Dirty`, `SwapPss`; missing fields → `undefined`. Collector fake Hdc sequence: pidof `"742\n"`, 3 status/smaps responses, `now` stepping 0/500/1000, sleep recording; duration 1000/interval 500 → 3 samples at expected ts and pid. Rejection cases: `app: 'com.demo; rm -rf /'` → `PROCFS_BAD_APP`; interval 99 → `PROCFS_BAD_INTERVAL`; empty pidof → `PROCFS_NO_PID`; all cat calls failing → `PROCFS_NO_SAMPLES`. Missing `smaps_rollup` → samples without `smaps`.
 `SceneLayout` test: `createSceneLayout('/x').procfsFile` is `/x/procfs.jsonl` (use `join` in the assertion).
 
 - [ ] **Step 2: Run, see fail**
@@ -343,7 +343,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement collector + serialization**
 
-Parse kB lines with `/^(VmRSS|VmHWM|Threads):\s+(\d+)(?:\s+kB)?$/m`; multiply RSS/HWM/Pss by 1024. `readProcfsSamples` returns `[]` for a missing file; malformed lines are skipped (never throw on one bad line). Use `writeFileSync` with `JSON.stringify` per sample.
+Parse kB lines with `/^(VmRSS|VmHWM|Threads):\s+(\d+)(?:\s+kB)?$/m`; multiply every kB-valued field by 1024 (`VmRSS`, `VmHWM`, `Pss`, `Private_Dirty`, `SwapPss`), so all `*Bytes` fields hold bytes. `readProcfsSamples` returns `[]` for a missing file; malformed lines are skipped (never throw on one bad line). Use `writeFileSync` with `JSON.stringify` per sample.
 Sampling loop: if the first sample fails, keep trying until the duration ends (the app may not have started yet); count successes.
 
 - [ ] **Step 4: Test, export, commit**
