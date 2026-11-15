@@ -47,8 +47,9 @@ const BINARIES = ['hiprofiler_cmd', 'hiperf', 'hitrace', 'hidumper', 'uitest'] a
 
 const CMD_LIST_HW = 'hiperf list hw';
 const CMD_LIST = 'hiperf list';
+const CMD_HIPROFILER_LIST = 'hiprofiler_cmd --list';
 
-/** Fixed order: five params, five `which`, then the two hiperf listings. */
+/** Fixed order: five params, five `which`, the hiprofiler list, then hiperf. */
 const COMMANDS: readonly string[] = [
   PARAM_ABI,
   PARAM_PRODUCT_NAME,
@@ -56,6 +57,7 @@ const COMMANDS: readonly string[] = [
   PARAM_OS_FULLNAME,
   PARAM_DEVICE_TYPE,
   ...BINARIES.map((binary) => `which ${binary}`),
+  CMD_HIPROFILER_LIST,
   CMD_LIST_HW,
   CMD_LIST,
 ];
@@ -128,6 +130,39 @@ export function parseHiperfEvents(listOutput: string): { hw: string[]; sw: strin
   return { hw, sw };
 }
 
+/** The daemon answers this, and nothing else, when it has not been started. */
+const SERVICE_NOT_STARTED = 'Service not started';
+const PLUGIN_NAME = /^\s*name:\s*"([^"]+)"/;
+
+/**
+ * Parse `hiprofiler_cmd --list`.
+ *
+ * Measured format on the Mate 60 (HarmonyOS 7.0.0.111), after the daemon is
+ * running:
+ *
+ * ```
+ * support plugin list:
+ * capabilities {
+ *   path: "libgpudataplugin.z.so"
+ *   name: "gpu-plugin"
+ * }
+ * ```
+ *
+ * The service reports `Service not started` while no daemon is running — the
+ * probe deliberately does not start one (starting is a device mutation), so
+ * `undefined` means "unknown", not "no plugins". An unparseable response is
+ * treated the same way rather than claiming every plugin is absent.
+ */
+export function parseHiprofilerPlugins(output: string): string[] | undefined {
+  if (output.includes(SERVICE_NOT_STARTED)) return undefined;
+  const names: string[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = PLUGIN_NAME.exec(line);
+    if (match !== null && !names.includes(match[1])) names.push(match[1]);
+  }
+  return names.length === 0 ? undefined : names;
+}
+
 function readParam(probes: Record<string, ProbeResult>, command: string): string {
   return probes[command].stdout.trim();
 }
@@ -162,6 +197,7 @@ export async function runProbe(runner: ProbeRunner): Promise<ProbeSnapshot> {
 
   const full = parseHiperfEvents(probes[CMD_LIST].stdout);
   const hwOnly = parseHiperfEvents(probes[CMD_LIST_HW].stdout);
+  const hiprofilerPlugins = parseHiprofilerPlugins(probes[CMD_HIPROFILER_LIST].stdout);
 
   return {
     // Flattened copies keep the snapshot assignable to `CapabilityInputs`
@@ -174,6 +210,8 @@ export async function runProbe(runner: ProbeRunner): Promise<ProbeSnapshot> {
     // (`perf.pmu` reports it in the matrix); the full listing backstops it.
     hiperfHwEvents: hwOnly.hw.length > 0 ? hwOnly.hw : full.hw,
     hiperfSwEvents: full.sw,
+    // Only present when the daemon was already running; see the parser.
+    ...(hiprofilerPlugins === undefined ? {} : { hiprofilerPlugins }),
     probes,
   };
 }

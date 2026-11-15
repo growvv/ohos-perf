@@ -260,3 +260,60 @@ describe('CapabilityMatrix', () => {
     expect(m.all().map((s: CapabilityState) => s.id)).toEqual(['trace.frames', 'ui.tree']);
   });
 });
+
+describe('plugin-aware hiprofiler verdicts', () => {
+  const list = (names: string[]): ProbeResult =>
+    p('hiprofiler_cmd --list', names.map((n) => `capabilities {\n  name: "${n}"\n}`).join('\n'));
+
+  it('marks mem.gpu unavailable when gpu-plugin is not offered', () => {
+    const probe = list(['cpu-plugin']);
+    const m = buildMatrix({
+      ...FULL_DEVICE,
+      hiprofilerPlugins: ['cpu-plugin'],
+      probes: { 'hiprofiler_cmd --list': probe },
+    });
+    const s = m.get('mem.gpu')!;
+    expect(s.available).toBe(false);
+    expect(s.reason).toContain('gpu-plugin');
+    expect(s.probe).toEqual(probe);
+  });
+
+  it('marks mem.native_hook unavailable when nativehook is not offered', () => {
+    const m = buildMatrix({
+      abi: 'aarch64',
+      isEmulator: false,
+      binaries: { ...FULL_DEVICE.binaries },
+      hiperfHwEvents: [],
+      hiperfSwEvents: [],
+      hiprofilerPlugins: ['gpu-plugin'],
+      probes: {},
+    });
+    const s = m.get('mem.native_hook')!;
+    expect(s.available).toBe(false);
+    expect(s.reason).toContain('nativehook');
+  });
+
+  it('gates each hiprofiler capability on its plugin when the list is known', () => {
+    const m = buildMatrix({
+      ...FULL_DEVICE,
+      hiprofilerPlugins: [
+        'cpu-plugin', 'gpu-plugin', 'xpower-plugin', 'nativehook', 'ftrace-plugin',
+        'memory-plugin', 'network-plugin', 'diskio-plugin',
+      ],
+    });
+    for (const id of [
+      'mem.native_hook', 'mem.gpu', 'power.xpower',
+      'net.io', 'disk.io', 'js.heap', 'startup.app_startup',
+    ] as CapabilityId[]) {
+      expect(m.has(id), id).toBe(true);
+    }
+  });
+
+  it('keeps the binary-based verdicts when the plugin list is unknown', () => {
+    // "Service not started": the matrix cannot see plugins, so hiprofiler_cmd's
+    // presence is the only evidence there is.
+    const m = buildMatrix({ ...FULL_DEVICE, hiprofilerPlugins: undefined });
+    expect(m.get('mem.gpu')!.available).toBe(true);
+    expect(m.get('mem.native_hook')!.available).toBe(true);
+  });
+});

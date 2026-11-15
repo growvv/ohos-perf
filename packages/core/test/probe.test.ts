@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { parseBinaries, parseHiperfEvents, runProbe } from '../src/device/probe';
+import {
+  parseBinaries,
+  parseHiperfEvents,
+  parseHiprofilerPlugins,
+  runProbe,
+} from '../src/device/probe';
 import { buildMatrix } from '../src/device/capability';
 
 function fixtureRunner(path: string) {
@@ -54,9 +59,32 @@ const COMMAND_SEQUENCE = [
   'which hitrace',
   'which hidumper',
   'which uitest',
+  'hiprofiler_cmd --list',
   'hiperf list hw',
   'hiperf list',
 ];
+
+/** Measured on the Mate 60 (HarmonyOS 7.0.0.111) with the daemon running. */
+const HIPROFILER_LIST = [
+  'support plugin list:',
+  'capabilities {',
+  '  path: "libcpudataplugin.z.so"',
+  '  name: "cpu-plugin"',
+  '}',
+  'capabilities {',
+  '  path: "libgpudataplugin.z.so"',
+  '  name: "gpu-plugin"',
+  '}',
+  'capabilities {',
+  '  path: "libxpowerplugin.z.so"',
+  '  name: "xpower-plugin"',
+  '}',
+  'capabilities {',
+  '  path: "nativehook"',
+  '  name: "nativehook"',
+  '}',
+  '',
+].join('\n');
 
 describe('parseBinaries', () => {
   it('treats MISSING and empty output as absent', () => {
@@ -119,6 +147,29 @@ describe('parseHiperfEvents', () => {
   });
 });
 
+describe('parseHiprofilerPlugins', () => {
+  it('extracts plugin names from capabilities blocks', () => {
+    expect(parseHiprofilerPlugins(HIPROFILER_LIST)).toEqual([
+      'cpu-plugin', 'gpu-plugin', 'xpower-plugin', 'nativehook',
+    ]);
+  });
+
+  it('returns undefined when the service is not running', () => {
+    expect(parseHiprofilerPlugins('Service not started\n')).toBeUndefined();
+  });
+
+  it('returns undefined for unparseable output', () => {
+    expect(parseHiprofilerPlugins('')).toBeUndefined();
+    expect(parseHiprofilerPlugins('something unexpected\n')).toBeUndefined();
+  });
+
+  it('deduplicates repeated names but keeps their order', () => {
+    const out = 'capabilities {\n  name: "a"\n}\ncapabilities {\n  name: "a"\n}\n'
+      + 'capabilities {\n  name: "b"\n}\n';
+    expect(parseHiprofilerPlugins(out)).toEqual(['a', 'b']);
+  });
+});
+
 describe('runProbe', () => {
   // `which uitest` is not in the saved probe log; see test/fixtures/README.md.
   it('detects emulator identity from fixture', async () => {
@@ -168,6 +219,24 @@ describe('runProbe', () => {
     for (const cmd of COMMAND_SEQUENCE) {
       expect(snap.probes[cmd].command).toBe(cmd);
     }
+  });
+
+  it('records the hiprofiler plugin list from the probe', async () => {
+    const runner = tableRunner({
+      'param get const.product.name': 'Phone',
+      'hiprofiler_cmd --list': HIPROFILER_LIST,
+    });
+    const snap = await runProbe(runner);
+    expect(snap.hiprofilerPlugins).toEqual([
+      'cpu-plugin', 'gpu-plugin', 'xpower-plugin', 'nativehook',
+    ]);
+    expect(snap.probes['hiprofiler_cmd --list'].stdout).toBe(HIPROFILER_LIST);
+  });
+
+  it('leaves the plugin list unknown when the service is not started', async () => {
+    const runner = tableRunner({ 'hiprofiler_cmd --list': 'Service not started\n' });
+    const snap = await runProbe(runner);
+    expect(snap.hiprofilerPlugins).toBeUndefined();
   });
 
   it('detects the emulator from the softwareVersion prefix', async () => {

@@ -51,6 +51,12 @@ export interface CapabilityInputs {
   binaries: Record<string, boolean>;
   hiperfHwEvents: string[];
   hiperfSwEvents: string[];
+  /**
+   * Plugins the hiprofiler daemon offers, when it was running during the probe.
+   * `undefined` means the list is unknown (`Service not started`), and the
+   * binary-based verdict is kept.
+   */
+  hiprofilerPlugins?: string[];
   probes: Record<string, ProbeResult>;
 }
 
@@ -106,6 +112,11 @@ interface Rule {
   probeCommand?: string;
   /** Prefer `probeCommand`'s output over the binary's `which` output. */
   probeFromCommand?: boolean;
+  /**
+   * hiprofiler plugin that must appear in `hiprofiler_cmd --list`. Ignored
+   * when the plugin list is unknown: the binary gate is then the only verdict.
+   */
+  plugin?: string;
   /** Overrides the default `<binary> not present on device` reason. */
   missingReason?: (binary: string) => string;
   /** Extra availability condition evaluated after the binary gate. */
@@ -119,12 +130,16 @@ interface Rule {
 const HIPROFILER_MISSING = 'hiprofiler not present on device (hiprofiler_cmd missing)';
 const NO_HW_PMU_EVENTS = 'no hardware PMU events reported by hiperf list hw';
 
-function hiprofiler(id: CapabilityId): Rule {
+/** The probe command that lists hiprofiler's plugins. */
+const HIPROFILER_LIST = 'hiprofiler_cmd --list';
+
+function hiprofiler(id: CapabilityId, plugin?: string): Rule {
   return {
     id,
     collector: 'hiprofiler',
     binary: 'hiprofiler_cmd',
     missingReason: () => HIPROFILER_MISSING,
+    ...(plugin === undefined ? {} : { plugin }),
   };
 }
 
@@ -149,14 +164,16 @@ const RULES: Rule[] = [
   // /proc is readable through the shell on every device, emulator included.
   { id: 'mem.procfs', collector: 'procfs', probeCommand: 'cat /proc/self/stat' },
 
-  hiprofiler('mem.native_hook'),
-  hiprofiler('mem.gpu'),
-  hiprofiler('power.xpower'),
-  hiprofiler('net.io'),
-  hiprofiler('disk.io'),
-  hiprofiler('js.heap'),
+  // Plugin names as measured by `hiprofiler_cmd --list` on the Mate 60.
+  // `coverage` has no known plugin, so it keeps the binary-only verdict.
+  hiprofiler('mem.native_hook', 'nativehook'),
+  hiprofiler('mem.gpu', 'gpu-plugin'),
+  hiprofiler('power.xpower', 'xpower-plugin'),
+  hiprofiler('net.io', 'network-plugin'),
+  hiprofiler('disk.io', 'diskio-plugin'),
+  hiprofiler('js.heap', 'memory-plugin'),
   hiprofiler('coverage'),
-  hiprofiler('startup.app_startup'),
+  hiprofiler('startup.app_startup', 'ftrace-plugin'),
 
   {
     id: 'render.fps_live',
@@ -175,13 +192,20 @@ const RULES: Rule[] = [
 function resolveState(rule: Rule, input: CapabilityInputs): CapabilityState {
   const hasBinary = rule.binary === undefined ? true : input.binaries[rule.binary] === true;
   const extraAvailable = rule.available === undefined ? true : rule.available(input);
-  const available = hasBinary && extraAvailable;
+  const plugin = rule.plugin;
+  const pluginList = plugin === undefined ? undefined : input.hiprofilerPlugins;
+  const pluginOffered =
+    plugin === undefined || pluginList === undefined || pluginList.includes(plugin);
+  const available = hasBinary && extraAvailable && pluginOffered;
   const fidelity = rule.fidelity === undefined ? 'exact' : rule.fidelity(input);
+  // The verdict cites whichever gate actually decided it: the plugin list when
+  // it is known, otherwise the binary check that stood in for it.
+  const citeList = plugin !== undefined && pluginList !== undefined;
   const probe = probeFor(
     input.probes,
     rule.binary,
-    rule.probeCommand,
-    rule.probeFromCommand === true,
+    citeList ? HIPROFILER_LIST : rule.probeCommand,
+    citeList || rule.probeFromCommand === true,
   );
 
   if (available) {
@@ -194,6 +218,8 @@ function resolveState(rule: Rule, input: CapabilityInputs): CapabilityState {
       rule.missingReason === undefined
         ? `${rule.binary} not present on device`
         : rule.missingReason(rule.binary as string);
+  } else if (!pluginOffered) {
+    reason = `hiprofiler plugin ${String(plugin)} is not offered by the device's daemon`;
   } else {
     reason = rule.unavailableReason ?? 'capability unavailable on this device';
   }
