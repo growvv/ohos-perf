@@ -155,11 +155,12 @@ Then commit engine, context, goldens, script, tests.
 
 **Files:**
 - Create: `packages/core/src/analyze/fault-tree.ts`, `packages/core/test/analyze-fault-tree.test.ts`, `THIRD_PARTY_NOTICES.md`, `LICENSES/Apache-2.0.txt`
-- Modify: `packages/core/src/analyze/engine.ts` (`defaultAnalyzers`), `packages/core/src/report/evidence.ts` (kind `fault_pattern`), `packages/core/src/index.ts`, `packages/core/test/parity-hapray.test.ts`
+- Modify: `packages/core/src/analyze/types.ts` (add `db?: QueryHandle`), `packages/core/src/analyze/engine.ts` (`defaultAnalyzers`), `packages/core/src/report/evidence.ts` (kind `fault_pattern`), `packages/core/src/index.ts`, `packages/core/test/parity-hapray.test.ts`
 - Test: `packages/core/test/parity-hapray.test.ts`
 
 **Interfaces:**
 - Produces: `computeFaultTree(db: QueryHandle, opts: { appPids: number[] }): FaultTreeSignals` — exact shape from `fault_tree_analyzer.py:34-60`; `FaultTreeAnalyzer implements Analyzer` (`id: 'fault-tree'`, `requires: ['trace.binder']`).
+- `AnalyzeContext` gains `db?: QueryHandle` (the trace database). The new analyzers need raw SQL that the typed query layer does not expose; when `ctx.db` is absent, `run` returns one `no_data` evidence explaining that the trace database handle was not provided, and no metrics. `ctx.db` is optional so every existing context and test still compiles.
 - Metrics: `fault.<category>.<name>`; nested values flatten (`fault.RS.ProcessedNodes.ts`, `.count`, `fault.RS.AnimateSize.nodeSizeSum`, `.totalAnimationSizeSum`); `soft_decoder` is emitted as `1`/`0` with unit `none`. All `fidelity: 'exact'`; provenance collector `'hitrace+streamer'`, table `'callstack'` (perf-based audio counters use table `'perf_sample'`).
 - Evidence: one `fault_pattern` per non-zero signal (skip zero counters, skip `soft_decoder=false`), severity `info`, subject process = the analyzed app name for arkui and `render_service` for RS, `signals: { category, count }`, explain `"<category> <name>: <count>"`; drillDown `{ tool: 'callstack.matching', args: { pattern }, returns: 'CallstackEvent[]' }` with the HapRay LIKE pattern.
 
@@ -198,7 +199,7 @@ Append `new FaultTreeAnalyzer()` to `defaultAnalyzers()`; export the analyzer an
 - Produces: `computeBinderAnalysis(db: QueryHandle, opts: { appPids: number[] }): BinderAnalysis` with:
   - `transactions: BinderTransaction[]` (`transactionId: string | number`, `caller/callee: { pid: number | null; tid: number | null; procName: string | null; threadName: string | null }`, `requestTs/responseTs: number | null`, `latencyMs: number | null`)
   - `processStats`, `threadStats`, `interfaceStats` exactly mirroring `ipc_binder_analyzer.py` field names/types; `qps`/`avgIntervalMs` are `number | null`.
-  - `BinderAnalyzer implements Analyzer` (`id: 'binder'`, `requires: ['trace.binder']`).
+  - `BinderAnalyzer implements Analyzer` (`id: 'binder'`, `requires: ['trace.binder']`); it calls `computeBinderAnalysis(ctx.db, ...)` and, when `ctx.db` is absent, returns one `no_data` evidence and no metrics.
 - Metrics: `binder.transactions.count`, `binder.latency.avg`, `binder.latency.max`, `binder.process.pairs`, `binder.thread.pairs`, `binder.interfaces.count`; unit `count`/`ms`; exact fidelity; provenance table `'callstack'`.
 - Evidence: top 5 process pairs by count, then key ascending, kind `binder_hotspot`, severity `info`, subject `{ process: callerProc }`, signals `{ calleeProc, count, avgLatencyMs, maxLatencyMs, qps }`; drillDown `{ tool: 'binder.processStats', args: { callerProc, calleeProc }, returns: 'BinderProcessStat' }`.
 
@@ -265,10 +266,11 @@ Expected: FAIL.
 
 Keep the same constants (`search_start = frame_start - 50_000_000`, `max_depth = 20`, max 50 chain ids / 20 callchains per thread). Use a `Map<number, Array<[number, number]>>` for the instant cache and sort candidates by `ts` descending; prefer app-process wakers when `appPid` matches. Instruction calculation is the binary-search sum over `perf_sample` event counts, split by `isSystemThread`; with no samples both maps are empty and every count is 0.
 Time range: explicit `opts.timeRange` wins; otherwise mimic HapRay's fallback chain `trace_range → frame_slice → callstack_events → trace` (the last two named tables may not exist in our fixtures; skip absent tables), with `frame_slice` extended by `max(ts + COALESCE(dur, 0))`; if none, throw `THREAD_NO_TIME_RANGE`.
+`threadInfo.startTs/endTs` come from the `thread` row via `ThreadQuery`, mapping its `0`-means-absent values to `null`; both `thread.start_ts` and `thread.end_ts` are NULL on every row of both fixture traces, so they serialize as `null`, matching HapRay (whose query never selects them). Do not substitute `0`.
 
 - [ ] **Step 4: Parity test**
 
-Compare `analyzeThreadWakeup` to `thread-wakeup.emu_big.json` and `.real_device.json`: project both sides to the documented shape, sort both by `threadId`, and compare numbers exactly (all are integers here; callchain strings/objects deep-equal). Pinned: thread 16702 has `wakeupDepth` 0 and 21 app threads exist; real device 18.
+Compare `analyzeThreadWakeup` to `thread-wakeup.emu_big.json` and `.real_device.json`: sort both sides by `threadId`, then compare `threadId`, `threadInfo.threadName`, `totalInstructions`, and every wakeup-thread field exactly. The committed goldens project the two arrays to `thread_states_count` / `callchains_count`, so compare each wakeup thread's `threadStates.length` and `callchains.length` to those counts rather than deep-comparing array contents. Pinned: thread 16702 has `wakeupDepth` 0 and 21 app threads exist; real device 18.
 
 - [ ] **Step 5: Run all, commit**
 
@@ -283,7 +285,7 @@ Compare `analyzeThreadWakeup` to `thread-wakeup.emu_big.json` and `.real_device.
 - Modify: `packages/core/src/analyze/engine.ts`, `packages/core/src/report/evidence.ts` (kind `thread_redundancy`), `packages/core/src/index.ts`, `packages/core/test/parity-hapray.test.ts`
 
 **Interfaces:**
-- Produces: `computeThreadAnalysis(results: ThreadWakeupResult[]): ThreadAnalysis` with `redundantThreadsSummary` (same keys as HapRay, including `redundancyTypes`), `summary`, `belowThresholdPatterns`; `ThreadAnalyzer implements Analyzer` (`id: 'threads'`, `requires: ['trace.sched', 'trace.thread_state']`).
+- Produces: `computeThreadAnalysis(results: ThreadWakeupResult[]): ThreadAnalysis` with `redundantThreadsSummary` (same keys as HapRay, including `redundancyTypes`), `summary`, `belowThresholdPatterns`; `ThreadAnalyzer implements Analyzer` (`id: 'threads'`, `requires: ['trace.sched', 'trace.thread_state']`). It obtains `ThreadWakeupResult[]` via `analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids, timeRange: ctx.window })`; when `ctx.db` is absent, it returns one `no_data` evidence and no metrics.
 - Metrics: `thread.patterns.count`, `thread.redundant.count`, `thread.instructions.total`, `thread.redundant.instructions`, `thread.redundant.instructions.ratio` (value is HapRay's 0–1 ratio × 100, unit `%`). Fidelity exact except the ratio: `'exact'`.
 - Evidence: one `thread_redundancy` per pattern in `redundantThreadsSummary.redundantThreads`, severity `warn`, subject `{ process: <analyzed app name>, thread: thread_name }`, window `ctx.window`, signals `{ score, redundantCount, waitingRatio, instructions }`, explain from the pattern's `type_label`; drillDown `{ tool: 'threads.pattern', args: { threadName }, returns: 'ThreadPattern' }`. If there are no patterns, emit one `no_data` evidence (not zero metrics only).
 
@@ -431,7 +433,7 @@ Append to defaults; export; `npm test`; commit.
   5. write `scene.json` with `{ version: 1, app, pids: [pid] or [], deviceId, startedAtNs, capture }`;
   6. convert and open the scene as today.
 - CLI: `ohos-perf collect --app <pkg> --duration <seconds> --out <dir> [--procfs] [--cold-start <ability>] [--json]`; duration parses seconds (`10` or `10s`) to ms and rejects `0`/negative; output JSON `{ sceneDir, device: { id, kind } }`, human output `scene  <dir>`.
-- CLI `analyze`: build the full context (all queries, procfs samples from `layout.procfsFile`, metadata from `layout.metadataFile`, `resolveAppIdentity` from `--app`), run `defaultAnalyzers()`, and keep `--json` byte-stable.
+- CLI `analyze`: build the full context (all queries, `db: scene.traceDb`, procfs samples from `layout.procfsFile`, metadata from `layout.metadataFile`, `resolveAppIdentity` from `--app`), run `defaultAnalyzers()`, and keep `--json` byte-stable. Replace the hand-built one-capability matrix with an offline matrix derived from table presence: `trace.frames`, `trace.sched`, `trace.binder`, `trace.thread_state` when those tables exist, `startup.app_startup` when `app_startup` exists, `mem.procfs` only when `procfs.jsonl` exists; every available state uses collector `'hitrace'` (or `'procfs'`) and fidelity `'exact'`. Without this, every new analyzer degrades in CLI runs.
 - Docs: README P1 status, metric id list, `collect` quickstart; site capability/feature copy no longer says binder/threads/memory/startup are P1.
 
 - [ ] **Step 1: Write failing collect tests**
