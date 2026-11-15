@@ -267,7 +267,7 @@ describe('StartupAnalyzer', () => {
 
   it('uses the maximum end_time even when it is not the last row by start_time', async () => {
     // The longest end belongs to the first row. A `lastRow.endTime -
-    // firstRow.startTime` implementation would report 1000 ms, not 2500.
+    // firstRow.startTime` implementation would report 2000 ms, not 2500.
     const db = withDb('branch1-span.db', (d) => {
       d.exec(PROCESS_DDL);
       d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)`);
