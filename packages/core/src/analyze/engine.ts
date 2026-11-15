@@ -6,6 +6,7 @@ import { BinderAnalyzer } from './binder';
 import { FaultTreeAnalyzer } from './fault-tree';
 import { FrameAnalyzer } from './frames';
 import { MemoryAnalyzer } from './memory';
+import { StartupAnalyzer } from './startup';
 import { ThreadAnalyzer } from './threads-score';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
@@ -165,5 +166,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new BinderAnalyzer(),
     new ThreadAnalyzer(),
     new MemoryAnalyzer(),
+    new StartupAnalyzer(),
   ];
 }

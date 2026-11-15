@@ -1,6 +1,7 @@
 import type { CapabilityId, CapabilityMatrix } from '../device/capability';
 import type { ProcfsSample } from '../collectors/procfs';
 import type { QueryHandle } from '../db/driver';
+import type { SceneMetadata } from '../ingest/metadata';
 import type { BinderQuery } from '../query/binder';
 import type { CallstackQuery } from '../query/callstack';
 import type { FrameQuery } from '../query/frames';
@@ -27,8 +28,8 @@ import type { AppIdentity, TimeRange } from '../types';
  * declare a capability requirement that guarantees its handle is present, but
  * the type stays optional until every caller supplies it. `procfs` is present
  * only when a procfs capture accompanied the trace (the memory analyzer
- * reports `no_data` without it); `metadata` is deliberately absent until its
- * type exists.
+ * reports `no_data` without it); `metadata` is the scene's `scene.json` when
+ * the caller read one, and the startup analyzer's fallback branch needs it.
  *
  * `db` is the raw trace database handle. It exists for analyzers whose SQL the
  * typed query layer does not expose yet (the fault tree joins `process`,
@@ -50,6 +51,7 @@ export interface AnalyzeContext {
   binder?: BinderQuery;
   startup?: StartupQuery;
   procfs?: ProcfsSample[];
+  metadata?: SceneMetadata;
   app: AppIdentity;
   window: TimeRange;
   caps: CapabilityMatrix;

@@ -11,7 +11,8 @@ export type EvidenceKind =
   | 'fault_pattern'
   | 'binder_hotspot'
   | 'thread_redundancy'
-  | 'memory_growth';
+  | 'memory_growth'
+  | 'startup';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.

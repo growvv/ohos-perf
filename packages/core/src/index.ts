@@ -65,6 +65,8 @@ export { Streamer } from './ingest/streamer';
 export type { StreamerOptions } from './ingest/streamer';
 export { Scene, createSceneLayout, ingestScene } from './ingest/scene';
 export type { SceneLayout } from './ingest/scene';
+export { readSceneMetadata, writeSceneMetadata } from './ingest/metadata';
+export type { SceneMetadata } from './ingest/metadata';
 
 // Database
 export { openDb, tableRowCounts } from './db/driver';
@@ -113,6 +115,7 @@ export type {
 } from './analyze/threads-wakeup';
 export { ThreadAnalyzer, computeThreadAnalysis } from './analyze/threads-score';
 export { MemoryAnalyzer } from './analyze/memory';
+export { StartupAnalyzer } from './analyze/startup';
 export type {
   BelowThresholdPattern,
   CallchainSample,

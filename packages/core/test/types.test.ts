@@ -80,13 +80,13 @@ const VALUE_EXPORTS = [
   'ProcessQuery', 'Scene',
   'ProcfsCollector', 'parseProcfsStatus', 'parseSmapsRollup', 'readProcfsSamples',
   'writeProcfsSamples',
-  'SchedQuery', 'StartupQuery', 'Streamer', 'StreamerNotFoundError',
+  'SchedQuery', 'StartupAnalyzer', 'StartupQuery', 'Streamer', 'StreamerNotFoundError',
   'ThreadAnalyzer', 'ThreadQuery',
   'ThreadStateQuery', 'analyzeThreadWakeup', 'buildMatrix', 'computeBinderAnalysis',
   'computeFaultTree', 'computeThreadAnalysis',
   'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ingestScene',
-  'metric', 'openDb', 'resolveAppIdentity', 'runAnalyzers', 'runProbe',
-  'tableRowCounts',
+  'metric', 'openDb', 'readSceneMetadata', 'resolveAppIdentity', 'runAnalyzers',
+  'runProbe', 'tableRowCounts', 'writeSceneMetadata',
 ];
 
 // This test checks the built declarations, not src. `dist/` is gitignored, so
