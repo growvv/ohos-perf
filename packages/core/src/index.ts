@@ -50,6 +50,19 @@ export type { ProbeSnapshot, DeviceIdentity, ProbeRunner } from './device/probe'
 
 // Collection
 export { HitraceCollector, HITRACE_DEFAULT_CATEGORIES } from './collectors/hitrace';
+export { HiprofilerCollector } from './collectors/hiprofiler';
+export type { HiprofilerCollectOptions } from './collectors/hiprofiler';
+export { buildHiprofilerConfig, MIN_BUFFER_PAGES } from './collectors/hiprofiler/config';
+export type { HiprofilerConfigOptions, HiprofilerPlugin } from './collectors/hiprofiler/config';
+export {
+  PLANE_A_PLUGINS,
+  FTRACE_CATEGORIES,
+  ftracePlugin,
+  gpuPlugin,
+  nativehookPlugin,
+  xpowerPlugin,
+} from './collectors/hiprofiler/templates';
+export type { FtraceOptions, NativehookOptions } from './collectors/hiprofiler/templates';
 export {
   ProcfsCollector,
   parseProcfsStatus,

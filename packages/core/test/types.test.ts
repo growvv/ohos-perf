@@ -75,18 +75,21 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 const VALUE_EXPORTS = [
   'BinderAnalyzer', 'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device',
   'DeviceNotFoundError', 'FaultTreeAnalyzer', 'FrameAnalyzer', 'FrameQuery',
-  'HITRACE_DEFAULT_CATEGORIES', 'Hdc', 'HdcNotFoundError', 'HitraceCollector',
-  'IngestError', 'InstantQuery', 'MemoryAnalyzer', 'OhosPerfError', 'PerfQuery',
+  'FTRACE_CATEGORIES', 'HITRACE_DEFAULT_CATEGORIES', 'Hdc', 'HdcNotFoundError',
+  'HitraceCollector', 'HiprofilerCollector',
+  'IngestError', 'InstantQuery', 'MIN_BUFFER_PAGES', 'MemoryAnalyzer', 'OhosPerfError',
+  'PLANE_A_PLUGINS', 'PerfQuery',
   'ProcessQuery', 'Scene',
   'ProcfsCollector', 'parseProcfsStatus', 'parseSmapsRollup', 'readProcfsSamples',
   'writeProcfsSamples',
   'SchedQuery', 'StartupAnalyzer', 'StartupQuery', 'Streamer', 'StreamerNotFoundError',
   'ThreadAnalyzer', 'ThreadQuery',
-  'ThreadStateQuery', 'analyzeThreadWakeup', 'buildMatrix', 'computeBinderAnalysis',
-  'computeFaultTree', 'computeThreadAnalysis',
-  'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ingestScene',
-  'metric', 'openDb', 'readSceneMetadata', 'resolveAppIdentity', 'runAnalyzers',
-  'runProbe', 'tableRowCounts', 'writeSceneMetadata',
+  'ThreadStateQuery', 'analyzeThreadWakeup', 'buildHiprofilerConfig', 'buildMatrix',
+  'computeBinderAnalysis', 'computeFaultTree', 'computeThreadAnalysis',
+  'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ftracePlugin',
+  'gpuPlugin', 'ingestScene',
+  'metric', 'nativehookPlugin', 'openDb', 'readSceneMetadata', 'resolveAppIdentity',
+  'runAnalyzers', 'runProbe', 'tableRowCounts', 'writeSceneMetadata', 'xpowerPlugin',
 ];
 
 // This test checks the built declarations, not src. `dist/` is gitignored, so
