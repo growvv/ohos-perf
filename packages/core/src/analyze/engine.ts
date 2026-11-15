@@ -117,8 +117,9 @@ function degradedEvidence(
  * The returned arrays are new and sorted (`metrics` by `id`, `evidence` by
  * `(kind, window.startNs, id)`). Two analyzers emitting the same metric id
  * make the report ambiguous, so the whole run fails with
- * `DUPLICATE_METRIC_ID` instead of silently keeping one value. Neither the
- * context nor any analyzer (including its result arrays) is mutated.
+ * `DUPLICATE_METRIC_ID` instead of silently keeping one value; the same
+ * integrity rule applies to evidence ids (`DUPLICATE_EVIDENCE_ID`). Neither
+ * the context nor any analyzer (including its result arrays) is mutated.
  */
 export async function runAnalyzers(
   analyzers: readonly Analyzer[],
@@ -149,6 +150,16 @@ export async function runAnalyzers(
   }
 
   evidenceItems.sort(byEvidenceOrder);
+  // An evidence consumer keyed on `id` (D4) silently drops all but one of a
+  // duplicate group, so a duplicate is a report-integrity failure, not a
+  // cosmetic one. Mirrors the metric check above.
+  for (let i = 1; i < evidenceItems.length; i++) {
+    if (evidenceItems[i].id === evidenceItems[i - 1].id) {
+      throw new OhosPerfError('DUPLICATE_EVIDENCE_ID', {
+        code: 'DUPLICATE_EVIDENCE_ID',
+      });
+    }
+  }
   return { metrics, evidence: evidenceItems };
 }
 

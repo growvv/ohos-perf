@@ -165,6 +165,7 @@ function missingProcfsEvidence(ctx: AnalyzeContext): Evidence {
       'procfs samples (ctx.procfs) were not provided; run' +
       ' `ohos-perf collect --procfs` to capture RSS/PSS samples for memory analysis',
     drillDown: [],
+    key: 'memory:no-procfs',
   });
 }
 
@@ -181,6 +182,7 @@ function nonFiniteRssEvidence(ctx: AnalyzeContext): Evidence {
       ' value; run `ohos-perf collect --procfs` to capture RSS/PSS samples' +
       ' for memory analysis',
     drillDown: [],
+    key: 'memory:no-finite-rss',
   });
 }
 

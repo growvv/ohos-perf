@@ -688,6 +688,7 @@ function missingDbEvidence(ctx: AnalyzeContext): Evidence {
     explain:
       'trace database handle (ctx.db) was not provided; fault-tree analysis skipped',
     drillDown: [],
+    key: 'fault-tree:no-db',
   });
 }
 

@@ -840,6 +840,7 @@ function missingDbEvidence(ctx: AnalyzeContext): Evidence {
     explain:
       'trace database handle (ctx.db) was not provided; binder analysis skipped',
     drillDown: [],
+    key: 'binder:no-db',
   });
 }
 
@@ -854,6 +855,7 @@ function unpairedEvidence(ctx: AnalyzeContext): Evidence {
     explain:
       'no binder transaction could be paired with both a request and a response; latency and pair statistics skipped',
     drillDown: [],
+    key: 'binder:unpaired',
   });
 }
 

@@ -22,6 +22,7 @@ import { resolveAppIdentity } from '../src/analyze/context';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from '../src/analyze/types';
 import { metric } from '../src/report/metric';
 import type { Metric } from '../src/report/metric';
+import { evidence } from '../src/report/evidence';
 
 let dir: string;
 let db: QueryHandle;
@@ -90,6 +91,23 @@ function m(id: string, value: number): Metric {
     unit: 'count',
     provenance: { collector: 'test', device: 'emu' },
     fidelity: 'exact',
+  });
+}
+
+/**
+ * A `no_data` item with a fixed identity; only the optional `key` varies, so
+ * two items with no key collide on id and two with distinct keys do not.
+ */
+function noData(key?: string) {
+  return evidence({
+    kind: 'no_data',
+    severity: 'info',
+    subject: { process: 'com.demo' },
+    window: { startNs: 1000, endNs: 2000 },
+    signals: {},
+    explain: 'no data',
+    drillDown: [],
+    ...(key === undefined ? {} : { key }),
   });
 }
 
@@ -198,6 +216,61 @@ describe('runAnalyzers', () => {
       message: 'DUPLICATE_METRIC_ID',
       code: 'DUPLICATE_METRIC_ID',
     });
+  });
+
+  it('throws DUPLICATE_EVIDENCE_ID when two analyzers emit the same evidence id', async () => {
+    // Both items share kind, subject and window and carry no key, so the id
+    // hash collides. A consumer keyed on `id` would silently drop one.
+    await expect(
+      runAnalyzers(
+        [
+          availableAnalyzer('one', [], [noData()]),
+          availableAnalyzer('two', [], [noData()]),
+        ],
+        makeCtx(),
+      ),
+    ).rejects.toMatchObject({
+      name: 'OhosPerfError',
+      message: 'DUPLICATE_EVIDENCE_ID',
+      code: 'DUPLICATE_EVIDENCE_ID',
+    });
+  });
+
+  it('keeps both evidence items when they differ only by key', async () => {
+    const result = await runAnalyzers(
+      [
+        availableAnalyzer('one', [], [noData('one')]),
+        availableAnalyzer('two', [], [noData('two')]),
+      ],
+      makeCtx(),
+    );
+    expect(result.evidence).toHaveLength(2);
+    expect(new Set(result.evidence.map((e) => e.id)).size).toBe(2);
+  });
+
+  it('keeps the no_data items of a bare library context distinct', async () => {
+    // The reported I3 defect: with all capabilities satisfied but no ctx.db
+    // or ctx.procfs, frames/fault-tree/binder/threads/memory each emitted a
+    // no_data item with the SAME id (same subject and window, no key).
+    const full = new CapabilityMatrix([
+      state('trace.frames', true),
+      state('trace.binder', true),
+      state('trace.sched', true),
+      state('trace.thread_state', true),
+      state('mem.procfs', true),
+    ]);
+    const bare: AnalyzeContext = {
+      ...makeCtx(),
+      caps: full,
+      db: undefined,
+      procfs: undefined,
+      frames: { all: () => [] } as unknown as FrameQuery,
+    };
+    const result = await runAnalyzers(defaultAnalyzers(), bare);
+    const noDataItems = result.evidence.filter((e) => e.kind === 'no_data');
+    expect(noDataItems.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(noDataItems.map((e) => e.id)).size).toBe(noDataItems.length);
+    expect('key' in noDataItems[0]).toBe(false);
   });
 
   it('does not mutate the context, analyzer objects, or their results', async () => {

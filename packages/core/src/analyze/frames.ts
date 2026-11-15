@@ -151,6 +151,7 @@ function noDataEvidence(
         estRows: totalRows,
       },
     ],
+    key: 'frames:no-data',
   });
 }
 

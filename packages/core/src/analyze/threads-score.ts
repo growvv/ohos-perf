@@ -1538,6 +1538,7 @@ function missingDbEvidence(ctx: AnalyzeContext): Evidence {
     explain:
       'trace database handle (ctx.db) was not provided; thread analysis skipped',
     drillDown: [],
+    key: 'threads:no-db',
   });
 }
 
@@ -1552,6 +1553,7 @@ function noPatternsEvidence(ctx: AnalyzeContext): Evidence {
     explain:
       'no redundant thread pattern was found; thread optimization analysis skipped',
     drillDown: [],
+    key: 'threads:no-patterns',
   });
 }
 

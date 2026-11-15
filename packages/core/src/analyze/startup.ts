@@ -95,6 +95,7 @@ function noStartupEvidence(ctx: AnalyzeContext, reason: NoStartupReason): Eviden
     signals: {},
     explain,
     drillDown: [],
+    key: `startup:${reason}`,
   });
 }
 
