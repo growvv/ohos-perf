@@ -68,11 +68,17 @@ function assertDuration(durationMs: number): void {
   }
 }
 
+const CATEGORY_PATTERN = /^[A-Za-z0-9_]+$/;
+
 /**
  * An empty or blank category list is not a capture. Measured on device:
  * `hitrace --trace_begin -b N` with no categories prints
  * `error: tag is empty, please add.` **and** `OpenRecording done.`, so every
  * marker check would pass and the result would be an eventless trace.
+ *
+ * Every name is also interpolated into a device shell command, and the device
+ * shell interprets metacharacters (measured: `echo AAA; echo BBB` prints two
+ * lines), so names must be bare trace tags.
  */
 function assertCategories(categories: readonly string[]): void {
   if (categories.length === 0 || categories.some((c) => c.trim().length === 0)) {
@@ -80,6 +86,28 @@ function assertCategories(categories: readonly string[]): void {
       'categories must contain at least one non-empty category name' +
         ` (got ${JSON.stringify(categories)})`,
       { code: 'HITRACE_BAD_CATEGORIES' },
+    );
+  }
+  const bad = categories.find((c) => !CATEGORY_PATTERN.test(c));
+  if (bad !== undefined) {
+    throw new OhosPerfError(
+      `category ${JSON.stringify(bad)} is not a bare trace category name; ` +
+        `allowed pattern: ${String(CATEGORY_PATTERN)}`,
+      { code: 'HITRACE_BAD_CATEGORIES' },
+    );
+  }
+}
+
+/**
+ * `bufferKb` is interpolated into the same device shell command, so it must be
+ * a positive safe integer. Rejecting before the first hdc call keeps a bad
+ * value from becoming an extra shell word (or a silently truncated one).
+ */
+function assertBufferKb(bufferKb: number): void {
+  if (!Number.isSafeInteger(bufferKb) || bufferKb <= 0) {
+    throw new OhosPerfError(
+      `bufferKb must be a positive safe integer (got ${String(bufferKb)})`,
+      { code: 'HITRACE_BAD_BUFFER' },
     );
   }
 }
@@ -156,6 +184,7 @@ export class HitraceCollector implements Collector {
   beginCommand(opts: TraceCollectOptions): string {
     const bufferKb = opts.bufferKb ?? DEFAULT_BUFFER_KB;
     const categories: readonly string[] = opts.categories ?? HITRACE_DEFAULT_CATEGORIES;
+    assertBufferKb(bufferKb);
     assertCategories(categories);
     return `hitrace --trace_begin -b ${bufferKb} ${categories.join(' ')}`;
   }
@@ -188,8 +217,10 @@ export class HitraceCollector implements Collector {
    *
    * `opts.durationMs` must be finite and in `(0, 2^31 - 1]`; anything else
    * throws `HITRACE_BAD_DURATION` before the device is touched. `categories`,
-   * when supplied, must contain at least one non-empty name, else
-   * `HITRACE_BAD_CATEGORIES`.
+   * when supplied, must contain at least one non-empty bare tag name
+   * (`/^[A-Za-z0-9_]+$/`), else `HITRACE_BAD_CATEGORIES`. `bufferKb`, when
+   * supplied, must be a positive safe integer, else `HITRACE_BAD_BUFFER`.
+   * All three checks run before the first device command.
    */
   async collect(
     hdc: Hdc,
@@ -199,6 +230,7 @@ export class HitraceCollector implements Collector {
   ): Promise<void> {
     assertDuration(opts.durationMs);
     assertCategories(opts.categories ?? HITRACE_DEFAULT_CATEGORIES);
+    assertBufferKb(opts.bufferKb ?? DEFAULT_BUFFER_KB);
 
     const devicePath = DEVICE_TRACE_PATH;
 

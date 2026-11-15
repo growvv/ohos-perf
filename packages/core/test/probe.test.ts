@@ -120,6 +120,7 @@ describe('parseHiperfEvents', () => {
 });
 
 describe('runProbe', () => {
+  // `which uitest` is not in the saved probe log; see test/fixtures/README.md.
   it('detects emulator identity from fixture', async () => {
     const snap = await runProbe(fixtureRunner('test/fixtures/probe-emulator.txt'));
     expect(snap.identity.abi).toBe('x86_64');

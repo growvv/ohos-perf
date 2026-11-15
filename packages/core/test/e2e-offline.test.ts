@@ -20,7 +20,7 @@ import { FrameAnalyzer } from '../src/analyze/frames';
  * The fixture is **not** checked in (`spike/out/` is gitignored), so:
  * - missing + `OHOS_PERF_E2E_REQUIRED=1` -> fail at collection (CI enforcement),
  * - missing otherwise -> warn on stdout and skip visibly,
- * - present -> the three tests below run.
+ * - present -> the five tests below run.
  *
  * See `test/fixtures/README.md` for provenance and regeneration.
  */
@@ -56,6 +56,10 @@ describe.skipIf(!HAVE_DB)('e2e on recorded emulator trace', () => {
       expect(r.metrics.length, 'the analyzer produced no metrics at all').toBeGreaterThan(0);
       expect(r.metrics.find((m) => m.id === 'frame.count')!.value).toBeGreaterThan(0);
       expect(r.metrics.every((m) => m.provenance.table === 'frame_slice')).toBe(true);
+      // `rows` is the analyzer's base set: all 177 flag-bearing rows, not the
+      // 169 actual frames. A consumer tracing provenance back to frame_slice
+      // would otherwise see a row count that does not match the query.
+      expect(r.metrics.every((m) => m.provenance.rows === 177)).toBe(true);
       // Values measured on the recorded emulator trace: 169 actual frames, 161
       // rendered (8 empty), 60 stuttered. Asserting concrete numbers lets the
       // e2e catch semantic drift, not just crashes.
@@ -88,7 +92,10 @@ describe.skipIf(!HAVE_DB)('e2e on recorded emulator trace', () => {
       const get = (id: string) => r.metrics.find((m) => m.id === id)!;
       expect(get('frame.empty.rate').value).toBeCloseTo(4.7337, 3);
       expect(get('frame.avg.duration').value).toBeCloseTo(35.8355, 3);
-      expect(get('frame.fps').value).toBeCloseTo(5.917, 2);
+      // 169 frames over 28.56177s = 5.9170002419...; the 5e-5 tolerance makes
+      // the `+ last.dur` term in the span observable (dropping it gives
+      // 5.917378, a 3.8e-4 difference).
+      expect(get('frame.fps').value).toBeCloseTo(5.91700024, 4);
       // fps is a whole-span average, not HapRay's 1-second sliding window, so
       // it must be labelled approximate.
       expect(get('frame.fps').fidelity).toBe('approximate');
@@ -96,6 +103,41 @@ describe.skipIf(!HAVE_DB)('e2e on recorded emulator trace', () => {
                         'frame.empty.rate', 'frame.avg.duration']) {
         expect(get(id).fidelity).toBe('exact');
       }
+    } finally {
+      db.close();
+    }
+  });
+
+  // I3: `FrameQuery.empty()`/`stats().empty` must mean the same 8 actual frames
+  // as the analyzer's empty numerator, not all 16 flag-2 rows (8 actual + 8
+  // expect). A consumer computing stats.empty / stats.actual otherwise gets
+  // 9.47% instead of 4.73%.
+  it('counts only actual frames as empty, matching flag semantics', () => {
+    const db = openDb(DB);
+    try {
+      const q = new FrameQuery(db);
+      const empty = q.empty();
+      expect(empty).toHaveLength(8);
+      expect(empty.every((f) => f.type === 0)).toBe(true);
+      const stats = q.stats();
+      expect(stats).toEqual({
+        total: 177, actual: 169, expect: 8, stuttered: 60, empty: 8, normal: 91,
+      });
+      // The invariant documented on FrameStats: flag-3 actual frames are in
+      // total/actual but in no bucket.
+      expect(stats.stuttered + stats.empty + stats.normal).toBe(stats.actual - 10);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('uses the same empty numerator as stats().empty', async () => {
+    const db = openDb(DB);
+    try {
+      const stats = new FrameQuery(db).stats();
+      const r = await new FrameAnalyzer().run(ctxFor(db));
+      const emptyRate = r.metrics.find((m) => m.id === 'frame.empty.rate')!.value as number;
+      expect(emptyRate).toBeCloseTo((stats.empty / stats.actual) * 100, 10);
     } finally {
       db.close();
     }

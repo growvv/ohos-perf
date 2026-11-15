@@ -11,8 +11,9 @@
     }
   },
   "files": ["dist"],
-  "engines": { "node": ">=22.5.0" },
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts"
+    "build": "tsup src/index.ts --format esm --dts",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   }
 }

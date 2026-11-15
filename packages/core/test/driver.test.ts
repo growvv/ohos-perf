@@ -34,6 +34,23 @@ describe('openDb', () => {
     db.close();
   });
 
+  it('escapes embedded double quotes in table names', () => {
+    const path = join(dir, 'weird-quote.db');
+    const d = new DatabaseSync(path);
+    d.exec('CREATE TABLE "weird""name"(id INT)');
+    d.exec('INSERT INTO "weird""name" VALUES (1)');
+    d.close();
+
+    const db = openDb(path);
+    try {
+      // Without quoteIdentifier doubling the embedded quote this query is a
+      // SQLite syntax error.
+      expect(tableRowCounts(db)).toEqual({ 'weird"name': 1 });
+    } finally {
+      db.close();
+    }
+  });
+
   it('exposes the db path', () => {
     const db = openDb(dbPath);
     expect(db.path).toBe(dbPath);

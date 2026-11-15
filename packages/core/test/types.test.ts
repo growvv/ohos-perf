@@ -6,7 +6,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '../../..');
@@ -191,9 +191,12 @@ describe.skipIf(!existsSync(distDts))('published type surface', () => {
       .toEqual([]);
   });
 
-  it('names every value export', () => {
-    expect(VALUE_EXPORTS).toHaveLength(25);
-    expect(new Set(VALUE_EXPORTS).size).toBe(VALUE_EXPORTS.length);
+  it('the built module exports exactly the documented value surface', async () => {
+    // Compare the literal against the built module itself. Asserting the
+    // literal against its own length/uniqeness would let a new accidental value
+    // export ship unnoticed.
+    const mod = await import(pathToFileURL(join(coreDir, 'dist/index.js')).href);
+    expect(Object.keys(mod).sort()).toEqual([...VALUE_EXPORTS].sort());
   });
 
   it('the built declarations are not older than the sources they were built from', () => {

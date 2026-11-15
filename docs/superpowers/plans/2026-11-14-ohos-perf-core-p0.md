@@ -6,13 +6,13 @@
 
 **Architecture:** 七层分层，但 P0 只实现其中五层的骨架：L0 Transport（hdc 客户端）、L1 Device（设备模型 + 能力探测 + 能力矩阵）、L2 Collectors（hitrace 与 hiperf 两个采集器）、L3 Ingest（trace_streamer 封装 + 场景目录）、L4 Query（帧与进程/线程访问器）、L5 Analyze（帧分析器）、L6 Report（Metric/Evidence 模型）。每个分析器是纯函数，输入查询句柄与时间窗，输出 `Metric[]` 与 `Evidence[]`。
 
-**Tech Stack:** TypeScript 5.x、Node ≥ 22.5（使用内置 `node:sqlite`）、`tsup` 打包、`vitest` 测试、`commander` 做 CLI。无原生依赖，无 Python 依赖。
+**Tech Stack:** TypeScript 5.x、Node ≥ 22.13（使用内置 `node:sqlite`）、`tsup` 打包、`vitest` 测试、`commander` 做 CLI。无原生依赖，无 Python 依赖。（2026-11-15 更正：实测 `node:sqlite` 无 flag 需 22.13+，23.0–23.3 不支持，据此修正版本下限。）
 
 **Spec:** `E:/CodeE/vibe51/emulator_compelate/design/2026-11-14-ohos-perf-core-design.md`
 
 ## Global Constraints
 
-- Node 版本下限：`>=22.5.0`（`node:sqlite` 内置）。实测环境 Node v26.13.0。
+- Node 版本下限：`>=22.13.0`（`node:sqlite` 内置）。实测环境 Node v26.13.0。
 - 禁止原生编译依赖。SQLite 只用 `node:sqlite`。
 - 不打包 `trace_streamer`（17MB，授权不明）。只做路径搜索 + 版本校验，最低版本 `4.3.0`（实测 4.3.7）。
 - 时间戳单位：`frame_slice.ts`、`trace_range.start_ts` 等全部为**纳秒**。
@@ -144,7 +144,7 @@ Expected: FAIL — 无法解析 `../src/errors`
   "name": "ohos-perf-workspace",
   "private": true,
   "workspaces": ["packages/*"],
-  "engines": { "node": ">=22.5.0" },
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
     "build": "npm run build -w @ohos-perf/core",
     "test": "vitest run"
@@ -160,7 +160,7 @@ Expected: FAIL — 无法解析 `../src/errors`
 
 `tsconfig.base.json`：`target: ES2022`、`module: NodeNext`、`moduleResolution: NodeNext`、`strict: true`、`declaration: true`。
 
-`packages/core/package.json`：`name: "@ohos-perf/core"`、`type: "module"`、`exports` 指向 `dist/index.js` 与 `dist/index.d.ts`、`engines.node: ">=22.5.0"`。
+`packages/core/package.json`：`name: "@ohos-perf/core"`、`type: "module"`、`exports` 指向 `dist/index.js` 与 `dist/index.d.ts`、`engines.node: ">=22.13.0"`。
 
 `errors.ts` 按 Interfaces 定义五个类。基类：
 ```ts

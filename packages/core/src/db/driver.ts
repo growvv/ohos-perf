@@ -1,6 +1,6 @@
-import type { SQLInputValue } from 'node:sqlite';
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { OhosPerfError } from '../errors';
-import { DatabaseSync } from './sqlite';
+import { loadDatabaseSync } from './sqlite';
 
 export interface QueryHandle {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): T[];
@@ -19,9 +19,13 @@ export interface QueryHandle {
  * missing file or directory.
  */
 export function openDb(path: string): QueryHandle {
+  // Loaded outside the try: a missing node:sqlite module is a
+  // RUNTIME_UNSUPPORTED condition, not a DB_OPEN_FAILED one, and wrapping it
+  // would hide the version guidance. openDb's signature is unchanged.
+  const DatabaseSyncCtor = loadDatabaseSync();
   let db: DatabaseSync;
   try {
-    db = new DatabaseSync(path, { readOnly: true });
+    db = new DatabaseSyncCtor(path, { readOnly: true });
   } catch (err) {
     throw new OhosPerfError(`failed to open trace database: ${path}`, {
       cause: err,

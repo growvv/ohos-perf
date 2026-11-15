@@ -84,16 +84,46 @@ describe('FrameQuery', () => {
     const q = new FrameQuery(db);
     // Same `flag IS NOT NULL` filter as all(), mirroring HapRay
     // get_frame_statistics -> get_frames_data. Row 1 is counted nowhere.
+    // Row 4 is an expect frame with flag 0, so it is in total/expect but not
+    // in the normal bucket: flag buckets are actual (type 0) frames only.
     expect(q.stats()).toEqual({
-      total: 4, actual: 3, expect: 1, stuttered: 1, empty: 1, normal: 2,
+      total: 4, actual: 3, expect: 1, stuttered: 1, empty: 1, normal: 1,
     });
+  });
+
+  it('excludes expect rows from the empty bucket (expect + flag 2)', () => {
+    // The real trace has exactly this shape: 8 type=1 flag=2 rows. Flag
+    // semantics describe rendered frames, so empty()/stats().empty must not
+    // count them even though total/expect do.
+    const mixed = withDb('expect-flag2.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 100, 10, 17, 44, 94, 100000, '', 0, 0, 'actural', 0, 0, 0),
+        (1, 200, 11, 17, 44, 95, 100000, '', 0, 1, 'expect', 2, 0, 1),
+        (2, 300, 12, 17, 44, 96, 100000, '', 0, 0, 'actural', 2, 0, 2)`);
+    });
+    try {
+      const q = new FrameQuery(mixed);
+      expect(q.empty().map((f) => f.id)).toEqual([2]);
+      const stats = q.stats();
+      // The expect row is counted in total and expect ...
+      expect(stats.total).toBe(3);
+      expect(stats.expect).toBe(1);
+      // ... but not in the empty bucket, which is actual-only.
+      expect(stats.empty).toBe(1);
+      expect(stats).toEqual({
+        total: 3, actual: 2, expect: 1, stuttered: 0, empty: 1, normal: 1,
+      });
+    } finally {
+      mixed.close();
+    }
   });
 
   it('counts flag 3 in total but in no flag bucket', () => {
     // Flag 3 is RS-App abnormal. It is deliberately unbucketed (pinned here so
     // a future `abnormal` field is a conscious change, not an accident): on the
-    // measured trace 10 of 177 rows are flag 3, so
-    // stuttered + empty + normal = 167 != total = 177.
+    // measured trace 10 of 169 actual rows are flag 3, so
+    // stuttered + empty + normal = 159 = actual - 10, not 169.
     const q3 = withDb('flag3.db', (d) => {
       d.exec(FRAME_DDL);
       d.exec(`INSERT INTO frame_slice VALUES

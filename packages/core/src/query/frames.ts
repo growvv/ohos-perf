@@ -8,10 +8,10 @@ import { num, str } from './rows';
  * `0` normal, `1` stuttered (rendered late), `2` empty (nothing to draw),
  * `3` RS-App abnormal.
  *
- * Note `3` is **not** a `FrameStats` bucket: `stats()` counts flag-3 rows in
- * `total` but in none of `stuttered`/`empty`/`normal`, so
- * `stuttered + empty + normal` can be less than `total` (10 of 177 rows on the
- * measured 249MB trace). Do not compute a stutter rate as `stuttered / total`
+ * Note `3` is **not** a `FrameStats` bucket: `stats()` counts flag-3 **actual**
+ * rows in `total` and `actual` but in none of `stuttered`/`empty`/`normal`, so
+ * `stuttered + empty + normal === actual - flag3` (159 = 169 - 10 on the
+ * measured 249MB trace). Do not compute a stutter rate as `stuttered / actual`
  * without deciding what to do with flag 3.
  */
 export type FrameFlag = 0 | 1 | 2 | 3;
@@ -43,6 +43,22 @@ export interface Frame {
   frameNo: number;
 }
 
+/**
+ * Counts over the same `flag IS NOT NULL` set as `all()`.
+ *
+ * - `total` - every flagged row, actual and expect (177 on the measured trace).
+ * - `actual` - `type = 0` frames (169); the denominator for the empty rate.
+ * - `expect` - `type = 1` frames (8); predictions, never rendered.
+ * - `stuttered` - actual frames with `flag = 1` (60).
+ * - `empty` - actual frames with `flag = 2` (8).
+ * - `normal` - actual frames with `flag = 0` (91).
+ *
+ * The three flag buckets are **actual (type 0) frames only**, matching the
+ * analyzer metrics: an expect row is a prediction, not a drawn frame. Flag-3
+ * actual frames are in `total` and `actual` but in no bucket, so
+ * `stuttered + empty + normal === actual - flag3` (159 = 169 - 10 on the
+ * measured trace). `expect` rows never contribute to a flag bucket.
+ */
 export interface FrameStats {
   total: number;
   actual: number;
@@ -129,14 +145,14 @@ export class FrameQuery {
     return this.all(range).filter((f) => f.type === 1);
   }
 
-  /** flag = 1 (rendered but late). */
+  /** flag = 1 (rendered but late), actual (type 0) frames only. */
   stuttered(range?: TimeRange): Frame[] {
-    return this.all(range).filter((f) => f.flag === 1);
+    return this.all(range).filter((f) => f.type === 0 && f.flag === 1);
   }
 
-  /** flag = 2 (nothing needed to be drawn). */
+  /** flag = 2 (nothing needed to be drawn), actual (type 0) frames only. */
   empty(range?: TimeRange): Frame[] {
-    return this.all(range).filter((f) => f.flag === 2);
+    return this.all(range).filter((f) => f.type === 0 && f.flag === 2);
   }
 
   /**
@@ -186,6 +202,11 @@ export class FrameQuery {
    * Counts over the same set `all()` returns, mirroring HapRay's
    * `get_frame_statistics` (which calls `get_frames_data` and therefore also
    * drops NULL-flag rows).
+   *
+   * `stuttered`/`empty`/`normal` bucket **actual (type 0) frames only**,
+   * matching the analyzer metrics: flag semantics describe rendered frames,
+   * and an expect row is a prediction. `total`, `actual` and `expect` keep
+   * their row-count meanings. See `FrameStats` for the full invariant.
    */
   stats(range?: TimeRange): FrameStats {
     const frames = this.all(range);
@@ -198,11 +219,14 @@ export class FrameQuery {
       normal: 0,
     };
     for (const frame of frames) {
-      if (frame.type === 0) stats.actual++;
-      else if (frame.type === 1) stats.expect++;
-      if (frame.flag === 1) stats.stuttered++;
-      else if (frame.flag === 2) stats.empty++;
-      else if (frame.flag === 0) stats.normal++;
+      if (frame.type === 0) {
+        stats.actual++;
+        if (frame.flag === 1) stats.stuttered++;
+        else if (frame.flag === 2) stats.empty++;
+        else if (frame.flag === 0) stats.normal++;
+      } else if (frame.type === 1) {
+        stats.expect++;
+      }
     }
     return stats;
   }

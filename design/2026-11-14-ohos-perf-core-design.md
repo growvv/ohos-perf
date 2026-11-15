@@ -132,7 +132,7 @@ interface DrillDownHandle {
 
 ### D6：零原生依赖优先
 
-**决策**：SQLite 用 Node 内置 `node:sqlite`（Node ≥ 22.5），`better-sqlite3` 作为可选 peer 用于大库。
+**决策**：SQLite 用 Node 内置 `node:sqlite`（Node ≥ 22.13；无 flag 时 22.13+，23.0–23.3 不支持），`better-sqlite3` 作为可选 peer 用于大库。
 
 **理由**：作为"其他开发者依赖的包"，原生编译是分发灾难。`node:sqlite` 是同步 API，对 249MB 库的查询延迟可接受。
 
@@ -335,7 +335,7 @@ interface AnalyzeContext {
 | `trace_streamer` | 外部二进制 | DevEco 安装路径搜索 / `OHOS_PERF_STREAMER` / `--streamer` | 降级：无 SQLite，仅原始产物 |
 | `@grpc/grpc-js` | npm dependency | — | 仅影响平面 A |
 | `@grpc/proto-loader` | npm dependency | — | 同上 |
-| `node:sqlite` | Node 内置（≥22.5） | — | 降级到 `better-sqlite3` peer |
+| `node:sqlite` | Node 内置（≥22.13；23.0–23.3 不支持） | — | 降级到 `better-sqlite3` peer |
 | `better-sqlite3` | optional peer | — | 可选 |
 | Python | **不依赖** | — | — |
 

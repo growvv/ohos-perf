@@ -37,6 +37,11 @@ export interface HdcResult {
   code: number;
 }
 
+/** Child exit code; `null` means killed by a signal, which is never success. */
+export function exitCodeOf(code: number | null): number {
+  return code ?? -1;
+}
+
 export type HdcOp = 'shell' | 'recv' | 'send' | 'tconn' | 'fport' | 'listTargets';
 
 export interface HdcArgvParams {
@@ -273,6 +278,16 @@ export class Hdc {
     }
   }
 
+  /**
+   * Run one shell command. Empty stdout with exit 0 is success; a non-zero
+   * exit or a `[Fail]` line on stdout is a failure.
+   *
+   * Only stdout is checked for `[Fail]`: device programs legitimately write
+   * diagnostics to stderr, while hdc's own transport errors arrive on stdout,
+   * and shell has no positive success marker to disambiguate. A dropped target
+   * still surfaces as DeviceNotFoundError from assertTargetAlive, not as
+   * HDC_SHELL_FAILED.
+   */
   async shell(target: string, cmd: string): Promise<HdcResult> {
     const result = await this.run(this.buildArgv('shell', { target, cmd }));
     this.assertTargetAlive(result.stdout);
@@ -281,6 +296,15 @@ export class Hdc {
     if (result.code !== 0) {
       throw new OhosPerfError(
         `hdc shell failed: exit code ${result.code}${failDetail(result) ? ` (${failDetail(result)})` : ''}`,
+        { code: 'HDC_SHELL_FAILED' },
+      );
+    }
+    // hdc exits 0 on transport failures such as `[Fail]Connect server failed`.
+    // Without this check a dead transport reads as a successful shell and the
+    // capability probe reports a fully-capable device that was never reached.
+    if (FAIL_PREFIX.test(result.stdout)) {
+      throw new OhosPerfError(
+        `hdc shell failed: ${failDetail(result) || firstLine(result)}`,
         { code: 'HDC_SHELL_FAILED' },
       );
     }
@@ -344,7 +368,10 @@ export class Hdc {
         );
       });
       child.on('close', (code) => {
-        resolve({ stdout, stderr, code: code ?? 0 });
+        // `code === null` means the child was killed by a signal. A killed
+        // process is never a success, so map it to a failing exit code that
+        // every `result.code !== 0` check already treats as failure.
+        resolve({ stdout, stderr, code: exitCodeOf(code) });
       });
     });
   }

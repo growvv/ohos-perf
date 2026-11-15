@@ -149,7 +149,10 @@ describe('HitraceCollector.collect failure paths', () => {
     const c = new HitraceCollector();
     const err = await c
       .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
-      .catch((e: { code?: string; message?: string }) => e);
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string; message?: string }) => e,
+      );
 
     expect(err.code).toBe('HITRACE_BEGIN_FAILED');
     // The actual device error line must survive into the message.
@@ -172,7 +175,10 @@ describe('HitraceCollector.collect failure paths', () => {
     const c = new HitraceCollector();
     const err = await c
       .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
-      .catch((e: { code?: string; message?: string }) => e);
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string; message?: string }) => e,
+      );
 
     expect(err.code).toBe('HITRACE_FINISH_FAILED');
     expect(err.message).toContain('errno: 2');
@@ -197,7 +203,10 @@ describe('HitraceCollector.collect failure paths', () => {
     const c = new HitraceCollector();
     const err = await c
       .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
-      .catch((e: { code?: string; message?: string }) => e);
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string; message?: string }) => e,
+      );
 
     expect(err.code).toBe('HITRACE_NO_OUTPUT');
     expect(err.message).toMatch(/file not found/);
@@ -221,7 +230,10 @@ describe('HitraceCollector.collect failure paths', () => {
     const c = new HitraceCollector();
     const err = await c
       .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
-      .catch((e: { code?: string }) => e);
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string }) => e,
+      );
     expect(err.code).toBe('HITRACE_NO_OUTPUT');
     expect(recvCalls(hdc)).toEqual([]);
   });
@@ -292,7 +304,10 @@ describe('HitraceCollector.collect stop-on-failure', () => {
     const c = new HitraceCollector();
     const err = await c
       .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
-      .catch((e: { message?: string }) => e);
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { message?: string }) => e,
+      );
 
     // The original finish failure surfaces, not the stop failure.
     expect(err.message).toContain('--trace_finish -o');
@@ -314,7 +329,10 @@ describe('HitraceCollector.collect duration validation', () => {
     const c = new HitraceCollector();
     const err = await c
       .collect(hdc as never, 'dev', { app: 'x', durationMs }, fakeLayout())
-      .catch((e: { code?: string; message?: string }) => e);
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string; message?: string }) => e,
+      );
 
     expect(err.code).toBe('HITRACE_BAD_DURATION');
     expect(err.message).toMatch(/durationMs/);
@@ -348,7 +366,11 @@ describe('HitraceCollector.collect duration validation', () => {
 describe('HitraceCollector.collect category validation', () => {
   it.each([
     ['an empty array', [] as string[]],
-    ['a blank entry', ['ace', '']],
+    ['a blank entry', ['ace', '   ']],
+    ['an empty string', ['ace', '']],
+    ['a space', ['ace', 'a b']],
+    ['a semicolon', ['ace', 'a;b']],
+    ['a dollar sign', ['ace', 'a$b']],
   ])('rejects %s before touching the device', async (_label, categories) => {
     const hdc = new FakeHdc({});
     const c = new HitraceCollector();
@@ -359,10 +381,42 @@ describe('HitraceCollector.collect category validation', () => {
         { app: 'x', durationMs: 1, categories },
         fakeLayout(),
       )
-      .catch((e: { code?: string; message?: string }) => e);
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string; message?: string }) => e,
+      );
 
     expect(err.code).toBe('HITRACE_BAD_CATEGORIES');
     expect(err.message).toMatch(/categor/i);
+    expect(hdc.calls).toEqual([]);
+  });
+});
+
+describe('HitraceCollector.collect buffer validation', () => {
+  it.each([
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['above MAX_SAFE_INTEGER', Number.MAX_SAFE_INTEGER + 1],
+  ])('rejects %s bufferKb before touching the device', async (_label, bufferKb) => {
+    const hdc = new FakeHdc({});
+    const c = new HitraceCollector();
+    const err = await c
+      .collect(
+        hdc as never,
+        'dev',
+        { app: 'x', durationMs: 1, bufferKb },
+        fakeLayout(),
+      )
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string; message?: string }) => e,
+      );
+
+    expect(err.code).toBe('HITRACE_BAD_BUFFER');
+    expect(err.message).toMatch(/bufferKb/);
     expect(hdc.calls).toEqual([]);
   });
 });

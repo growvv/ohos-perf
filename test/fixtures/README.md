@@ -27,6 +27,15 @@ field is unescaped back to a newline by the fixture runner in
 snapshot carries only the measured `hiperf list` hardware section; no missing
 software events were invented for it.
 
+Provenance exception: the `which uitest<TAB>/bin/uitest` line in
+`probe-emulator.txt` is **not** in the saved probe log
+(`spike/logs/probe_emulator.log` has no `uitest` line). It comes from PHASE_B's
+separate `uitest dumpLayout` measurement (117 KB of output on that device), so
+the device capability is real but the line is not part of the recording the
+file otherwise reproduces. It is kept deliberately - dropping it would erase a
+real capability - and it is why the emulator capability matrix reports 11
+available capabilities while the ledger's live measurement lists 9.
+
 ## `emu_big.db` — NOT checked in
 
 `spike/out/` is listed in `.gitignore`, so `emu_big.db` does not exist on a

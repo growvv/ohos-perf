@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
-import { Hdc, normalizeLocalPath } from '../src/transport/hdc';
-import { HdcNotFoundError } from '../src/errors';
+import { Hdc, exitCodeOf, normalizeLocalPath } from '../src/transport/hdc';
+import { DeviceNotFoundError, HdcNotFoundError, OhosPerfError } from '../src/errors';
 
 describe('Hdc', () => {
   it('builds argv for shell without shell-quoting the device path', () => {
@@ -190,6 +190,40 @@ describe('Hdc command failure detection', () => {
     await expect(hdc.shell('t1', 'true')).resolves.toEqual({ stdout: '', stderr: '', code: 0 });
   });
 
+  it('rejects [Fail] on stdout even when hdc exits 0', async () => {
+    // hdc prints transport failures (`[Fail]Connect server failed`) to stdout
+    // and still exits 0. Without this check a dead transport reads as a
+    // successful shell and the capability probe fabricates a live device.
+    const hdc = new StubHdc('[Fail]Connect server failed\r\n');
+    const err = await hdc
+      .shell('t1', 'ls /nope')
+      .then(
+        () => { throw new Error('expected shell() to reject'); },
+        (e: OhosPerfError) => e,
+      );
+    expect(err).toBeInstanceOf(OhosPerfError);
+    expect(err.code).toBe('HDC_SHELL_FAILED');
+    expect(err.message).toContain('Connect server failed');
+  });
+
+  it('does not fail shell on a stderr-only [Fail]', async () => {
+    // Device programs write diagnostics to stderr; only hdc's own transport
+    // errors on stdout are authoritative for shell.
+    const hdc = new StubHdc('', '[Fail]benign device diagnostic\r\n');
+    await expect(hdc.shell('t1', 'true')).resolves.toEqual({
+      stdout: '',
+      stderr: '[Fail]benign device diagnostic\r\n',
+      code: 0,
+    });
+  });
+
+  it('reports a dropped target from shell and recv as DeviceNotFoundError', async () => {
+    const hdc = new StubHdc('[Fail]Not match target founded, check connect-key please\r\n');
+    await expect(hdc.shell('t1', 'true')).rejects.toBeInstanceOf(DeviceNotFoundError);
+    await expect(hdc.recv('t1', '/data/local/tmp/x', 'out/x'))
+      .rejects.toBeInstanceOf(DeviceNotFoundError);
+  });
+
   it('throws on send failure even though hdc exits 0', async () => {
     const hdc = new StubHdc('[Fail]Error opening file: no such file or directory, path:out/x\r\n');
     await expect(hdc.send('t1', 'out/x', '/data/local/tmp/x')).rejects.toThrow(/send failed/);
@@ -243,6 +277,13 @@ describe('normalizeLocalPath', () => {
     expect(normalizeLocalPath('out/a.htrace', 'win32')).toBe('out/a.htrace');
     expect(normalizeLocalPath('/data/local/tmp/a.htrace', 'linux')).toBe('/data/local/tmp/a.htrace');
     expect(normalizeLocalPath('E:/a/b.htrace', 'linux')).toBe('E:/a/b.htrace');
+  });
+});
+
+describe('exitCodeOf', () => {
+  it('maps signal death (null) to a failure exit code', () => {
+    expect(exitCodeOf(null)).toBe(-1);
+    expect(exitCodeOf(0)).toBe(0);
   });
 });
 

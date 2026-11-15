@@ -4,7 +4,7 @@
   "type": "module",
   "bin": { "ohos-perf": "./dist/index.js" },
   "files": ["dist"],
-  "engines": { "node": ">=22.5.0" },
+  "engines": { "node": ">=22.13.0" },
   "dependencies": {
     "@ohos-perf/core": "0.1.0",
     "commander": "^12.1.0"
@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --target node22",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "pretest": "npm run build -w @ohos-perf/core",
     "test": "vitest run"
   }
 }
