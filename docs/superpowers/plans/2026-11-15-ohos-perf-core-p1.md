@@ -283,10 +283,11 @@ Compare `analyzeThreadWakeup` to `thread-wakeup.emu_big.json` and `.real_device.
 
 **Files:**
 - Create: `packages/core/src/analyze/threads-score.ts`, `packages/core/test/analyze-threads.test.ts`
-- Modify: `packages/core/src/analyze/engine.ts`, `packages/core/src/report/evidence.ts` (kind `thread_redundancy`), `packages/core/src/index.ts`, `packages/core/test/parity-hapray.test.ts`
+- Modify: `packages/core/src/analyze/engine.ts`, `packages/core/src/report/evidence.ts` (kind `thread_redundancy`), `packages/core/src/index.ts`, `packages/core/test/parity-hapray.test.ts`, `THIRD_PARTY_NOTICES.md`
+- License: `// Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.` at the top of `threads-score.ts`, and add its upstream sources (`thread_optimization.py`, `thread_utils.py`, `thread_analyzer.py`) to the notices table.
 
 **Interfaces:**
-- Produces: `computeThreadAnalysis(results: ThreadWakeupResult[]): ThreadAnalysis` with `redundantThreadsSummary` (same keys as HapRay, including `redundancyTypes`), `summary`, `belowThresholdPatterns`; `ThreadAnalyzer implements Analyzer` (`id: 'threads'`, `requires: ['trace.sched', 'trace.thread_state']`). It obtains `ThreadWakeupResult[]` via `analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids })` — deliberately **not** `timeRange: ctx.window`, because the CLI window is `0..MAX_SAFE_INTEGER` and HapRay derives its range from `trace_range`; passing the open window would change thread-state counts. When `ctx.db` is absent, it returns one `no_data` evidence and no metrics.
+- Produces: `computeThreadAnalysis(results: ThreadWakeupResult[]): ThreadAnalysis` with `redundantThreadsSummary`, `summary`, `belowThresholdPatterns`. The three payloads keep HapRay's **snake_case field names verbatim** (`redundancy_types`, `total_redundant_thread_patterns`, `max_score`, …) so the golden comparison is direct; only the three top-level property names are camelCase. `ThreadAnalyzer implements Analyzer` (`id: 'threads'`, `requires: ['trace.sched', 'trace.thread_state']`). It obtains `ThreadWakeupResult[]` via `analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids })` — deliberately **not** `timeRange: ctx.window`, because the CLI window is `0..MAX_SAFE_INTEGER` and HapRay derives its range from `trace_range`; passing the open window would change thread-state counts. When `ctx.db` is absent, it returns one `no_data` evidence and no metrics.
 - Metrics: `thread.patterns.count`, `thread.redundant.count`, `thread.instructions.total`, `thread.redundant.instructions`, `thread.redundant.instructions.ratio` (value is HapRay's 0–1 ratio × 100, unit `%`). Fidelity exact except the ratio: `'exact'`.
 - Evidence: one `thread_redundancy` per pattern in `redundantThreadsSummary.redundantThreads`, severity `warn`, subject `{ process: <analyzed app name>, thread: thread_name }`, window `ctx.window`, signals `{ score, redundantCount, waitingRatio, instructions }`, explain from the pattern's `type_label`; drillDown `{ tool: 'threads.pattern', args: { threadName }, returns: 'ThreadPattern' }`. If there are no patterns, emit one `no_data` evidence (not zero metrics only).
 
@@ -302,11 +303,11 @@ Expected: FAIL.
 
 - [ ] **Step 3: Port scoring**
 
-Port `thread_utils.py` (pattern key, ignore `OS_`, callchain sample, frame counts, memory estimate, `num`) and all of `thread_optimization.py` (`per_thread_redundancy_score`, `thread_redundancy_features`, `analyze_optimization_opportunities`). Preserve thresholds and the exact `score_breakdown` keys. Python's `round(x, 6)` applies to the summary outputs; mirror it with a deterministic `round6` helper. Sorting: `redundancyScore` descending, then `threadName` ascending.
+Port `thread_utils.py` (pattern key, ignore `OS_`, callchain sample, frame counts, memory estimate, `num`) and all of `thread_optimization.py` (`per_thread_redundancy_score`, `thread_redundancy_features`, `analyze_optimization_opportunities`). Preserve thresholds and the exact `score_breakdown` keys. Python's `round(x, 6)` applies to the summary outputs; mirror it with a deterministic `round6` helper. Sorting: `redundant_threads` by `redundancy_score` descending then `thread_name` ascending; `below_threshold_patterns` by `thread_name` ascending.
 
 - [ ] **Step 4: Parity test**
 
-Compare `computeThreadAnalysis(analyzeThreadWakeup(...))` to `threads.emu_big.json` / `threads.real_device.json`: deep-equal strings/arrays, `toBeCloseTo(..., 6)` for floats. Empty app pids → empty analysis, no throw.
+Compare `computeThreadAnalysis(analyzeThreadWakeup(...))` to `threads.emu_big.json` / `threads.real_device.json`. Normalize both sides first: sort `redundant_threads` and `below_threshold_patterns` by `thread_name` (HapRay emits them in trace insertion order; our public output sorts by name for determinism), then deep-equal strings/arrays and use `toBeCloseTo(..., 6)` for floats. Compare `summary` as an object with tolerance. Empty app pids → empty analysis, no throw.
 
 - [ ] **Step 5: Wire, test, commit**
 
