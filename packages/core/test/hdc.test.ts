@@ -294,9 +294,13 @@ describe('Hdc.resolvePath', () => {
   });
 
   it('throws HdcNotFoundError listing every candidate in order', async () => {
+    // A PATH entry must not contain the host's delimiter by accident: a
+    // drive letter on Windows uses ':' but ':' splits PATH on POSIX, which
+    // would turn one entry into two candidates on Linux CI.
+    const pathDir = process.platform === 'win32' ? 'C:/path-nope' : '/path-nope';
     const hdc = new Hdc({
       hdcPath: 'C:/nope/hdc.exe',
-      env: { OHOS_PERF_HDC: 'C:/also-nope/hdc.exe', PATH: 'C:/path-nope' },
+      env: { OHOS_PERF_HDC: 'C:/also-nope/hdc.exe', PATH: pathDir },
       commonPaths: [],
     });
     const err = await hdc.resolvePath().catch((e: unknown) => e);
@@ -305,7 +309,7 @@ describe('Hdc.resolvePath', () => {
     expect((err as HdcNotFoundError).searchedPaths).toEqual([
       'C:/nope/hdc.exe',
       'C:/also-nope/hdc.exe',
-      join('C:/path-nope', bin),
+      join(pathDir, bin),
     ]);
   });
 });

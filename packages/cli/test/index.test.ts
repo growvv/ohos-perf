@@ -134,10 +134,20 @@ describe.skipIf(!distExists)('cli entry point', () => {
 
   it('reads its own arguments', () => {
     // With a fixed argv, `caps` would degrade to the top-level command and
-    // print help instead of the capability array.
+    // print help instead of running a capability report. The outcome depends
+    // on the host: a developer machine may have hdc and a device, a CI runner
+    // has neither. Both outcomes prove the argv reached `caps`; a fall-back
+    // to top-level help parses as JSON in neither branch.
     const r = run(['caps', '--json']);
-    expect(r.status).toBe(0);
-    expect(() => JSON.parse(r.stdout)).not.toThrow();
+    expect(r.stderr).not.toContain('Usage: ohos-perf');
+    if (r.status === 0) {
+      expect(() => JSON.parse(r.stdout)).not.toThrow();
+      expect(Array.isArray(JSON.parse(r.stdout))).toBe(true);
+    } else {
+      expect(r.status).toBe(1);
+      expect(r.stdout).toBe('');
+      expect(cliStderr(r.stderr)).toContain('hdc unavailable');
+    }
   });
 
   it('exits 0 on --help and writes usage to stdout', () => {
