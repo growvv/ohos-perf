@@ -35,11 +35,11 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 is complete**: 543 tests, two workspace typechecks and two builds, all
+**P1 is complete**: 551 tests, two workspace typechecks and two builds, all
 green on the declared minimum Node (`22.13.0`). On a clean checkout — where the
 gitignored `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures are
-absent — `npm test` reports **521 passed, 22 skipped (2 files skipped)**; with
-both fixtures present all 543 pass. The fixture-dependent suites are
+absent — `npm test` reports **529 passed, 22 skipped (2 files skipped)**; with
+both fixtures present all 551 pass. The fixture-dependent suites are
 `e2e-offline`, `parity-hapray`, `analyze-thread-wakeup`,
 `query-binder-startup`, `query-callstack-perf`, `query-sched-state` and the CLI
 `index` end-to-end tests.
@@ -120,7 +120,7 @@ node packages/cli/dist/index.js analyze ./scene --app com.example.app --json
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
-npm test        # 543 tests; 521 pass + 22 skip on a clean checkout (spike/out/ absent)
+npm test        # 551 tests; 529 pass + 22 skip on a clean checkout (spike/out/ absent)
 ```
 
 ## Library
@@ -166,6 +166,9 @@ for the full rule set. Offline `analyze` builds its own matrix from the tables
 present in `trace.db` (and `procfs.jsonl`); when `scene.json` exists, its
 `capture.collectors` decides whether memory samples are trusted, so a re-capture
 without `--procfs` can never report the previous capture's `mem.*` as exact.
+A `scene.json` that exists but is malformed, of the wrong version or missing
+required fields is treated as untrustworthy rather than as "no metadata": only
+a genuinely absent descriptor lets a hand-built scene's `procfs.jsonl` be used.
 
 Known limitation: `trace.binder` is keyed on the `callstack` table alone, as
 specified by the capability table. A synthetic database with `callstack` but

@@ -627,4 +627,75 @@ describe('CollectSession.ingest with procfs and cold start', () => {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  // Fix round 2, item 2: a failed conversion after a --procfs capture must not
+  // leave this attempt's new procfs.jsonl beside the old scene. We preserve a
+  // pre-existing file byte-for-byte (restoring it), and remove the file when
+  // the previous scene had none.
+  it('restores the previous procfs.jsonl when a --procfs conversion fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-procfs-conv-fail-'));
+    try {
+      const traceDb = join(root, 'trace.db');
+      const db = new DatabaseSync(traceDb);
+      db.exec('CREATE TABLE frame_slice(id INT, ts INT)');
+      db.exec('INSERT INTO frame_slice VALUES (0, 42)');
+      db.close();
+      writeFileSync(join(root, 'scene.json'), JSON.stringify({
+        version: 1, app: { packageName: 'old.app', processNames: ['old.app'] },
+        pids: [7], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace', 'procfs'] },
+      }));
+      const oldSamples = 'old samples\n';
+      writeFileSync(join(root, 'procfs.jsonl'), oldSamples);
+
+      const h = collectHarness();
+      // The procfs collector writes this attempt's samples.
+      h.procfs.collect = async (_h, _t, _o, layout) => {
+        writeFileSync(layout.procfsFile, 'new samples\n');
+        return [{ ts: 9, pid: 42, status: { vmRssBytes: 1, vmHwmBytes: 1, threads: 1 } }];
+      };
+      h.streamer.convert = async () => { throw new Error('conversion exploded'); };
+      const d = fakeDevice(h);
+      await expect(
+        d.collect({ app: 'new.app', durationMs: 1000, sceneRoot: root, procfs: true })
+          .then((s) => s.ingest()),
+      ).rejects.toThrow(/conversion exploded/);
+
+      // trace.db and scene.json still describe the previous capture...
+      const check = new DatabaseSync(traceDb, { readOnly: true });
+      expect(check.prepare('SELECT ts FROM frame_slice').all()).toEqual([{ ts: 42 }]);
+      check.close();
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.app.packageName).toBe('old.app');
+      // ...and the previous procfs.jsonl is byte-identical, not this attempt's.
+      expect(readFileSync(join(root, 'procfs.jsonl'), 'utf8')).toBe(oldSamples);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('removes a new procfs.jsonl when a --procfs conversion fails and the old scene had none', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-procfs-conv-fail2-'));
+    try {
+      writeFileSync(join(root, 'scene.json'), JSON.stringify({
+        version: 1, app: { packageName: 'old.app', processNames: ['old.app'] },
+        pids: [], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace'] },
+      }));
+      const h = collectHarness();
+      h.procfs.collect = async (_h, _t, _o, layout) => {
+        writeFileSync(layout.procfsFile, 'new samples\n');
+        return [{ ts: 9, pid: 42, status: { vmRssBytes: 1, vmHwmBytes: 1, threads: 1 } }];
+      };
+      h.streamer.convert = async () => { throw new Error('conversion exploded'); };
+      const d = fakeDevice(h);
+      await expect(
+        d.collect({ app: 'new.app', durationMs: 1000, sceneRoot: root, procfs: true })
+          .then((s) => s.ingest()),
+      ).rejects.toThrow(/conversion exploded/);
+      expect(existsSync(join(root, 'procfs.jsonl'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });

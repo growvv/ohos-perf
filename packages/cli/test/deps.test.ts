@@ -321,6 +321,53 @@ describe('realDeps().analyze', () => {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  // Fix round 2, item 1: a scene.json that exists but cannot be read is a
+  // corrupt descriptor, not "no metadata". Only a genuinely absent file means
+  // a legacy hand-built scene whose procfs.jsonl we may trust.
+  async function analyzeWithMeta(meta: string | undefined): Promise<string[]> {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-corrupt-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'procfs.jsonl'), procfsSample);
+      if (meta !== undefined) writeFileSync(join(parent, 'scene.json'), meta);
+      const result = await realDeps('0.0.0').analyze(parent);
+      return result.metrics.map((m) => m.id);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  }
+
+  it('does not grant procfs for malformed scene.json JSON', async () => {
+    const ids = await analyzeWithMeta('{ not json');
+    expect(ids).toContain('memory.degraded');
+    expect(ids.some((id) => id.startsWith('mem.'))).toBe(false);
+  });
+
+  it('does not grant procfs for a wrong-version scene.json', async () => {
+    const ids = await analyzeWithMeta(JSON.stringify({
+      version: 2, app: { packageName: 'x', processNames: ['x'] },
+      pids: [], deviceId: 't1',
+      capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace', 'procfs'] },
+    }));
+    expect(ids).toContain('memory.degraded');
+    expect(ids.some((id) => id.startsWith('mem.'))).toBe(false);
+  });
+
+  it('does not grant procfs for a valid scene.json without capture', async () => {
+    const ids = await analyzeWithMeta(JSON.stringify({
+      version: 1, app: { packageName: 'x', processNames: ['x'] },
+      pids: [], deviceId: 't1',
+    }));
+    expect(ids).toContain('memory.degraded');
+    expect(ids.some((id) => id.startsWith('mem.'))).toBe(false);
+  });
+
+  it('trusts procfs.jsonl when scene.json is genuinely absent (positive control)', async () => {
+    const ids = await analyzeWithMeta(undefined);
+    expect(ids).not.toContain('memory.degraded');
+    expect(ids.some((id) => id.startsWith('mem.'))).toBe(true);
+  });
 });
 
 describe('realDeps().collect', () => {

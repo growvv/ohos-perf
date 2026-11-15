@@ -8,7 +8,7 @@
  * and turn it into a queryable scene.
  */
 
-import { mkdirSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { HitraceCollector } from '../collectors/hitrace';
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import type { TraceCollectOptions } from '../collectors/types';
@@ -169,6 +169,13 @@ export class Device {
 
         mkdirSync(layout.root, { recursive: true });
 
+        // The procfs collector overwrites procfs.jsonl during the capture. If
+        // conversion later fails, the old scene must stay exactly as it was,
+        // so remember the previous file (if any) before anything writes it.
+        const previousProcfs = wantsProcfs && existsSync(layout.procfsFile)
+          ? readFileSync(layout.procfsFile)
+          : undefined;
+
         // Host wall-clock at capture start, recorded for humans only.
         const startedAtMs = Date.now();
 
@@ -236,7 +243,16 @@ export class Device {
         // scene.json keeps describing the old trace.db, so the scene directory
         // stays coherent instead of pairing new metadata with an old database.
         const streamer = this.deps.streamer ?? new Streamer();
-        await streamer.convert(layout.traceFile, layout.traceDb);
+        try {
+          await streamer.convert(layout.traceFile, layout.traceDb);
+        } catch (err) {
+          // The procfs collector has already written this attempt's samples.
+          // Restore the previous file byte-for-byte, or remove it when the
+          // previous scene had none, so the directory holds exactly the old
+          // scene's artifacts. Never mask the conversion error.
+          if (wantsProcfs) restorePreviousProcfs(layout.procfsFile, previousProcfs);
+          throw err;
+        }
 
         // A re-capture into the same sceneRoot without --procfs must not leave
         // the previous capture's memory samples behind: analyze would otherwise
@@ -289,6 +305,23 @@ function removeStaleProcfs(path: string): void {
     unlinkSync(path);
   } catch (err) {
     if ((err as { code?: string }).code !== 'ENOENT') throw err;
+  }
+}
+
+/**
+ * Undo a procfs capture on the conversion-failure path: put the previous file
+ * back byte-for-byte, or delete this attempt's file when there was none. Errors
+ * here are best-effort — the conversion error is the one the caller must see.
+ */
+function restorePreviousProcfs(path: string, previous: Buffer | undefined): void {
+  try {
+    if (previous === undefined) {
+      removeStaleProcfs(path);
+    } else {
+      writeFileSync(path, previous);
+    }
+  } catch {
+    // Deliberately swallowed: never replace the conversion failure.
   }
 }
 

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -121,9 +121,10 @@ const TABLE_RULES: ReadonlyArray<{
  *
  * `procfs.jsonl` is special: it is a scene artifact, not a database table, and
  * is available only when the file yields at least one valid sample. The caller
- * passes the samples it already read (after applying the scene.json
- * `capture.collectors` gate) so the file is parsed once and `mem.procfs` cannot
- * be claimed for a capture that did not sample memory.
+ * passes the samples it already read — after applying the scene.json gate
+ * (absent file → trust it; present but unreadable or not listing `procfs` →
+ * empty) — so the file is parsed once and `mem.procfs` cannot be claimed for a
+ * capture that did not sample memory.
  */
 export function offlineCapabilities(
   db: CapabilityMatrixDb,
@@ -210,15 +211,22 @@ export function realDeps(
       try {
         const db = scene.traceDb;
         const processes = new ProcessQuery(db);
-        const metadata = readSceneMetadata(layout);
+        const hasMetadataFile = existsSync(layout.metadataFile);
+        const metadata = hasMetadataFile ? readSceneMetadata(layout) : undefined;
         // A scene written by Device.collect always has scene.json, and its
         // `capture.collectors` is the authority on which collectors actually
         // ran. Re-collecting into the same directory without --procfs can leave
         // a stale procfs.jsonl; ignoring it prevents `mem.*` exact metrics for
-        // a capture that never sampled memory. Hand-built/legacy scenes with no
-        // metadata keep working from the file alone.
-        const procfsDeclared = metadata === undefined ||
-          (metadata.capture?.collectors.includes('procfs') ?? false);
+        // a capture that never sampled memory.
+        //
+        // Only a genuinely ABSENT scene.json means a legacy hand-built scene
+        // whose procfs.jsonl we may trust. A file that exists but cannot be
+        // read (malformed JSON, wrong version, missing required fields) is an
+        // untrustworthy descriptor: treat it as "no procfs" rather than
+        // fabricating exact mem.* from a possibly stale capture.
+        const procfsDeclared = !hasMetadataFile ||
+          (metadata !== undefined &&
+            (metadata.capture?.collectors.includes('procfs') ?? false));
         const samples = procfsDeclared
           ? readProcfsSamples(layout.procfsFile)
           : [];
