@@ -84,6 +84,30 @@ export function normalizeLocalPath(
   return p;
 }
 
+/**
+ * Strip the single leading `/` from an absolute device path.
+ *
+ * `file send/recv` resolve the device path against the fport server's working
+ * directory, which is whatever directory the server was started from. An
+ * absolute path is joined onto it anyway (`D:/Application/Git/data/...`), so
+ * the transfer fails. Pairing `-cwd /` with a relative path is the only form
+ * measured to work on the real-device hdc, and it also works when the server
+ * cwd already is `/`.
+ *
+ * A caller that passes a relative path is rejected rather than silently
+ * resolved against the server cwd: that would depend on where the server was
+ * started, which the package cannot know.
+ */
+export function toRelativeDevicePath(devicePath: string): string {
+  if (!devicePath.startsWith('/')) {
+    throw new OhosPerfError(
+      `device path must be absolute (got ${JSON.stringify(devicePath)})`,
+      { code: 'HDC_BAD_DEVICE_PATH' },
+    );
+  }
+  return devicePath.replace(/^\/+/, '');
+}
+
 function hdcBinName(platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32' ? 'hdc.exe' : 'hdc';
 }
@@ -151,11 +175,17 @@ export class Hdc {
       }
       case 'recv': {
         const { target, devicePath, localPath } = params as HdcArgvParams['recv'];
-        return ['-t', target, 'file', 'recv', devicePath, localPath];
+        return [
+          '-t', target, 'file', 'recv', '-cwd', '/',
+          toRelativeDevicePath(devicePath), localPath,
+        ];
       }
       case 'send': {
         const { target, localPath, devicePath } = params as HdcArgvParams['send'];
-        return ['-t', target, 'file', 'send', localPath, devicePath];
+        return [
+          '-t', target, 'file', 'send', '-cwd', '/',
+          localPath, toRelativeDevicePath(devicePath),
+        ];
       }
       case 'tconn': {
         const { target } = params as HdcArgvParams['tconn'];

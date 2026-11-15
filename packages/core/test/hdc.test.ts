@@ -16,20 +16,37 @@ describe('Hdc', () => {
     expect(env.MSYS_NO_PATHCONV).toBe('1');
   });
 
-  it('builds argv for recv with device path unmodified', () => {
+  it('builds argv for recv with -cwd / and a relative device path', () => {
     const hdc = new Hdc({ hdcPath: 'C:/fake/hdc.exe' });
     const argv = hdc.buildArgv('recv', {
       target: 't1', devicePath: '/data/local/tmp/a.htrace', localPath: 'out/a.htrace',
     });
-    expect(argv).toEqual(['-t', 't1', 'file', 'recv', '/data/local/tmp/a.htrace', 'out/a.htrace']);
+    expect(argv).toEqual([
+      '-t', 't1', 'file', 'recv', '-cwd', '/', 'data/local/tmp/a.htrace', 'out/a.htrace',
+    ]);
   });
 
-  it('builds argv for send with local path first', () => {
+  it('builds argv for send with -cwd / and a relative device path', () => {
     const hdc = new Hdc({ hdcPath: 'C:/fake/hdc.exe' });
     const argv = hdc.buildArgv('send', {
       target: 't1', localPath: 'out/a.htrace', devicePath: '/data/local/tmp/a.htrace',
     });
-    expect(argv).toEqual(['-t', 't1', 'file', 'send', 'out/a.htrace', '/data/local/tmp/a.htrace']);
+    expect(argv).toEqual([
+      '-t', 't1', 'file', 'send', '-cwd', '/', 'out/a.htrace', 'data/local/tmp/a.htrace',
+    ]);
+  });
+
+  it('rejects a device path that is not absolute', () => {
+    const hdc = new Hdc({ hdcPath: 'C:/fake/hdc.exe' });
+    let error: unknown;
+    try {
+      hdc.buildArgv('recv', {
+        target: 't1', devicePath: 'data/local/tmp/a.htrace', localPath: 'out/a.htrace',
+      });
+    } catch (err) {
+      error = err;
+    }
+    expect((error as OhosPerfError).code).toBe('HDC_BAD_DEVICE_PATH');
   });
 
   it('builds argv for tconn, fport and verbose target listing', () => {
@@ -145,7 +162,9 @@ describe('Hdc command failure detection', () => {
       '[Fail]Error opening file: no such file or directory, path:/data/local/tmp/x\r\n',
     );
     await expect(hdc.recv('t1', '/data/local/tmp/x', 'out/x')).rejects.toThrow(/recv failed/);
-    expect(hdc.calls[0]).toEqual(['-t', 't1', 'file', 'recv', '/data/local/tmp/x', 'out/x']);
+    expect(hdc.calls[0]).toEqual([
+      '-t', 't1', 'file', 'recv', '-cwd', '/', 'data/local/tmp/x', 'out/x',
+    ]);
   });
 
   it('resolves recv when hdc reports a finished transfer', async () => {
