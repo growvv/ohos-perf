@@ -137,6 +137,12 @@ export class FrameQuery {
       .map(toFrame);
   }
 
+  /** The frame with `id`, or `undefined` when it is absent or has no flag row. */
+  get(id: number): Frame | undefined {
+    const [row] = this.db.query<FrameSliceRow>(`${SELECT_FRAMES} AND id = ? LIMIT 1`, [id]);
+    return row ? toFrame(row) : undefined;
+  }
+
   actual(range?: TimeRange): Frame[] {
     return this.all(range).filter((f) => f.type === 0);
   }

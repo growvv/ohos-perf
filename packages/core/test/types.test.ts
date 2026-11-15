@@ -74,12 +74,12 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 /** The runtime value exports of `@ohos-perf/core`; `index.test.ts` exercises them at runtime. */
 const VALUE_EXPORTS = [
   'BinderAnalyzer', 'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device',
-  'DeviceNotFoundError', 'FaultTreeAnalyzer', 'FrameAnalyzer', 'FrameQuery',
-  'FTRACE_CATEGORIES', 'HIPROFILER_PLUGIN_NAMES', 'HITRACE_DEFAULT_CATEGORIES', 'Hdc',
-  'HdcNotFoundError',
+  'DEFAULT_QUERY_LIMIT', 'DeviceNotFoundError', 'FaultTreeAnalyzer', 'FrameAnalyzer',
+  'FrameQuery', 'FTRACE_CATEGORIES', 'HIPROFILER_PLUGIN_NAMES', 'HITRACE_DEFAULT_CATEGORIES',
+  'Hdc', 'HdcNotFoundError',
   'HitraceCollector', 'HiprofilerCollector',
-  'IngestError', 'InstantQuery', 'MIN_BUFFER_PAGES', 'MemoryAnalyzer', 'OhosPerfError',
-  'PLANE_A_PLUGINS', 'PerfQuery',
+  'IngestError', 'InstantQuery', 'MAX_QUERY_LIMIT', 'MIN_BUFFER_PAGES', 'MemoryAnalyzer',
+  'OhosPerfError', 'PLANE_A_PLUGINS', 'PerfQuery',
   'ProcessQuery', 'Scene',
   'ProcfsCollector', 'parseProcfsStatus', 'parseSmapsRollup', 'readProcfsSamples',
   'writeProcfsSamples',
@@ -88,9 +88,11 @@ const VALUE_EXPORTS = [
   'ThreadStateQuery', 'analyzeThreadWakeup', 'buildHiprofilerConfig', 'buildMatrix',
   'computeBinderAnalysis', 'computeFaultTree', 'computeThreadAnalysis',
   'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ftracePlugin',
-  'gpuPlugin', 'ingestScene',
-  'metric', 'nativehookPlugin', 'openDb', 'readSceneMetadata', 'resolveAppIdentity',
-  'runAnalyzers', 'runProbe', 'tableRowCounts', 'writeSceneMetadata', 'xpowerPlugin',
+  'gpuPlugin', 'ingestScene', 'lookupQuery',
+  'metric', 'nativehookPlugin', 'openDb', 'queryDefinitions', 'readSceneMetadata',
+  'resolveAppIdentity', 'resolveQueryLimit',
+  'runAnalyzers', 'runNamedQuery', 'runProbe', 'tableRowCounts', 'unknownQueryError',
+  'writeSceneMetadata', 'xpowerPlugin',
 ];
 
 // This test checks the built declarations, not src. `dist/` is gitignored, so

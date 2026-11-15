@@ -88,9 +88,9 @@ function jankEvidence(frame: Frame, processName: string, originNs: number): Evid
       { label: 'Frame detail', tool: 'frames.get', args: { id: frame.id }, returns: 'Frame' },
       {
         label: 'Callstack for frame',
-        tool: 'callstack.under',
-        args: { ipid: frame.ipid, itid: frame.itid, startNs, endNs },
-        returns: 'CallstackEntry[]',
+        tool: 'callstack.range',
+        args: { startNs, endNs },
+        returns: 'CallstackEvent[]',
       },
     ],
   });

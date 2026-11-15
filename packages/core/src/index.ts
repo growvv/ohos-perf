@@ -107,6 +107,13 @@ export type {
 } from './query/perf';
 export { BinderQuery } from './query/binder';
 export type { BinderEvent } from './query/binder';
+export {
+  DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT, lookupQuery, queryDefinitions,
+  resolveQueryLimit, runNamedQuery, unknownQueryError,
+} from './query/registry';
+export type {
+  NamedQueryDefinition, NamedQueryInfo, NamedQueryResult, QueryArgument, QueryContext,
+} from './query/registry';
 export { StartupQuery } from './query/startup';
 export type { StartupRecord } from './query/startup';
 
