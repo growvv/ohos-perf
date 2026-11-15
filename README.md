@@ -170,11 +170,11 @@ A `scene.json` that exists but is malformed, of the wrong version or missing
 required fields is treated as untrustworthy rather than as "no metadata": only
 a genuinely absent descriptor lets a hand-built scene's `procfs.jsonl` be used.
 
-Known limitation: `trace.binder` is keyed on the `callstack` table alone, as
-specified by the capability table. A synthetic database with `callstack` but
-without the other core `trace_streamer` tables (`process`, `thread`,
-`trace_range`) would pass the gate and then fail in the analyzer; real
-`trace_streamer` databases always contain them.
+The offline matrix gates each capability on every table its analyzers read
+without a `hasTable` guard — for `trace.binder`, that is `callstack`, `args`,
+`data_dict`, `process`, `thread` and `trace_range`. A synthetic database that
+lacks any of them is reported as a `degraded` proxy, never run far enough to
+crash: a crash is not the documented answer to missing input.
 
 ## Architecture
 

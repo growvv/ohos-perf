@@ -67,6 +67,48 @@ function createFullTraceDb(path: string, processRows?: string): void {
   db.close();
 }
 
+/**
+ * A scene database with exactly the named tables (minimal column shape), for
+ * asserting that the offline matrix gates on the full table set. `trace_range`
+ * always carries one row so an analyzer that does run can resolve a range.
+ */
+function createTableSetDb(path: string, tables: string[]): void {
+  const db = new DatabaseSync(path);
+  const ddl: Record<string, string> = {
+    frame_slice: `CREATE TABLE frame_slice(id INT, ts INT, dur INT, type INT, flag INT,
+      ipid INT, itid INT, vsync INT, callstack_id INT, src TEXT, dst INT,
+      type_desc TEXT, depth INT, frame_no INT)`,
+    process: `CREATE TABLE process(id INT, ipid INT, pid INT, name TEXT, start_ts INT,
+      switch_count INT, thread_count INT, slice_count INT, mem_count INT)`,
+    thread: `CREATE TABLE thread(id INT, itid INT, tid INT, name TEXT, start_ts INT,
+      end_ts INT, ipid INT, is_main_thread INT, switch_count INT)`,
+    callstack: `CREATE TABLE callstack(id INT, ts INT, dur INT, callid INT,
+      cat TEXT, name TEXT, depth INT, cookie INT, parent_id INT, argsetid INT,
+      chainId TEXT, spanId TEXT, parentSpanId TEXT, flag TEXT, trace_level TEXT,
+      trace_tag TEXT, custom_category TEXT, custom_args TEXT, child_callid INT)`,
+    args: 'CREATE TABLE args(id INT, key INT, datatype INT, value INT, argset INT)',
+    data_dict: 'CREATE TABLE data_dict(id INT, data TEXT)',
+    trace_range: 'CREATE TABLE trace_range(start_ts INT, end_ts INT)',
+    sched_slice: `CREATE TABLE sched_slice(id INT, ts INT, dur INT, ts_end INT,
+      cpu INT, itid INT, ipid INT, end_state TEXT, priority INT, arg_setid INT)`,
+    instant: `CREATE TABLE instant(ts INT, name TEXT, ref INT, wakeup_from INT,
+      ref_type TEXT, value REAL)`,
+    thread_state: `CREATE TABLE thread_state(ts INT, dur INT, cpu INT, itid INT,
+      tid INT, pid INT, state TEXT, arg_setid INT)`,
+    app_startup: `CREATE TABLE app_startup(id INT, call_id INT, ipid INT, tid INT,
+      start_time INT, end_time INT, start_name INT, packed_name TEXT)`,
+  };
+  for (const table of tables) db.exec(ddl[table]);
+  if (tables.includes('trace_range')) {
+    db.exec('INSERT INTO trace_range VALUES (0, 10000000000)');
+  }
+  if (tables.includes('frame_slice')) {
+    db.exec(`INSERT INTO frame_slice VALUES
+      (0, 1000, 16000000, 0, 0, 17, 44, 0, 0, '', 0, 'actural', 0, 0)`);
+  }
+  db.close();
+}
+
 /** A scene whose database returns no rows; used to observe the layout only. */
 function emptyScene(): Scene {
   return {
@@ -356,6 +398,23 @@ describe('realDeps().analyze', () => {
       expect(matrix.get('trace.sched')).toBeUndefined();
       const both = offlineCapabilities(fakeDb(['sched_slice', 'instant']), []);
       expect(both.has('trace.sched')).toBe(true);
+
+      // I2: trace.binder is gated on the full unguarded table set. One missing
+      // table (args) must drop the capability rather than let the analyzer run
+      // and crash on `no such table`.
+      const binderTables = [
+        'callstack', 'args', 'data_dict', 'process', 'thread', 'trace_range',
+      ];
+      const fullBinder = offlineCapabilities(fakeDb(binderTables), []);
+      expect(fullBinder.has('trace.binder')).toBe(true);
+      const minusArgs = offlineCapabilities(
+        fakeDb(binderTables.filter((name) => name !== 'args')),
+        [],
+      );
+      expect(minusArgs.has('trace.binder')).toBe(false);
+      // startup.app_startup is dead: no capability row is emitted for it.
+      expect(offlineCapabilities(fakeDb(['app_startup']), []).has('startup.app_startup'))
+        .toBe(false);
     } finally {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -483,6 +542,49 @@ describe('realDeps().analyze', () => {
       expect(ids).not.toContain('binder.transactions.count');
       expect(ids.some((id) => /^fault\.(arkui|av_codec|Audio)\./.test(id))).toBe(false);
       expect(ids.some((id) => id.startsWith('thread.'))).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  // I2: a capability must not be claimed for a trace missing one of the
+  // tables its analyzers read unguarded. `callstack` + an empty `process`
+  // (the standard scene shape) but no `args`/`data_dict`/`thread`/`trace_range`
+  // used to grant trace.binder (keyed on `callstack` alone), and the analyzer
+  // then crashed on the first missing table instead of degrading.
+  it('degrades binder and fault-tree when the binder table set is incomplete', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-tablegating-'));
+    try {
+      createTableSetDb(join(parent, 'trace.db'), [
+        'callstack', 'frame_slice', 'process',
+      ]);
+      const result = await realDeps('0.0.0').analyze(parent);
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).toContain('binder.degraded');
+      expect(ids).toContain('fault-tree.degraded');
+
+      const evidence = result.evidence as unknown as ReadonlyArray<{
+        kind: string;
+        explain: string;
+      }>;
+      const degraded = evidence.filter((e) => e.kind === 'degraded_capability');
+      expect(degraded.some((e) => /trace\.binder/.test(e.explain))).toBe(true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('degrades frames when frame_slice is absent but the binder tables exist', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-tablegating-frames-'));
+    try {
+      createTableSetDb(join(parent, 'trace.db'), [
+        'callstack', 'args', 'data_dict', 'process', 'thread', 'trace_range',
+      ]);
+      const result = await realDeps('0.0.0').analyze(parent);
+      const ids = result.metrics.map((m) => m.id);
+      // trace.binder is fully satisfied, so binder runs; trace.frames is not.
+      expect(ids).toContain('frames.degraded');
+      expect(ids).not.toContain('binder.degraded');
     } finally {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

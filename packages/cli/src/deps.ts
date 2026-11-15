@@ -95,17 +95,25 @@ function offlineState(id: CapabilityId, collector: 'hitrace' | 'procfs'): Capabi
   };
 }
 
-/** Names of the core trace tables an offline capability depends on. */
+/**
+ * The tables each analyzer actually reads without a `hasTable` guard.
+ *
+ * A capability declared for a trace that lacks one of these tables turns a
+ * degradation into a crash, and a crash is not the documented answer to
+ * missing input: the engine's whole point is that an unsupported signal
+ * becomes a `degraded` proxy. So a capability is available only when every
+ * table behind it is present. `procfs.jsonl` is a scene artifact, not a table
+ * (see {@link offlineCapabilities}).
+ */
 const TABLE_RULES: ReadonlyArray<{
   id: CapabilityId;
   collector: 'hitrace' | 'procfs';
   tables: readonly string[];
 }> = [
-  { id: 'trace.frames', collector: 'hitrace', tables: ['frame_slice'] },
+  { id: 'trace.frames', collector: 'hitrace', tables: ['frame_slice', 'process'] },
   { id: 'trace.sched', collector: 'hitrace', tables: ['sched_slice', 'instant'] },
-  { id: 'trace.binder', collector: 'hitrace', tables: ['callstack'] },
-  { id: 'trace.thread_state', collector: 'hitrace', tables: ['thread_state'] },
-  { id: 'startup.app_startup', collector: 'hitrace', tables: ['app_startup'] },
+  { id: 'trace.binder', collector: 'hitrace', tables: ['callstack', 'args', 'data_dict', 'process', 'thread', 'trace_range'] },
+  { id: 'trace.thread_state', collector: 'hitrace', tables: ['thread_state', 'thread', 'process'] },
   { id: 'mem.procfs', collector: 'procfs', tables: ['procfs.jsonl'] },
 ];
 
