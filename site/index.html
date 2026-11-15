@@ -58,7 +58,7 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P0 is shipped — 291 tests, two independent reviews" data-zh="P0 已交付 — 291 个测试，两轮独立评审">P0 is shipped — 291 tests, two independent reviews</span>
+        <span data-en="P1 is complete — 531 tests, six analyzers, two collectors" data-zh="P1 已完成 — 531 个测试，六个分析器，两个采集器">P1 is complete — 531 tests, six analyzers, two collectors</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
@@ -112,7 +112,7 @@
     <div class="stats reveal">
       <div class="stat"><b>20</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
       <div class="stat"><b>8</b><span data-en="architecture layers" data-zh="层架构">architecture layers</span></div>
-      <div class="stat"><b>291</b><span data-en="tests, 53 of them CLI" data-zh="个测试，其中 53 个 CLI 测试">tests, 53 of them CLI</span></div>
+      <div class="stat"><b>531</b><span data-en="tests, all green on Node 22.13" data-zh="个测试，在 Node 22.13 上全部通过">tests, all green on Node 22.13</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -219,10 +219,10 @@
     <ol class="layers">
       <li class="reveal"><span class="ln">L7</span><div><h3>API / CLI / Skill</h3><p data-en="Programmatic API, `ohos-perf` CLI, and the seam for an agent skill adapter." data-zh="编程 API、`ohos-perf` CLI，以及 agent skill 适配器的接缝。">Programmatic API, <code>ohos-perf</code> CLI, and the seam for an agent skill adapter.</p></div></li>
       <li class="reveal"><span class="ln">L6</span><div><h3>Report</h3><p data-en="Metric and Evidence models, provenance, fidelity, stable ordering." data-zh="Metric 与 Evidence 模型、provenance、保真度、稳定排序。">Metric and Evidence models, provenance, fidelity, stable ordering.</p></div></li>
-      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Frame analyzer today — count, jank rate, empty rate, fps; vsync, memory and startup analyzers are the P1 surface." data-zh="当前是帧分析器：帧数、卡顿率、空帧率、fps；vsync、内存与启动分析器是 P1 的扩展面。">Frame analyzer today; jank, empty-frame, vsync, memory and startup analyzers are the P1 surface.</p></div></li>
+      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Six analyzers: frames, fault tree, binder, threads, memory and startup, with a capability matrix that degrades what the trace cannot support." data-zh="六个分析器：帧、故障树、binder、线程、内存与启动；能力矩阵会让 trace 不支持的分析器显式降级。">Six analyzers: frames, fault tree, binder, threads, memory and startup, with a capability matrix that degrades what the trace cannot support.</p></div></li>
       <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Typed accessors over the 88 tables trace_streamer produces, starting with frames, processes and threads." data-zh="对 trace_streamer 产出的 88 张表做类型化访问，目前覆盖帧、进程与线程。">Typed accessors over the 88 tables trace_streamer produces, starting with frames, processes and threads.</p></div></li>
       <li class="reveal"><span class="ln">L3</span><div><h3>Ingest</h3><p data-en="trace_streamer wrapper, scene artifact layout, read-only database handle." data-zh="trace_streamer 封装、场景产物布局、只读数据库句柄。">trace_streamer wrapper, scene artifact layout, read-only database handle.</p></div></li>
-      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace capture today; hiperf, hidumper, procfs and uitest are probed and queued." data-zh="当前实现 hitrace 采集；hiperf、hidumper、procfs 与 uitest 已被探测并排队。">hitrace capture today; hiperf, hidumper, procfs and uitest are probed and queued.</p></div></li>
+      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace and procfs capture today; hiperf, hiprofiler, hidumper and uitest collectors are still missing." data-zh="当前实现 hitrace 与 procfs 采集；hiperf、hiprofiler、hidumper 与 uitest 采集器仍待补齐。">hitrace and procfs capture today; hiperf, hiprofiler, hidumper and uitest collectors are still missing.</p></div></li>
       <li class="reveal"><span class="ln">L1</span><div><h3>Device</h3><p data-en="Device model, one-shot capability probe, cached CapabilityMatrix." data-zh="设备模型、一次性能力探测、缓存的 CapabilityMatrix。">Device model, one-shot capability probe, cached CapabilityMatrix.</p></div></li>
       <li class="reveal"><span class="ln">L0</span><div><h3>Transport</h3><p data-en="hdc client: shell, port forwarding, file send/recv, target listing, connect." data-zh="hdc 客户端：shell、端口转发、文件收发、目标枚举与连接。">hdc client: shell, port forwarding, file send/recv, target listing, connect.</p></div></li>
     </ol>
@@ -328,7 +328,7 @@ ohos-perf analyze ./scene --json
 <span class="cm"># Analyze a scene directory offline.</span>
 <span class="p">$</span> node packages/cli/dist/index.js analyze ./scene --json
 
-<span class="cm"># Run the suite: 238 core + 53 CLI tests.</span>
+<span class="cm"># Run the suite: 531 tests, all green.</span>
 <span class="p">$</span> npm test</code></pre>
       </div>
     </div>

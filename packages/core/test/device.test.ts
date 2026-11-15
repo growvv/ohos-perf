@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Device, connect } from '../src/device/device';
 import { CapabilityMatrix } from '../src/device/capability';
 import { DeviceNotFoundError } from '../src/errors';
+import type { SceneLayout } from '../src/ingest/scene';
 
 const probe = {
   identity: {
@@ -265,6 +268,250 @@ describe('CollectSession.ingest', () => {
       const scene = await d.collect({ app: 'x', durationMs: 1, sceneRoot: root }).then((s) => s.ingest());
       expect(scene.query<{ ts: number }>('SELECT ts FROM frame_slice')).toEqual([{ ts: 99 }]);
       scene.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+/**
+ * A harness that records every device shell command and the options each
+ * collector receives. `bothStarted` is a barrier: both fakes await it, and it
+ * resolves only once both have been entered. A sequential implementation would
+ * await the first collector forever and hit the test timeout; `Promise.all`
+ * starts both in the same tick, so the barrier releases.
+ */
+function collectHarness(opts: { failHitrace?: boolean; concurrent?: boolean } = {}) {
+  const commands: string[] = [];
+  const received: Array<{ durationMs: number }> = [];
+  let release = (): void => {};
+  const bothStarted = new Promise<void>((resolve) => { release = resolve; });
+
+  const hdc = {
+    shell: async (_target: string, cmd: string) => {
+      commands.push(cmd);
+      if (cmd === 'cat /proc/uptime') return { stdout: '1234.56 9999.00\n', stderr: '', code: 0 };
+      return { stdout: '', stderr: '', code: 0 };
+    },
+  };
+
+  const enter = async (o: { durationMs: number }): Promise<void> => {
+    received.push(o);
+    if (opts.concurrent) {
+      if (received.length === 2) release();
+      await bothStarted;
+    }
+  };
+
+  const hitrace = {
+    collect: async (_h: unknown, _t: string, o: { durationMs: number }, layout: SceneLayout) => {
+      await enter(o);
+      if (opts.failHitrace) throw new Error('hitrace exploded');
+      writeFileSync(layout.traceFile, 'fresh capture');
+    },
+  };
+  const procfs = {
+    collect: async (_h: unknown, _t: string, o: { durationMs: number }, layout: SceneLayout) => {
+      await enter(o);
+      writeFileSync(layout.procfsFile, '');
+      return [{ ts: 1, pid: 42, status: { vmRssBytes: 1, vmHwmBytes: 1, threads: 1 } }];
+    },
+  };
+  const streamer = {
+    convert: async (_input: string, output: string) => {
+      const db = new DatabaseSync(output);
+      db.exec('CREATE TABLE frame_slice(id INT, ts INT)');
+      db.close();
+    },
+  };
+  return { commands, received, hdc, hitrace, procfs, streamer };
+}
+
+/** Build a Device whose dependencies are entirely fake. */
+function fakeDevice(h: ReturnType<typeof collectHarness>): Device {
+  return new Device('t1', probe as any, {
+    hdc: h.hdc as any,
+    streamer: h.streamer as any,
+    collector: h.hitrace as any,
+    procfs: h.procfs as any,
+  });
+}
+
+describe('CollectSession.ingest with procfs and cold start', () => {
+  it('rejects procfs without an app before any device call', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-noapp-'));
+    try {
+      const h = collectHarness();
+      const d = fakeDevice(h);
+      const session = await d.collect({ app: '', durationMs: 1000, sceneRoot: root, procfs: true });
+      await expect(session.ingest()).rejects.toMatchObject({ code: 'COLLECT_APP_REQUIRED' });
+      expect(h.commands).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('runs both collectors concurrently with the same duration and writes scene.json', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-'));
+    try {
+      // `concurrent` arms the barrier: both collectors must have entered
+      // before either is allowed to finish (see collectHarness).
+      const h = collectHarness({ concurrent: true });
+      const d = fakeDevice(h);
+      const scene = await d.collect({
+        app: 'com.demo', durationMs: 10_000, sceneRoot: root, procfs: true,
+      }).then((s) => s.ingest());
+      scene.close();
+
+      expect(h.received).toHaveLength(2);
+      expect(h.received.every((o) => o.durationMs === 10_000)).toBe(true);
+      expect(h.commands).toContain('cat /proc/uptime');
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta).toMatchObject({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [42],
+        deviceId: 't1',
+        startedAtNs: 1_234_560_000_000,
+        capture: {
+          durationMs: 10_000,
+          collectors: ['hitrace', 'procfs'],
+        },
+      });
+      expect(typeof meta.capture.startedAtMs).toBe('number');
+      expect(Number.isFinite(meta.capture.startedAtMs)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('launches the ability on a cold start with validated bare names', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-cold-'));
+    try {
+      const h = collectHarness();
+      const d = fakeDevice(h);
+      const scene = await d.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+        coldStart: { ability: 'EntryAbility' },
+      }).then((s) => s.ingest());
+      scene.close();
+      expect(h.commands).toContain('aa start -a EntryAbility -b com.demo');
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects an unsafe cold-start ability before any device call', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-bad-ability-'));
+    try {
+      const h = collectHarness();
+      const d = fakeDevice(h);
+      const session = await d.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+        coldStart: { ability: 'Entry;rm -rf /' },
+      });
+      await expect(session.ingest()).rejects.toMatchObject({ code: 'COLLECT_BAD_COLD_START' });
+      expect(h.commands).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('omits startedAtNs rather than failing when /proc/uptime is unavailable', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-uptime-'));
+    try {
+      const h = collectHarness();
+      h.hdc.shell = async (_t, cmd) => {
+        h.commands.push(cmd);
+        if (cmd === 'cat /proc/uptime') return { stdout: '', stderr: 'no such file', code: 1 };
+        return { stdout: '', stderr: '', code: 0 };
+      };
+      const d = fakeDevice(h);
+      const scene = await d.collect({ app: 'com.demo', durationMs: 1000, sceneRoot: root })
+        .then((s) => s.ingest());
+      scene.close();
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.startedAtNs).toBeUndefined();
+      expect(meta.capture.collectors).toEqual(['hitrace']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects when hitrace fails instead of presenting a partial scene', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-fail-'));
+    try {
+      const h = collectHarness({ failHitrace: true });
+      const d = fakeDevice(h);
+      await expect(
+        d.collect({ app: 'com.demo', durationMs: 1000, sceneRoot: root, procfs: true })
+          .then((s) => s.ingest()),
+      ).rejects.toThrow(/hitrace exploded/);
+      expect(existsSync(join(root, 'scene.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('forwards a custom procfs intervalMs and records no pids without procfs', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-interval-'));
+    try {
+      const h = collectHarness();
+      let gotInterval: number | undefined;
+      h.procfs.collect = async (_h, _t, o: any, layout) => {
+        gotInterval = o.intervalMs;
+        h.received.push(o);
+        writeFileSync(layout.procfsFile, '');
+        return [];
+      };
+      const d = fakeDevice(h);
+      const scene = await d.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+        procfs: { intervalMs: 250 },
+      }).then((s) => s.ingest());
+      scene.close();
+      expect(gotInterval).toBe(250);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.pids).toEqual([]);
+      expect(meta.capture.collectors).toEqual(['hitrace', 'procfs']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('omits startedAtNs for a non-finite or negative uptime token', async () => {
+    for (const stdout of ['NaN 0\n', '-1 0\n', 'garbage\n', '']) {
+      const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-uptime-bad-'));
+      try {
+        const h = collectHarness();
+        h.hdc.shell = async (_t, cmd) => {
+          h.commands.push(cmd);
+          if (cmd === 'cat /proc/uptime') return { stdout, stderr: '', code: 0 };
+          return { stdout: '', stderr: '', code: 0 };
+        };
+        const d = fakeDevice(h);
+        const scene = await d.collect({ app: 'com.demo', durationMs: 1000, sceneRoot: root })
+          .then((s) => s.ingest());
+        scene.close();
+        const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+        expect(meta.startedAtNs, `stdout ${JSON.stringify(stdout)}`).toBeUndefined();
+      } finally {
+        rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      }
+    }
+  });
+
+  it('rejects a cold start whose app name is not a bare name', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-bad-app-'));
+    try {
+      const h = collectHarness();
+      const d = fakeDevice(h);
+      const session = await d.collect({
+        app: 'com.demo; rm -rf /', durationMs: 1000, sceneRoot: root,
+        coldStart: { ability: 'EntryAbility' },
+      });
+      await expect(session.ingest()).rejects.toMatchObject({ code: 'COLLECT_BAD_COLD_START' });
+      expect(h.commands).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

@@ -10,9 +10,11 @@
 
 import { mkdirSync } from 'node:fs';
 import { HitraceCollector } from '../collectors/hitrace';
+import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import type { TraceCollectOptions } from '../collectors/types';
 import { buildMatrix, type CapabilityMatrix } from './capability';
 import { DeviceNotFoundError, OhosPerfError } from '../errors';
+import { writeSceneMetadata } from '../ingest/metadata';
 import {
   createSceneLayout,
   ingestScene,
@@ -40,6 +42,13 @@ export interface ConnectOptions {
 export interface CollectOptions extends TraceCollectOptions {
   /** Directory that holds this scene's artifacts. Reused across captures. */
   sceneRoot: string;
+  /**
+   * Also sample `/proc/<pid>/status` (and `smaps_rollup`) for `app`.
+   * `true` uses the collector's default interval; an object overrides it.
+   */
+  procfs?: boolean | { intervalMs?: number };
+  /** Launch this ability on `app` before recording (a cold-start capture). */
+  coldStart?: { ability: string };
 }
 
 export interface CollectSession {
@@ -52,7 +61,12 @@ export interface DeviceDeps {
   hdc?: Hdc;
   streamer?: Streamer;
   collector?: HitraceCollector;
+  procfs?: ProcfsCollector;
 }
+
+/** Bare device/application/ability names, safe to interpolate into a shell command. */
+const BARE_NAME = /^[A-Za-z0-9_.]+$/;
+const NS_PER_SECOND = 1_000_000_000;
 
 /**
  * A probed device.
@@ -121,21 +135,98 @@ export class Device {
        */
       ingest: async (): Promise<Scene> => {
         const layout = createSceneLayout(opts.sceneRoot);
+        const hdc = this.requireHdc();
+
+        // Validation happens before any device call: a bad request must not
+        // leave a half-started capture behind.
+        const wantsProcfs = opts.procfs !== undefined && opts.procfs !== false;
+        if (wantsProcfs && (opts.app === undefined || opts.app === '')) {
+          throw new OhosPerfError(
+            'procfs capture requires an app (CollectOptions.app) to resolve a pid',
+            { code: 'COLLECT_APP_REQUIRED' },
+          );
+        }
+        if (opts.coldStart !== undefined) {
+          const { ability } = opts.coldStart;
+          if (!BARE_NAME.test(ability) || !BARE_NAME.test(opts.app)) {
+            throw new OhosPerfError(
+              `cold start requires a bare ability and app name matching ${String(BARE_NAME)}` +
+                ` (got ability ${JSON.stringify(ability)}, app ${JSON.stringify(opts.app)})`,
+              { code: 'COLLECT_BAD_COLD_START' },
+            );
+          }
+        }
 
         mkdirSync(layout.root, { recursive: true });
 
+        // Host wall-clock at capture start, recorded for humans only.
+        const startedAtMs = Date.now();
+
+        // The startup analyzer's fallback needs a device-uptime marker in the
+        // same clock base as trace `ts`. A failed read is not a capture failure:
+        // omit the field rather than losing the whole trace.
+        const startedAtNs = await readUptimeNs(hdc, this.id);
+
+        if (opts.coldStart !== undefined) {
+          const result = await hdc.shell(
+            this.id,
+            `aa start -a ${opts.coldStart.ability} -b ${opts.app}`,
+          );
+          if (result.code !== 0) {
+            throw new OhosPerfError(
+              `aa start failed for ${opts.app}/${opts.coldStart.ability}` +
+                ` (exit ${result.code})`,
+              { code: 'COLLECT_COLD_START_FAILED' },
+            );
+          }
+        }
+
         const collector = this.deps.collector ?? new HitraceCollector();
-        await collector.collect(
-          this.requireHdc(),
-          this.id,
-          {
-            app: opts.app,
+        const traceOpts: TraceCollectOptions = {
+          app: opts.app,
+          durationMs: opts.durationMs,
+          bufferKb: opts.bufferKb,
+          categories: opts.categories,
+        };
+
+        let procfsSamples: ProcfsSample[] | undefined;
+        if (wantsProcfs) {
+          const procfs = this.deps.procfs ?? new ProcfsCollector();
+          const intervalMs =
+            typeof opts.procfs === 'object' ? opts.procfs.intervalMs : undefined;
+          // Both collectors start in the same tick and receive the same
+          // duration. Promise.all rejects with the first failure: a partial
+          // scene must never be presented as complete.
+          const [, samples] = await Promise.all([
+            collector.collect(hdc, this.id, traceOpts, layout),
+            procfs.collect(
+              hdc,
+              this.id,
+              { app: opts.app, durationMs: opts.durationMs, intervalMs },
+              layout,
+            ),
+          ]);
+          procfsSamples = samples;
+        } else {
+          await collector.collect(hdc, this.id, traceOpts, layout);
+        }
+
+        writeSceneMetadata(layout, {
+          version: 1,
+          app: { packageName: opts.app, processNames: [opts.app] },
+          // The procfs collector resolves the pid for its samples; reuse it
+          // instead of issuing another `pidof` device call.
+          pids: procfsSamples === undefined
+            ? []
+            : [...new Set(procfsSamples.map((sample) => sample.pid))],
+          deviceId: this.id,
+          ...(startedAtNs === undefined ? {} : { startedAtNs }),
+          capture: {
+            startedAtMs,
             durationMs: opts.durationMs,
-            bufferKb: opts.bufferKb,
-            categories: opts.categories,
+            collectors: wantsProcfs ? ['hitrace', 'procfs'] : ['hitrace'],
           },
-          layout,
-        );
+        });
 
         // Convert unconditionally instead of deleting a pre-existing trace.db.
         // `ingestScene` skips conversion when trace.db exists, so reusing a
@@ -162,6 +253,34 @@ export class Device {
       );
     }
     return this.deps.hdc;
+  }
+}
+
+/**
+ * Read device uptime in nanoseconds from `/proc/uptime`'s first token.
+ *
+ * Returns `undefined` on any failure (missing file, nonzero exit, a
+ * non-numeric or negative token): a missing start marker only disables the
+ * startup analyzer's fallback, so losing the whole capture would be worse.
+ * The value is `seconds * 1e9`, matching the trace's nanosecond clock base.
+ */
+async function readUptimeNs(
+  hdc: Hdc,
+  target: string,
+): Promise<number | undefined> {
+  try {
+    const result = await hdc.shell(target, 'cat /proc/uptime');
+    if (result.code !== 0) return undefined;
+    const first = result.stdout.trim().split(/\s+/)[0];
+    // `Number('') === 0`, so an empty response must not become a valid zero
+    // marker: it would address the trace origin instead of the capture start.
+    if (first === undefined || first === '') return undefined;
+    const seconds = Number(first);
+    if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+    const ns = seconds * NS_PER_SECOND;
+    return Number.isFinite(ns) && ns >= 0 ? ns : undefined;
+  } catch {
+    return undefined;
   }
 }
 

@@ -155,6 +155,114 @@ describe('realDeps().analyze', () => {
     await expect(deps.analyze('scene1')).rejects.toThrow('query exploded');
     expect(closed).toBe(true);
   });
+
+  it('degrades analyzers whose tables are missing, without throwing', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      const result = await realDeps('0.0.0').analyze(parent);
+      const ids = result.metrics.map((m) => m.id);
+      // The synthetic DB has only frame_slice + process: frames and startup run,
+      // every other analyzer is explicitly degraded rather than silently zeroed.
+      expect(ids).toContain('frame.count');
+      expect(ids).toContain('binder.degraded');
+      expect(ids).toContain('fault-tree.degraded');
+      expect(ids).toContain('threads.degraded');
+      expect(ids).toContain('memory.degraded');
+      const binder = result.metrics.find((m) => m.id === 'binder.degraded');
+      expect(binder?.fidelity).toBe('proxy');
+      const degraded = result.evidence.filter((e) => e.kind === 'degraded_capability');
+      expect(degraded.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('runs memory instead of degrading it when procfs.jsonl has samples', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(
+        join(parent, 'procfs.jsonl'),
+        `${JSON.stringify({ ts: 1, pid: 42, status: { vmRssBytes: 2048, vmHwmBytes: 2048, threads: 1 } })}\n`,
+      );
+      const result = await realDeps('0.0.0').analyze(parent);
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).not.toContain('memory.degraded');
+      expect(ids.some((id) => id.startsWith('mem.'))).toBe(true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('does not claim mem.procfs for an empty procfs.jsonl', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'procfs.jsonl'), '');
+      const result = await realDeps('0.0.0').analyze(parent);
+      // A file with no usable samples is not a capture: the analyzer must
+      // degrade rather than report an exact zero as a measurement.
+      expect(result.metrics.map((m) => m.id)).toContain('memory.degraded');
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('reads scene.json metadata when it is valid', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-cli-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1', startedAtNs: 1_000_000_000,
+      }));
+      // The startup analyzer consumes the marker; a bad metadata reader would
+      // drop it. Assert the run still succeeds and stays deterministic.
+      const a = await realDeps('0.0.0').analyze(parent);
+      const b = await realDeps('0.0.0').analyze(parent);
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('realDeps().collect', () => {
+  it('resolves the output directory and closes the scene', async () => {
+    const seen: unknown[] = [];
+    let closed = false;
+    const scene = {
+      close: () => { closed = true; },
+    };
+    const deps = realDeps('0.0.0', {
+      collectDevice: async () => ({
+        id: 't1',
+        kind: 'emulator',
+        collect: async (opts: unknown) => {
+          seen.push(opts);
+          return { ingest: async () => scene as unknown as Scene };
+        },
+      }),
+    });
+    const result = await deps.collect({
+      app: 'com.demo', durationMs: 10_000, out: 'relative-scene',
+      procfs: true, coldStart: 'EntryAbility',
+    });
+    expect(result).toEqual({
+      sceneDir: resolve('relative-scene'),
+      device: { id: 't1', kind: 'emulator' },
+    });
+    expect(seen).toEqual([{
+      app: 'com.demo',
+      durationMs: 10_000,
+      sceneRoot: resolve('relative-scene'),
+      procfs: true,
+      coldStart: { ability: 'EntryAbility' },
+    }]);
+    expect(closed).toBe(true);
+  });
 });
 
 describe('realDeps().capsReport', () => {

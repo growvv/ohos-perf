@@ -19,6 +19,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     },
     capsReport: async () => ({ hdcOk: true, capabilities: [] }),
     analyze: async () => ({ metrics: [], evidence: [] }),
+    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
     ...overrides,
   };
 }
@@ -98,5 +99,45 @@ describe('command wiring', () => {
     expect(seen).toEqual([['scene1', 'com.demo']]);
     expect(emitted).toHaveLength(1);
     expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('collect maps every flag to one CollectRequest', async () => {
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', '10s', '--out', 'scene1',
+        '--procfs', '--cold-start', 'EntryAbility', '--json'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' } };
+        },
+      },
+    );
+    expect(seen).toEqual([{
+      app: 'com.demo',
+      durationMs: 10_000,
+      out: 'scene1',
+      procfs: true,
+      coldStart: 'EntryAbility',
+    }]);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].exitCode).toBe(0);
+    expect(JSON.parse(emitted[0].stdout)).toEqual({
+      sceneDir: '/abs/scene1',
+      device: { id: 't1', kind: 'emulator' },
+    });
+  });
+
+  it('collect rejects an invalid --duration before calling deps.collect', async () => {
+    let called = false;
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', 'abc', '--out', 'scene1'],
+      { collect: async () => { called = true; return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' } }; } },
+    );
+    expect(called).toBe(false);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stdout).toBe('');
+    expect(emitted[0].stderr).toContain('abc');
   });
 });

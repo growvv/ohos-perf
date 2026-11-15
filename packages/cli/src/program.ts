@@ -2,10 +2,13 @@ import { Command } from 'commander';
 import {
   runAnalyze,
   runCaps,
+  runCollect,
   runDoctor,
+  safeMessage,
   type CliDeps,
   type CliResult,
 } from './commands';
+import { parseDurationSeconds } from './collect';
 
 /**
  * Commander wiring, kept free of `process`.
@@ -73,6 +76,42 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--json', 'print the analysis result as JSON')
     .action(async (sceneDir: string, opts: { app?: string; json?: boolean }) => {
       io.emit(await runAnalyze(deps, sceneDir, opts));
+    });
+
+  program
+    .command('collect')
+    .description('capture a scene from the attached device')
+    .requiredOption('--app <pkg>', 'application package name')
+    .requiredOption('--duration <seconds>', 'capture duration in seconds (10 or 10s)')
+    .requiredOption('--out <dir>', 'scene output directory')
+    .option('--procfs', 'also sample /proc memory state for the app')
+    .option('--cold-start <ability>', 'launch this ability before capturing')
+    .option('--json', 'print the result as JSON')
+    .action(async (opts: {
+      app: string;
+      duration: string;
+      out: string;
+      procfs?: boolean;
+      coldStart?: string;
+      json?: boolean;
+    }) => {
+      // Validation lives in the action (not a commander option parser) so a bad
+      // value produces the same failure contract as every other CLI error:
+      // empty stdout, one message on stderr, exit 1.
+      let durationMs: number;
+      try {
+        durationMs = parseDurationSeconds(opts.duration);
+      } catch (err) {
+        io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+        return;
+      }
+      io.emit(await runCollect(deps, {
+        app: opts.app,
+        durationMs,
+        out: opts.out,
+        ...(opts.procfs === true ? { procfs: true } : {}),
+        ...(opts.coldStart !== undefined ? { coldStart: opts.coldStart } : {}),
+      }, { json: opts.json }));
     });
 
   return program;

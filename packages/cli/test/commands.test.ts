@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { CapabilityState } from '@ohos-perf/core';
-import { runAnalyze, runCaps, runDoctor, type CliDeps, type DoctorDeps } from '../src/commands';
+import {
+  runAnalyze, runCaps, runCollect, runDoctor,
+  type CliDeps, type DoctorDeps,
+} from '../src/commands';
 
 const okDevice = {
   id: 't1',
@@ -38,6 +41,7 @@ function deps(
     },
     capsReport: async () => ({ hdcOk: true, capabilities: [] }),
     analyze: async () => ({ metrics: [], evidence: [] }),
+    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
     ...rest,
   };
 }
@@ -282,5 +286,31 @@ describe('runAnalyze', () => {
     expect(r.exitCode).toBe(1);
     expect(r.stdout).toBe('');
     expect(r.stderr).toBe('Nothing to ingest\n');
+  });
+});
+
+describe('runCollect', () => {
+  const req = { app: 'com.demo', durationMs: 10_000, out: 'scene1' };
+  const output = { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' } };
+
+  it('prints the scene path in human mode', async () => {
+    const r = await runCollect(deps({ collect: async () => output }), req, {});
+    expect(r).toEqual({ stdout: 'scene  /abs/scene1\n', stderr: '', exitCode: 0 });
+  });
+
+  it('prints the scene and device as JSON in --json mode', async () => {
+    const r = await runCollect(deps({ collect: async () => output }), req, { json: true });
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual(output);
+    expect(r.stdout.endsWith('\n')).toBe(true);
+  });
+
+  it('keeps the failure contract: empty stdout, message on stderr, exit 1', async () => {
+    const r = await runCollect(
+      deps({ collect: async () => { throw new Error('no device attached'); } }),
+      req,
+      { json: true },
+    );
+    expect(r).toEqual({ stdout: '', stderr: 'no device attached\n', exitCode: 1 });
   });
 });

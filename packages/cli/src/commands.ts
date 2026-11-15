@@ -53,6 +53,21 @@ export interface AnalyzeOutput {
   evidence: ReadonlyArray<{ kind: string }>;
 }
 
+/** The arguments `collect` forwards to the IO layer. */
+export interface CollectRequest {
+  app: string;
+  durationMs: number;
+  out: string;
+  procfs?: boolean;
+  coldStart?: string;
+}
+
+/** What a successful `collect` returns to the renderer. */
+export interface CollectOutput {
+  sceneDir: string;
+  device: { id: string; kind: string };
+}
+
 /** Everything the commands touch, injected so the module performs no IO itself. */
 export interface CliDeps {
   doctor: DoctorDeps;
@@ -60,6 +75,8 @@ export interface CliDeps {
   capsReport(): Promise<CapsReport>;
   /** Analyze a scene directory. Throws on any failure; the caller maps it to exit 1. */
   analyze(sceneDir: string, app?: string): Promise<AnalyzeOutput>;
+  /** Capture a scene. Throws on any failure; the caller maps it to exit 1. */
+  collect(req: CollectRequest): Promise<CollectOutput>;
   /** Package version, for `--version` and the help banner. */
   version: string;
 }
@@ -185,6 +202,27 @@ export async function runAnalyze(
     const jank = result.evidence.filter((item) => item.kind === 'jank').length;
     const summary = `evidence  ${result.evidence.length} items (jank: ${jank})\n`;
     return { stdout: metrics + summary, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Capture a scene.
+ *
+ * As with `analyze`, any failure is exit 1 with an empty stdout: a half-written
+ * JSON document would be worse than none. `--json` reports the absolute scene
+ * directory and the device identity the capture used.
+ */
+export async function runCollect(
+  deps: CliDeps,
+  req: CollectRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.collect(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    return { stdout: `scene  ${result.sceneDir}\n`, stderr: '', exitCode: 0 };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }

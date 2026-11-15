@@ -2,15 +2,28 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  BinderQuery,
+  CallstackQuery,
   CapabilityMatrix,
-  FrameAnalyzer,
   FrameQuery,
   Hdc,
+  InstantQuery,
+  PerfQuery,
   ProcessQuery,
+  SchedQuery,
+  StartupQuery,
   Streamer,
+  ThreadQuery,
+  ThreadStateQuery,
   connect,
   createSceneLayout,
+  defaultAnalyzers,
   ingestScene,
+  readProcfsSamples,
+  readSceneMetadata,
+  resolveAppIdentity,
+  runAnalyzers,
+  type CapabilityId,
   type CapabilityState,
   type Scene,
   type SceneLayout,
@@ -59,6 +72,80 @@ export interface RealDepsOverrides {
   }>;
   /** Scene ingestion; replaced in tests to observe the layout without a converter. */
   ingest?: (streamer: Streamer, layout: SceneLayout) => Promise<Scene>;
+  /** Device used by `collect`; replaced in tests to avoid a real capture. */
+  collectDevice?: () => Promise<{
+    id: string;
+    kind: string;
+    collect(opts: unknown): Promise<{ ingest(): Promise<Scene> }>;
+  }>;
+}
+
+/** The empty probe an offline capability state carries (no device was asked). */
+const OFFLINE_PROBE = (): CapabilityState['probe'] =>
+  ({ command: '', stdout: '', stderr: '', code: 0 });
+
+/** An available state in the offline matrix, with the exact probe shape. */
+function offlineState(id: CapabilityId, collector: 'hitrace' | 'procfs'): CapabilityState {
+  return {
+    id,
+    available: true,
+    collector,
+    fidelity: 'exact',
+    probe: OFFLINE_PROBE(),
+  };
+}
+
+/** Names of the core trace tables an offline capability depends on. */
+const TABLE_RULES: ReadonlyArray<{
+  id: CapabilityId;
+  collector: 'hitrace' | 'procfs';
+  tables: readonly string[];
+}> = [
+  { id: 'trace.frames', collector: 'hitrace', tables: ['frame_slice'] },
+  { id: 'trace.sched', collector: 'hitrace', tables: ['sched_slice', 'instant'] },
+  { id: 'trace.binder', collector: 'hitrace', tables: ['callstack'] },
+  { id: 'trace.thread_state', collector: 'hitrace', tables: ['thread_state'] },
+  { id: 'startup.app_startup', collector: 'hitrace', tables: ['app_startup'] },
+  { id: 'mem.procfs', collector: 'procfs', tables: ['procfs.jsonl'] },
+];
+
+/**
+ * Build the offline capability matrix from what the scene actually contains.
+ *
+ * A CLI `analyze` has no device to probe, but the engine still needs to decide
+ * which analyzers may run. Deriving availability from the trace database (and
+ * `procfs.jsonl`) means a scene that carries the tables gets the analyzers,
+ * while one that does not leaves the capability **absent** from the matrix:
+ * `satisfies()` reports it as `capability not probed` and the engine emits a
+ * degraded proxy instead of a fabricated zero.
+ *
+ * `procfs.jsonl` is special: it is a scene artifact, not a database table, and
+ * is available only when the file yields at least one valid sample. The caller
+ * passes the samples it already read so the file is parsed once.
+ */
+export function offlineCapabilities(
+  db: CapabilityMatrixDb,
+  procfsSamples: readonly unknown[],
+): CapabilityMatrix {
+  const tables = new Set(
+    db.query<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table'",
+    ).map((row) => row.name),
+  );
+
+  const states: CapabilityState[] = [];
+  for (const rule of TABLE_RULES) {
+    const present = rule.tables.every((name) =>
+      name === 'procfs.jsonl' ? procfsSamples.length > 0 : tables.has(name),
+    );
+    if (present) states.push(offlineState(rule.id, rule.collector));
+  }
+  return new CapabilityMatrix(states);
+}
+
+/** The minimal database surface the offline matrix needs. */
+export interface CapabilityMatrixDb {
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): T[];
 }
 
 /**
@@ -79,6 +166,7 @@ export function realDeps(
   const connectDevice: DoctorDeps['connectDevice'] =
     overrides.connectDevice ?? (() => connect());
   const ingest = overrides.ingest ?? ingestScene;
+  const collectDevice = overrides.collectDevice ?? (() => connect());
 
   const doctor: DoctorDeps = {
     resolveHdc,
@@ -118,28 +206,52 @@ export function realDeps(
       const layout = createSceneLayout(resolve(sceneDir));
       const scene = await ingest(new Streamer(), layout);
       try {
-        return await new FrameAnalyzer().run({
-          frames: new FrameQuery(scene.traceDb),
-          processes: new ProcessQuery(scene.traceDb),
-          app: { packageName: app ?? 'unknown', pids: [], processNames: [] },
+        const db = scene.traceDb;
+        const processes = new ProcessQuery(db);
+        const samples = readProcfsSamples(layout.procfsFile);
+        const metadata = readSceneMetadata(layout);
+        const context = {
+          db,
+          frames: new FrameQuery(db),
+          processes,
+          threads: new ThreadQuery(db),
+          sched: new SchedQuery(db),
+          instant: new InstantQuery(db),
+          threadStates: new ThreadStateQuery(db),
+          callstacks: new CallstackQuery(db),
+          perf: new PerfQuery(db),
+          binder: new BinderQuery(db),
+          startup: new StartupQuery(db),
+          ...(samples.length > 0 ? { procfs: samples } : {}),
+          ...(metadata !== undefined ? { metadata } : {}),
+          app: resolveAppIdentity(processes, app ?? 'unknown'),
           // The whole database: a CLI run has no capture window to honour.
           window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
-          // Offline analysis probes no device; the analyzer does not consult
-          // caps (the caller gates on `requires`), so this only fills the shape.
-          caps: new CapabilityMatrix([
-            {
-              id: 'trace.frames',
-              available: true,
-              collector: 'hitrace',
-              fidelity: 'exact',
-              probe: { command: '', stdout: '', stderr: '', code: 0 },
-            },
-          ]),
+          caps: offlineCapabilities(db, samples),
           deviceId: 'offline',
-        });
+        };
+        return await runAnalyzers(defaultAnalyzers(), context);
       } finally {
         // Windows keeps the file handle open otherwise, so a second analysis
         // of the same scene would fail.
+        scene.close();
+      }
+    },
+
+    async collect(req) {
+      const sceneDir = resolve(req.out);
+      const device = await collectDevice();
+      const session = await device.collect({
+        app: req.app,
+        durationMs: req.durationMs,
+        sceneRoot: sceneDir,
+        ...(req.procfs === true ? { procfs: true } : {}),
+        ...(req.coldStart !== undefined ? { coldStart: { ability: req.coldStart } } : {}),
+      });
+      const scene = await session.ingest();
+      try {
+        return { sceneDir, device: { id: device.id, kind: device.kind } };
+      } finally {
         scene.close();
       }
     },

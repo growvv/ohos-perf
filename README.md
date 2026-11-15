@@ -35,22 +35,43 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P0 is complete**: 291 tests (238 core + 53 CLI-package), three typechecks, and
-a full suite that is green on the declared minimum Node (`22.13.0`).
+**P1 is complete**: 531 tests (515 on a clean checkout, 16 use the gitignored
+`spike/out/emu_big.db` fixture), three typechecks, and a full suite that is
+green on the declared minimum Node (`22.13.0`).
 
 Implemented today:
 
 - `hdc` transport: shell, port forwarding, file send/recv, target listing
 - one-shot capability probe → 20 verdicts with evidence
-- hitrace collector with marker checks, stale-file protection and stop-on-failure
-- `trace_streamer` wrapper and scene layout
-- typed frame/process/thread queries over the 88-table trace database
-- frame analyzer: count, rendered count, jank rate, empty rate, mean duration, fps
-- `Metric` / `Evidence` models with provenance, fidelity and drill-down ids
-- `ohos-perf` CLI: `doctor`, `caps`, `analyze`
+- collectors: hitrace (marker checks, stale-file protection, stop-on-failure)
+  and procfs (`/proc` memory/thread sampling with `pidof` resolution)
+- `trace_streamer` wrapper and scene layout, with `scene.json` metadata
+  (device-uptime start marker, pids, collector list)
+- typed queries over the 88-table trace database: frames, processes, threads,
+  sched/instant, thread state, callstacks, perf samples, binder, startup
+- analyzers: frames, fault tree (`fault.*`), binder (`binder.*`), threads
+  (`thread.*`), memory (`mem.*`) and startup (`startup.*`), driven by an
+  offline capability matrix derived from table presence
+- `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
+  plus the degraded-metric engine that skips analyzers whose inputs are absent
+- `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`
 
-Not implemented yet (P1): hiperf sampling, hiprofiler-based memory/power/IO,
-hidumper live FPS/hitch, uitest UI tree/gestures, the degraded-metric engine,
+Metric ids emitted by the P1 analyzers:
+
+| Prefix | Analyzer | Examples |
+| --- | --- | --- |
+| `fault.*` | fault tree | `fault.arkui.HandleOnAreaChangeEvent`, `fault.RS.DisplayNodeSkipTimes` |
+| `binder.*` | binder | `binder.transactions.count`, `binder.latency.avg` |
+| `thread.*` | threads | `thread.patterns.count`, `thread.redundant.count` |
+| `mem.*` | memory | `mem.rss.*`, `mem.pss.*` |
+| `startup.*` | startup | `startup.count`, `startup.duration` |
+
+The HapRay-parity analyzers (binder, threads, fault tree) are tested against
+golden outputs from ArkAnalyzer-HapRay revision `9386e4e`. Memory (procfs) and
+startup have no HapRay equivalent on the emulator; their tests pin the parser,
+aggregation and marker fallback instead, and no parity is claimed for them.
+
+Not implemented yet: hiperf, hiprofiler, hidumper and uitest collectors,
 baseline comparison, and the agent-skill adapter.
 
 ## Requirements
@@ -74,13 +95,27 @@ npm run build -w @ohos-perf/cli
 
 node packages/cli/dist/index.js doctor          # what can this device do?
 node packages/cli/dist/index.js caps --json     # machine-readable matrix
-node packages/cli/dist/index.js analyze ./scene --json
+```
+
+Capture a scene (add `--procfs` for memory samples, `--cold-start` to launch an
+ability first):
+
+```bash
+node packages/cli/dist/index.js collect \
+  --app com.example.app --duration 10s --out ./scene --procfs \
+  --cold-start EntryAbility --json
+```
+
+Analyze it offline — no device or toolchain needed:
+
+```bash
+node packages/cli/dist/index.js analyze ./scene --app com.example.app --json
 ```
 
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
-npm test        # 291 root tests (includes 53 CLI tests)
+npm test        # 531 root tests (16 need the optional spike/out/emu_big.db fixture)
 ```
 
 ## Library
@@ -129,10 +164,10 @@ for the full rule set.
 ```
 L7  API / CLI / Skill      programmatic API · ohos-perf CLI · agent skill seam
 L6  Report                 Metric · Evidence · provenance · fidelity
-L5  Analyze                frame analyzer: count · jank · empty · fps (vsync/memory/startup in P1)
+L5  Analyze                frames · fault tree · binder · threads · memory · startup
 L4  Query                  typed accessors over 88 trace tables
-L3  Ingest                 trace_streamer wrapper · scene layout · db handle
-L2  Collectors             hitrace today; hiperf/hidumper/procfs/uitest probed
+L3  Ingest                 trace_streamer wrapper · scene layout · scene.json · db handle
+L2  Collectors             hitrace · procfs (hiperf/hidumper/uitest still missing)
 L1  Device                 device model · capability probe · matrix
 L0  Transport              hdc client
 ```
@@ -162,9 +197,11 @@ TypeScript 编写。它把设备能力探测、hitrace 采集、trace_streamer �
 2. **确定性输出**：同一输入两次运行字节一致，CI diff 有意义。
 3. **零原生依赖**：只用 Node 内置 `node:sqlite`，无编译、无 Python。
 
-当前 P0 已实现 hdc 传输、能力矩阵、hitrace 采集、入库、帧/进程/线程查询、帧分析、
-Metric/Evidence 与 `doctor` / `caps` / `analyze` 三个命令。P1 将补齐 hiperf、
-hiprofiler、hidumper、uitest 采集器与降级指标引擎。
+当前 P0 与 P1 均已实现：hdc 传输、能力矩阵、hitrace / procfs 采集、入库、类型化查询、
+帧 / 故障树 / binder / 线程 / 内存 / 启动分析、降级指标引擎，以及
+`doctor` / `caps` / `collect` / `analyze` 四个命令。binder、线程与故障树分析器已与
+HapRay 修订 `9386e4e` 做了对齐测试；内存与启动分析没有 HapRay 对应实现。
+hiperf、hiprofiler、hidumper、uitest 采集器、基线对比与 skill 适配器仍待实现。
 
 ## License
 

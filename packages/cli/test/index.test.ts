@@ -214,6 +214,39 @@ describe.skipIf(!distExists)('cli entry point', () => {
     }
   });
 
+  // Full-analyzer wiring: the offline capability matrix must let fault-tree,
+  // binder and threads run (not degrade) on a trace that has their tables.
+  it.skipIf(!existsSync(spikeDb))('runs every analyzer with byte-identical --json output', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-index-'));
+    try {
+      mkdirSync(dir, { recursive: true });
+      copyFileSync(spikeDb, join(dir, 'trace.db'));
+      const first = run(['analyze', dir, '--json', '--app', 'pbench.baseline']);
+      const second = run(['analyze', dir, '--json', '--app', 'pbench.baseline']);
+      expect(first.status).toBe(0);
+      expect(second.status).toBe(0);
+      expect(cliStderr(first.stderr)).toBe('');
+      expect(cliStderr(second.stderr)).toBe('');
+      // Byte-identical, not merely deep-equal: `analyze --json` is a stable
+      // machine contract (D5).
+      expect(first.stdout).toBe(second.stdout);
+      const result = JSON.parse(first.stdout) as {
+        metrics: Array<{ id: string; value: number | string }>;
+        evidence: Array<{ kind: string }>;
+      };
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).toContain('fault.arkui.HandleOnAreaChangeEvent');
+      expect(ids).toContain('binder.transactions.count');
+      expect(ids).toContain('thread.patterns.count');
+      // No analyzer was silently degraded on a trace with all core tables.
+      expect(ids).not.toContain('fault-tree.degraded');
+      expect(ids).not.toContain('binder.degraded');
+      expect(ids).not.toContain('threads.degraded');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('the bundle is not older than the sources it was built from', () => {
     // These tests spawn `dist/index.js`, and every entry-point assertion is
     // therefore only as fresh as the last build. A stale bundle once hid a
