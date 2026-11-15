@@ -11,6 +11,7 @@ import {
   type ProcfsSample,
 } from '../src/collectors/procfs';
 import { createSceneLayout } from '../src/ingest/scene';
+import { DeviceNotFoundError, OhosPerfError } from '../src/errors';
 import type { Hdc, HdcResult } from '../src/transport/hdc';
 
 /**
@@ -50,6 +51,7 @@ Pss_Shmem:             0 kB
 Private_Dirty:     40000 kB
 Shared_Dirty:          0 kB
 SwapPss:            5000 kB
+SwapPss_Anon:       9000 kB
 Locked:                0 kB
 `;
 
@@ -97,6 +99,11 @@ describe('parseSmapsRollup', () => {
 
   it('does not let Pss_Anon or Pss_File satisfy Pss', () => {
     const text = SMAPS_TEXT.replace('Pss:              100000 kB\n', '');
+    expect(parseSmapsRollup(text)).toBeUndefined();
+  });
+
+  it('does not let SwapPss_Anon satisfy SwapPss', () => {
+    const text = SMAPS_TEXT.replace('SwapPss:            5000 kB\n', '');
     expect(parseSmapsRollup(text)).toBeUndefined();
   });
 
@@ -184,6 +191,11 @@ function ok(stdout: string): HdcResult {
 
 const fail = (stderr: string, code = 1): HdcResult => ({ stdout: '', stderr, code });
 
+/** What the real `Hdc.shell` throws for a nonzero device exit. */
+function shellFailure(message: string): OhosPerfError {
+  return new OhosPerfError(message, { code: 'HDC_SHELL_FAILED' });
+}
+
 /** Structural fake of `Hdc`; no device is ever contacted. */
 function fakeHdc(
   handler: (cmd: string) => HdcResult | Promise<HdcResult>,
@@ -230,15 +242,23 @@ describe('ProcfsCollector.collect', () => {
     const layout = createSceneLayout(dir);
     const fake = clock([0, 500, 1000]);
     const sleeps: number[] = [];
+    // Ordered log across both injected seams and the fake device, so clock
+    // reads can be proven to precede the cat commands they time.
+    const events: string[] = [];
     const { hdc, calls } = fakeHdc((cmd) => {
+      events.push(cmd);
       if (cmd === 'pidof com.demo') return ok('742\n');
       if (cmd === 'cat /proc/742/status') return ok(STATUS_TEXT);
       if (cmd === 'cat /proc/742/smaps_rollup') return ok(SMAPS_TEXT);
       throw new Error(`unexpected command: ${cmd}`);
     });
     const c = new ProcfsCollector({
-      now: fake.now,
+      now: () => {
+        events.push('now');
+        return fake.now();
+      },
       sleep: async (ms) => {
+        events.push(`sleep:${ms}`);
         sleeps.push(ms);
       },
     });
@@ -256,14 +276,20 @@ describe('ProcfsCollector.collect', () => {
     expect(samples[0].status).toEqual(STATUS);
     expect(samples[0].smaps).toEqual(SMAPS);
     expect(sleeps).toEqual([500, 500]);
-    // now() is read once per attempt, before the cat commands.
+    // now() is read once per attempt, before that attempt's cat commands.
     expect(fake.reads()).toBe(3);
-    expect(calls).toEqual([
+    expect(events).toEqual([
       'pidof com.demo',
+      'now',
       'cat /proc/742/status', 'cat /proc/742/smaps_rollup',
+      'sleep:500',
+      'now',
       'cat /proc/742/status', 'cat /proc/742/smaps_rollup',
+      'sleep:500',
+      'now',
       'cat /proc/742/status', 'cat /proc/742/smaps_rollup',
     ]);
+    expect(calls).toEqual(events.filter((event) => event !== 'now' && !event.startsWith('sleep:')));
     expect(layout.procfsFile).toBe(join(dir, 'procfs.jsonl'));
     expect(readProcfsSamples(layout.procfsFile)).toEqual(samples);
   });
@@ -290,6 +316,37 @@ describe('ProcfsCollector.collect', () => {
 
     expect(samples.map((s) => s.ts)).toEqual([0, 1000]);
     expect(sleeps).toEqual([1000]);
+  });
+
+  it('accepts the duration ceiling and the interval floor', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    // Jumping to the deadline ends the loop after the second attempt, so the
+    // boundary values are exercised without a real 24-day wait.
+    const fake = clock([0, 2_147_483_647]);
+    const sleeps: number[] = [];
+    const { hdc } = fakeHdc((cmd) => {
+      if (cmd === 'pidof com.demo') return ok('742\n');
+      if (cmd === 'cat /proc/742/status') return ok(STATUS_TEXT);
+      if (cmd === 'cat /proc/742/smaps_rollup') return ok(SMAPS_TEXT);
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+    const c = new ProcfsCollector({
+      now: fake.now,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    const samples = await c.collect(
+      hdc,
+      'dev',
+      { app: 'com.demo', durationMs: 2_147_483_647, intervalMs: 100 },
+      layout,
+    );
+
+    expect(samples.map((s) => s.ts)).toEqual([0, 2_147_483_647]);
+    expect(sleeps).toEqual([100]);
   });
 
   it('keeps sampling after a failed attempt and counts only successes', async () => {
@@ -373,6 +430,25 @@ describe('ProcfsCollector.collect', () => {
     expect(existsSync(layout.procfsFile)).toBe(false);
   });
 
+  it('removes a stale capture so a failing run leaves no file', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    writeFileSync(layout.procfsFile, 'stale capture from an earlier run');
+    const fake = clock([0, 500, 1000]);
+    const { hdc } = fakeHdc((cmd) => {
+      if (cmd === 'pidof com.demo') return ok('742\n');
+      return fail('cat: /proc/742/status: No such file or directory');
+    });
+    const c = new ProcfsCollector({ now: fake.now, sleep: async () => {} });
+
+    const err = await rejection(
+      c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1000, intervalMs: 500 }, layout),
+    );
+
+    expect(err.code).toBe('PROCFS_NO_SAMPLES');
+    expect(existsSync(layout.procfsFile)).toBe(false);
+  });
+
   it('throws PROCFS_NO_SAMPLES when every status output is unparsable', async () => {
     const dir = makeDir();
     const layout = createSceneLayout(dir);
@@ -434,7 +510,7 @@ describe('ProcfsCollector pid resolution failures', () => {
     );
 
     expect(err.code).toBe('PROCFS_NO_PID');
-    expect(err.message).toContain(String(pidof.code));
+    expect(err.message).toContain(`exit code ${pidof.code}`);
     expect(err.message).toContain(JSON.stringify(pidof.stdout));
     expect(err.message).toContain(JSON.stringify(pidof.stderr));
     // Only the pidof command ran.
@@ -453,6 +529,104 @@ describe('ProcfsCollector pid resolution failures', () => {
     await expect(
       c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1000 }, layout),
     ).rejects.toThrow('device disconnected');
+  });
+});
+
+describe('ProcfsCollector with the Hdc.shell throw contract', () => {
+  it('skips an attempt whose status call throws HDC_SHELL_FAILED', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    const fake = clock([0, 500, 1000]);
+    let statusCalls = 0;
+    const { hdc, calls } = fakeHdc((cmd) => {
+      if (cmd === 'pidof com.demo') return ok('742\n');
+      if (cmd === 'cat /proc/742/status') {
+        statusCalls += 1;
+        if (statusCalls === 1) {
+          throw shellFailure(
+            'hdc shell failed: exit code 1 (cat: /proc/742/status: No such file or directory)',
+          );
+        }
+        return ok(STATUS_TEXT);
+      }
+      if (cmd === 'cat /proc/742/smaps_rollup') return ok(SMAPS_TEXT);
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+    const c = new ProcfsCollector({ now: fake.now, sleep: async () => {} });
+
+    const samples = await c.collect(
+      hdc,
+      'dev',
+      { app: 'com.demo', durationMs: 1000, intervalMs: 500 },
+      layout,
+    );
+
+    expect(samples.map((s) => s.ts)).toEqual([500, 1000]);
+    expect(calls.filter((cmd) => cmd.endsWith('/status'))).toHaveLength(3);
+    expect(calls.filter((cmd) => cmd.endsWith('/smaps_rollup'))).toHaveLength(2);
+  });
+
+  it('yields the sample without smaps when smaps_rollup throws HDC_SHELL_FAILED', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    const fake = clock([0, 500, 1000]);
+    const { hdc } = fakeHdc((cmd) => {
+      if (cmd === 'pidof com.demo') return ok('742\n');
+      if (cmd === 'cat /proc/742/status') return ok(STATUS_TEXT);
+      if (cmd === 'cat /proc/742/smaps_rollup') {
+        throw shellFailure('hdc shell failed: exit code 1 (cat: Permission denied)');
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+    const c = new ProcfsCollector({ now: fake.now, sleep: async () => {} });
+
+    const samples = await c.collect(
+      hdc,
+      'dev',
+      { app: 'com.demo', durationMs: 1000, intervalMs: 500 },
+      layout,
+    );
+
+    expect(samples).toHaveLength(3);
+    for (const sample of samples) {
+      expect(sample.status).toEqual(STATUS);
+      expect('smaps' in sample).toBe(false);
+    }
+    expect(readProcfsSamples(layout.procfsFile)).toEqual(samples);
+  });
+
+  it('converts a pidof HDC_SHELL_FAILED into PROCFS_NO_PID', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    const { hdc, calls } = fakeHdc(() => {
+      throw shellFailure('hdc shell failed: exit code 127 (pidof: com.demo: not found)');
+    });
+    const c = new ProcfsCollector({ now: () => 0, sleep: async () => {} });
+
+    const err = await rejection(
+      c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1000 }, layout),
+    );
+
+    expect(err.code).toBe('PROCFS_NO_PID');
+    expect(err.message).toContain('pidof com.demo');
+    expect(err.message).toContain('exit code 127');
+    expect(calls).toEqual(['pidof com.demo']);
+    expect(existsSync(layout.procfsFile)).toBe(false);
+  });
+
+  it('propagates a non-HDC_SHELL_FAILED error from status unchanged', async () => {
+    const dir = makeDir();
+    const layout = createSceneLayout(dir);
+    const failure = new DeviceNotFoundError('emulator-5554');
+    const { hdc } = fakeHdc((cmd) => {
+      if (cmd === 'pidof com.demo') return ok('742\n');
+      throw failure;
+    });
+    const c = new ProcfsCollector({ now: () => 0, sleep: async () => {} });
+
+    await expect(
+      c.collect(hdc, 'dev', { app: 'com.demo', durationMs: 1000 }, layout),
+    ).rejects.toBe(failure);
   });
 });
 

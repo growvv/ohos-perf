@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { CapabilityId } from '../device/capability';
 import { OhosPerfError } from '../errors';
@@ -222,16 +222,47 @@ function detail(result: HdcResult): string {
 }
 
 /**
+ * `Hdc.shell` reports a nonzero device exit (or a `[Fail]` line on stdout) by
+ * throwing `HDC_SHELL_FAILED`, not by returning `code !== 0`. Both forms are
+ * handled: structural fakes return the code, the real transport throws.
+ */
+function isShellFailure(err: unknown): err is OhosPerfError {
+  return err instanceof OhosPerfError && err.code === 'HDC_SHELL_FAILED';
+}
+
+/**
+ * Remove a previous run's capture after validation, before `pidof`, so a
+ * capture that produces no samples leaves no JSONL behind.
+ */
+function removeStaleCapture(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch (err) {
+    if ((err as { code?: string }).code !== 'ENOENT') throw err;
+  }
+}
+
+/**
  * Resolve the app's pid with `pidof`. The first positive integer on the first
  * non-empty stdout line wins: an app with several processes prints several
  * pids, and the first is the one whose `/proc` entry the capture follows.
  *
- * Transport errors propagate untouched; a device-level failure becomes
- * `PROCFS_NO_PID` with the raw output, because "the app is not running" and
- * "pidof is missing" must both reach the caller.
+ * Transport errors propagate untouched; a device-level failure — including
+ * the `HDC_SHELL_FAILED` that `Hdc.shell` throws for a nonzero exit — becomes
+ * `PROCFS_NO_PID` with the raw output or the transport's message, because "the
+ * app is not running" and "pidof is missing" must both reach the caller.
  */
 async function resolvePid(hdc: Hdc, target: string, app: string): Promise<number> {
-  const result = await hdc.shell(target, `pidof ${app}`);
+  let result: HdcResult;
+  try {
+    result = await hdc.shell(target, `pidof ${app}`);
+  } catch (err) {
+    if (!isShellFailure(err)) throw err;
+    throw new OhosPerfError(`pidof ${app} failed; no pid resolved (${err.message})`, {
+      code: 'PROCFS_NO_PID',
+      cause: err,
+    });
+  }
   const raw =
     `stdout ${JSON.stringify(result.stdout)}, ` +
     `stderr ${JSON.stringify(result.stderr)}, exit code ${result.code}`;
@@ -267,7 +298,9 @@ function defaultSleep(ms: number): Promise<void> {
  * port. Each attempt reads `status` first; a nonzero exit or unparsable
  * `status` skips that attempt (the app may still be starting). A failed or
  * unparsable `smaps_rollup` only omits the optional `smaps` field, so a kernel
- * without that file still yields RSS samples.
+ * without that file still yields RSS samples. `Hdc.shell` throws
+ * `HDC_SHELL_FAILED` for a nonzero device exit; those errors follow the same
+ * skip/omit rules, while every other transport error propagates.
  *
  * The loop runs immediately, then sleeps `intervalMs` while
  * `ts + intervalMs <= deadline`, where `deadline` is the first attempt's
@@ -275,10 +308,11 @@ function defaultSleep(ms: number): Promise<void> {
  * commands) and that reading is both the sample's `ts` and the value used for
  * the stop decision, so timestamps and attempt count cannot drift apart.
  *
- * On success the samples are written to `layout.procfsFile` before returning.
- * With zero successful samples the capture throws `PROCFS_NO_SAMPLES` (carrying
- * the last device/parse error) and writes nothing, so a stale file from a
- * previous run is never mistaken for this run's data.
+ * Any existing `layout.procfsFile` is removed after validation, before `pidof`
+ * and the first attempt. On success the fresh samples are written before
+ * returning; with zero successful samples the capture throws
+ * `PROCFS_NO_SAMPLES` (carrying the last device/parse error) and leaves no
+ * file, so a previous run's data is never mistaken for this run's.
  */
 export class ProcfsCollector implements Collector {
   readonly id = 'procfs';
@@ -303,6 +337,8 @@ export class ProcfsCollector implements Collector {
     assertDuration(opts.durationMs);
     assertInterval(intervalMs);
 
+    removeStaleCapture(layout.procfsFile);
+
     const pid = await resolvePid(hdc, target, opts.app);
 
     const samples: ProcfsSample[] = [];
@@ -312,26 +348,40 @@ export class ProcfsCollector implements Collector {
     const deadline = ts + opts.durationMs;
 
     for (;;) {
-      const statusResult = await hdc.shell(target, `cat /proc/${pid}/status`);
-      if (statusResult.code !== 0) {
-        lastError =
-          `cat /proc/${pid}/status exited ${statusResult.code}` +
-          ` (${detail(statusResult)})`;
-      } else {
-        const status = parseProcfsStatus(statusResult.stdout);
-        if (status === undefined) {
+      let status: ProcfsStatus | undefined;
+
+      try {
+        const statusResult = await hdc.shell(target, `cat /proc/${pid}/status`);
+        if (statusResult.code !== 0) {
           lastError =
-            `cat /proc/${pid}/status did not contain VmRSS, VmHWM and Threads` +
+            `cat /proc/${pid}/status exited ${statusResult.code}` +
             ` (${detail(statusResult)})`;
         } else {
-          const sample: ProcfsSample = { ts, pid, status };
+          status = parseProcfsStatus(statusResult.stdout);
+          if (status === undefined) {
+            lastError =
+              `cat /proc/${pid}/status did not contain VmRSS, VmHWM and Threads` +
+              ` (${detail(statusResult)})`;
+          }
+        }
+      } catch (err) {
+        if (!isShellFailure(err)) throw err;
+        lastError = `cat /proc/${pid}/status failed: ${err.message}`;
+      }
+
+      if (status !== undefined) {
+        const sample: ProcfsSample = { ts, pid, status };
+        try {
           const smapsResult = await hdc.shell(target, `cat /proc/${pid}/smaps_rollup`);
           if (smapsResult.code === 0) {
             const smaps = parseSmapsRollup(smapsResult.stdout);
             if (smaps !== undefined) sample.smaps = smaps;
           }
-          samples.push(sample);
+        } catch (err) {
+          if (!isShellFailure(err)) throw err;
+          // A kernel without smaps_rollup still yields the RSS sample.
         }
+        samples.push(sample);
       }
 
       if (ts + intervalMs > deadline) break;
