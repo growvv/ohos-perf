@@ -89,6 +89,15 @@ export type { StartupRecord } from './query/startup';
 export { FrameAnalyzer } from './analyze/frames';
 export { FaultTreeAnalyzer, computeFaultTree } from './analyze/fault-tree';
 export type { FaultTreeSignals } from './analyze/fault-tree';
+export { BinderAnalyzer, computeBinderAnalysis } from './analyze/binder';
+export type {
+  BinderAnalysis,
+  BinderEndpoint,
+  BinderInterfaceStat,
+  BinderProcessStat,
+  BinderThreadStat,
+  BinderTransaction,
+} from './analyze/binder';
 export { runAnalyzers, defaultAnalyzers } from './analyze/engine';
 export { resolveAppIdentity } from './analyze/context';
 export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';
