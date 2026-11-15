@@ -33,7 +33,8 @@ Regenerate the real-device fixtures:
 "E:\CodeE\vibe51\performance_rq\performance_rq\hapray_perf_testing\.venv-win\Scripts\python.exe" scripts/parity/hapray_reference.py --hapray-root "E:\CodeE\vibe51\performance_rq\performance_rq\hapray_perf_testing" --trace spike/out/real_device.db --pids 6115 --out-dir packages/core/test/fixtures/hapray
 ```
 
-Both commands write the eight fixtures:
+Each command writes four fixtures (one per analyzer, tagged with that trace's
+stem); the two commands together produce the eight recorded-trace fixtures:
 
 | File | HapRay source |
 | --- | --- |
@@ -41,6 +42,10 @@ Both commands write the eight fixtures:
 | `binder.<tag>.json` | `IpcBinderAnalyzer` (`{}` when the trace has no binder events) |
 | `threads.<tag>.json` | `ThreadAnalyzer` |
 | `thread-wakeup.<tag>.json` | `analyze_all_threads_wakeup_chain` |
+
+`binder.real_device.json` is `{}` because that trace has no binder events, so
+binder parity on the real device is a one-sided assertion: the TypeScript side
+must also be empty.
 
 ## Synthetic golden
 
