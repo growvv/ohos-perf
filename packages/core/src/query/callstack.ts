@@ -166,6 +166,26 @@ export class CallstackQuery {
   }
 
   /**
+   * Rows `matching()` would return without its `opts.limit` cap.
+   *
+   * Uses the same `WHERE` as `matching()`, so the pair can report a true
+   * match count while the fetched rows stay bounded.
+   */
+  countMatching(pattern: string, opts: { range?: TimeRange } = {}): number {
+    const where = ['name LIKE ?'];
+    const params: unknown[] = [pattern];
+    if (opts.range) {
+      where.push('ts >= ?', 'ts <= ?');
+      params.push(opts.range.startNs, opts.range.endNs);
+    }
+    const [row] = this.db.query<{ n: number | null }>(
+      `SELECT COUNT(*) AS n FROM callstack WHERE ${where.join(' AND ')}`,
+      params,
+    );
+    return row == null ? 0 : num(row.n);
+  }
+
+  /**
    * Callstack rows with their arguments resolved through `args` + `data_dict`.
    *
    * A key is **always** looked up in `data_dict`; a value is looked up only

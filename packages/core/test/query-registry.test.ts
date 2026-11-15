@@ -7,8 +7,8 @@ import { openDb, type QueryHandle } from '../src/db/driver';
 import { CapabilityMatrix, type CapabilityState } from '../src/device/capability';
 import { OhosPerfError } from '../src/errors';
 import {
-  DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT, lookupQuery, queryDefinitions,
-  resolveQueryLimit, runNamedQuery, type QueryContext,
+  DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT, lookupQuery, patternMatchesName,
+  queryDefinitions, resolveQueryLimit, runNamedQuery, type QueryContext,
 } from '../src/query/registry';
 
 const START = 1_000_000_000;
@@ -57,6 +57,12 @@ function seed(d: DatabaseSync): void {
       (2, 200, 0, 17, 44, 0, 10, '', 0, 0, 'actual', 0, 0, 2),
       (3, 300, 0, 17, 44, 0, 10, '', 0, 1, 'expect', 0, 0, 3);
   `);
+  // More matches than callstack.matching's internal MAX_QUERY_LIMIT fetch.
+  const bulk = d.prepare(
+    `INSERT INTO callstack VALUES (?, ?, 0, 20, 'bulk', 'Bulk', 0, 0, 0, 0,
+       '', '', '', '', '', '', '', '', 0)`,
+  );
+  for (let i = 0; i < 1005; i += 1) bulk.run(1000 + i, START + 10 * MS + i);
 }
 
 function state(id: CapabilityState['id'], available: boolean): CapabilityState {
@@ -116,6 +122,42 @@ describe('queryDefinitions', () => {
   });
 });
 
+describe('patternMatchesName', () => {
+  it('matches the display name', () => {
+    expect(patternMatchesName(
+      { thread_name: 'Worker', thread_name_variants: ['Worker'] }, 'Worker',
+    )).toBe(true);
+  });
+
+  it('matches any variant name', () => {
+    const pattern = {
+      thread_name: 'Worker_*',
+      thread_name_variants: ['Worker_a', 'Worker_b'],
+    };
+    expect(patternMatchesName(pattern, 'Worker_a')).toBe(true);
+    expect(patternMatchesName(pattern, 'Worker_b')).toBe(true);
+  });
+
+  it('matches the name_* label of a multi-variant pattern', () => {
+    expect(patternMatchesName(
+      { thread_name: 'Worker', thread_name_variants: ['Worker_a', 'Worker_b'] },
+      'Worker_*',
+    )).toBe(true);
+  });
+
+  it('matches the empty name of an unnamed pattern', () => {
+    expect(patternMatchesName(
+      { thread_name: '', thread_name_variants: [''] }, '',
+    )).toBe(true);
+  });
+
+  it('rejects an unrelated name', () => {
+    expect(patternMatchesName(
+      { thread_name: 'Worker', thread_name_variants: ['Worker'] }, 'Other',
+    )).toBe(false);
+  });
+});
+
 describe('runNamedQuery', () => {
   it('returns one frame by id', () => {
     expect(runNamedQuery(ctx, 'frames.get', { id: 2 })).toEqual({
@@ -157,6 +199,20 @@ describe('runNamedQuery', () => {
     expect(r.rows.map((row) => (row as { id: number }).id)).toEqual([1, 2]);
   });
 
+  it('reports the true match count beyond its internal fetch cap', () => {
+    // 1005 rows named Bulk exist; the definition fetches at most 1000.
+    const capped = runNamedQuery(ctx, 'callstack.matching', { pattern: 'Bulk' },
+      { limit: MAX_QUERY_LIMIT });
+    expect(capped.rows).toHaveLength(MAX_QUERY_LIMIT);
+    expect(capped.total).toBe(1005);
+    expect(capped.truncated).toBe(true);
+
+    const small = runNamedQuery(ctx, 'callstack.matching', { pattern: 'Bulk' }, { limit: 10 });
+    expect(small.rows).toHaveLength(10);
+    expect(small.total).toBe(1005);
+    expect(small.truncated).toBe(true);
+  });
+
   it('reports capability states in the requested order, synthesizing unknown ids', () => {
     const r = runNamedQuery(ctx, 'caps.get', { ids: ['perf.pmu', 'trace.frames', 'ui.tree'] });
     expect(r.rows.map((row) => (row as CapabilityState).id))
@@ -182,6 +238,15 @@ describe('runNamedQuery', () => {
   it('returns no thread patterns without app pids', () => {
     const r = runNamedQuery({ ...ctx, app: { ...ctx.app, pids: [] } }, 'threads.pattern',
       { threadName: 'Worker' });
+    expect(r.rows).toEqual([]);
+  });
+
+  it('accepts the empty thread name the analyzer emits for unnamed patterns', () => {
+    const definition = lookupQuery('threads.pattern');
+    expect(definition).toBeDefined();
+    expect(() => definition?.parseArgs({ threadName: '' })).not.toThrow();
+    const r = runNamedQuery({ ...ctx, app: { ...ctx.app, pids: [] } }, 'threads.pattern',
+      { threadName: '' });
     expect(r.rows).toEqual([]);
   });
 

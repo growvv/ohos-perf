@@ -1,5 +1,7 @@
 import { computeBinderAnalysis } from '../analyze/binder';
-import { computeThreadAnalysis } from '../analyze/threads-score';
+import {
+  computeThreadAnalysis, type RedundantThreadPattern,
+} from '../analyze/threads-score';
 import { analyzeThreadWakeup } from '../analyze/threads-wakeup';
 import type { QueryHandle } from '../db/driver';
 import type {
@@ -51,6 +53,12 @@ export interface NamedQueryDefinition {
   /** Throws QUERY_BAD_ARGS for missing, unknown, or wrongly typed arguments. */
   parseArgs(args: Record<string, unknown>): void;
   run(ctx: QueryContext, args: Record<string, unknown>): unknown[];
+  /**
+   * Exact match count when `run` caps its own fetch; defaults to
+   * `rows.length`. Must apply the same filter as `run` so `total` stays
+   * deterministic for fixed arguments (D5).
+   */
+  count?(ctx: QueryContext, args: Record<string, unknown>): number;
 }
 
 /** A definition without its function, safe to serialise as a tool list. */
@@ -103,6 +111,25 @@ function stringArg(
 ): string {
   const value = args[name];
   if (typeof value !== 'string' || value === '') {
+    throw badArgs(query, `missing string argument "${name}"`);
+  }
+  return value;
+}
+
+/**
+ * Any string, including `''`.
+ *
+ * Unnamed threads are a real pattern: the wakeup analysis maps a NULL
+ * `thread.name` to `''` and the analyzer emits that value as a
+ * `threads.pattern` handle, so an empty name must stay valid.
+ */
+function nameArg(
+  query: string,
+  args: Record<string, unknown>,
+  name: string,
+): string {
+  const value = args[name];
+  if (typeof value !== 'string') {
     throw badArgs(query, `missing string argument "${name}"`);
   }
   return value;
@@ -166,6 +193,24 @@ function rangeArg(
   return { startNs, endNs };
 }
 
+/**
+ * True when one redundant-thread pattern answers the requested name.
+ *
+ * A pattern answers to three names: its display name (the only variant, or
+ * `name_*` when it groups several), any individual variant name, and its
+ * `name_*` label. The empty string matches unnamed patterns.
+ */
+export function patternMatchesName(
+  pattern: Pick<RedundantThreadPattern, 'thread_name' | 'thread_name_variants'>,
+  name: string,
+): boolean {
+  return (
+    pattern.thread_name === name ||
+    pattern.thread_name_variants.includes(name) ||
+    `${pattern.thread_name}_*` === name
+  );
+}
+
 function filterBinderStats(
   stats: ReturnType<typeof computeBinderAnalysis>['processStats'],
   callerProc: string | undefined,
@@ -216,6 +261,12 @@ const DEFINITIONS: NamedQueryDefinition[] = [
       rejectUnknownArgs('callstack.matching', args, ['pattern', 'startNs', 'endNs']);
       stringArg('callstack.matching', args, 'pattern');
       rangeArg('callstack.matching', args);
+    },
+    count(ctx, args) {
+      const pattern = stringArg('callstack.matching', args, 'pattern');
+      const range = rangeArg('callstack.matching', args);
+      return new CallstackQuery(ctx.db).countMatching(pattern,
+        range === undefined ? {} : { range });
     },
     run(ctx, args) {
       const pattern = stringArg('callstack.matching', args, 'pattern');
@@ -316,18 +367,13 @@ const DEFINITIONS: NamedQueryDefinition[] = [
     returns: 'RedundantThreadPattern[]',
     parseArgs(args) {
       rejectUnknownArgs('threads.pattern', args, ['threadName']);
-      stringArg('threads.pattern', args, 'threadName');
+      nameArg('threads.pattern', args, 'threadName');
     },
     run(ctx, args) {
-      const name = stringArg('threads.pattern', args, 'threadName');
+      const name = nameArg('threads.pattern', args, 'threadName');
       const results = analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids });
       const patterns = computeThreadAnalysis(results).redundantThreadsSummary.redundant_threads;
-      return patterns.filter(
-        (pattern) =>
-          pattern.thread_name === name ||
-          pattern.thread_name_variants.includes(name) ||
-          `${pattern.thread_name}_*` === name,
-      );
+      return patterns.filter((pattern) => patternMatchesName(pattern, name));
     },
   },
 ];
@@ -391,7 +437,10 @@ export function runNamedQuery(
   const normalized = args ?? {};
   definition.parseArgs(normalized);
   const rows = definition.run(ctx, normalized);
-  const total = rows.length;
+  // A definition that caps its own fetch reports the exact count separately,
+  // so `truncated` stays truthful even when `rows` cannot hold every match.
+  const total =
+    definition.count === undefined ? rows.length : definition.count(ctx, normalized);
   const truncated = total > limit;
   return {
     query: name,

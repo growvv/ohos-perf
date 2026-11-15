@@ -5,8 +5,16 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '../../..');
-const skill = readFileSync(join(root, 'skill/ohos-perf/SKILL.md'), 'utf8');
-const readme = readFileSync(join(root, 'README.md'), 'utf8');
+
+// A Windows checkout with core.autocrlf=true (this repo commits no
+// .gitattributes) turns these files into CRLF; the assertions below are about
+// content, so line endings are normalised before they run.
+function readNormalized(path: string): string {
+  return readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+}
+
+const skill = readNormalized(join(root, 'skill/ohos-perf/SKILL.md'));
+const readme = readNormalized(join(root, 'README.md'));
 
 const COMMANDS = new Set(['doctor', 'caps', 'collect', 'analyze', 'query', 'tools']);
 
