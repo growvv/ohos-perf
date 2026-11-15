@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ohos-perf — HarmonyOS performance, made measurable</title>
-<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace collection, trace ingest, frame metrics, an evidence graph and a CLI. Deterministic, evidence-backed, zero native dependencies.">
+<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace and procfs capture, trace ingest, typed queries, six analyzers (frames, fault tree, binder, threads, memory, startup) and a CLI. Deterministic, evidence-backed, zero native dependencies.">
 <meta property="og:title" content="ohos-perf — HarmonyOS performance, made measurable">
-<meta property="og:description" content="Capability probing, hitrace capture, trace ingest, frame metrics and an evidence graph in one TypeScript toolkit.">
+<meta property="og:description" content="Capability probing, hitrace and procfs capture, trace ingest, typed queries over 88 tables, six analyzers with HapRay-verified parity, and a CLI in one TypeScript toolkit.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://growvv.github.io/ohos-perf/">
 <meta property="og:image" content="https://growvv.github.io/ohos-perf/assets/poster.jpg">
@@ -35,6 +35,7 @@
     </a>
     <nav class="links" aria-label="Main">
       <a href="#features" data-en="Features" data-zh="能力">Features</a>
+      <a href="#analyzers" data-en="Analyzers" data-zh="分析器">Analyzers</a>
       <a href="#capabilities" data-en="Capabilities" data-zh="能力矩阵">Capabilities</a>
       <a href="#architecture" data-en="Architecture" data-zh="架构">Architecture</a>
       <a href="#demo" data-en="Demo" data-zh="演示">Demo</a>
@@ -58,14 +59,14 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1 is complete — 551 tests pass on a clean checkout, six analyzers, two collectors" data-zh="P1 已完成 — 干净检出下 551 个测试通过，六个分析器，两个采集器">P1 is complete — 551 tests pass on a clean checkout, six analyzers, two collectors</span>
+        <span data-en="P1 is complete — six analyzers, HapRay-verified parity, 574 tests" data-zh="P1 已完成 — 六个分析器、经 HapRay 对拍的输出、574 个测试">P1 is complete — six analyzers, HapRay-verified parity, 574 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
         <span class="grad" data-en="made measurable." data-zh="从此可度量。">made measurable.</span>
       </h1>
-      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace capture, trace ingest, typed queries, frame metrics and a CLI — in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测、hitrace 采集、trace 入库、类型化查询、帧指标与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
-        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace capture, trace ingest, typed queries, frame metrics and a CLI — in one TypeScript toolkit with zero native dependencies.
+      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace and procfs capture, trace ingest, typed queries, six analyzers — frames, fault tree, binder, threads, memory, startup — and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测、hitrace 与 procfs 采集、trace 入库、类型化查询、六个分析器（帧、故障树、binder、线程、内存、启动）与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
+        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace and procfs capture, trace ingest, typed queries, six analyzers — frames, fault tree, binder, threads, memory, startup — and a CLI, in one TypeScript toolkit with zero native dependencies.
       </p>
       <div class="cta-row reveal">
         <a class="btn btn-primary" href="#quickstart">
@@ -93,17 +94,26 @@
         </div>
         <pre class="term"><code><span class="p">$</span> <span class="c">ohos-perf analyze ./scene --json</span>
 {
-  <span class="k">"metrics"</span>: [
-    { <span class="k">"id"</span>: <span class="s">"frame.count"</span>,   <span class="k">"value"</span>: <span class="n">169</span> },
+  <span class="k">"metrics"</span>: [   <span class="cm">/* 37 metrics from six analyzers */</span>
     { <span class="k">"id"</span>: <span class="s">"frame.jank.rate"</span>, <span class="k">"value"</span>: <span class="n">37.267080745341616</span>,
-      <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
-      <span class="k">"provenance"</span>: { <span class="k">"table"</span>: <span class="s">"frame_slice"</span>, <span class="k">"rows"</span>: <span class="n">177</span> } },
-    { <span class="k">"id"</span>: <span class="s">"frame.fps"</span>,    <span class="k">"value"</span>: <span class="n">5.9170002419317855</span>,
-      <span class="k">"fidelity"</span>: <span class="s">"approximate"</span> }
+      <span class="k">"unit"</span>: <span class="s">"%"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
+      <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
+                      <span class="k">"table"</span>: <span class="s">"frame_slice"</span>, <span class="k">"rows"</span>: <span class="n">177</span>,
+                      <span class="k">"device"</span>: <span class="s">"offline"</span> } },
+    { <span class="k">"id"</span>: <span class="s">"fault.arkui.HandleOnAreaChangeEvent"</span>,
+      <span class="k">"value"</span>: <span class="n">51</span>, <span class="k">"unit"</span>: <span class="s">"count"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
+      <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
+                      <span class="k">"table"</span>: <span class="s">"callstack"</span>, <span class="k">"rows"</span>: <span class="n">51</span> } },
+    { <span class="k">"id"</span>: <span class="s">"binder.transactions.count"</span>, <span class="k">"value"</span>: <span class="n">372</span>,
+      <span class="k">"unit"</span>: <span class="s">"count"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
+      <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
+                      <span class="k">"table"</span>: <span class="s">"callstack"</span>, <span class="k">"rows"</span>: <span class="n">372</span> } },
+    <span class="cm">/* … 34 more, including binder.latency.avg, thread.*, mem.* */</span>
   ],
-  <span class="k">"evidence"</span>: [ <span class="cm">/* 60 jank items, 60 distinct ids */</span> ]
+  <span class="k">"evidence"</span>: [ <span class="cm">/* 74 items: 60 jank, 6 fault patterns, 5 binder */</span>
+                 <span class="cm">/* hotspots, 1 startup, 1 no_data, 1 degraded */</span> ]
 }</code></pre>
-        <p class="terminal-note" data-en="Excerpt from a real 17.9 MB trace recorded on a HarmonyOS emulator. Every metric carries provenance: collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的 17.9 MB 真实 trace。每个指标都带 provenance：采集器、表、行数、设备。">Excerpt from a real 17.9 MB trace recorded on a HarmonyOS emulator. Every metric carries provenance: collector, table, rows, device.</p>
+        <p class="terminal-note reveal" data-en="Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 37 metrics, 74 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的 17.9 MB 真实 trace 的实际输出：37 个指标、74 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 37 metrics, 74 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
       </div>
     </div>
   </div>
@@ -111,8 +121,8 @@
   <div class="wrap">
     <div class="stats reveal">
       <div class="stat"><b>20</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
-      <div class="stat"><b>8</b><span data-en="architecture layers" data-zh="层架构">architecture layers</span></div>
-      <div class="stat"><b>551</b><span data-en="tests pass on a clean checkout (23 skip without spike fixtures)" data-zh="个测试在干净检出下通过（缺少 spike 夹具时 23 个跳过）">tests pass on a clean checkout (23 skip without spike fixtures)</span></div>
+      <div class="stat"><b>6</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
+      <div class="stat"><b>574</b><span data-en="tests pass with spike fixtures; 551 + 23 skipped on a clean checkout" data-zh="个测试在含 spike 夹具时通过；干净检出为 551 通过 + 23 跳过">tests pass with spike fixtures; 551 + 23 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -163,6 +173,68 @@
         <p data-en="Recorded traces pin field-level output for binder, threads and fault tree against HapRay rev 9386e4e. The threads scorer also has a synthetic HapRay golden that exercises the redundancy-scoring path, which the recorded traces cannot: they contain no redundant patterns and no perf samples, so their thread goldens are all-zero. Memory and startup claim no parity." data-zh="录制的真实 trace 已将 binder、线程与故障树分析器的逐字段输出与 HapRay 修订 9386e4e 对齐。线程评分另有一个由 HapRay 生成的合成 golden，专门覆盖冗余评分路径——真实 trace 既无冗余线程模式也无 perf 采样，其线程 golden 全为零值。内存与启动不声称对齐。">Recorded traces pin field-level output for binder, threads and fault tree against HapRay rev 9386e4e. The threads scorer also has a synthetic HapRay golden that exercises the redundancy-scoring path, which the recorded traces cannot: they contain no redundant patterns and no perf samples, so their thread goldens are all-zero. Memory and startup claim no parity.</p>
       </article>
     </div>
+  </div>
+</section>
+
+<section class="section" id="analyzers">
+  <div class="wrap">
+    <p class="eyebrow reveal" data-en="Analyzers" data-zh="分析器">Analyzers</p>
+    <h2 class="reveal" data-en="Six analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，六个分析器。每个结论都带证据。">Six analyzers over one trace. Every finding carries its evidence.</h2>
+    <p class="section-lead reveal" data-en="`analyze` runs all six against a scene and merges the result into one report: 37 metrics and 74 evidence items on the recorded emulator trace, byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部六个分析器，合并成一份报告：在录制的模拟器 trace 上产出 37 个指标与 74 条证据，跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
+      <code>analyze</code> runs all six against a scene and merges the result into one report: 37 metrics and 74 evidence items on the recorded emulator trace, byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
+    </p>
+
+    <div class="table-wrap reveal">
+      <table class="caps">
+        <thead>
+          <tr>
+            <th data-en="Analyzer" data-zh="分析器">Analyzer</th>
+            <th data-en="What it measures" data-zh="度量什么">What it measures</th>
+            <th data-en="Metric ids" data-zh="指标 id">Metric ids</th>
+            <th class="center" data-en="HapRay parity" data-zh="HapRay 对拍">HapRay parity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>frames</code></td>
+            <td data-en="Frame counts, jank rate, FPS, per-frame jank evidence" data-zh="帧数、卡顿率、FPS、逐帧卡顿证据">Frame counts, jank rate, FPS, per-frame jank evidence</td>
+            <td><code>frame.*</code></td>
+            <td class="center"><span class="no">—</span></td>
+          </tr>
+          <tr>
+            <td><code>fault-tree</code></td>
+            <td data-en="ArkUI / Render Service / av_codec / Audio signals, ported from HapRay's fault tree" data-zh="ArkUI / Render Service / av_codec / Audio 信号，移植自 HapRay 故障树">ArkUI / Render Service / av_codec / Audio signals, ported from HapRay's fault tree</td>
+            <td><code>fault.*</code></td>
+            <td class="center"><span class="yes">✓</span></td>
+          </tr>
+          <tr>
+            <td><code>binder</code></td>
+            <td data-en="IPC transaction pairing, latency, process/thread/interface hotspots" data-zh="IPC 事务配对、延迟、进程/线程/接口热点">IPC transaction pairing, latency, process/thread/interface hotspots</td>
+            <td><code>binder.*</code></td>
+            <td class="center"><span class="yes">✓</span></td>
+          </tr>
+          <tr>
+            <td><code>threads</code></td>
+            <td data-en="Wakeup chains, per-thread redundancy scoring, thread-pattern evidence" data-zh="唤醒链、逐线程冗余评分、线程模式证据">Wakeup chains, per-thread redundancy scoring, thread-pattern evidence</td>
+            <td><code>thread.*</code></td>
+            <td class="center"><span class="yes">✓</span></td>
+          </tr>
+          <tr>
+            <td><code>memory</code></td>
+            <td data-en="RSS/PSS peak and mean from `/proc` samples, growth evidence" data-zh="来自 `/proc` 采样的 RSS/PSS 峰值与均值、增长证据">RSS/PSS peak and mean from <code>/proc</code> samples, growth evidence</td>
+            <td><code>mem.*</code></td>
+            <td class="center"><span class="no">—</span></td>
+          </tr>
+          <tr>
+            <td><code>startup</code></td>
+            <td data-en="Cold-start duration from `app_startup`, with a start-marker fallback" data-zh="基于 `app_startup` 的冷启动耗时，带启动标记回退">Cold-start duration from <code>app_startup</code>, with a start-marker fallback</td>
+            <td><code>startup.*</code></td>
+            <td class="center"><span class="no">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="footnote reveal" data-en="Parity means field-level comparison against golden output from ArkAnalyzer-HapRay rev `9386e4e` on two recorded traces. The threads scorer also has a synthetic HapRay golden, because the recorded traces contain no redundant patterns. Frames, memory and startup have no HapRay equivalent to compare against, so none is claimed." data-zh="对拍指在两条录制 trace 上与 ArkAnalyzer-HapRay 修订 `9386e4e` 的 golden 输出做逐字段比较。线程评分另有一个 HapRay 生成的合成 golden，因为录制的 trace 中没有冗余线程模式。帧、内存与启动没有对应的 HapRay 实现，因此不声称对拍。">Parity means field-level comparison against golden output from ArkAnalyzer-HapRay rev <code>9386e4e</code> on two recorded traces. The threads scorer also has a synthetic HapRay golden, because the recorded traces contain no redundant patterns. Frames, memory and startup have no HapRay equivalent to compare against, so none is claimed.</p>
   </div>
 </section>
 
@@ -225,9 +297,9 @@
       <li class="reveal"><span class="ln">L7</span><div><h3>API / CLI / Skill</h3><p data-en="Programmatic API, `ohos-perf` CLI, and the seam for an agent skill adapter." data-zh="编程 API、`ohos-perf` CLI，以及 agent skill 适配器的接缝。">Programmatic API, <code>ohos-perf</code> CLI, and the seam for an agent skill adapter.</p></div></li>
       <li class="reveal"><span class="ln">L6</span><div><h3>Report</h3><p data-en="Metric and Evidence models, provenance, fidelity, stable ordering." data-zh="Metric 与 Evidence 模型、provenance、保真度、稳定排序。">Metric and Evidence models, provenance, fidelity, stable ordering.</p></div></li>
       <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Six analyzers: frames, fault tree, binder, threads, memory and startup, with a capability matrix that degrades what the trace cannot support." data-zh="六个分析器：帧、故障树、binder、线程、内存与启动；能力矩阵会让 trace 不支持的分析器显式降级。">Six analyzers: frames, fault tree, binder, threads, memory and startup, with a capability matrix that degrades what the trace cannot support.</p></div></li>
-      <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Typed accessors over the 88 tables trace_streamer produces, starting with frames, processes and threads." data-zh="对 trace_streamer 产出的 88 张表做类型化访问，目前覆盖帧、进程与线程。">Typed accessors over the 88 tables trace_streamer produces, starting with frames, processes and threads.</p></div></li>
+      <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Ten typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup and perf." data-zh="十个类型化查询类，覆盖 trace_streamer 产出的 88 张表：帧、进程、线程、调度、瞬时事件、调用栈、binder、线程状态、启动与 perf。">Ten typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup and perf.</p></div></li>
       <li class="reveal"><span class="ln">L3</span><div><h3>Ingest</h3><p data-en="trace_streamer wrapper, scene artifact layout, read-only database handle." data-zh="trace_streamer 封装、场景产物布局、只读数据库句柄。">trace_streamer wrapper, scene artifact layout, read-only database handle.</p></div></li>
-      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace and procfs capture today; hiperf, hiprofiler, hidumper and uitest collectors are still missing." data-zh="当前实现 hitrace 与 procfs 采集；hiperf、hiprofiler、hidumper 与 uitest 采集器仍待补齐。">hitrace and procfs capture today; hiperf, hiprofiler, hidumper and uitest collectors are still missing.</p></div></li>
+      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace and procfs capture today, including `--procfs` memory sampling and `--cold-start` launch capture; hiperf, hiprofiler, hidumper and uitest collectors are still missing." data-zh="当前实现 hitrace 与 procfs 采集，含 `--procfs` 内存采样与 `--cold-start` 启动采集；hiperf、hiprofiler、hidumper 与 uitest 采集器仍待补齐。">hitrace and procfs capture today, including <code>--procfs</code> memory sampling and <code>--cold-start</code> launch capture; hiperf, hiprofiler, hidumper and uitest collectors are still missing.</p></div></li>
       <li class="reveal"><span class="ln">L1</span><div><h3>Device</h3><p data-en="Device model, one-shot capability probe, cached CapabilityMatrix." data-zh="设备模型、一次性能力探测、缓存的 CapabilityMatrix。">Device model, one-shot capability probe, cached CapabilityMatrix.</p></div></li>
       <li class="reveal"><span class="ln">L0</span><div><h3>Transport</h3><p data-en="hdc client: shell, port forwarding, file send/recv, target listing, connect." data-zh="hdc 客户端：shell、端口转发、文件收发、目标枚举与连接。">hdc client: shell, port forwarding, file send/recv, target listing, connect.</p></div></li>
     </ol>
@@ -257,24 +329,34 @@
         <h3 class="code-title"><span data-en="As a library" data-zh="作为库">As a library</span></h3>
         <div class="codewrap">
           <button class="copy" type="button" data-copy="lib-code" data-en="Copy" data-zh="复制">Copy</button>
-          <pre class="code"><code id="lib-code"><span class="k">import</span> { connect, FrameQuery, ProcessQuery, FrameAnalyzer } <span class="k">from</span> <span class="s">'@ohos-perf/core'</span>;
+          <pre class="code"><code id="lib-code"><span class="k">import</span> {
+  connect, resolveAppIdentity, runAnalyzers, defaultAnalyzers,
+  FrameQuery, ProcessQuery, ThreadQuery, CallstackQuery, BinderQuery,
+} <span class="k">from</span> <span class="s">'@ohos-perf/core'</span>;
 
 <span class="cm">// One probe → identity, 20 capability verdicts, evidence.</span>
 <span class="k">const</span> device = <span class="k">await</span> connect();
 <span class="k">const</span> caps = <span class="k">await</span> device.capabilities();
 
 <span class="cm">// Capture, convert with trace_streamer, open trace.db.</span>
-<span class="k">const</span> scene = <span class="k">await</span> device.collect({
+<span class="k">const</span> session = <span class="k">await</span> device.collect({
   app: <span class="s">'com.example.app'</span>,
   durationMs: <span class="n">10_000</span>,
   sceneRoot: <span class="s">'scenes/demo'</span>,
-}).ingest();
+});
+<span class="k">const</span> scene = <span class="k">await</span> session.ingest();
 
-<span class="cm">// Typed queries + metrics with provenance and fidelity.</span>
-<span class="k">const</span> result = <span class="k">await new</span> FrameAnalyzer().run({
+<span class="cm">// All six analyzers, one context. A capability the trace cannot</span>
+<span class="cm">// support degrades to a named proxy — never a silent zero.</span>
+<span class="k">const</span> processes = <span class="k">new</span> ProcessQuery(scene.traceDb);
+<span class="k">const</span> result = <span class="k">await</span> runAnalyzers(defaultAnalyzers(), {
+  db: scene.traceDb,
   frames: <span class="k">new</span> FrameQuery(scene.traceDb),
-  processes: <span class="k">new</span> ProcessQuery(scene.traceDb),
-  app: { packageName: <span class="s">'com.example.app'</span>, pids: [], processNames: [] },
+  processes,
+  threads: <span class="k">new</span> ThreadQuery(scene.traceDb),
+  callstacks: <span class="k">new</span> CallstackQuery(scene.traceDb),
+  binder: <span class="k">new</span> BinderQuery(scene.traceDb),
+  app: resolveAppIdentity(processes, <span class="s">'com.example.app'</span>),
   window: { startNs: <span class="n">0</span>, endNs: Number.MAX_SAFE_INTEGER },
   caps,
   deviceId: device.id,
@@ -294,7 +376,11 @@ ohos-perf doctor
 <span class="cm"># Machine-readable capability matrix.</span>
 ohos-perf caps --json
 
-<span class="cm"># Analyze an existing scene directory.</span>
+<span class="cm"># Capture a scene; --procfs adds memory, --cold-start adds launch.</span>
+ohos-perf collect --app com.example.app --duration 10 \
+  --out ./scene --procfs --cold-start EntryAbility
+
+<span class="cm"># Run all six analyzers over it.</span>
 ohos-perf analyze ./scene --json
 
 <span class="cm"># Exit codes are real: a failed analysis is 1.</span>
@@ -316,7 +402,7 @@ ohos-perf analyze ./scene --json
       <div class="steps reveal">
         <div class="step"><span class="num">1</span><div><h4 data-en="Clone and install" data-zh="克隆并安装">Clone and install</h4><p data-en="One workspace, two packages: core and CLI." data-zh="一个 workspace，两个包：core 与 CLI。">One workspace, two packages: core and CLI.</p></div></div>
         <div class="step"><span class="num">2</span><div><h4 data-en="Build both packages" data-zh="构建两个包">Build both packages</h4><p data-en="`npm test` also builds them first, so a clean checkout is never red." data-zh="`npm test` 会先构建再测试，干净检出不会红。"><code>npm test</code> also builds them first, so a clean checkout is never red.</p></div></div>
-        <div class="step"><span class="num">3</span><div><h4 data-en="Run against a device" data-zh="对真机运行">Run against a device</h4><p data-en="`doctor` tells you what the attached device can do before you capture anything." data-zh="`doctor` 会在采集前告诉你这台设备能做什么。"><code>doctor</code> tells you what the attached device can do before you capture anything.</p></div></div>
+        <div class="step"><span class="num">3</span><div><h4 data-en="Run against a device" data-zh="对真机运行">Run against a device</h4><p data-en="`doctor` tells you what the attached device can do before you capture anything. Add `--procfs` for memory sampling and `--cold-start` for a launch capture." data-zh="`doctor` 会在采集前告诉你这台设备能做什么。加 `--procfs` 采样内存，加 `--cold-start` 采集冷启动。"><code>doctor</code> tells you what the attached device can do before you capture anything. Add <code>--procfs</code> for memory sampling and <code>--cold-start</code> for a launch capture.</p></div></div>
         <div class="step"><span class="num">4</span><div><h4 data-en="Analyze offline" data-zh="离线分析">Analyze offline</h4><p data-en="No device? Point the analyzer at an existing trace.db and get the same metrics." data-zh="没有设备？把分析器指向已有的 trace.db，得到同样的指标。">No device? Point the analyzer at an existing <code>trace.db</code> and get the same metrics.</p></div></div>
       </div>
       <div class="codewrap reveal">
@@ -330,7 +416,11 @@ ohos-perf analyze ./scene --json
 <span class="cm"># Probe the attached device (real or emulator).</span>
 <span class="p">$</span> node packages/cli/dist/index.js doctor
 
-<span class="cm"># Analyze a scene directory offline.</span>
+<span class="cm"># Capture 10s of the app, with memory sampling and a cold start.</span>
+<span class="p">$</span> node packages/cli/dist/index.js collect --app com.example.app \
+    --duration 10 --out ./scene --procfs --cold-start EntryAbility
+
+<span class="cm"># Run all six analyzers over the scene, offline.</span>
 <span class="p">$</span> node packages/cli/dist/index.js analyze ./scene --json
 
 <span class="cm"># Run the suite: 551 pass + 23 skip on a clean checkout; 574 with spike fixtures.</span>
