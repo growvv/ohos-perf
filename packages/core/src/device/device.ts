@@ -10,6 +10,14 @@
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { HitraceCollector } from '../collectors/hitrace';
+import { HiprofilerCollector } from '../collectors/hiprofiler';
+import { MIN_BUFFER_PAGES, type HiprofilerPlugin } from '../collectors/hiprofiler/config';
+import {
+  ftracePlugin,
+  gpuPlugin,
+  nativehookPlugin,
+  xpowerPlugin,
+} from '../collectors/hiprofiler/templates';
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import type { TraceCollectOptions } from '../collectors/types';
 import { buildMatrix, type CapabilityMatrix } from './capability';
@@ -39,6 +47,21 @@ export interface ConnectOptions {
   probe?: (runner: ProbeRunner) => Promise<ProbeSnapshot>;
 }
 
+/** The hiprofiler plugins a caller can request by name. */
+export const HIPROFILER_PLUGIN_NAMES = ['ftrace', 'gpu', 'xpower', 'nativehook'] as const;
+export type HiprofilerPluginName = (typeof HIPROFILER_PLUGIN_NAMES)[number];
+
+export interface HiprofilerCollectRequest {
+  /**
+   * Plugins to run, by name; defaults to `['ftrace']`. `nativehook` resolves
+   * the app's pids on the device after any cold start, so the caller does not
+   * need a pid.
+   */
+  readonly plugins?: readonly HiprofilerPluginName[];
+  /** Ring buffer pages; the daemon requires at least 16384. */
+  readonly bufferPages?: number;
+}
+
 export interface CollectOptions extends TraceCollectOptions {
   /** Directory that holds this scene's artifacts. Reused across captures. */
   sceneRoot: string;
@@ -49,6 +72,11 @@ export interface CollectOptions extends TraceCollectOptions {
   procfs?: boolean | { intervalMs?: number };
   /** Launch this ability on `app` before recording (a cold-start capture). */
   coldStart?: { ability: string };
+  /**
+   * Capture the trace through hiprofiler instead of hitrace. The resulting
+   * `.htrace` converts through the same Streamer into the same schema.
+   */
+  hiprofiler?: HiprofilerCollectRequest;
 }
 
 export interface CollectSession {
@@ -61,6 +89,7 @@ export interface DeviceDeps {
   hdc?: Hdc;
   streamer?: Streamer;
   collector?: HitraceCollector;
+  hiprofiler?: HiprofilerCollector;
   procfs?: ProcfsCollector;
 }
 
@@ -143,13 +172,41 @@ export class Device {
         // here rather than inside ProcfsCollector (which would run only after
         // hitrace had already begun).
         const wantsProcfs = opts.procfs !== undefined && opts.procfs !== false;
-        if (wantsProcfs && (opts.app === undefined || opts.app === '')) {
+        const wantsHiprofiler = opts.hiprofiler !== undefined;
+        const pluginNames: readonly HiprofilerPluginName[] =
+          opts.hiprofiler?.plugins ?? ['ftrace'];
+        for (const name of pluginNames) {
+          if (!HIPROFILER_PLUGIN_NAMES.includes(name)) {
+            throw new OhosPerfError(
+              `unknown hiprofiler plugin ${JSON.stringify(name)};` +
+                ` expected one of ${HIPROFILER_PLUGIN_NAMES.join(', ')}`,
+              { code: 'COLLECT_BAD_PLUGIN' },
+            );
+          }
+        }
+        const bufferPages = opts.hiprofiler?.bufferPages;
+        if (
+          bufferPages !== undefined &&
+          (!Number.isSafeInteger(bufferPages) || bufferPages < MIN_BUFFER_PAGES)
+        ) {
           throw new OhosPerfError(
-            'procfs capture requires an app (CollectOptions.app) to resolve a pid',
+            `bufferPages must be a safe integer no smaller than ${MIN_BUFFER_PAGES}` +
+              ` (got ${String(bufferPages)})`,
+            { code: 'HIPROFILER_BAD_BUFFER' },
+          );
+        }
+        const wantsNativehook = wantsHiprofiler && pluginNames.includes('nativehook');
+        if ((wantsProcfs || wantsNativehook) && (opts.app === undefined || opts.app === '')) {
+          throw new OhosPerfError(
+            `${wantsNativehook ? 'nativehook' : 'procfs'} capture requires an app` +
+              ` (CollectOptions.app) to resolve a pid`,
             { code: 'COLLECT_APP_REQUIRED' },
           );
         }
-        if ((wantsProcfs || opts.coldStart !== undefined) && !BARE_NAME.test(opts.app)) {
+        if (
+          (wantsProcfs || wantsNativehook || opts.coldStart !== undefined) &&
+          !BARE_NAME.test(opts.app)
+        ) {
           throw new OhosPerfError(
             `app must be a bare name matching ${String(BARE_NAME)}` +
               ` (got ${JSON.stringify(opts.app)})`,
@@ -198,12 +255,46 @@ export class Device {
           }
         }
 
+        // The nativehook template needs pids, and only the device knows them.
+        // Resolve them after a cold start (the old process is gone) and before
+        // the session starts. A failure here happens before any trace capture,
+        // so there is no partial scene to repair.
+        let hiprofilerPlugins: HiprofilerPlugin[] | undefined;
+        let nativehookPids: number[] | undefined;
+        if (wantsHiprofiler) {
+          hiprofilerPlugins = [];
+          for (const name of pluginNames) {
+            if (name === 'ftrace') {
+              hiprofilerPlugins.push(ftracePlugin());
+            } else if (name === 'gpu') {
+              hiprofilerPlugins.push(gpuPlugin());
+            } else if (name === 'xpower') {
+              hiprofilerPlugins.push(xpowerPlugin());
+            } else {
+              nativehookPids = await resolvePids(hdc, this.id, opts.app);
+              hiprofilerPlugins.push(nativehookPlugin({ pids: nativehookPids }));
+            }
+          }
+        }
+
         const collector = this.deps.collector ?? new HitraceCollector();
         const traceOpts: TraceCollectOptions = {
           app: opts.app,
           durationMs: opts.durationMs,
           bufferKb: opts.bufferKb,
           categories: opts.categories,
+        };
+        const runTrace = async (): Promise<void> => {
+          if (hiprofilerPlugins === undefined) {
+            await collector.collect(hdc, this.id, traceOpts, layout);
+            return;
+          }
+          const hipro = this.deps.hiprofiler ?? new HiprofilerCollector();
+          await hipro.collect(hdc, this.id, {
+            durationMs: opts.durationMs,
+            plugins: hiprofilerPlugins,
+            ...(bufferPages === undefined ? {} : { bufferPages }),
+          }, layout);
         };
 
         let procfsSamples: ProcfsSample[] | undefined;
@@ -216,7 +307,7 @@ export class Device {
             // duration. Promise.all rejects with the first failure: a partial
             // scene must never be presented as complete.
             const [, samples] = await Promise.all([
-              collector.collect(hdc, this.id, traceOpts, layout),
+              runTrace(),
               procfs.collect(
                 hdc,
                 this.id,
@@ -226,7 +317,7 @@ export class Device {
             ]);
             procfsSamples = samples;
           } else {
-            await collector.collect(hdc, this.id, traceOpts, layout);
+            await runTrace();
           }
         } catch (err) {
           // A hitrace failure rejects the pair while the procfs collector may
@@ -276,16 +367,20 @@ export class Device {
           version: 1,
           app: { packageName: opts.app, processNames: [opts.app] },
           // The procfs collector resolves the pid for its samples; reuse it
-          // instead of issuing another `pidof` device call.
+          // instead of issuing another `pidof` device call. Without procfs the
+          // nativehook resolution (if any) already holds the app's pids.
           pids: procfsSamples === undefined
-            ? []
+            ? nativehookPids ?? []
             : [...new Set(procfsSamples.map((sample) => sample.pid))],
           deviceId: this.id,
           ...(startedAtNs === undefined ? {} : { startedAtNs }),
           capture: {
             startedAtMs,
             durationMs: opts.durationMs,
-            collectors: wantsProcfs ? ['hitrace', 'procfs'] : ['hitrace'],
+            collectors: [
+              wantsHiprofiler ? 'hiprofiler' : 'hitrace',
+              ...(wantsProcfs ? ['procfs'] : []),
+            ],
           },
         });
 
@@ -361,6 +456,31 @@ async function readUptimeNs(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Resolve the running process ids of `app` for the nativehook template.
+ *
+ * `pidof` prints every match, which is what a multi-process app needs. A
+ * non-zero exit or empty output means no process is running: starting a
+ * hiprofiler session without pids would record nothing and look like a quiet
+ * app, so this is an error with an actionable message.
+ */
+async function resolvePids(hdc: Hdc, target: string, app: string): Promise<number[]> {
+  const result = await hdc.shell(target, `pidof ${app}`);
+  const pids = result.stdout
+    .split(/\s+/)
+    .filter((token) => /^\d+$/.test(token))
+    .map(Number)
+    .filter((pid) => Number.isSafeInteger(pid) && pid > 0);
+  if (pids.length === 0) {
+    throw new OhosPerfError(
+      `nativehook requires a running process for ${app};` +
+        ` pidof exited ${result.code} with ${JSON.stringify(result.stdout.trim())}`,
+      { code: 'COLLECT_NATIVEHOOK_NO_PID' },
+    );
+  }
+  return [...new Set(pids)];
 }
 
 /**

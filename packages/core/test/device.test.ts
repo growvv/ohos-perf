@@ -745,3 +745,212 @@ describe('CollectSession.ingest with procfs and cold start', () => {
     }
   });
 });
+
+/**
+ * A harness for the hiprofiler path: the trace collector is a fake that only
+ * records its options, and the hdc shell answers the two commands the device
+ * issues before collection (`cat /proc/uptime`, `pidof <app>`).
+ */
+function hiprofilerHarness(opts: { pidof?: string; fail?: boolean } = {}) {
+  const commands: string[] = [];
+  const calls: Array<{
+    opts: {
+      durationMs: number;
+      plugins: readonly { pluginName: string; configData: string }[];
+      bufferPages?: number;
+    };
+  }> = [];
+  const hdc = {
+    shell: async (_target: string, cmd: string) => {
+      commands.push(cmd);
+      if (cmd === 'cat /proc/uptime') {
+        return { stdout: '1234.56 9999.00\n', stderr: '', code: 0 };
+      }
+      if (cmd.startsWith('pidof ')) {
+        return { stdout: (opts.pidof ?? '') + '\n', stderr: '', code: opts.pidof ? 0 : 1 };
+      }
+      return { stdout: '', stderr: '', code: 0 };
+    },
+  };
+
+  const hitraceCalls: string[] = [];
+  const hitrace = {
+    collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+      hitraceCalls.push('hitrace');
+      writeFileSync(layout.traceFile, 'hitrace capture');
+    },
+  };
+  const hiprofiler = {
+    collect: async (
+      _h: unknown,
+      _t: string,
+      o: {
+        durationMs: number;
+        plugins: readonly { pluginName: string; configData: string }[];
+        bufferPages?: number;
+      },
+      layout: SceneLayout,
+    ) => {
+      calls.push({ opts: o });
+      if (opts.fail) throw new Error('hiprofiler exploded');
+      writeFileSync(layout.traceFile, 'hiprofiler capture');
+    },
+  };
+  const streamer = {
+    convert: async (_input: string, output: string) => {
+      const db = new DatabaseSync(output);
+      db.exec('CREATE TABLE frame_slice(id INT, ts INT)');
+      db.close();
+    },
+  };
+  const device = (): Device => new Device('t1', probe as any, {
+    hdc: hdc as any,
+    streamer: streamer as any,
+    collector: hitrace as any,
+    hiprofiler: hiprofiler as any,
+  });
+  return { commands, calls, hitraceCalls, device };
+}
+
+describe('CollectSession.ingest through hiprofiler', () => {
+  it('routes the trace capture to hiprofiler and records the collector', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-hipro-route-'));
+    try {
+      const h = hiprofilerHarness();
+      const session = await h.device().collect({
+        app: 'com.example',
+        durationMs: 1500,
+        sceneRoot: root,
+        hiprofiler: { plugins: ['gpu', 'xpower'] },
+      });
+      const scene = await session.ingest();
+      scene.close();
+
+      expect(h.hitraceCalls).toHaveLength(0);
+      expect(h.calls).toHaveLength(1);
+      expect(h.calls[0].opts.durationMs).toBe(1500);
+      expect(h.calls[0].opts.plugins.map((p) => p.pluginName))
+        .toEqual(['gpu-plugin', 'xpower-plugin']);
+
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hiprofiler']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('defaults to the ftrace plugin when no plugin list is given', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-hipro-default-'));
+    try {
+      const h = hiprofilerHarness();
+      const session = await h.device().collect({
+        app: 'com.example', durationMs: 1000, sceneRoot: root, hiprofiler: {},
+      });
+      (await session.ingest()).close();
+      expect(h.calls[0].opts.plugins.map((p) => p.pluginName)).toEqual(['ftrace-plugin']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('resolves nativehook pids through pidof and records them', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-hipro-pids-'));
+    try {
+      const h = hiprofilerHarness({ pidof: '4242 4243' });
+      const session = await h.device().collect({
+        app: 'com.example',
+        durationMs: 1000,
+        sceneRoot: root,
+        hiprofiler: { plugins: ['nativehook'] },
+      });
+      (await session.ingest()).close();
+
+      expect(h.commands).toContain('pidof com.example');
+      expect(h.calls[0].opts.plugins[0].pluginName).toBe('nativehook');
+      expect(h.calls[0].opts.plugins[0].configData).toContain('expand_pids: 4242');
+      expect(h.calls[0].opts.plugins[0].configData).toContain('expand_pids: 4243');
+
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.pids).toEqual([4242, 4243]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects nativehook when the app has no running process', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-hipro-nopid-'));
+    try {
+      const h = hiprofilerHarness({ pidof: '' });
+      const session = await h.device().collect({
+        app: 'com.example',
+        durationMs: 1000,
+        sceneRoot: root,
+        hiprofiler: { plugins: ['nativehook'] },
+      });
+      await expect(session.ingest()).rejects.toMatchObject({
+        code: 'COLLECT_NATIVEHOOK_NO_PID',
+      });
+      expect(h.calls).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects an unknown plugin and a bad buffer before any device call', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-hipro-badopts-'));
+    try {
+      const h = hiprofilerHarness();
+      const unknown = await h.device().collect({
+        app: 'com.example',
+        durationMs: 1000,
+        sceneRoot: root,
+        hiprofiler: { plugins: ['nope' as never] },
+      });
+      await expect(unknown.ingest()).rejects.toMatchObject({ code: 'COLLECT_BAD_PLUGIN' });
+
+      const badBuffer = await h.device().collect({
+        app: 'com.example',
+        durationMs: 1000,
+        sceneRoot: root,
+        hiprofiler: { bufferPages: 4096 },
+      });
+      await expect(badBuffer.ingest()).rejects.toMatchObject({
+        code: 'HIPROFILER_BAD_BUFFER',
+      });
+
+      expect(h.commands).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('leaves the previous scene coherent when the hiprofiler capture fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-hipro-fail-'));
+    try {
+      writeFileSync(join(root, 'trace.db'), 'old database');
+      writeFileSync(join(root, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'old.app', processNames: ['old.app'] },
+        pids: [],
+        deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace'] },
+      }));
+
+      const h = hiprofilerHarness({ fail: true });
+      const session = await h.device().collect({
+        app: 'com.example',
+        durationMs: 1000,
+        sceneRoot: root,
+        hiprofiler: { plugins: ['ftrace'] },
+      });
+      await expect(session.ingest()).rejects.toThrow(/hiprofiler exploded/);
+
+      expect(readFileSync(join(root, 'trace.db'), 'utf8')).toBe('old database');
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.app.packageName).toBe('old.app');
+      expect(meta.capture.collectors).toEqual(['hitrace']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});

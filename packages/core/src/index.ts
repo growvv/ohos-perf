@@ -28,7 +28,7 @@ export { Hdc } from './transport/hdc';
 export type { Env, HdcOptions, HdcTarget, HdcResult } from './transport/hdc';
 
 // Device and capabilities
-export { connect, Device } from './device/device';
+export { connect, Device, HIPROFILER_PLUGIN_NAMES } from './device/device';
 export type {
   ConnectOptions,
   CollectOptions,
@@ -36,6 +36,8 @@ export type {
   // `Device`'s public constructor takes `DeviceDeps`, so callers who construct
   // a Device (offline analysis, tests) need the type to name what they pass.
   DeviceDeps,
+  HiprofilerCollectRequest,
+  HiprofilerPluginName,
 } from './device/device';
 export { CapabilityMatrix, buildMatrix } from './device/capability';
 export type {

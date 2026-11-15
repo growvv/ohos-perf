@@ -75,7 +75,8 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 const VALUE_EXPORTS = [
   'BinderAnalyzer', 'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device',
   'DeviceNotFoundError', 'FaultTreeAnalyzer', 'FrameAnalyzer', 'FrameQuery',
-  'FTRACE_CATEGORIES', 'HITRACE_DEFAULT_CATEGORIES', 'Hdc', 'HdcNotFoundError',
+  'FTRACE_CATEGORIES', 'HIPROFILER_PLUGIN_NAMES', 'HITRACE_DEFAULT_CATEGORIES', 'Hdc',
+  'HdcNotFoundError',
   'HitraceCollector', 'HiprofilerCollector',
   'IngestError', 'InstantQuery', 'MIN_BUFFER_PAGES', 'MemoryAnalyzer', 'OhosPerfError',
   'PLANE_A_PLUGINS', 'PerfQuery',
