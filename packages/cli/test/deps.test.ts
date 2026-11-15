@@ -731,6 +731,107 @@ describe('realDeps().capsReport', () => {
   });
 });
 
+describe('realDeps().query', () => {
+  it('runs a named query and closes the scene it opened', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-query-'));
+    try {
+      createFullTraceDb(join(parent, 'trace.db'));
+      const r = await realDeps('0.0.0').query({
+        sceneDir: parent,
+        name: 'frames.all',
+        args: { window: { startNs: 0, endNs: 2000 } },
+      });
+      expect(r.rows).toHaveLength(1);
+      expect(r.total).toBe(1);
+      // An unclosed SQLite handle blocks this on Windows.
+      rmSync(parent, { recursive: true });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects an unknown query name before opening the scene', async () => {
+    await expect(realDeps('0.0.0').query({
+      sceneDir: join(tmpdir(), 'ohosperf-does-not-exist'),
+      name: 'nope',
+    })).rejects.toThrow(/unknown query "nope"; available: .*frames\.get/);
+  });
+
+  it('rejects malformed arguments before opening the scene', async () => {
+    await expect(realDeps('0.0.0').query({
+      sceneDir: join(tmpdir(), 'ohosperf-does-not-exist'),
+      name: 'frames.get',
+      args: {},
+    })).rejects.toThrow(/frames\.get: missing number argument "id"/);
+  });
+
+  it('resolves the app from scene.json, lets --app win, and fabricates no pids', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-query-app-'));
+    try {
+      // createFullTraceDb already creates process/thread/callstack/args/
+      // data_dict and one frame row; seed one completed binder transaction
+      // through a raw handle (the helper only exposes `processRows`).
+      createFullTraceDb(
+        join(parent, 'trace.db'),
+        "(0, 17, 5000, 'com.demo', 0, 0, 1, 0, 0), "
+        + "(1, 200, 6000, 'render_service', 0, 0, 1, 0, 0)",
+      );
+      const raw = new DatabaseSync(join(parent, 'trace.db'));
+      raw.exec(`
+        INSERT INTO thread VALUES
+          (10, 5000, 5000, 'main', 0, 0, 17, 1, 0),
+          (20, 6001, 6001, 'RSThread', 0, 0, 200, 0, 0);
+        INSERT INTO data_dict VALUES
+          (1, 'transaction id'), (2, 'calling tid'), (3, 'code'),
+          (4, 'destination process');
+        INSERT INTO args VALUES
+          (1, 1, 0, 1, 1), (2, 2, 0, 5000, 1), (3, 3, 1, 100, 1),
+          (4, 1, 0, 1, 2), (5, 4, 0, 5000, 2), (6, 3, 1, 102, 2);
+        INSERT INTO callstack VALUES
+          (1, 1000000000, 0, 10, 'binder', 'H:binder transaction', 0, 0, 0, 1,
+           '', '', '', '', '', '', '', '', 0),
+          (2, 1002000000, 0, 20, 'binder', 'H:binder reply', 0, 0, 0, 2,
+           '', '', '', '', '', '', '', '', 0);
+      `);
+      raw.close();
+
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1', startedAtNs: 1_000_000_000,
+      }));
+      const fromMeta = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'binder.processStats',
+      });
+      expect(fromMeta.rows).toEqual([
+        expect.objectContaining({
+          callerProc: 'com.demo', calleeProc: 'render_service', count: 1,
+        }),
+      ]);
+
+      rmSync(join(parent, 'scene.json'));
+      const fromFlag = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'binder.processStats', app: 'com.demo',
+      });
+      expect(fromFlag.rows).toHaveLength(1);
+
+      const withoutApp = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'binder.processStats',
+      });
+      expect(withoutApp).toMatchObject({ rows: [], total: 0 });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('exposes the same sorted tool list as the registry', () => {
+    expect(realDeps('0.0.0').tools().map((t) => t.name)).toEqual([
+      'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
+      'frames.all', 'frames.get', 'threads.pattern',
+    ]);
+  });
+});
+
 describe('realDeps()', () => {
   it('defaults the version to the manifest', () => {
     expect(realDeps().version).toBe(manifest.version);

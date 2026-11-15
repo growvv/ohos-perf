@@ -20,6 +20,8 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     capsReport: async () => ({ hdcOk: true, capabilities: [] }),
     analyze: async () => ({ metrics: [], evidence: [] }),
     collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
+    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
+    tools: () => [],
     ...overrides,
   };
 }
@@ -72,6 +74,8 @@ describe('--help', () => {
     expect(text).toContain('doctor');
     expect(text).toContain('caps');
     expect(text).toContain('analyze');
+    expect(text).toContain('query');
+    expect(text).toContain('tools');
   });
 });
 
@@ -218,5 +222,58 @@ describe('command wiring', () => {
     expect(emitted[0].exitCode).toBe(1);
     expect(emitted[0].stdout).toBe('');
     expect(emitted[0].stderr).toContain('abc');
+  });
+
+  it('query maps flags to one QueryRequest', async () => {
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['query', 'scene1', 'frames.get', '--app', 'com.demo',
+        '--args', '{"id":2}', '--limit', '5', '--json'],
+      {
+        query: async (req) => {
+          seen.push(req);
+          return { query: 'frames.get', rows: [], total: 0, truncated: false };
+        },
+      },
+    );
+    expect(seen).toEqual([{
+      sceneDir: 'scene1', name: 'frames.get', app: 'com.demo', args: { id: 2 }, limit: 5,
+    }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('query rejects a malformed --args before calling the query layer', async () => {
+    let called = false;
+    const { emitted } = await parse(['query', 'scene1', 'frames.get', '--args', 'nope'], {
+      query: async () => { called = true; throw new Error('should not run'); },
+    });
+    expect(called).toBe(false);
+    expect(emitted).toEqual([{
+      stdout: '', stderr: 'invalid --args: not valid JSON\n', exitCode: 1,
+    }]);
+  });
+
+  it('query rejects an out-of-range --limit with one stderr line', async () => {
+    let called = false;
+    const { emitted } = await parse(['query', 'scene1', 'frames.get', '--limit', '0'], {
+      query: async () => { called = true; throw new Error('should not run'); },
+    });
+    expect(called).toBe(false);
+    expect(emitted).toEqual([{
+      stdout: '',
+      stderr: 'limit must be an integer between 1 and 1000, got 0\n',
+      exitCode: 1,
+    }]);
+  });
+
+  it('tools forwards --json to the definitions', async () => {
+    const info = [{
+      name: 'frames.get',
+      description: 'One frame by id.',
+      args: [{ name: 'id', type: 'number' as const, required: true, description: 'frame row id' }],
+      returns: 'Frame',
+    }];
+    const { emitted } = await parse(['tools', '--json'], { tools: () => info });
+    expect(JSON.parse(emitted[0].stdout)).toEqual(info);
   });
 });

@@ -19,14 +19,23 @@ import {
   createSceneLayout,
   defaultAnalyzers,
   ingestScene,
+  lookupQuery,
+  queryDefinitions,
   readProcfsSamples,
   readSceneMetadata,
   resolveAppIdentity,
+  resolveQueryLimit,
   runAnalyzers,
+  runNamedQuery,
+  unknownQueryError,
+  type AppIdentity,
   type CapabilityId,
   type CapabilityState,
+  type NamedQueryInfo,
+  type ProcfsSample,
   type Scene,
   type SceneLayout,
+  type SceneMetadata,
 } from '@ohos-perf/core';
 import { safeMessage, type CliDeps, type DoctorDeps } from './commands';
 
@@ -159,6 +168,16 @@ export interface CapabilityMatrixDb {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): T[];
 }
 
+/** Everything opening a scene yields for an offline analysis or query. */
+interface OpenedScene {
+  scene: Scene;
+  layout: SceneLayout;
+  metadata?: SceneMetadata;
+  samples: ProcfsSample[];
+  app: AppIdentity;
+  caps: CapabilityMatrix;
+}
+
 /**
  * Production wiring for {@link CliDeps}.
  *
@@ -188,6 +207,80 @@ export function realDeps(
     connectDevice,
   };
 
+  /**
+   * Open a scene and resolve everything both `analyze` and `query` need.
+   *
+   * The caller owns the returned `scene` and must close it. On a failure
+   * before that point the helper closes it itself, so a half-opened scene
+   * never leaks a Windows file handle.
+   */
+  const openOfflineScene = async (sceneDir: string, app?: string): Promise<OpenedScene> => {
+    // `createSceneLayout` joins onto the argument, so a relative path or a
+    // shell-style `/c/...` must be normalized against the current drive
+    // before it is handed over.
+    const layout = createSceneLayout(resolve(sceneDir));
+    const scene = await ingest(new Streamer(), layout);
+    try {
+      const db = scene.traceDb;
+      const processes = new ProcessQuery(db);
+      const hasMetadataFile = existsSync(layout.metadataFile);
+      const metadata = hasMetadataFile ? readSceneMetadata(layout) : undefined;
+      // A scene written by Device.collect always has scene.json, and its
+      // `capture.collectors` is the authority on which collectors actually
+      // ran. Re-collecting into the same directory without --procfs can leave
+      // a stale procfs.jsonl; ignoring it prevents `mem.*` exact metrics for
+      // a capture that never sampled memory.
+      //
+      // Only a genuinely ABSENT scene.json means a legacy hand-built scene
+      // whose procfs.jsonl we may trust. A file that exists but cannot be
+      // read (malformed JSON, wrong version, missing required fields) is an
+      // untrustworthy descriptor: treat it as "no procfs" rather than
+      // fabricating exact mem.* from a possibly stale capture.
+      const procfsDeclared = !hasMetadataFile ||
+        (metadata !== undefined &&
+          (metadata.capture?.collectors.includes('procfs') ?? false));
+      const samples = procfsDeclared
+        ? readProcfsSamples(layout.procfsFile)
+        : [];
+      // `collect` writes scene.json precisely so a later `analyze` does not
+      // need to be told the app again; a scene whose descriptor names the app
+      // must not be analyzed as `unknown`. An explicit --app always wins.
+      // resolveAppIdentity stays the single pid-resolution path: only when the
+      // descriptor's name resolves to no process do we fall back to the pids
+      // recorded at capture time (deduplicated and sorted for byte-stability).
+      let appIdentity: AppIdentity;
+      if (app !== undefined) {
+        appIdentity = resolveAppIdentity(processes, app);
+      } else if (metadata !== undefined) {
+        const resolved = resolveAppIdentity(processes, metadata.app.packageName);
+        appIdentity =
+          resolved.pids.length === 0 && metadata.pids.length > 0
+            ? {
+                packageName: metadata.app.packageName,
+                pids: [...new Set(metadata.pids)].sort((a, b) => a - b),
+                processNames:
+                  metadata.app.processNames.length > 0
+                    ? [...metadata.app.processNames]
+                    : [metadata.app.packageName],
+              }
+            : resolved;
+      } else {
+        appIdentity = resolveAppIdentity(processes, 'unknown');
+      }
+      return {
+        scene,
+        layout,
+        ...(metadata !== undefined ? { metadata } : {}),
+        samples,
+        app: appIdentity,
+        caps: offlineCapabilities(db, samples),
+      };
+    } catch (err) {
+      scene.close();
+      throw err;
+    }
+  };
+
   return {
     doctor,
     version,
@@ -211,62 +304,13 @@ export function realDeps(
     },
 
     async analyze(sceneDir, app) {
-      // `createSceneLayout` joins onto the argument, so a relative path or a
-      // shell-style `/c/...` must be normalized against the current drive
-      // before it is handed over.
-      const layout = createSceneLayout(resolve(sceneDir));
-      const scene = await ingest(new Streamer(), layout);
+      const opened = await openOfflineScene(sceneDir, app);
       try {
-        const db = scene.traceDb;
-        const processes = new ProcessQuery(db);
-        const hasMetadataFile = existsSync(layout.metadataFile);
-        const metadata = hasMetadataFile ? readSceneMetadata(layout) : undefined;
-        // A scene written by Device.collect always has scene.json, and its
-        // `capture.collectors` is the authority on which collectors actually
-        // ran. Re-collecting into the same directory without --procfs can leave
-        // a stale procfs.jsonl; ignoring it prevents `mem.*` exact metrics for
-        // a capture that never sampled memory.
-        //
-        // Only a genuinely ABSENT scene.json means a legacy hand-built scene
-        // whose procfs.jsonl we may trust. A file that exists but cannot be
-        // read (malformed JSON, wrong version, missing required fields) is an
-        // untrustworthy descriptor: treat it as "no procfs" rather than
-        // fabricating exact mem.* from a possibly stale capture.
-        const procfsDeclared = !hasMetadataFile ||
-          (metadata !== undefined &&
-            (metadata.capture?.collectors.includes('procfs') ?? false));
-        const samples = procfsDeclared
-          ? readProcfsSamples(layout.procfsFile)
-          : [];
-        // `collect` writes scene.json precisely so a later `analyze` does not
-        // need to be told the app again; a scene whose descriptor names the app
-        // must not be analyzed as `unknown`. An explicit --app always wins.
-        // resolveAppIdentity stays the single pid-resolution path: only when the
-        // descriptor's name resolves to no process do we fall back to the pids
-        // recorded at capture time (deduplicated and sorted for byte-stability).
-        let appIdentity;
-        if (app !== undefined) {
-          appIdentity = resolveAppIdentity(processes, app);
-        } else if (metadata !== undefined) {
-          const resolved = resolveAppIdentity(processes, metadata.app.packageName);
-          appIdentity =
-            resolved.pids.length === 0 && metadata.pids.length > 0
-              ? {
-                  packageName: metadata.app.packageName,
-                  pids: [...new Set(metadata.pids)].sort((a, b) => a - b),
-                  processNames:
-                    metadata.app.processNames.length > 0
-                      ? [...metadata.app.processNames]
-                      : [metadata.app.packageName],
-                }
-              : resolved;
-        } else {
-          appIdentity = resolveAppIdentity(processes, 'unknown');
-        }
+        const db = opened.scene.traceDb;
         const context = {
           db,
           frames: new FrameQuery(db),
-          processes,
+          processes: new ProcessQuery(db),
           threads: new ThreadQuery(db),
           sched: new SchedQuery(db),
           instant: new InstantQuery(db),
@@ -275,20 +319,51 @@ export function realDeps(
           perf: new PerfQuery(db),
           binder: new BinderQuery(db),
           startup: new StartupQuery(db),
-          ...(samples.length > 0 ? { procfs: samples } : {}),
-          ...(metadata !== undefined ? { metadata } : {}),
-          app: appIdentity,
+          ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
+          ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
+          app: opened.app,
           // The whole database: a CLI run has no capture window to honour.
           window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
-          caps: offlineCapabilities(db, samples),
+          caps: opened.caps,
           deviceId: 'offline',
         };
         return await runAnalyzers(defaultAnalyzers(), context);
       } finally {
         // Windows keeps the file handle open otherwise, so a second analysis
         // of the same scene would fail.
-        scene.close();
+        opened.scene.close();
       }
+    },
+
+    async query(req) {
+      // Validate the name, arguments and limit before touching the
+      // filesystem: a typo must not depend on the scene being readable.
+      const definition = lookupQuery(req.name);
+      if (definition === undefined) throw unknownQueryError(req.name);
+      const args = req.args ?? {};
+      definition.parseArgs(args);
+      const limit = resolveQueryLimit(req.limit);
+
+      const opened = await openOfflineScene(req.sceneDir, req.app);
+      try {
+        return runNamedQuery(
+          { db: opened.scene.traceDb, app: opened.app, caps: opened.caps },
+          req.name,
+          args,
+          { limit },
+        );
+      } finally {
+        opened.scene.close();
+      }
+    },
+
+    tools() {
+      return queryDefinitions().map((definition) => ({
+        name: definition.name,
+        description: definition.description,
+        args: definition.args,
+        returns: definition.returns,
+      }));
     },
 
     async collect(req) {

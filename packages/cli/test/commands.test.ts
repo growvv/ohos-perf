@@ -42,6 +42,8 @@ function deps(
     capsReport: async () => ({ hdcOk: true, capabilities: [] }),
     analyze: async () => ({ metrics: [], evidence: [] }),
     collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
+    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
+    tools: () => [],
     ...rest,
   };
 }

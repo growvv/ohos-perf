@@ -5,11 +5,14 @@ import {
   runCaps,
   runCollect,
   runDoctor,
+  runQuery,
+  runTools,
   safeMessage,
   type CliDeps,
   type CliResult,
 } from './commands';
 import { parseDurationSeconds, parsePluginList } from './collect';
+import { parseLimit, parseQueryArgs } from './query';
 
 /**
  * Commander wiring, kept free of `process`.
@@ -145,6 +148,47 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         ...(opts.coldStart !== undefined ? { coldStart: opts.coldStart } : {}),
         ...(hiprofilerRequest === undefined ? {} : { hiprofiler: hiprofilerRequest }),
       }, { json: opts.json }));
+    });
+
+  program
+    .command('query')
+    .description('run one named drill-down query against a captured scene')
+    .argument('<scene-dir>', 'directory containing trace.db / trace.htrace')
+    .argument('<name>', 'named query; list them with `ohos-perf tools`')
+    .option('--app <packageName>', 'app package name, overriding scene.json')
+    .option('--args <json>', 'query arguments as a JSON object')
+    .option('--limit <n>', 'maximum rows to return (default 100, max 1000)')
+    .option('--json', 'print the result as JSON')
+    .action(async (sceneDir: string, name: string, opts: {
+      app?: string;
+      args?: string;
+      limit?: string;
+      json?: boolean;
+    }) => {
+      let args: Record<string, unknown> | undefined;
+      let limit: number | undefined;
+      try {
+        args = opts.args === undefined ? undefined : parseQueryArgs(opts.args);
+        limit = opts.limit === undefined ? undefined : parseLimit(opts.limit);
+      } catch (err) {
+        io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+        return;
+      }
+      io.emit(await runQuery(deps, {
+        sceneDir,
+        name,
+        ...(opts.app !== undefined ? { app: opts.app } : {}),
+        ...(args !== undefined ? { args } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      }, { json: opts.json }));
+    });
+
+  program
+    .command('tools')
+    .description('list the named drill-down queries an agent can call')
+    .option('--json', 'print the query definitions as JSON')
+    .action((opts: { json?: boolean }) => {
+      io.emit(runTools(deps, opts));
     });
 
   return program;

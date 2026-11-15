@@ -1,4 +1,6 @@
-import type { CapabilityState, HiprofilerPluginName } from '@ohos-perf/core';
+import type {
+  CapabilityState, HiprofilerPluginName, NamedQueryInfo, NamedQueryResult,
+} from '@ohos-perf/core';
 import { doctorReport, safeMessage, type DoctorDeps } from './doctor';
 
 /**
@@ -70,6 +72,18 @@ export interface CollectOutput {
   device: { id: string; kind: string };
 }
 
+/** The arguments `query` forwards to the IO layer. */
+export interface QueryRequest {
+  sceneDir: string;
+  name: string;
+  /** Overrides the app named in scene.json. */
+  app?: string;
+  /** The named query's arguments, already parsed from --args. */
+  args?: Record<string, unknown>;
+  /** Output row limit; the core validates it. */
+  limit?: number;
+}
+
 /** Everything the commands touch, injected so the module performs no IO itself. */
 export interface CliDeps {
   doctor: DoctorDeps;
@@ -79,6 +93,10 @@ export interface CliDeps {
   analyze(sceneDir: string, app?: string): Promise<AnalyzeOutput>;
   /** Capture a scene. Throws on any failure; the caller maps it to exit 1. */
   collect(req: CollectRequest): Promise<CollectOutput>;
+  /** Run one named drill-down query against a scene. */
+  query(req: QueryRequest): Promise<NamedQueryResult>;
+  /** The named query definitions, for `tools`. */
+  tools(): NamedQueryInfo[];
   /** Package version, for `--version` and the help banner. */
   version: string;
 }
@@ -225,6 +243,55 @@ export async function runCollect(
     const result = await deps.collect(req);
     if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
     return { stdout: `scene  ${result.sceneDir}\n`, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Run one named drill-down query.
+ *
+ * Human output is one summary line (`name  returned/total rows`) followed by
+ * one compact JSON row per line; `--json` is the exact API structure. Any
+ * failure is exit 1 with an empty stdout, like `analyze` and `collect`.
+ */
+export async function runQuery(
+  deps: CliDeps,
+  req: QueryRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.query(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+
+    const summary = `${result.query}  ${result.rows.length}/${result.total} rows` +
+      `${result.truncated ? ' (truncated)' : ''}\n`;
+    const rows = result.rows.map((row) => JSON.stringify(row) + '\n').join('');
+    return { stdout: summary + rows, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * List the named queries an agent can call.
+ *
+ * `--json` emits the same `{ name, description, args, returns }` objects the
+ * registry exposes, so a skill adapter can turn them into tool definitions
+ * without parsing prose.
+ */
+export function runTools(deps: CliDeps, opts: { json?: boolean }): CliResult {
+  try {
+    const tools = deps.tools();
+    if (opts.json) return { stdout: json(tools), stderr: '', exitCode: 0 };
+
+    const lines = tools.map((tool) => {
+      const args = tool.args
+        .map((arg) => (arg.required ? arg.name : `${arg.name}?`))
+        .join(', ');
+      return `${tool.name}(${args})  -> ${tool.returns}\n  ${tool.description}\n`;
+    });
+    return { stdout: lines.join(''), stderr: '', exitCode: 0 };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }
