@@ -14,6 +14,11 @@ import {
   analyzeThreadWakeup,
   type ThreadWakeupResult,
 } from '../src/analyze/threads-wakeup';
+import {
+  computeThreadAnalysis,
+  type RedundantThreadPattern,
+  type ThreadAnalysis,
+} from '../src/analyze/threads-score';
 
 /**
  * HapRay parity on the recorded traces.
@@ -302,6 +307,199 @@ function compareThreadWakeups(
   }
 }
 
+/** The snake_case `thread_analyzer.py` / `thread_optimization.py` payload. */
+interface GoldenRedundantThread {
+  thread_name: string;
+  thread_name_variants: string[];
+  type: string;
+  type_label: string;
+  total_thread_count: number;
+  redundant_count: number;
+  redundant_instructions: number;
+  redundant_instructions_ratio: number;
+  estimated_memory_mb: number;
+  redundancy_score: number;
+  score_breakdown: Record<string, number>;
+  redundancy_level: string;
+  leak_score: number;
+  leak_level: string;
+  waiting_ratio: number;
+  wakeup_pattern: string;
+  all_thread_ids: number[];
+  redundant_thread_ids: number[];
+  callchain_sample: Array<{ symbol: string; file_path: string; count: number }>;
+}
+
+interface GoldenRedundantThreadsSummary {
+  redundancy_types: Record<string, string>;
+  total_redundant_thread_patterns: number;
+  total_redundant_threads: number;
+  total_cpu_instructions: number;
+  total_redundant_instructions: number;
+  redundant_instructions_ratio: number;
+  redundant_threads: GoldenRedundantThread[];
+}
+
+interface GoldenThreadAnalysisSummary {
+  total_memory_savings_mb: number;
+  total_cpu_savings_instructions: number;
+  high_priority_patterns_count: number;
+  total_cpu_instructions: number;
+  total_redundant_instructions: number;
+  redundant_instructions_ratio: number;
+}
+
+interface GoldenBelowThresholdPattern {
+  thread_name: string;
+  thread_name_variants: string[];
+  total_thread_count: number;
+  all_thread_ids: number[];
+  redundant_count: number;
+  max_score: number;
+  avg_score: number;
+}
+
+interface ThreadsGolden {
+  redundant_threads_summary: GoldenRedundantThreadsSummary;
+  summary: GoldenThreadAnalysisSummary;
+  below_threshold_patterns: GoldenBelowThresholdPattern[];
+}
+
+/** HapRay emits trace insertion order; the public output sorts by name. */
+function byThreadName(
+  a: { thread_name: string },
+  b: { thread_name: string },
+): number {
+  if (a.thread_name < b.thread_name) return -1;
+  if (a.thread_name > b.thread_name) return 1;
+  return 0;
+}
+
+function compareRedundantThread(
+  actual: RedundantThreadPattern,
+  golden: GoldenRedundantThread,
+  label: string,
+): void {
+  expect(actual.thread_name, `${label} thread_name`).toBe(golden.thread_name);
+  expect(actual.thread_name_variants, `${label} variants`)
+    .toEqual(golden.thread_name_variants);
+  expect(actual.type, `${label} type`).toBe(golden.type);
+  expect(actual.type_label, `${label} type_label`).toBe(golden.type_label);
+  expect(actual.total_thread_count, `${label} total_thread_count`)
+    .toBe(golden.total_thread_count);
+  expect(actual.redundant_count, `${label} redundant_count`)
+    .toBe(golden.redundant_count);
+  expect(actual.redundant_instructions, `${label} redundant_instructions`)
+    .toBe(golden.redundant_instructions);
+  expectClose(
+    actual.redundant_instructions_ratio,
+    golden.redundant_instructions_ratio,
+    `${label} redundant_instructions_ratio`,
+  );
+  expectClose(
+    actual.estimated_memory_mb,
+    golden.estimated_memory_mb,
+    `${label} estimated_memory_mb`,
+  );
+  expect(actual.redundancy_score, `${label} redundancy_score`)
+    .toBe(golden.redundancy_score);
+  expect(actual.score_breakdown, `${label} score_breakdown`)
+    .toEqual(golden.score_breakdown);
+  expect(actual.redundancy_level, `${label} redundancy_level`)
+    .toBe(golden.redundancy_level);
+  expect(actual.leak_score, `${label} leak_score`).toBe(golden.leak_score);
+  expect(actual.leak_level, `${label} leak_level`).toBe(golden.leak_level);
+  expectClose(actual.waiting_ratio, golden.waiting_ratio, `${label} waiting_ratio`);
+  expect(actual.wakeup_pattern, `${label} wakeup_pattern`)
+    .toBe(golden.wakeup_pattern);
+  expect(actual.all_thread_ids, `${label} all_thread_ids`)
+    .toEqual(golden.all_thread_ids);
+  expect(actual.redundant_thread_ids, `${label} redundant_thread_ids`)
+    .toEqual(golden.redundant_thread_ids);
+  expect(actual.callchain_sample, `${label} callchain_sample`)
+    .toEqual(golden.callchain_sample);
+}
+
+/**
+ * Field-by-field comparison after normalizing both sides to name order.
+ *
+ * Counts and strings are exact; every ratio/mean is `toBeCloseTo(..., 6)`.
+ * `summary` is compared field by field rather than with a deep equal so a
+ * float regression cannot hide behind a same-shape object.
+ */
+function compareThreadAnalysis(
+  actual: ThreadAnalysis,
+  golden: ThreadsGolden,
+): void {
+  const got = actual.redundantThreadsSummary;
+  const want = golden.redundant_threads_summary;
+
+  expect(got.redundancy_types).toEqual(want.redundancy_types);
+  expect(got.total_redundant_thread_patterns)
+    .toBe(want.total_redundant_thread_patterns);
+  expect(got.total_redundant_threads).toBe(want.total_redundant_threads);
+  expect(got.total_cpu_instructions).toBe(want.total_cpu_instructions);
+  expect(got.total_redundant_instructions)
+    .toBe(want.total_redundant_instructions);
+  expectClose(
+    got.redundant_instructions_ratio,
+    want.redundant_instructions_ratio,
+    'summary redundant_instructions_ratio',
+  );
+
+  const actualThreads = [...got.redundant_threads].sort(byThreadName);
+  const goldenThreads = [...want.redundant_threads].sort(byThreadName);
+  expect(actualThreads.map((thread) => thread.thread_name))
+    .toEqual(goldenThreads.map((thread) => thread.thread_name));
+  for (let i = 0; i < goldenThreads.length; i++) {
+    compareRedundantThread(
+      actualThreads[i],
+      goldenThreads[i],
+      `redundant[${goldenThreads[i].thread_name}]`,
+    );
+  }
+
+  expectClose(
+    actual.summary.total_memory_savings_mb,
+    golden.summary.total_memory_savings_mb,
+    'summary total_memory_savings_mb',
+  );
+  expectClose(
+    actual.summary.total_cpu_savings_instructions,
+    golden.summary.total_cpu_savings_instructions,
+    'summary total_cpu_savings_instructions',
+  );
+  expect(actual.summary.high_priority_patterns_count)
+    .toBe(golden.summary.high_priority_patterns_count);
+  expect(actual.summary.total_cpu_instructions)
+    .toBe(golden.summary.total_cpu_instructions);
+  expect(actual.summary.total_redundant_instructions)
+    .toBe(golden.summary.total_redundant_instructions);
+  expectClose(
+    actual.summary.redundant_instructions_ratio,
+    golden.summary.redundant_instructions_ratio,
+    'summary summary.redundant_instructions_ratio',
+  );
+
+  const actualBelow = [...actual.belowThresholdPatterns].sort(byThreadName);
+  const goldenBelow = [...golden.below_threshold_patterns].sort(byThreadName);
+  expect(actualBelow.map((pattern) => pattern.thread_name))
+    .toEqual(goldenBelow.map((pattern) => pattern.thread_name));
+  for (let i = 0; i < goldenBelow.length; i++) {
+    const label = `below[${goldenBelow[i].thread_name}]`;
+    expect(actualBelow[i].thread_name_variants, `${label} variants`)
+      .toEqual(goldenBelow[i].thread_name_variants);
+    expect(actualBelow[i].total_thread_count, `${label} total_thread_count`)
+      .toBe(goldenBelow[i].total_thread_count);
+    expect(actualBelow[i].all_thread_ids, `${label} all_thread_ids`)
+      .toEqual(goldenBelow[i].all_thread_ids);
+    expect(actualBelow[i].redundant_count, `${label} redundant_count`)
+      .toBe(goldenBelow[i].redundant_count);
+    expectClose(actualBelow[i].max_score, goldenBelow[i].max_score, `${label} max_score`);
+    expectClose(actualBelow[i].avg_score, goldenBelow[i].avg_score, `${label} avg_score`);
+  }
+}
+
 describe('HapRay parity', () => {
   describe('fault tree', () => {
     it.skipIf(!existsSync(EMU_DB))(
@@ -429,6 +627,67 @@ describe('HapRay parity', () => {
         expect(main).toBeDefined();
         expect(main?.wakeupThreads[0]?.wakeupDepth).toBe(0);
         expect(actual.every((row) => row.totalInstructions === 0)).toBe(true);
+      },
+    );
+  });
+
+  describe('thread scoring', () => {
+    it.skipIf(!existsSync(EMU_DB))(
+      'emu_big matches the thread-analysis golden',
+      () => {
+        const actual = withDb(EMU_DB, (db) =>
+          computeThreadAnalysis(analyzeThreadWakeup(db, { appPids: [16702] })),
+        );
+        compareThreadAnalysis(
+          actual,
+          readGolden<ThreadsGolden>('threads.emu_big.json'),
+        );
+
+        // Pinned counts so a same-shape regression cannot hide behind the
+        // per-field comparison.
+        expect(actual.redundantThreadsSummary.redundant_threads).toHaveLength(0);
+        expect(actual.redundantThreadsSummary.total_redundant_thread_patterns)
+          .toBe(0);
+        expect(actual.belowThresholdPatterns).toHaveLength(9);
+      },
+    );
+
+    it.skipIf(!existsSync(REAL_DB))(
+      'real_device matches the thread-analysis golden',
+      () => {
+        const actual = withDb(REAL_DB, (db) =>
+          computeThreadAnalysis(analyzeThreadWakeup(db, { appPids: [6115] })),
+        );
+        compareThreadAnalysis(
+          actual,
+          readGolden<ThreadsGolden>('threads.real_device.json'),
+        );
+
+        expect(actual.redundantThreadsSummary.redundant_threads).toHaveLength(0);
+        expect(actual.belowThresholdPatterns).toHaveLength(2);
+        const hiprofilerd = actual.belowThresholdPatterns.find(
+          (pattern) => pattern.thread_name === 'hiprofilerd',
+        );
+        expect(hiprofilerd).toBeDefined();
+        expect(hiprofilerd?.max_score).toBe(40);
+        expect(hiprofilerd?.redundant_count).toBe(1);
+      },
+    );
+
+    it.skipIf(!existsSync(EMU_DB))(
+      'empty app pids produce an empty analysis without throwing',
+      () => {
+        const actual = withDb(EMU_DB, (db) =>
+          computeThreadAnalysis(analyzeThreadWakeup(db, { appPids: [] })),
+        );
+        expect(actual.redundantThreadsSummary.total_redundant_thread_patterns)
+          .toBe(0);
+        expect(actual.redundantThreadsSummary.total_redundant_threads).toBe(0);
+        expect(actual.redundantThreadsSummary.total_cpu_instructions).toBe(0);
+        expect(actual.redundantThreadsSummary.redundant_threads).toEqual([]);
+        expect(actual.summary.total_cpu_instructions).toBe(0);
+        expect(actual.summary.redundant_instructions_ratio).toBe(0);
+        expect(actual.belowThresholdPatterns).toEqual([]);
       },
     );
   });

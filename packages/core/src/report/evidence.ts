@@ -9,7 +9,8 @@ export type EvidenceKind =
   | 'fps_baseline'
   | 'degraded_capability'
   | 'fault_pattern'
-  | 'binder_hotspot';
+  | 'binder_hotspot'
+  | 'thread_redundancy';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.

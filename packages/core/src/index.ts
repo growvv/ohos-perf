@@ -103,6 +103,18 @@ export type {
   ThreadWakeupResult,
   ThreadWakeupThread,
 } from './analyze/threads-wakeup';
+export { ThreadAnalyzer, computeThreadAnalysis } from './analyze/threads-score';
+export type {
+  BelowThresholdPattern,
+  CallchainSample,
+  OptimizationPotential,
+  RedundancyLevel,
+  RedundancyType,
+  RedundantThreadPattern,
+  RedundantThreadsSummary,
+  ThreadAnalysis,
+  ThreadAnalysisSummary,
+} from './analyze/threads-score';
 export { runAnalyzers, defaultAnalyzers } from './analyze/engine';
 export { resolveAppIdentity } from './analyze/context';
 export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';

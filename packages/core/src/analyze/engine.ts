@@ -5,6 +5,7 @@ import { metric, type Metric } from '../report/metric';
 import { BinderAnalyzer } from './binder';
 import { FaultTreeAnalyzer } from './fault-tree';
 import { FrameAnalyzer } from './frames';
+import { ThreadAnalyzer } from './threads-score';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
@@ -157,5 +158,10 @@ export async function runAnalyzers(
  * affecting another run.
  */
 export function defaultAnalyzers(): Analyzer[] {
-  return [new FrameAnalyzer(), new FaultTreeAnalyzer(), new BinderAnalyzer()];
+  return [
+    new FrameAnalyzer(),
+    new FaultTreeAnalyzer(),
+    new BinderAnalyzer(),
+    new ThreadAnalyzer(),
+  ];
 }
