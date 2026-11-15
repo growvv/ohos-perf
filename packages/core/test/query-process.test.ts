@@ -129,6 +129,50 @@ describe('ThreadQuery', () => {
   });
 });
 
+describe('absent process/thread tables (truncated scene)', () => {
+  // A sparse or truncated scene can carry only `callstack` + `frame_slice`.
+  // App resolution calls ProcessQuery before runAnalyzers, and the wakeup
+  // analysis joins `thread` unguarded, so both must degrade, never throw.
+  it('returns []/undefined instead of throwing when there is no process table', () => {
+    const sparse = withDb('no-process.db', (d) => {
+      d.exec('CREATE TABLE callstack(id INT)');
+      d.exec('CREATE TABLE frame_slice(id INT)');
+    });
+    try {
+      const processes = new ProcessQuery(sparse);
+      expect(processes.all()).toEqual([]);
+      expect(processes.byName('com.demo')).toBeUndefined();
+      expect(processes.byPid(4999)).toBeUndefined();
+      // `byNames` in the fix brief is this name→pid batch accessor.
+      expect(processes.pidsFor(['com.demo', 'render_service'])).toEqual([]);
+    } finally {
+      sparse.close();
+    }
+  });
+
+  it('returns [] when there is no thread table', () => {
+    const sparse = withDb('no-thread.db', (d) => {
+      d.exec('CREATE TABLE callstack(id INT)');
+      d.exec('CREATE TABLE frame_slice(id INT)');
+    });
+    try {
+      const threads = new ThreadQuery(sparse);
+      expect(threads.all()).toEqual([]);
+      expect(threads.mainThreads()).toEqual([]);
+      expect(threads.forProcess(17)).toEqual([]);
+      // forPid joins through `process` too; neither table exists here.
+      expect(threads.forPid(4999)).toEqual([]);
+    } finally {
+      sparse.close();
+    }
+  });
+
+  it('still resolves normally when the tables exist (positive control)', () => {
+    expect(new ProcessQuery(db).byName('com.demo')?.pid).toBe(4999);
+    expect(new ThreadQuery(db).all()).toHaveLength(3);
+  });
+});
+
 describe('rows', () => {
   it('coerces a non-numeric value to 0 instead of NaN', () => {
     // SQLite can store text in an INT-affinity column. `JSON.stringify(NaN)`

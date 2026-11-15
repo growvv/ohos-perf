@@ -589,6 +589,26 @@ describe('realDeps().analyze', () => {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  // Fix round 2 (R1): a scene with no `process` table used to exit 1 with a
+  // raw `no such table: process`, because app resolution runs `byName` before
+  // the offline capability matrix can degrade anything. With the query-layer
+  // guard, the literal round-1 scenario (callstack + frame_slice only, with an
+  // explicit --app) succeeds and degrades the app-scoped analyzers.
+  it('succeeds with degraded binder/fault-tree on a scene with no process table', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-no-process-'));
+    try {
+      createTableSetDb(join(parent, 'trace.db'), ['callstack', 'frame_slice']);
+      const result = await realDeps('0.0.0').analyze(parent, 'com.demo');
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).toContain('binder.degraded');
+      expect(ids).toContain('fault-tree.degraded');
+      // No raw SQL error surfaced as an exception or a thrown analyzer.
+      expect(result.metrics.every((m) => Number.isFinite(m.value))).toBe(true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });
 
 describe('realDeps().collect', () => {

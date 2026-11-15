@@ -108,8 +108,11 @@ function toThread(row: ThreadRow): ThreadInfo {
 /**
  * Typed accessor over `process`.
  *
- * `process` is a core trace_streamer table present in every 88-table output,
- * so no `hasTable()` guard is used (matching `FrameQuery.all()`).
+ * A truncated or sparse scene can lack the `process` table entirely (e.g. a
+ * capture holding only `callstack` and `frame_slice`). Every accessor therefore
+ * checks `hasTable()` first and returns `[]`/`undefined` instead of letting
+ * SQLite throw `no such table: process` — the same guard idiom as the other
+ * query classes use for their optional tables.
  */
 export class ProcessQuery {
   constructor(private readonly db: QueryHandle) {}
@@ -118,9 +121,10 @@ export class ProcessQuery {
    * Every process row, ordered by `id` ascending.
    *
    * Ordering is fixed rather than left to SQLite so the result is byte-stable
-   * across runs (D5).
+   * across runs (D5). An absent table returns `[]`.
    */
   all(): ProcessInfo[] {
+    if (!this.hasTable('process')) return [];
     return this.db.query<ProcessRow>(`${SELECT_PROCESS} ORDER BY id`).map(toProcess);
   }
 
@@ -135,9 +139,11 @@ export class ProcessQuery {
    *
    * Rows with `name IS NULL` map to `ProcessInfo.name === ''`, but
    * `byName('')` does **not** find them: SQL `name = ''` never matches NULL.
-   * A NULL-named row is reachable only through `all()`.
+   * A NULL-named row is reachable only through `all()`. An absent table returns
+   * `undefined`.
    */
   byName(name: string): ProcessInfo | undefined {
+    if (!this.hasTable('process')) return undefined;
     const [row] = this.db.query<ProcessRow>(
       `${SELECT_PROCESS} WHERE name = ? ORDER BY id LIMIT 1`,
       [name],
@@ -150,9 +156,11 @@ export class ProcessQuery {
    *
    * Like {@link byName}, duplicate matches resolve to the lowest `id` so output
    * is deterministic (D5). This is the safe pid→ipid step: never compare a pid
-   * against `thread.ipid` or another ipid column directly.
+   * against `thread.ipid` or another ipid column directly. An absent table
+   * returns `undefined`.
    */
   byPid(pid: number): ProcessInfo | undefined {
+    if (!this.hasTable('process')) return undefined;
     const [row] = this.db.query<ProcessRow>(
       `${SELECT_PROCESS} WHERE pid = ? ORDER BY id LIMIT 1`,
       [pid],
@@ -166,15 +174,25 @@ export class ProcessQuery {
    *
    * Each name resolves with the same lowest-`id` rule as `byName`. A name
    * repeated in `names` therefore yields its pid once per occurrence, and
-   * names resolving to the same `pid` are not deduplicated.
+   * names resolving to the same `pid` are not deduplicated. An absent table
+   * returns `[]`.
    */
   pidsFor(names: string[]): number[] {
+    if (names.length === 0 || !this.hasTable('process')) return [];
     const pids: number[] = [];
     for (const name of names) {
       const process = this.byName(name);
       if (process) pids.push(process.pid);
     }
     return pids;
+  }
+
+  private hasTable(name: string): boolean {
+    const rows = this.db.query<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [name],
+    );
+    return rows.length > 0;
   }
 }
 
@@ -187,13 +205,17 @@ export class ProcessQuery {
  * through `process` and reuses the same `toThread` mapping, so only its
  * predicate differs.
  *
- * `thread` is a core trace_streamer table, so no `hasTable()` guard is used.
+ * A truncated or sparse scene can lack the `thread` table (the wakeup analysis
+ * joins it unguarded), so every accessor checks `hasTable()` first and returns
+ * `[]` instead of letting SQLite throw `no such table: thread`, matching the
+ * other query classes' guard idiom.
  */
 export class ThreadQuery {
   constructor(private readonly db: QueryHandle) {}
 
-  /** Every thread row, ordered by `id` ascending. */
+  /** Every thread row, ordered by `id` ascending. An absent table returns `[]`. */
   all(): ThreadInfo[] {
+    if (!this.hasTable('thread')) return [];
     return this.db.query<ThreadRow>(`${SELECT_THREAD} ORDER BY id`).map(toThread);
   }
 
@@ -235,9 +257,11 @@ export class ThreadQuery {
    * mistaken for an ipid — see {@link forProcess} for the measured overlap.
    * Measured: `hilogd` (pid 113) yields its 6 threads, `ohos.sceneboard` 32,
    * `render_service` 17, `sh` 1. Pids are unique on the measured traces, so
-   * the join cannot fan out; an unknown pid returns `[]`.
+   * the join cannot fan out; an unknown pid returns `[]`. The join reads both
+   * `thread` and `process`, so an absent one of them returns `[]`.
    */
   forPid(pid: number): ThreadInfo[] {
+    if (!this.hasTable('thread') || !this.hasTable('process')) return [];
     return this.db
       .query<ThreadRow>(
         `SELECT t.id, t.itid, t.tid, t.name, t.start_ts, t.end_ts, t.ipid,
@@ -248,5 +272,13 @@ export class ThreadQuery {
         [pid],
       )
       .map(toThread);
+  }
+
+  private hasTable(name: string): boolean {
+    const rows = this.db.query<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [name],
+    );
+    return rows.length > 0;
   }
 }
