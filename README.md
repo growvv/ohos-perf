@@ -35,7 +35,7 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 and P2 are complete**: 626 tests, two workspace typechecks and two builds,
+**P1, P2 and P3 are complete**: 626 tests, two workspace typechecks and two builds,
 all green on the declared minimum Node (`22.13.0`). On a clean checkout — where
 the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures
 and any attached device are absent — `npm test` reports **602 passed, 24
@@ -58,6 +58,9 @@ Implemented today:
   (device-uptime start marker, pids, collector list)
 - typed queries over the 88-table trace database: frames, processes, threads,
   sched/instant, thread state, callstacks, perf samples, binder, startup
+- named drill-down queries (`ohos-perf tools`, `ohos-perf query`) that resolve
+  every `Evidence.drillDown` handle, and the agent skill adapter in
+  `skill/ohos-perf/SKILL.md`
 - analyzers: frames, fault tree (`fault.*`), binder (`binder.*`), threads
   (`thread.*`), memory (`mem.*`) and startup (`startup.*`), driven by an
   offline capability matrix derived from table presence
@@ -130,6 +133,15 @@ Analyze it offline — no device or toolchain needed:
 node packages/cli/dist/index.js analyze ./scene --app com.example.app --json
 ```
 
+Follow an evidence item's `drillDown` handle — list the query names and their
+argument schemas first, then pass the handle's `tool` and `args` verbatim:
+
+```bash
+node packages/cli/dist/index.js tools --json
+node packages/cli/dist/index.js query ./scene frames.get \
+  --args '{"id":42}' --json
+```
+
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
@@ -192,7 +204,7 @@ crash: a crash is not the documented answer to missing input.
 ## Architecture
 
 ```
-L7  API / CLI / Skill      programmatic API · ohos-perf CLI · agent skill seam
+L7  API / CLI / Skill      programmatic API · ohos-perf CLI · agent skill (skill/ohos-perf/)
 L6  Report                 Metric · Evidence · provenance · fidelity
 L5  Analyze                frames · fault tree · binder · threads · memory · startup
 L4  Query                  typed accessors over 88 trace tables
