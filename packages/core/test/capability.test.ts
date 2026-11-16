@@ -111,7 +111,9 @@ describe('buildMatrix availability rules', () => {
     expect(m.get('power.xpower')!.collector).toBe('hiprofiler');
     expect(m.get('net.io')!.collector).toBe('hiprofiler');
     expect(m.get('disk.io')!.collector).toBe('hiprofiler');
-    expect(m.get('js.heap')!.collector).toBe('hiprofiler');
+    // js.heap has no serving collector: no analyzer consumes the heap tables,
+    // so the state carries no `collector` (as with every unavailable state).
+    expect(m.get('js.heap')!.available).toBe(false);
     expect(m.get('coverage')!.collector).toBe('hiprofiler');
     expect(m.get('startup.app_startup')!.collector).toBe('hiprofiler');
     expect(m.get('render.hitch')!.collector).toBe('hidumper');
@@ -303,10 +305,27 @@ describe('plugin-aware hiprofiler verdicts', () => {
     });
     for (const id of [
       'mem.native_hook', 'mem.gpu', 'power.xpower',
-      'net.io', 'disk.io', 'js.heap', 'startup.app_startup',
+      'net.io', 'disk.io', 'startup.app_startup',
     ] as CapabilityId[]) {
       expect(m.has(id), id).toBe(true);
     }
+    // js.heap is not gated on a plugin at all: the plugin's presence does not
+    // imply a consumer, so the row stays unavailable (pinned separately).
+    expect(m.has('js.heap')).toBe(false);
+  });
+
+  it('reports js.heap unavailable even when the daemon lists memory-plugin', () => {
+    // The plugin exists on the device but nothing in this package consumes its
+    // js_heap_* tables, so "available" would be a claim the package cannot
+    // honour. The reason must name what is missing, not just say "no".
+    const caps = buildMatrix({
+      ...FULL_DEVICE,
+      hiprofilerPlugins: ['memory-plugin'],
+    });
+    expect(caps.get('js.heap')).toMatchObject({
+      available: false,
+      reason: expect.stringContaining('no analyzer'),
+    });
   });
 
   it('keeps the binary-based verdicts when the plugin list is unknown', () => {

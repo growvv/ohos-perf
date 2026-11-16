@@ -171,7 +171,17 @@ const RULES: Rule[] = [
   hiprofiler('power.xpower', 'xpower-plugin'),
   hiprofiler('net.io', 'network-plugin'),
   hiprofiler('disk.io', 'diskio-plugin'),
-  hiprofiler('js.heap', 'memory-plugin'),
+  // The device can run memory-plugin, but that says nothing about heap data:
+  // nothing in this package consumes the js_heap_* tables, so the row stays in
+  // the matrix (a dropped row reads as "not probed") and reports why.
+  {
+    id: 'js.heap',
+    collector: 'hiprofiler',
+    binary: 'hiprofiler_cmd',
+    missingReason: () => HIPROFILER_MISSING,
+    available: () => false,
+    unavailableReason: 'no analyzer in this package consumes js_heap_* tables',
+  },
   hiprofiler('coverage'),
   hiprofiler('startup.app_startup', 'ftrace-plugin'),
 
