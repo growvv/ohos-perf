@@ -158,6 +158,9 @@ const TABLE_RULES: ReadonlyArray<{
   { id: 'trace.sched', collector: 'hitrace', tables: ['sched_slice', 'instant'] },
   { id: 'trace.binder', collector: 'hitrace', tables: ['callstack', 'args', 'data_dict', 'process', 'thread', 'trace_range'] },
   { id: 'trace.thread_state', collector: 'hitrace', tables: ['thread_state', 'thread', 'process'] },
+  // GC and component-build events are callstack rows scoped through thread and
+  // process; without either join the analyzers would crash rather than degrade.
+  { id: 'trace.ark', collector: 'hitrace', tables: ['callstack', 'thread', 'process'] },
   // Scene artifacts, not tables: `procfs.jsonl`, `hidumper.json` and `ui.json`
   // are satisfied by the parsed artifact the caller passes in.
   { id: 'mem.procfs', collector: 'procfs', tables: ['procfs.jsonl'] },

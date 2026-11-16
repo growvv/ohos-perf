@@ -59,6 +59,7 @@ HapRay（ArkAnalyzer-HapRay）与 DevEco Studio 各自持有鸿蒙性能数据�
 ```ts
 type CapabilityId =
   | 'trace.frames' | 'trace.sched' | 'trace.binder' | 'trace.thread_state'
+  | 'trace.ark'
   | 'perf.samples' | 'perf.pmu'
   | 'mem.procfs' | 'mem.native_hook' | 'mem.gpu'
   | 'render.fps_live' | 'render.hitch' | 'render.vsync'
@@ -351,6 +352,7 @@ interface AnalyzeContext {
 | `trace.sched` | ✅ exact | ✅ exact | hitrace → sched_slice |
 | `trace.binder` | ✅ exact | ✅ exact | hitrace → callstack |
 | `trace.thread_state` | ✅ exact | ✅ exact | hitrace → thread_state |
+| `trace.ark` | ✅ exact | ✅ exact | hitrace → callstack（GC 事件、`H:CustomNode:Build*`） |
 | `perf.samples` | ✅ exact | ⚠️ debug-app-only | hiperf `--app` |
 | `perf.pmu` | ✅ exact | ❌ | hiperf `hw-*`（QEMU 无 PMU） |
 | `mem.procfs` | ✅ exact | ✅ exact | `/proc/<pid>/status` |

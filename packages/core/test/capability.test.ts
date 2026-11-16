@@ -92,10 +92,17 @@ describe('buildMatrix', () => {
 });
 
 describe('buildMatrix availability rules', () => {
-  it('emits exactly the 20 spec capability ids', () => {
+  it('emits exactly the 21 spec capability ids', () => {
     const ids = buildMatrix(FULL_DEVICE).all().map((s) => s.id);
-    expect(ids).toHaveLength(20);
-    expect(new Set(ids).size).toBe(20);
+    expect(ids).toHaveLength(21);
+    expect(new Set(ids).size).toBe(21);
+  });
+
+  it('serves trace.ark from hitrace', () => {
+    const m = buildMatrix(FULL_DEVICE);
+    expect(m.get('trace.ark')!.collector).toBe('hitrace');
+    expect(m.get('trace.ark')!.available).toBe(true);
+    expect(buildMatrix(EMULATOR).get('trace.ark')!.available).toBe(true);
   });
 
   it('maps each collector family to the right collector', () => {

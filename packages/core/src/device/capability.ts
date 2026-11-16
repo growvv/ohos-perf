@@ -11,6 +11,7 @@
 
 export type CapabilityId =
   | 'trace.frames' | 'trace.sched' | 'trace.binder' | 'trace.thread_state'
+  | 'trace.ark'
   | 'perf.samples' | 'perf.pmu'
   | 'mem.procfs' | 'mem.native_hook' | 'mem.gpu'
   | 'render.fps_live' | 'render.hitch' | 'render.vsync'
@@ -149,6 +150,10 @@ const RULES: Rule[] = [
   { id: 'trace.binder', collector: 'hitrace', binary: 'hitrace' },
   { id: 'trace.thread_state', collector: 'hitrace', binary: 'hitrace' },
   { id: 'render.vsync', collector: 'hitrace', binary: 'hitrace' },
+  // Ark-runtime trace events (GC phases, CustomNode builds). The hitrace
+  // categories `ark` and `ace` are already in HITRACE_DEFAULT_CATEGORIES, so
+  // this row is about the trace content, not about a collector to add.
+  { id: 'trace.ark', collector: 'hitrace', binary: 'hitrace' },
 
   { id: 'perf.samples', collector: 'hiperf', binary: 'hiperf' },
   {
