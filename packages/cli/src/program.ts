@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import type { HiprofilerPluginName } from '@ohos-perf/core';
+import type { Gesture, HiprofilerPluginName } from '@ohos-perf/core';
 import {
   runAnalyze,
   runCaps,
@@ -10,6 +10,7 @@ import {
   runEmulatorList,
   runEmulatorStart,
   runEmulatorStop,
+  runGesture,
   runQuery,
   runTools,
   safeMessage,
@@ -18,6 +19,7 @@ import {
   type EmulatorTargetOptions,
 } from './commands';
 import { parseDurationSeconds, parsePluginList } from './collect';
+import { parseCoordinate, parseKey, parseVelocity } from './gesture';
 import { parseLimit, parseQueryArgs } from './query';
 
 /**
@@ -412,6 +414,121 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       ...(storageGb === undefined ? {} : { storageGb }),
       ...targetOptionsOf(opts),
     }, { json: opts.json }));
+  });
+
+  /**
+   * Gesture injection.
+   *
+   * Every subcommand declares `--target`/`--json` for the same reason the
+   * emulator group does: commander resolves options against the command whose
+   * action consumes them. The argument parsers run inside the action's
+   * `build` callback so a bad positional takes the CLI-wide failure path
+   * (empty stdout, one stderr line, exit 1) -- not commander's own usage
+   * error, and never a device call.
+   */
+  const gestureGroup = program
+    .command('gesture')
+    .description('inject a UI gesture on the attached device');
+
+  const withGestureTargets = (cmd: Command): Command =>
+    cmd
+      .option('--target <id>', 'inject on this hdc target instead of the first connected one')
+      .option('--json', 'print the result as JSON');
+
+  const sendGesture = async (
+    build: () => Gesture,
+    opts: { target?: string; json?: boolean },
+  ): Promise<void> => {
+    let gesture: Gesture;
+    try {
+      gesture = build();
+    } catch (err) {
+      io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+      return;
+    }
+    io.emit(await runGesture(deps, {
+      gesture,
+      ...(opts.target === undefined ? {} : { target: opts.target }),
+    }, { json: opts.json }));
+  };
+
+  withGestureTargets(
+    gestureGroup
+      .command('click')
+      .description('tap at <x>,<y>')
+      .argument('<x>')
+      .argument('<y>'),
+  ).action(async (x: string, y: string, opts: { target?: string; json?: boolean }) => {
+    await sendGesture(
+      () => ({ action: 'click', x: parseCoordinate(x, '<x>'), y: parseCoordinate(y, '<y>') }),
+      opts,
+    );
+  });
+
+  withGestureTargets(
+    gestureGroup
+      .command('swipe')
+      .description('swipe from <from-x>,<from-y> to <to-x>,<to-y>')
+      .argument('<from-x>')
+      .argument('<from-y>')
+      .argument('<to-x>')
+      .argument('<to-y>')
+      .option('--velocity <n>', 'swipe velocity, 200 to 40000 (device default 600)'),
+  ).action(async (
+    fromX: string,
+    fromY: string,
+    toX: string,
+    toY: string,
+    opts: { velocity?: string; target?: string; json?: boolean },
+  ) => {
+    await sendGesture(
+      () => ({
+        action: 'swipe',
+        fromX: parseCoordinate(fromX, '<from-x>'),
+        fromY: parseCoordinate(fromY, '<from-y>'),
+        toX: parseCoordinate(toX, '<to-x>'),
+        toY: parseCoordinate(toY, '<to-y>'),
+        ...(opts.velocity === undefined ? {} : { velocity: parseVelocity(opts.velocity) }),
+      }),
+      opts,
+    );
+  });
+
+  withGestureTargets(
+    gestureGroup
+      .command('key')
+      .description('inject a key event')
+      .argument('<key>', 'Back, Home, Power or a positive key code'),
+  ).action(async (key: string, opts: { target?: string; json?: boolean }) => {
+    await sendGesture(() => ({ action: 'key', key: parseKey(key) }), opts);
+  });
+
+  withGestureTargets(
+    gestureGroup
+      .command('input')
+      .description('type text at <x>,<y>')
+      .argument('<x>')
+      .argument('<y>')
+      .argument('<text>', 'text to type; quote it when it contains spaces'),
+  ).action(async (x: string, y: string, text: string, opts: { target?: string; json?: boolean }) => {
+    await sendGesture(
+      () => ({
+        action: 'inputText',
+        x: parseCoordinate(x, '<x>'),
+        y: parseCoordinate(y, '<y>'),
+        text,
+      }),
+      opts,
+    );
+  });
+
+  withGestureTargets(
+    gestureGroup
+      .command('text')
+      .description('type text at the focused field')
+      .argument('<text>', 'text to type; quote it when it contains spaces'),
+  ).action(async (text: string, opts: { target?: string; json?: boolean }) => {
+    await sendGesture(() => ({ action: 'text', text }), opts);
   });
 
   return program;
