@@ -32,7 +32,7 @@ import { frameDelta } from '../analyze/render';
 import { buildMatrix, type CapabilityMatrix } from './capability';
 import { GestureDriver, type Gesture, type GestureResult } from './gesture';
 import { DeviceNotFoundError, OhosPerfError } from '../errors';
-import { writeSceneMetadata } from '../ingest/metadata';
+import { writeSceneMetadata, type SceneStepRef } from '../ingest/metadata';
 import {
   createSceneLayout,
   ingestScene,
@@ -103,6 +103,12 @@ export interface CollectOptions extends TraceCollectOptions {
    * capture. The raw log lands in `hilog.log`; parsing happens offline.
    */
   hilog?: boolean;
+  /**
+   * Record this capture as one step of a scenario run. Written into
+   * `scene.json`, so the scene names its own step after being copied out of
+   * the run directory.
+   */
+  step?: SceneStepRef;
 }
 
 export interface CollectSession {
@@ -605,6 +611,7 @@ export class Device {
             : [...new Set(procfsSamples.map((sample) => sample.pid))],
           deviceId: this.id,
           ...(startedAtNs === undefined ? {} : { startedAtNs }),
+          ...(opts.step === undefined ? {} : { step: opts.step }),
           capture: {
             startedAtMs,
             durationMs: opts.durationMs,

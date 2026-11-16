@@ -133,7 +133,7 @@ export type { StreamerOptions } from './ingest/streamer';
 export { Scene, createSceneLayout, ingestScene } from './ingest/scene';
 export type { SceneLayout } from './ingest/scene';
 export { readSceneMetadata, writeSceneMetadata } from './ingest/metadata';
-export type { SceneMetadata } from './ingest/metadata';
+export type { SceneMetadata, SceneStepRef } from './ingest/metadata';
 
 // Database
 export { openDb, tableRowCounts } from './db/driver';

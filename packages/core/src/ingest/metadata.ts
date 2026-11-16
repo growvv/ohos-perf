@@ -9,12 +9,26 @@ import type { SceneLayout } from './scene';
  * start marker the startup analyzer falls back to when `app_startup` is empty.
  * `capture.startedAtMs` is host wall-clock and exists for humans only.
  */
+export interface SceneStepRef {
+  /** 1-based round within a scenario run. */
+  readonly round: number;
+  /** 0-based position of the step in the scenario's `steps` array. */
+  readonly index: number;
+  readonly id: string;
+}
+
 export interface SceneMetadata {
   version: 1;
   app: { packageName: string; processNames: string[] };
   pids: number[];
   deviceId: string;
   startedAtNs?: number;
+  /**
+   * Present only when the scene was captured by a scenario step. A scene
+   * copied out of a run therefore still says which step produced it, without
+   * needing the run's `steps.json` beside it.
+   */
+  step?: SceneStepRef;
   capture?: {
     startedAtMs: number;
     durationMs: number;
@@ -92,6 +106,19 @@ function isNumberArray(value: unknown): value is number[] {
 }
 
 /**
+ * A step reference is 1-based in `round` and 0-based in `index`: a round 0 or
+ * a negative index describes no position, so the descriptor is untrustworthy.
+ */
+function isStepRef(value: unknown): value is SceneStepRef {
+  return (
+    isRecord(value) &&
+    Number.isSafeInteger(value.round) && (value.round as number) >= 1 &&
+    Number.isSafeInteger(value.index) && (value.index as number) >= 0 &&
+    typeof value.id === 'string' && value.id !== ''
+  );
+}
+
+/**
  * Writes `scene.json` next to the other scene artifacts.
  *
  * The scene root is created when needed. The file is pretty-printed with two
@@ -132,6 +159,9 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
   if (parsed.capture !== undefined && !isCapture(parsed.capture)) {
     return undefined;
   }
+  if (parsed.step !== undefined && !isStepRef(parsed.step)) {
+    return undefined;
+  }
 
   const metadata: SceneMetadata = {
     version: 1,
@@ -163,6 +193,9 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
   }
   if (isFiniteNumber(parsed.startedAtNs) && parsed.startedAtNs > 0) {
     metadata.startedAtNs = parsed.startedAtNs;
+  }
+  if (isStepRef(parsed.step)) {
+    metadata.step = { round: parsed.step.round, index: parsed.step.index, id: parsed.step.id };
   }
   return metadata;
 }
