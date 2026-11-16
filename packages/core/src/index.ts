@@ -52,6 +52,10 @@ export type { ProbeSnapshot, DeviceIdentity, ProbeRunner } from './device/probe'
 
 // Collection
 export { HitraceCollector, HITRACE_DEFAULT_CATEGORIES } from './collectors/hitrace';
+export {
+  HiperfCollector, DEVICE_PERF_PATH, hiperfRecordCommand, parseHiperfSummary,
+} from './collectors/hiperf';
+export type { HiperfCapture, HiperfCollectOptions } from './collectors/hiperf';
 export { HiprofilerCollector } from './collectors/hiprofiler';
 export type { HiprofilerCollectOptions } from './collectors/hiprofiler';
 export { buildHiprofilerConfig, MIN_BUFFER_PAGES } from './collectors/hiprofiler/config';
