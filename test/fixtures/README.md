@@ -39,8 +39,15 @@ Provenance exception: the `which uitest<TAB>/bin/uitest` line in
 separate `uitest dumpLayout` measurement (117 KB of output on that device), so
 the device capability is real but the line is not part of the recording the
 file otherwise reproduces. It is kept deliberately - dropping it would erase a
-real capability - and it is why the emulator capability matrix reports 12
-available capabilities while the ledger's live measurement lists 10.
+real capability - and it is why the emulator capability matrix reports 12 of 22
+available capabilities rather than the 10 of 21 the older ledger entry lists.
+
+Hilog note: neither snapshot records `which hilog`, so a matrix built from
+`probe-emulator.txt` reports `hilog.stream` unavailable with
+`hilog not present on device`. That is the fixture being faithful to its
+recording, not a claim about the device: a live `caps --target 127.0.0.1:5555`
+on 2026-11-17 measured `which hilog` -> `/bin/hilog` and reported 13 of 22
+available. Re-capture the fixture if you need the matrix to match the device.
 
 ## `emu_big.db` — NOT checked in
 

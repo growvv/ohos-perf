@@ -421,12 +421,12 @@ scene.close();
 
 ## Capability matrix
 
-Measured on 2026-11-16 (Mate 60) and 2026-11-14 (emulator):
+Measured on 2026-11-16 (Mate 60) and 2026-11-17 (emulator):
 
 | Device | Available | Notes |
 | --- | --- | --- |
-| HUAWEI Mate 60, OpenHarmony 7.0.0.111, arm64-v8a | **19 / 21** | hardware PMU, hiprofiler (including `memory-plugin`), uitest, `ui.gesture` (driven through `uitest uiInput`) and Ark-runtime trace events present; `coverage` unavailable — no `bjc_cov` on the device and no collector in this package consumes its output; `js.heap` unavailable — no analyzer consumes `js_heap_*` tables, and `hidumper --mem-jsheap` needs a debug-signed or profilerable app |
-| HarmonyOS emulator 6.1.1.125, x86_64 | **10 / 21** | no hiprofiler; `perf.pmu` has no hardware events; `render.fps_live` is a `proxy`. `trace.ark` is available because `hitrace` records the `ark` and `ace` categories. The live probe did not run `uitest`, so `ui.tree` and `ui.gesture` stay out of this numerator — a matrix built from the committed emulator probe snapshot reports 12 / 21 |
+| HUAWEI Mate 60, OpenHarmony 7.0.0.111, arm64-v8a | **20 / 22** | hardware PMU, hiprofiler (including `memory-plugin`), uitest, `hilog`, `ui.gesture` (driven through `uitest uiInput`) and Ark-runtime trace events present; `coverage` unavailable — no `bjc_cov` on the device and no collector in this package consumes its output; `js.heap` unavailable — no analyzer consumes `js_heap_*` tables, and `hidumper --mem-jsheap` needs a debug-signed or profilerable app |
+| HarmonyOS emulator 6.1.1.125, x86_64 | **13 / 22** | no hiprofiler, so `mem.native_hook`, `mem.gpu`, `power.xpower`, `net.io`, `disk.io` and `startup.app_startup` are out; `perf.pmu` has no hardware events; `render.fps_live` is a `proxy`. `trace.ark` is available because `hitrace` records the `ark` and `ace` categories, and `hilog.stream` because the image ships the `hilog` binary. `ui.tree` and `ui.gesture` are measured by a live `caps` run; a matrix built from the committed probe snapshot reports 12 / 22 instead, because that snapshot predates both the `hilog` row and the separate `uitest dumpLayout` measurement |
 
 A missing capability is a value with a `reason` — never a silent zero. See
 [`packages/core/src/device/capability.ts`](packages/core/src/device/capability.ts)
