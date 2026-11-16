@@ -14,6 +14,7 @@ import {
 import { BinderAnalyzer } from '../src/analyze/binder';
 import { FaultTreeAnalyzer } from '../src/analyze/fault-tree';
 import { FrameAnalyzer } from '../src/analyze/frames';
+import { GcAnalyzer } from '../src/analyze/gc';
 import { MemoryAnalyzer } from '../src/analyze/memory';
 import { MemoryMeasureAnalyzer } from '../src/analyze/mem-measure';
 import { StartupAnalyzer } from '../src/analyze/startup';
@@ -330,6 +331,7 @@ describe('defaultAnalyzers', () => {
       'mem-measure',
       'startup',
       'render',
+      'gc',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FaultTreeAnalyzer);
@@ -339,6 +341,7 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[5]).toBeInstanceOf(MemoryMeasureAnalyzer);
     expect(analyzers[6]).toBeInstanceOf(StartupAnalyzer);
     expect(analyzers[7]).toBeInstanceOf(RenderAnalyzer);
+    expect(analyzers[8]).toBeInstanceOf(GcAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

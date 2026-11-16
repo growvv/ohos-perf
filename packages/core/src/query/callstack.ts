@@ -97,6 +97,25 @@ LEFT JOIN args a ON c.argsetid = a.argset
 LEFT JOIN data_dict kd ON a.key = kd.id
 LEFT JOIN data_dict vd ON a.value = vd.id AND a.datatype = 1`;
 
+/**
+ * Adds the `ipids` scope to a `callstack` WHERE clause.
+ *
+ * `callstack.callid` joins `thread.id`, so the scope is a subquery over
+ * `thread.ipid`. Callers have already handled the empty-array case, which must
+ * match nothing rather than everything.
+ */
+function pushIpidScope(
+  where: string[],
+  params: unknown[],
+  ipids: readonly number[] | undefined,
+): void {
+  if (ipids === undefined) return;
+  where.push(
+    `callid IN (SELECT id FROM thread WHERE ipid IN (${ipids.map(() => '?').join(', ')}))`,
+  );
+  params.push(...ipids);
+}
+
 function toCallstack(row: CallstackRow): CallstackEvent {
   const cookie = num(row['cookie']);
   return {
@@ -148,14 +167,25 @@ export class CallstackQuery {
    * quotes or a `--` comment is matched as text. The result is capped by
    * `opts.limit` (default {@link DEFAULT_MATCH_LIMIT}), and `opts.range`
    * restricts `ts` inclusively.
+   *
+   * `opts.ipids` restricts the result to rows emitted by a thread of one of
+   * those processes. **An empty array matches nothing** — an empty app
+   * identity means no process was identified, and widening to device-wide is
+   * the attribution bug `MemoryMeasureAnalyzer` guards against. `undefined`
+   * leaves the query unscoped.
    */
-  matching(pattern: string, opts: { range?: TimeRange; limit?: number } = {}): CallstackEvent[] {
+  matching(
+    pattern: string,
+    opts: { range?: TimeRange; limit?: number; ipids?: readonly number[] } = {},
+  ): CallstackEvent[] {
+    if (opts.ipids !== undefined && opts.ipids.length === 0) return [];
     const where = ['name LIKE ?'];
     const params: unknown[] = [pattern];
     if (opts.range) {
       where.push('ts >= ?', 'ts <= ?');
       params.push(opts.range.startNs, opts.range.endNs);
     }
+    pushIpidScope(where, params, opts.ipids);
     params.push(opts.limit ?? DEFAULT_MATCH_LIMIT);
     return this.db
       .query<CallstackRow>(
@@ -169,15 +199,21 @@ export class CallstackQuery {
    * Rows `matching()` would return without its `opts.limit` cap.
    *
    * Uses the same `WHERE` as `matching()`, so the pair can report a true
-   * match count while the fetched rows stay bounded.
+   * match count while the fetched rows stay bounded. An empty `opts.ipids`
+   * counts zero, for the same reason `matching()` returns nothing.
    */
-  countMatching(pattern: string, opts: { range?: TimeRange } = {}): number {
+  countMatching(
+    pattern: string,
+    opts: { range?: TimeRange; ipids?: readonly number[] } = {},
+  ): number {
+    if (opts.ipids !== undefined && opts.ipids.length === 0) return 0;
     const where = ['name LIKE ?'];
     const params: unknown[] = [pattern];
     if (opts.range) {
       where.push('ts >= ?', 'ts <= ?');
       params.push(opts.range.startNs, opts.range.endNs);
     }
+    pushIpidScope(where, params, opts.ipids);
     const [row] = this.db.query<{ n: number | null }>(
       `SELECT COUNT(*) AS n FROM callstack WHERE ${where.join(' AND ')}`,
       params,

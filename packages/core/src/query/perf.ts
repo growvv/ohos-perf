@@ -159,6 +159,47 @@ export class PerfQuery {
   }
 
   /**
+   * The `thread_id`s of the threads named `threadName` in one of `pids`.
+   *
+   * Exists for the GC analyzer, which attributes samples to `OS_GC_Thread`.
+   * Ordering is by `thread_id` so the result is byte-stable (D5); an empty
+   * `pids` or an absent `perf_thread` table returns `[]`.
+   */
+  threadIdsNamed(pids: readonly number[], threadName: string): number[] {
+    if (pids.length === 0 || !this.hasTable('perf_thread')) return [];
+    return this.db
+      .query<{ thread_id: number | null }>(
+        `SELECT thread_id FROM perf_thread
+WHERE process_id IN (${placeholders(pids.length)}) AND thread_name = ?
+ORDER BY thread_id`,
+        [...pids, threadName],
+      )
+      .map((row) => num(row.thread_id));
+  }
+
+  /**
+   * The summed weight of the samples recorded by `threadIds`.
+   *
+   * `perf_sample.event_count` is the sample's weight — the number of events
+   * the sample stands for — not 1. Summing rows instead of this column makes
+   * every share computed from it wrong by the sampling period. `threadIds`
+   * omitted sums the whole database; an empty array returns 0.
+   */
+  eventCount(threadIds?: readonly number[]): number {
+    if (threadIds !== undefined && threadIds.length === 0) return 0;
+    if (!this.hasTable('perf_sample')) return 0;
+    const where =
+      threadIds === undefined
+        ? ''
+        : ` WHERE thread_id IN (${placeholders(threadIds.length)})`;
+    const [row] = this.db.query<{ n: number | null }>(
+      `SELECT COALESCE(SUM(event_count), 0) AS n FROM perf_sample${where}`,
+      threadIds === undefined ? [] : [...threadIds],
+    );
+    return row == null ? 0 : num(row.n);
+  }
+
+  /**
    * Samples of `threadIds` whose `timestamp_trace` is in `[startNs, endNs]`.
    *
    * Rows are ordered by `timestamp_trace, id`. An empty `threadIds` or an

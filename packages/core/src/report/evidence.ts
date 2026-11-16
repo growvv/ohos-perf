@@ -12,6 +12,8 @@ export type EvidenceKind =
   | 'binder_hotspot'
   | 'thread_redundancy'
   | 'memory_growth'
+  | 'gc_pressure'
+  | 'rs_skip'
   | 'startup';
 
 /**

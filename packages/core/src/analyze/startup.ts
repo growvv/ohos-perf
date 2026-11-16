@@ -1,6 +1,7 @@
 import type { CapabilityId } from '../device/capability';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric, type MetricUnit } from '../report/metric';
+import { resolveAppIpids } from './context';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 const NS_PER_MS = 1_000_000;
@@ -13,26 +14,10 @@ function appProcessName(ctx: AnalyzeContext): string {
 /**
  * The `ipid` of every app pid, in `ctx.app.pids` order, without duplicates.
  *
- * `ctx.app.pids` are **pids** and `app_startup.ipid` is an **ipid**: the two
- * number spaces overlap, so comparing them directly would silently attribute
- * another process's startup rows to the app. `ProcessQuery.byPid` is the only
- * safe translation (it resolves duplicate pids to the lowest row id, D5).
+ * Shared with the other ipid-scoped analyzers; see `resolveAppIpids`.
  */
 function appIpids(ctx: AnalyzeContext): number[] {
-  const ipids: number[] = [];
-  const seen = new Set<number>();
-  for (const pid of ctx.app.pids) {
-    const ipid = ctx.processes.byPid(pid)?.ipid;
-    // `ipid` 0 is a NULL column, not a process: the query layer maps NULL to 0,
-    // and `app_startup` rows with a NULL/0 ipid would otherwise be attributed.
-    if (ipid === undefined || !Number.isInteger(ipid) || ipid <= 0) {
-      continue;
-    }
-    if (seen.has(ipid)) continue;
-    seen.add(ipid);
-    ipids.push(ipid);
-  }
-  return ipids;
+  return resolveAppIpids(ctx.processes, ctx.app.pids);
 }
 
 /** The `startedAtNs` marker when it can address a trace timestamp. */

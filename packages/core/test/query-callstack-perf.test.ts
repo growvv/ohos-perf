@@ -54,6 +54,11 @@ beforeAll(() => {
     (3, 99, 0, 7, 5),
     (4, 4, 1, 77, 5),
     (5, 1, 0, 99, 7)`);
+  // The three callstack rows above use callid 44, 45 and 46. Thread 44 and 46
+  // belong to ipid 17; 45 belongs to ipid 18, so an ipid-17 scope must drop it.
+  cd.exec('CREATE TABLE thread(id INT, itid INT, ipid INT, name TEXT)');
+  cd.exec(`INSERT INTO thread VALUES
+    (44, 44, 17, 'main'), (45, 45, 18, 'w'), (46, 46, 17, 'x')`);
   cd.close();
   callstackDb = openDb(cp);
 
@@ -152,6 +157,18 @@ describe('CallstackQuery', () => {
     expect(q.matching('%', { limit: 0 })).toEqual([]);
   });
 
+  it('scopes a LIKE match to the given ipids and matches nothing for an empty list', () => {
+    const q = new CallstackQuery(callstackDb);
+    expect(q.matching('H:%', { ipids: [17] }).map((row) => row.id)).toEqual([0, 2]);
+    expect(q.countMatching('H:%', { ipids: [17] })).toBe(2);
+    // An empty ipid list means "no process identified", never "every process":
+    // widening here would attribute another process's rows to the app.
+    expect(q.matching('H:%', { ipids: [] })).toEqual([]);
+    expect(q.countMatching('H:%', { ipids: [] })).toBe(0);
+    expect(q.matching('H:%')).toHaveLength(2);
+    expect(q.countMatching('H:%', { ipids: [18] })).toBe(0);
+  });
+
   it('groups args per callstack row and resolves keys/values through data_dict', () => {
     const events = new CallstackQuery(callstackDb).withArgs();
     expect(events.map((e) => e.id)).toEqual([0, 1, 2]);
@@ -178,6 +195,20 @@ describe('CallstackQuery', () => {
 });
 
 describe('PerfQuery', () => {
+  it('sums event_count, which is the sample weight, not the row count', () => {
+    const q = new PerfQuery(perfDb);
+    // thread 100: 5 + 7 + 9 + 2 = 23; thread 101: 3; thread 102: 4.
+    expect(q.eventCount()).toBe(30);
+    expect(q.eventCount([100])).toBe(23);
+    expect(q.eventCount([100, 101])).toBe(26);
+    expect(q.eventCount([])).toBe(0);
+  });
+
+  it('resolves perf thread ids by thread name within the given processes', () => {
+    expect(new PerfQuery(perfDb).threadIdsNamed([500], 'main')).toEqual([100]);
+    expect(new PerfQuery(perfDb).threadIdsNamed([500], 'OS_GC_Thread')).toEqual([]);
+  });
+
   it('returns false/[] when the optional perf tables are absent', () => {
     const empty = withDb('perf-empty.db', () => {});
     try {

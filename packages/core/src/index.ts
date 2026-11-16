@@ -166,6 +166,8 @@ export { MemoryAnalyzer } from './analyze/memory';
 export { MemoryMeasureAnalyzer } from './analyze/mem-measure';
 export { StartupAnalyzer } from './analyze/startup';
 export { RenderAnalyzer } from './analyze/render';
+export { GcAnalyzer, computeGc } from './analyze/gc';
+export type { GcSignals } from './analyze/gc';
 export type {
   BelowThresholdPattern,
   CallchainSample,
@@ -178,7 +180,7 @@ export type {
   ThreadAnalysisSummary,
 } from './analyze/threads-score';
 export { runAnalyzers, defaultAnalyzers } from './analyze/engine';
-export { resolveAppIdentity } from './analyze/context';
+export { resolveAppIdentity, resolveAppIpids } from './analyze/context';
 export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';
 
 // Reports

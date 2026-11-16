@@ -54,9 +54,16 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
 
   'startup.count': 'lower',
   'startup.duration': 'lower',
-
   'render.fps.live': 'higher',
   'render.hitch.count': 'lower',
+
+  'gc.full.count': 'lower',
+  'gc.invocations.count': 'lower',
+  'gc.partial.count': 'lower',
+  'gc.perf.share': 'lower',
+  'gc.rate': 'lower',
+  'gc.shared.count': 'lower',
+  'gc.shared_full.count': 'lower',
 };
 
 export type DeltaStatus =

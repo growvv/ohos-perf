@@ -5,6 +5,7 @@ import { metric, type Metric } from '../report/metric';
 import { BinderAnalyzer } from './binder';
 import { FaultTreeAnalyzer } from './fault-tree';
 import { FrameAnalyzer } from './frames';
+import { GcAnalyzer } from './gc';
 import { MemoryAnalyzer } from './memory';
 import { MemoryMeasureAnalyzer } from './mem-measure';
 import { StartupAnalyzer } from './startup';
@@ -182,5 +183,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new MemoryMeasureAnalyzer(),
     new StartupAnalyzer(),
     new RenderAnalyzer(),
+    new GcAnalyzer(),
   ];
 }

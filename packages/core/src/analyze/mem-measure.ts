@@ -1,6 +1,7 @@
 import type { CapabilityId } from '../device/capability';
 import { evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
+import { resolveAppIpids } from './context';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /** The filter whose values are the process's resident set size. */
@@ -22,23 +23,10 @@ function appProcessName(ctx: AnalyzeContext): string {
 /**
  * The `ipid` of every app pid, in `ctx.app.pids` order, without duplicates.
  *
- * `ctx.app.pids` are **pids** and `process_measure_filter.ipid` is an
- * **ipid**: the two number spaces overlap, so comparing them directly would
- * silently read another process's rows (measured on the Mate 60: sceneboard
- * has `pid=6500` and `ipid=117`). `ProcessQuery.byPid` is the only safe
- * translation. `ipid` 0 is a NULL column, not a process.
+ * Shared with the other ipid-scoped analyzers; see `resolveAppIpids`.
  */
 function appIpids(ctx: AnalyzeContext): number[] {
-  const ipids: number[] = [];
-  const seen = new Set<number>();
-  for (const pid of ctx.app.pids) {
-    const ipid = ctx.processes.byPid(pid)?.ipid;
-    if (ipid === undefined || !Number.isInteger(ipid) || ipid <= 0) continue;
-    if (seen.has(ipid)) continue;
-    seen.add(ipid);
-    ipids.push(ipid);
-  }
-  return ipids;
+  return resolveAppIpids(ctx.processes, ctx.app.pids);
 }
 
 /**
