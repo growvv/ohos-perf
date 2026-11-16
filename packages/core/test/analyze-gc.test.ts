@@ -151,6 +151,70 @@ describe('GcAnalyzer', () => {
     }
   });
 
+  it('reports GC pressure when the GC thread carries more than 15% of app samples', async () => {
+    // HapRay's second clause: `perf_percentage > 0.15` sets `GCStatus` to
+    // "Too many GC" regardless of the invocation count. Two invocations over a
+    // 2 s span are well under the count rule, so only the share can fire it.
+    const p = join(dir, 'share.db');
+    const d = new DatabaseSync(p);
+    d.exec(CALLSTACK_DDL);
+    d.exec('CREATE TABLE thread(id INT, itid INT, ipid INT, name TEXT)');
+    d.exec(`CREATE TABLE process(id INT, ipid INT, pid INT, name TEXT,
+      start_ts INT, switch_count INT, thread_count INT, slice_count INT, mem_count INT)`);
+    d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)`);
+    d.exec(`INSERT INTO thread VALUES (44, 44, 17, 'main')`);
+    d.exec(`INSERT INTO callstack VALUES
+      ${gcRow(0, 1_000_000_000, PARTIAL, 44)},
+      ${gcRow(1, 3_000_000_000, PARTIAL, 44)}`);
+    d.close();
+    const trace = openDb(p);
+
+    const pp = join(dir, 'share-perf.db');
+    const pd = new DatabaseSync(pp);
+    for (const sql of PERF_DDL) pd.exec(sql);
+    pd.exec(`INSERT INTO perf_thread VALUES (0, 500, 4999, 'main'),
+      (1, 501, 4999, 'OS_GC_Thread')`);
+    // GC thread holds 30 of the app's 100 samples: 30%, above the 15% rule.
+    pd.exec(`INSERT INTO perf_sample VALUES
+      (0, NULL, 1000, 501, 30, 1, 1000, 0, 'S'),
+      (1, NULL, 1100, 500, 70, 1, 1100, 0, 'S')`);
+    pd.close();
+    const perf = openDb(pp);
+    try {
+      const r = await new GcAnalyzer().run(ctxFor(trace, { perf }));
+      const item = r.evidence.find((e) => e.kind === 'gc_pressure')!;
+      expect(item.severity).toBe('warn');
+      expect(item.explain).toContain('perf share');
+      expect(metric(r, 'gc.perf.share').value).toBeCloseTo(30, 6);
+    } finally {
+      perf.close();
+      trace.close();
+    }
+  });
+
+  it('omits gc.rate when the callstack span is zero instead of reporting an exact 0', async () => {
+    // One callstack row makes `max(ts) - min(ts)` zero, so the rate has no
+    // denominator. `empty-frame` omits its rate in the same situation.
+    const p = join(dir, 'single-row.db');
+    const d = new DatabaseSync(p);
+    d.exec(CALLSTACK_DDL);
+    d.exec('CREATE TABLE thread(id INT, itid INT, ipid INT, name TEXT)');
+    d.exec(`CREATE TABLE process(id INT, ipid INT, pid INT, name TEXT,
+      start_ts INT, switch_count INT, thread_count INT, slice_count INT, mem_count INT)`);
+    d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)`);
+    d.exec(`INSERT INTO thread VALUES (44, 44, 17, 'main')`);
+    d.exec(`INSERT INTO callstack VALUES ${gcRow(0, 1_000_000_000, PARTIAL, 44)}`);
+    d.close();
+    const single = openDb(p);
+    try {
+      const r = await new GcAnalyzer().run(ctxFor(single));
+      expect(metric(r, 'gc.invocations.count').value).toBe(1);
+      expect(r.metrics.map((m) => m.id)).not.toContain('gc.rate');
+    } finally {
+      single.close();
+    }
+  });
+
   it('degrades the perf share instead of reporting 0% when there are no samples', async () => {
     const r = await new GcAnalyzer().run(ctxFor(db, { perf: emptyPerf }));
     expect(r.metrics.map((m) => m.id)).not.toContain('gc.perf.share');

@@ -282,6 +282,10 @@ export class RsSkipAnalyzer implements Analyzer {
     }
 
     const appIpids = resolveAppIpids(ctx.processes, ctx.app.pids);
+    // The reverse trace needs the app's ipid to recognise the frames RS
+    // consumed. Without it `computeRsSkip` never attempts a trace, so the
+    // trace metrics would be an unmeasured 0 dressed as `exact`.
+    const appKnown = appIpids.length > 0;
     const result = computeRsSkip(ctx.db, { window: ctx.window, appIpids, rsIpids });
 
     if (result.frames.length === 0) {
@@ -316,23 +320,44 @@ export class RsSkipAnalyzer implements Analyzer {
         fidelity: 'exact',
         window: ctx.window,
       }),
-      metric({
-        id: 'rs_skip.trace.accuracy',
-        value: (traced / result.frames.length) * 100,
-        unit: '%',
-        provenance: prov,
-        fidelity: 'exact',
-        window: ctx.window,
-      }),
-      metric({
-        id: 'rs_skip.traced.count',
-        value: traced,
-        unit: 'count',
-        provenance: prov,
-        fidelity: 'exact',
-        window: ctx.window,
-      }),
     ];
+    if (appKnown) {
+      metrics.push(
+        metric({
+          id: 'rs_skip.trace.accuracy',
+          value: (traced / result.frames.length) * 100,
+          unit: '%',
+          provenance: prov,
+          fidelity: 'exact',
+          window: ctx.window,
+        }),
+        metric({
+          id: 'rs_skip.traced.count',
+          value: traced,
+          unit: 'count',
+          provenance: prov,
+          fidelity: 'exact',
+          window: ctx.window,
+        }),
+      );
+    } else {
+      metrics.push(
+        metric({
+          id: 'rs_skip.trace.degraded',
+          value: 0,
+          unit: 'count',
+          fidelity: 'proxy',
+          degraded: {
+            reason:
+              'no app process was identified in this trace, so a skip cannot be ' +
+              'traced back to one of its frames',
+            fallback: 'no reverse trace',
+          },
+          provenance: { collector: 'hitrace', device: ctx.deviceId },
+          window: ctx.window,
+        }),
+      );
+    }
 
     const items = result.frames.map((entry) => {
       const { frame, traced: match } = entry;

@@ -138,6 +138,27 @@ describe('computeVsyncAnomalies', () => {
 });
 
 describe('VsyncAnalyzer', () => {
+  it('rounds the anomaly rate with Python’s half-even round(x, 2)', () => {
+    // 1 mismatch over 160 signals is exactly 0.625%. Python's `round(0.625, 2)`
+    // is 0.62 (half-even on the exact double); `Math.round(x*100)/100` gives
+    // 0.63. HapRay reports 0.62.
+    const frames: Frame[] = [];
+    let id = 0;
+    // 159 vsync groups with both an actual and an expect frame, then one group
+    // with only an actual: 160 signals and exactly one mismatch.
+    for (let i = 0; i < 160; i++) {
+      const ts = 1e9 + i * 16_666_667;
+      frames.push(frame(id++, ts, i + 1, 0));
+      if (i < 159) frames.push(frame(id++, ts, i + 1, 1));
+    }
+    // The single unmet side is the 160th group, which has no expect frame.
+    const analysis = computeVsyncAnomalies(frames);
+    expect(analysis.signals).toBe(160);
+    expect(analysis.mismatches).toBe(1);
+    expect(analysis.periods).toHaveLength(0);
+    expect(analysis.anomalyRate).toBe(0.62);
+  });
+
   it('analyzes only the app’s frames, not every process’s', async () => {
     // The app emits a 4ms burst; sceneboard emits a slow 100ms cadence. If the
     // analyzer mixed them, the intervals would straddle both and no period

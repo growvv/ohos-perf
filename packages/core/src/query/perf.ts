@@ -197,17 +197,28 @@ ORDER BY thread_id`,
    * the sample stands for — not 1. Summing rows instead of this column makes
    * every share computed from it wrong by the sampling period. `threadIds`
    * omitted sums the whole database; an empty array returns 0.
+   *
+   * `range` restricts the sum to samples whose `timestamp_trace` falls inside
+   * it, which is what a windowed share needs: summing the whole table while the
+   * stacks are windowed makes the share describe a different population.
    */
-  eventCount(threadIds?: readonly number[]): number {
+  eventCount(threadIds?: readonly number[], range?: TimeRange): number {
     if (threadIds !== undefined && threadIds.length === 0) return 0;
     if (!this.hasTable('perf_sample')) return 0;
-    const where =
-      threadIds === undefined
-        ? ''
-        : ` WHERE thread_id IN (${placeholders(threadIds.length)})`;
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (threadIds !== undefined) {
+      conditions.push(`thread_id IN (${placeholders(threadIds.length)})`);
+      params.push(...threadIds);
+    }
+    if (range !== undefined) {
+      conditions.push('timestamp_trace >= ? AND timestamp_trace <= ?');
+      params.push(range.startNs, range.endNs);
+    }
+    const where = conditions.length === 0 ? '' : ` WHERE ${conditions.join(' AND ')}`;
     const [row] = this.db.query<{ n: number | null }>(
       `SELECT COALESCE(SUM(event_count), 0) AS n FROM perf_sample${where}`,
-      threadIds === undefined ? [] : [...threadIds],
+      params,
     );
     return row == null ? 0 : num(row.n);
   }
@@ -303,14 +314,15 @@ ORDER BY thread_id, callchain_id`,
    * the sample's weight, not 1 row.
    *
    * Stacks are sorted by `samples` descending then `stack` ascending, so equal
-   * weights never fall back to row order, and sliced to `top`. A chain with no
-   * frames contributes nothing. An empty `threadIds`, a missing
+   * weights never fall back to row order, and sliced to `top` — omit `top` to
+   * get every distinct stack, which is what a count of stacks needs. A chain
+   * with no frames contributes nothing. An empty `threadIds`, a missing
    * `perf_callchain`/`perf_files`, or no samples in range yields `[]`.
    */
   foldedStacks(
     threadIds: readonly number[],
     range: TimeRange,
-    top: number,
+    top?: number,
   ): FoldedStack[] {
     if (threadIds.length === 0 || !this.hasTable('perf_sample')) return [];
     const uniqueThreadIds = [...new Set(threadIds)];
@@ -349,7 +361,7 @@ ORDER BY callchain_id`,
         samples,
       }))
       .sort((a, b) => (a.samples !== b.samples ? b.samples - a.samples : a.stack < b.stack ? -1 : a.stack > b.stack ? 1 : 0))
-      .slice(0, Math.max(0, top));
+      .slice(0, top === undefined ? undefined : Math.max(0, top));
   }
 
   /**

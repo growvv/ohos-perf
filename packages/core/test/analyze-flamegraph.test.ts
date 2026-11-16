@@ -144,6 +144,50 @@ describe('FlamegraphAnalyzer', () => {
     }
   });
 
+  it('scopes the sample totals to the analysis window, like the stacks', async () => {
+    // Samples at 1000..1300. A window of [0, 1150] holds only the first two,
+    // weights 5 and 7; the other process's sample at 1300 is outside it. A
+    // share computed over the whole table would report 12/19 = 63.2%.
+    const db = perfDb('windowed.db', true);
+    try {
+      const r = await new FlamegraphAnalyzer().run({
+        ...ctxWith(db),
+        window: { startNs: 0, endNs: 1150 },
+      });
+      expect(metricOf(r, 'flamegraph.samples.count').value).toBe(12);
+      expect(metricOf(r, 'flamegraph.app.share').value).toBe(100);
+      expect(metricOf(r, 'flamegraph.top.samples').value).toBe(12);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('reports the real stack count, not the number of stacks it kept', async () => {
+    // 25 distinct chains, so the top-20 cut hides five. `stacks.count` is the
+    // count of distinct folded stacks, not the payload's length.
+    const path = join(dir, 'many-stacks.db');
+    const d = new DatabaseSync(path);
+    d.exec(PERF_THREAD_DDL);
+    d.exec(`INSERT INTO perf_thread VALUES (0, 500, 9000, 'main')`);
+    d.exec(PERF_SAMPLE_DDL);
+    d.exec(PERF_CALLCHAIN_DDL);
+    d.exec(PERF_FILES_DDL);
+    for (let i = 0; i < 25; i++) {
+      d.exec(`INSERT INTO perf_files VALUES (${i}, ${1000 + i}, 1, 'Fn${i}()', '/lib/lib.so')`);
+      d.exec(`INSERT INTO perf_callchain VALUES (${i}, ${100 + i}, 0, 0, 0, 0, ${1000 + i}, ${i}, 'raw', 0, 0)`);
+      d.exec(`INSERT INTO perf_sample VALUES (${i}, ${100 + i}, ${1000 + i}, 500, ${25 - i}, 1, ${1000 + i}, 0, 'S')`);
+    }
+    d.close();
+    const many = openDb(path);
+    try {
+      const r = await new FlamegraphAnalyzer().run(ctxWith(many));
+      expect(metricOf(r, 'flamegraph.stacks.count').value).toBe(25);
+      expect(metricOf(r, 'flamegraph.top.symbol').value).toBe('Fn0()');
+    } finally {
+      many.close();
+    }
+  });
+
   it('degrades when the context carries no perf query', async () => {
     const db = perfDb('no-query.db', true);
     try {

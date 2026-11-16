@@ -131,7 +131,10 @@ function componentName(name: string): string {
  * `ipids` must already be resolved. An empty list means "no app to scope to"
  * and matches every process, which is what makes the parity fixture
  * reproducible; a non-empty list restricts to `callstack` rows whose
- * `thread.id` belongs to one of those ipids. Ties for the busiest component
+ * `thread.id` belongs to one of those ipids. **The analyzer never passes an
+ * empty list** — it degrades first, because a device-wide answer labelled as
+ * the app's is worse than no answer. This function keeps the unscoped mode
+ * because the parity golden needs it. Ties for the busiest component
  * resolve to the first one seen (rows are read `ORDER BY ts, id`), matching
  * HapRay's strict `>`.
  */
@@ -219,6 +222,30 @@ export class ComponentReuseAnalyzer implements Analyzer {
     }
 
     const ipids = resolveAppIpids(ctx.processes, ctx.app.pids);
+    // `computeComponentReuse` reads `[]` as "match every process", which is
+    // what keeps the parity fixture reproducible. The analyzer must not pass
+    // that through: an unnamed or absent app would report another process's
+    // builds as this app's, labelled `exact`.
+    if (ipids.length === 0) {
+      return {
+        metrics: [
+          metric({
+            id: 'components.degraded',
+            value: 0,
+            unit: 'count',
+            fidelity: 'proxy',
+            degraded: {
+              reason:
+                'no app process was identified in this trace, so component builds ' +
+                'cannot be attributed',
+              fallback: 'no component measurement',
+            },
+            provenance: { collector: 'hitrace', device: ctx.deviceId },
+          }),
+        ],
+        evidence: [],
+      };
+    }
     const result = computeComponentReuse(ctx.db, { ipids });
     const prov = {
       collector: 'hitrace',

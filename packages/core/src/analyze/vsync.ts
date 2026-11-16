@@ -4,6 +4,7 @@ import type { CapabilityId } from '../device/capability';
 import { evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import type { Frame } from '../query/frames';
+import { round2HalfEven } from './components';
 import { resolveAppIpids } from './context';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
@@ -75,9 +76,16 @@ interface Interval {
   startNs: number;
 }
 
-/** Python's `round(x, 2)` for the values this module produces (half-up here). */
+/**
+ * Python's `round(x, 2)`, which is half-even on the exact double.
+ *
+ * `round2HalfEven` lives in `components.ts` (it was written there for HapRay's
+ * reuse ratio); importing it keeps one implementation of Python's rounding in
+ * the package. `Math.round(x * 100) / 100` would disagree at exact midpoints —
+ * `0.625` becomes `0.63` instead of Python's `0.62`.
+ */
 function round2(value: number): number {
-  return Math.round(value * 100) / 100;
+  return round2HalfEven(value);
 }
 
 /** Groups frames by `vsync`, dropping frames with no `vsync`, sorted by time. */

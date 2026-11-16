@@ -293,6 +293,30 @@ describe('RsSkipAnalyzer', () => {
     db.close();
   });
 
+  it('omits the trace metrics when the app is unknown, instead of an exact 0%', async () => {
+    // The reverse trace needs the app's ipid to find the frames RS consumed.
+    // Without it the trace never runs, so `traced = 0` is not a measurement and
+    // must not be reported as `exact` — the same guard `gc` applies.
+    const db = dbWith('no-app.db', {
+      ...skipFrameFixture({ id: 21, ts: 1e9 + 3.5e6, dur: 16e6, ipid: APP, itid: 44 }),
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        { id: 2, ts: 1e9 + 3e6, name: 'H:AcquireBuffer', callid: 4 },
+      ],
+    });
+    const r = await new RsSkipAnalyzer().run({
+      ...ctxWith(db),
+      app: { packageName: 'com.missing', pids: [], processNames: ['com.missing'] },
+    });
+    expect(metricOf(r, 'rs_skip.frames.count').value).toBe(1);
+    const ids = r.metrics.map((m) => m.id);
+    expect(ids).not.toContain('rs_skip.trace.accuracy');
+    expect(ids).not.toContain('rs_skip.traced.count');
+    expect(metricOf(r, 'rs_skip.trace.degraded').fidelity).toBe('proxy');
+    expect(metricOf(r, 'rs_skip.trace.degraded').degraded?.reason).toContain('no app process');
+    db.close();
+  });
+
   it('emits no_data when the trace has no DisplayNode skip events', async () => {
     const db = dbWith('empty.db', {
       frames: [{ id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 }],

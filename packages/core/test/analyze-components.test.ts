@@ -163,10 +163,20 @@ describe('round2HalfEven', () => {
 });
 
 describe('ComponentReuseAnalyzer', () => {
+  /** The golden fixture plus the process/thread rows that identify the app. */
+  function appDb(name: string): QueryHandle {
+    return syntheticDb(name, (d) => {
+      d.exec(PROCESS_DDL);
+      d.exec(THREAD_DDL);
+      d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)`);
+      d.exec(`INSERT INTO thread VALUES (44, 44, 440, 'com.demo', 0, 0, 17, 1, 0)`);
+    });
+  }
+
   it('reports the max component’s builds, recycled builds and reuse rate', async () => {
-    const db = syntheticDb('analyzer.db');
+    const db = appDb('analyzer.db');
     try {
-      const r = await new ComponentReuseAnalyzer().run(ctxWith(db));
+      const r = await new ComponentReuseAnalyzer().run(ctxWith(db, [4999]));
       expect(metricOf(r, 'components.builds.count').value).toBe(4);
       expect(metricOf(r, 'components.recycled.count').value).toBe(2);
       expect(metricOf(r, 'components.reuse.rate').value).toBe(50);
@@ -177,12 +187,32 @@ describe('ComponentReuseAnalyzer', () => {
     }
   });
 
+  it('degrades instead of counting every process’s builds when the app is unknown', async () => {
+    // `computeComponentReuse` treats an empty scope as "match everything",
+    // which is what makes the parity golden reproducible. The analyzer must not
+    // pass that through: without a resolved app, another process's builds are
+    // not this app's, and labelling them `exact` is the bug.
+    const db = syntheticDb('analyzer-unscoped.db');
+    try {
+      const r = await new ComponentReuseAnalyzer().run(ctxWith(db));
+      expect(r.metrics.map((m) => m.id)).toEqual(['components.degraded']);
+      expect(metricOf(r, 'components.degraded').fidelity).toBe('proxy');
+      expect(metricOf(r, 'components.degraded').degraded?.reason).toContain('no app process');
+    } finally {
+      db.close();
+    }
+  });
+
   it('reports no reuse rate when nothing was built', async () => {
     const db = syntheticDb('analyzer-empty.db', (d) => {
+      d.exec(PROCESS_DDL);
+      d.exec(THREAD_DDL);
+      d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)`);
+      d.exec(`INSERT INTO thread VALUES (44, 44, 440, 'com.demo', 0, 0, 17, 1, 0)`);
       d.exec('DELETE FROM callstack');
     });
     try {
-      const r = await new ComponentReuseAnalyzer().run(ctxWith(db));
+      const r = await new ComponentReuseAnalyzer().run(ctxWith(db, [4999]));
       expect(metricOf(r, 'components.builds.count').value).toBe(0);
       const ids = r.metrics.map((m) => m.id);
       expect(ids).not.toContain('components.reuse.rate');

@@ -20,6 +20,8 @@ import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
  * - `flamegraph.app.share` — that weight over every sample in the database
  *   × 100. On a capture filtered to the app this is 100; on a device-wide one
  *   it is the app's slice of the profile.
+ * - `flamegraph.stacks.count` — the number of distinct folded stacks in the
+ *   window. The `top.*` payload is cut to the heaviest 20; this count is not.
  * - `flamegraph.top.symbol` / `flamegraph.top.samples` — the leaf of the
  *   heaviest folded stack and that stack's weight.
  *
@@ -58,9 +60,14 @@ export class FlamegraphAnalyzer implements Analyzer {
 
     const threads = ctx.perf.threads(ctx.app.pids);
     const threadIds = [...new Set(threads.map((thread) => thread.threadId))].sort((a, b) => a - b);
-    const samples = ctx.perf.eventCount(threadIds);
-    const total = ctx.perf.eventCount();
-    const stacks: FoldedStack[] = ctx.perf.foldedStacks(threadIds, ctx.window, TOP_STACKS);
+    // Both totals are windowed to match the stacks: a share over the whole
+    // database while the stacks cover the window describes two populations.
+    const samples = ctx.perf.eventCount(threadIds, ctx.window);
+    const total = ctx.perf.eventCount(undefined, ctx.window);
+    // The full list, so `stacks.count` counts stacks; the top cut is applied
+    // to the payload below, not to the count.
+    const allStacks: FoldedStack[] = ctx.perf.foldedStacks(threadIds, ctx.window);
+    const stacks = allStacks.slice(0, TOP_STACKS);
 
     const prov = {
       collector: 'hiperf',
@@ -87,7 +94,7 @@ export class FlamegraphAnalyzer implements Analyzer {
       }),
       metric({
         id: 'flamegraph.stacks.count',
-        value: stacks.length,
+        value: allStacks.length,
         unit: 'count',
         provenance: prov,
         fidelity: 'exact',

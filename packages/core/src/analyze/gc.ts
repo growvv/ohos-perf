@@ -4,29 +4,27 @@ import type { CapabilityId } from '../device/capability';
 import type { QueryHandle } from '../db/driver';
 import { evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
-import type { TimeRange } from '../types';
 import { resolveAppIpids } from './context';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /**
  * GC invocation pressure from Ark-runtime trace events.
  *
- * Ported from `hapray/analyze/gc_analyzer.py`. The rule is HapRay's: an app is
- * under GC pressure when it invokes GC more than 10 times **and** more than
- * once per second, or when the `OS_GC_Thread` carries more than 15% of the
- * app's perf samples.
+ * Ported from `hapray/analyze/gc_analyzer.py`. HapRay's rule has two clauses,
+ * and either one raises the verdict: more than 10 invocations **and** more than
+ * once per second, or the `OS_GC_Thread` carrying more than 15% of the app's
+ * perf samples. Both are implemented; the count clause alone would report OK
+ * for an app whose collector thread is burning a third of its CPU.
  *
- * Two deliberate divergences from HapRay, both visible in the output:
+ * One deliberate divergence from HapRay, visible in the output: **a missing
+ * `perf.db` degrades the perf share; it does not suppress the report.** HapRay
+ * returns `None` when the perf database is absent, hiding trace-side counts it
+ * did measure. We emit those counts and a `gc.perf.degraded` proxy naming what
+ * is missing. The count clause still decides the severity in that case, and the
+ * evidence's `explain` says the share was not measured.
  *
- * 1. **The rate's denominator is the whole `callstack` span.** HapRay divides
- *    by `max(ts) - min(ts)` over the entire table, not by the app's own window,
- *    so a 60 s trace where the app ran for 2.6 s yields the same rate for both
- *    implementations. Dividing by the app's span instead makes the rate ~23x
- *    higher and fires the pressure rule when HapRay says OK.
- * 2. **Missing `perf.db` degrades the perf share; it does not suppress the
- *    report.** HapRay returns `None` when the perf database is absent, hiding
- *    trace-side counts it did measure. We emit those counts and a
- *    `gc.perf.degraded` proxy naming what is missing.
+ * The rate's denominator is the whole `callstack` span, as HapRay computes it —
+ * `max(ts) - min(ts)` over the entire table, not the app's own window.
  */
 
 /** The four GC phase events HapRay counts, in drill-down order. */
@@ -39,8 +37,8 @@ const GC_PATTERNS = [
 
 /** HapRay's threshold: more than this many invocations in the span. */
 const MAX_INVOCATIONS = 10;
-/** HapRay's threshold: a GC-thread perf share above this is pressure. */
-const MAX_PERF_SHARE = 0.15;
+/** HapRay's threshold, as a percentage of the app's sample weight. */
+const MAX_PERF_SHARE_PCT = 15;
 /** HapRay's thread name for the GC worker. */
 const GC_THREAD_NAME = 'OS_GC_Thread';
 
@@ -55,7 +53,7 @@ export interface GcSignals {
   spanNs: number;
   /** `invocations` per second over `spanNs`; 0 when the span is empty. */
   rate: number;
-  /** True when the app exceeds both HapRay thresholds. */
+  /** True when the count clause alone fires: `> 10` invocations and `> 1/s`. */
   tooMany: boolean;
 }
 
@@ -64,7 +62,8 @@ export interface GcSignals {
  *
  * `ipids` must already be resolved (see `resolveAppIpids`); an empty list
  * matches nothing, so the result is all zeros rather than device-wide counts.
- * `db` is read through `CallstackQuery` so the `LIKE` predicates stay bound.
+ * The raw SQL is here because no query class owns a `LIKE` count scoped by
+ * `thread.ipid`; the `LIKE` predicates stay bound as parameters.
  */
 export function computeGc(
   db: QueryHandle,
@@ -218,14 +217,6 @@ export class GcAnalyzer implements Analyzer {
         window: ctx.window,
       }),
       metric({
-        id: 'gc.rate',
-        value: signals.rate,
-        unit: 'none',
-        provenance: { collector: 'hitrace', table: 'callstack', device: ctx.deviceId },
-        fidelity: 'exact',
-        window: ctx.window,
-      }),
-      metric({
         id: 'gc.shared.count',
         value: signals.shared,
         unit: 'count',
@@ -243,24 +234,43 @@ export class GcAnalyzer implements Analyzer {
       }),
     ];
 
-    const perfMetric = this.perfShare(ctx);
-    metrics.push(perfMetric);
+    // A single-row `callstack` gives a zero span, so the rate has no
+    // denominator. Omitting it is the same choice `empty-frame` makes for its
+    // rate; a 0 there would read as a measurement.
+    if (signals.spanNs > 0) {
+      metrics.push(
+        metric({
+          id: 'gc.rate',
+          value: signals.rate,
+          unit: 'none',
+          provenance: { collector: 'hitrace', table: 'callstack', device: ctx.deviceId },
+          fidelity: 'exact',
+          window: ctx.window,
+        }),
+      );
+    }
+
+    const perf = this.perfShare(ctx);
+    metrics.push(perf.metric);
 
     return {
       metrics,
-      evidence: [this.pressureEvidence(ctx, signals)],
+      evidence: [this.pressureEvidence(ctx, signals, perf.sharePct)],
     };
   }
 
   /**
-   * `gc.perf.share`, or `gc.perf.degraded` when no samples back it.
+   * `gc.perf.share` plus the number behind it, or a degraded proxy and
+   * `undefined`.
    *
    * HapRay computes the share over the app's own perf threads, so the
-   * denominator is the app's sample weight — not the device's.
+   * denominator is the app's sample weight — not the device's. The caller
+   * needs the number, not just the metric: HapRay's second pressure clause is
+   * `perf_percentage > 0.15`.
    */
-  private perfShare(ctx: AnalyzeContext): Metric {
-    const degraded = (reason: string): Metric =>
-      metric({
+  private perfShare(ctx: AnalyzeContext): { metric: Metric; sharePct: number | undefined } {
+    const degraded = (reason: string): { metric: Metric; sharePct: undefined } => ({
+      metric: metric({
         id: 'gc.perf.degraded',
         value: 0,
         unit: '%',
@@ -268,7 +278,9 @@ export class GcAnalyzer implements Analyzer {
         degraded: { reason, fallback: 'no GC perf share' },
         provenance: { collector: 'hiperf', table: 'perf_sample', device: ctx.deviceId },
         window: ctx.window,
-      });
+      }),
+      sharePct: undefined,
+    });
 
     const perf = ctx.perf;
     if (perf === undefined) {
@@ -283,7 +295,9 @@ export class GcAnalyzer implements Analyzer {
     if (appThreadIds.length === 0) {
       return degraded('perf_thread has no threads for the app, so the GC perf share cannot be measured');
     }
-    const total = perf.eventCount(appThreadIds);
+    // Windowed like the flamegraph's totals, so the two analyzers describe the
+    // same sample population when a caller narrows the window.
+    const total = perf.eventCount(appThreadIds, ctx.window);
     if (total === 0) {
       return degraded('the app perf threads carry no samples, so the GC perf share cannot be measured');
     }
@@ -293,26 +307,56 @@ export class GcAnalyzer implements Analyzer {
         `perf_thread has no ${GC_THREAD_NAME} for the app, so the GC perf share cannot be measured`,
       );
     }
-    const gcSamples = perf.eventCount(gcThreadIds);
+    const gcSamples = perf.eventCount(gcThreadIds, ctx.window);
     const value = share(gcSamples, total);
-    return metric({
-      id: 'gc.perf.share',
-      value,
-      unit: '%',
-      fidelity: 'exact',
-      provenance: { collector: 'hiperf', table: 'perf_sample', rows: gcSamples, device: ctx.deviceId },
-      window: ctx.window,
-    });
+    return {
+      metric: metric({
+        id: 'gc.perf.share',
+        value,
+        unit: '%',
+        fidelity: 'exact',
+        provenance: { collector: 'hiperf', table: 'perf_sample', rows: gcSamples, device: ctx.deviceId },
+        window: ctx.window,
+      }),
+      sharePct: value,
+    };
   }
 
-  private pressureEvidence(ctx: AnalyzeContext, signals: GcSignals) {
+  private pressureEvidence(
+    ctx: AnalyzeContext,
+    signals: GcSignals,
+    sharePct: number | undefined,
+  ) {
+    // HapRay raises the verdict on either clause: the count rule, or a GC
+    // thread carrying more than 15% of the app's samples.
+    const shareFires = sharePct !== undefined && sharePct > MAX_PERF_SHARE_PCT;
+    const pressure = signals.tooMany || shareFires;
+
     const thresholds = `> ${MAX_INVOCATIONS} invocations and > 1/s (${fmtRate(signals.rate)}/s over ${fmtSpan(signals.spanNs)}s)`;
-    const explain = signals.tooMany
-      ? `the app invoked GC ${signals.invocations} times, ${thresholds}: GC pressure is high`
-      : `the app invoked GC ${signals.invocations} times over ${fmtSpan(signals.spanNs)}s (${fmtRate(signals.rate)}/s), below ${thresholds}`;
+    const countClause = `the app invoked GC ${signals.invocations} times, ${thresholds}`;
+    const shareClause = sharePct === undefined
+      ? 'the GC perf share was not measured'
+      : `the GC thread's perf share is ${fmtRate(sharePct)}% of the app's samples ` +
+        `(threshold > ${MAX_PERF_SHARE_PCT}%)`;
+
+    let explain: string;
+    if (pressure) {
+      const fired = shareFires && !signals.tooMany
+        ? `the GC thread's perf share is ${fmtRate(sharePct!)}% of the app's samples, above ${MAX_PERF_SHARE_PCT}%`
+        : shareFires
+          ? `${countClause} and ${shareClause}`
+          : countClause;
+      explain = `${fired}: GC pressure is high`;
+    } else if (signals.tooMany) {
+      explain = `${countClause}: GC pressure is high`;
+    } else {
+      explain = `the app invoked GC ${signals.invocations} times over ${fmtSpan(signals.spanNs)}s ` +
+        `(${fmtRate(signals.rate)}/s), below ${thresholds}; ${shareClause}`;
+    }
+
     return evidence({
       kind: 'gc_pressure',
-      severity: signals.tooMany ? 'warn' : 'info',
+      severity: pressure ? 'warn' : 'info',
       subject: { process: appProcessName(ctx) },
       window: ctx.window,
       signals: {
@@ -323,15 +367,20 @@ export class GcAnalyzer implements Analyzer {
         invocations: signals.invocations,
         rate: Number(fmtRate(signals.rate)),
         spanSeconds: Number(fmtSpan(signals.spanNs)),
-        perfShareThreshold: MAX_PERF_SHARE,
+        // Percent, matching the `gc.perf.share` metric's unit, and only when
+        // the share was actually measured.
+        ...(sharePct === undefined ? {} : { perfSharePct: sharePct }),
+        perfShareThresholdPct: MAX_PERF_SHARE_PCT,
       },
       explain,
+      // No `estRows`: `callstack.matching` has no ipid argument, so it returns
+      // every process's matches, not the app's count. Promising the app's count
+      // would understate the rows a caller actually gets back.
       drillDown: GC_PATTERNS.map(({ pattern, key }) => ({
         label: `${key} GC phases`,
         tool: 'callstack.matching',
         args: { pattern, startNs: ctx.window.startNs, endNs: ctx.window.endNs },
         returns: 'CallstackEvent[]',
-        estRows: signals[key],
       })),
     });
   }
