@@ -14,6 +14,7 @@ import {
 import { BinderAnalyzer } from '../src/analyze/binder';
 import { EmptyFrameAnalyzer } from '../src/analyze/empty-frame';
 import { FaultTreeAnalyzer } from '../src/analyze/fault-tree';
+import { FrameLoadAnalyzer } from '../src/analyze/frame-load';
 import { FrameAnalyzer } from '../src/analyze/frames';
 import { ComponentReuseAnalyzer } from '../src/analyze/components';
 import { FlamegraphAnalyzer } from '../src/analyze/flamegraph';
@@ -349,6 +350,7 @@ describe('defaultAnalyzers', () => {
     const analyzers = defaultAnalyzers();
     expect(analyzers.map((a) => a.id)).toEqual([
       'frames',
+      'frame-load',
       'fault-tree',
       'binder',
       'threads',
@@ -364,19 +366,20 @@ describe('defaultAnalyzers', () => {
       'components',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
-    expect(analyzers[1]).toBeInstanceOf(FaultTreeAnalyzer);
-    expect(analyzers[2]).toBeInstanceOf(BinderAnalyzer);
-    expect(analyzers[3]).toBeInstanceOf(ThreadAnalyzer);
-    expect(analyzers[4]).toBeInstanceOf(MemoryAnalyzer);
-    expect(analyzers[5]).toBeInstanceOf(MemoryMeasureAnalyzer);
-    expect(analyzers[6]).toBeInstanceOf(StartupAnalyzer);
-    expect(analyzers[7]).toBeInstanceOf(RenderAnalyzer);
-    expect(analyzers[8]).toBeInstanceOf(GcAnalyzer);
-    expect(analyzers[9]).toBeInstanceOf(VsyncAnalyzer);
-    expect(analyzers[10]).toBeInstanceOf(EmptyFrameAnalyzer);
-    expect(analyzers[11]).toBeInstanceOf(RsSkipAnalyzer);
-    expect(analyzers[12]).toBeInstanceOf(FlamegraphAnalyzer);
-    expect(analyzers[13]).toBeInstanceOf(ComponentReuseAnalyzer);
+    expect(analyzers[1]).toBeInstanceOf(FrameLoadAnalyzer);
+    expect(analyzers[2]).toBeInstanceOf(FaultTreeAnalyzer);
+    expect(analyzers[3]).toBeInstanceOf(BinderAnalyzer);
+    expect(analyzers[4]).toBeInstanceOf(ThreadAnalyzer);
+    expect(analyzers[5]).toBeInstanceOf(MemoryAnalyzer);
+    expect(analyzers[6]).toBeInstanceOf(MemoryMeasureAnalyzer);
+    expect(analyzers[7]).toBeInstanceOf(StartupAnalyzer);
+    expect(analyzers[8]).toBeInstanceOf(RenderAnalyzer);
+    expect(analyzers[9]).toBeInstanceOf(GcAnalyzer);
+    expect(analyzers[10]).toBeInstanceOf(VsyncAnalyzer);
+    expect(analyzers[11]).toBeInstanceOf(EmptyFrameAnalyzer);
+    expect(analyzers[12]).toBeInstanceOf(RsSkipAnalyzer);
+    expect(analyzers[13]).toBeInstanceOf(FlamegraphAnalyzer);
+    expect(analyzers[14]).toBeInstanceOf(ComponentReuseAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

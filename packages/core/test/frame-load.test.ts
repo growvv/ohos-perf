@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type QueryHandle } from '../src/db/driver';
 import { PerfQuery } from '../src/query/perf';
-import { FrameLoadIndex } from '../src/analyze/frame-load';
+import { FrameQuery } from '../src/query/frames';
+import { ProcessQuery } from '../src/query/process';
+import { FrameLoadAnalyzer, FrameLoadIndex } from '../src/analyze/frame-load';
+import type { AnalyzeContext } from '../src/analyze/types';
+import { CapabilityMatrix } from '../src/device/capability';
 
 let dir: string;
 
@@ -142,5 +146,140 @@ describe('FrameLoadIndex', () => {
     } finally {
       db2.close();
     }
+  });
+});
+
+/** A trace with the two app processes and the given frame_slice rows. */
+function traceWith(name: string, framesSql: string): QueryHandle {
+  const path = join(dir, name);
+  const d = new DatabaseSync(path);
+  d.exec(FRAME_DDL);
+  d.exec(PROCESS_DDL);
+  d.exec(THREAD_DDL);
+  d.exec(`INSERT INTO process VALUES
+    (0, 17, 4999, 'com.demo', 0, 0, 1, 1, 0),
+    (1, 18, 6000, 'render_service', 0, 0, 1, 1, 0)`);
+  d.exec(`INSERT INTO thread VALUES (44, 44, 440, 'main', 0, 0, 17, 1, 0)`);
+  d.exec(`INSERT INTO frame_slice VALUES ${framesSql}`);
+  d.close();
+  return openDb(path);
+}
+
+/** Only a sample at 900us-equivalent ns, outside the frames at 1000-2000. */
+function mismatchPerf(name: string): QueryHandle {
+  const path = join(dir, name);
+  const d = new DatabaseSync(path);
+  d.exec(PERF_THREAD_DDL);
+  d.exec(`INSERT INTO perf_thread VALUES (0, 100, 4999, 'main')`);
+  d.exec(PERF_SAMPLE_DDL);
+  d.exec(`INSERT INTO perf_sample VALUES (0, 10, 900000, 100, 50, 1, 900000, 0, 'S')`);
+  d.close();
+  return openDb(path);
+}
+
+function ctxFor(db: QueryHandle, perf?: QueryHandle): AnalyzeContext {
+  const available = {
+    available: true, collector: 'x', fidelity: 'exact' as const,
+    probe: { command: 'p', stdout: '', stderr: '', code: 0 },
+  };
+  const caps = new CapabilityMatrix([
+    { id: 'trace.frames', ...available },
+    { id: 'perf.samples', ...available },
+  ]);
+  return {
+    frames: new FrameQuery(db), processes: new ProcessQuery(db),
+    ...(perf === undefined ? {} : { perf: new PerfQuery(perf) }),
+    app: { packageName: 'com.demo', pids: [4999], processNames: ['com.demo'] },
+    window: { startNs: 0, endNs: 10_000 },
+    caps, deviceId: 'emu',
+  };
+}
+
+describe('FrameLoadAnalyzer', () => {
+  it('reports per-frame load for rendered app actual frames only', async () => {
+    const trace = traceWith('analyzer.db', `
+      (0, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0),
+      (1, 1500, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 1, 0, 0),
+      (2, 4000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 2, 0, 0),
+      (3, 5000, 0, 17, 44, 0, 1000, '', 0, 1, 'expect', 0, 0, 0),
+      (4, 6000, 0, 18, 45, 0, 1000, '', 0, 0, 'actual', 0, 0, 0)`);
+    const perf = perfDb('analyzer-perf.db');
+    try {
+      const r = await new FrameLoadAnalyzer().run(ctxFor(trace, perf));
+      const get = (id: string) => r.metrics.find((m) => m.id === id)!;
+      expect(get('frame.load.frames.count').value).toBe(2);
+      expect(get('frame.load.total').value).toBe(36);
+      expect(get('frame.load.avg').value).toBe(18);
+      expect(get('frame.load.min').value).toBe(15);
+      expect(get('frame.load.max').value).toBe(21);
+      expect(get('frame.load.top10.share').value).toBeCloseTo(100, 5);
+      // The index reads the analysis window, so it includes the 99-weight
+      // sample at 3000 that no frame window covers: 5+7+3+11+99.
+      expect(get('frame.load.span.weight').value).toBe(125);
+      expect(get('frame.load.total').provenance).toEqual({
+        collector: 'hiperf', table: 'perf_sample', rows: 5, device: 'emu',
+      });
+      for (const m of r.metrics) expect(Number.isFinite(m.value as number)).toBe(true);
+    } finally { trace.close(); perf.close(); }
+  });
+
+  it('emits top-frame evidence ranked by load with attribution signals', async () => {
+    const trace = traceWith('analyzer-rank.db', `
+      (0, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0),
+      (1, 1500, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 1, 0, 0)`);
+    const perf = perfDb('analyzer-rank-perf.db');
+    try {
+      const r = await new FrameLoadAnalyzer().run(ctxFor(trace, perf));
+      const ev = r.evidence.filter((e) => e.kind === 'frame_load');
+      expect(ev).toHaveLength(2);
+      // Evidence is chronological; rank carries the load ordering.
+      expect(ev.map((e) => [e.window.startNs, e.signals.rank])).toEqual([
+        [1000, 2], [1500, 1],
+      ]);
+      expect(ev[1].signals.load).toBe(21);
+      expect(ev[1].signals.topThread).toBe('worker');
+      expect(ev[1].signals.topThreadLoad).toBe(14);
+      expect(ev[1].drillDown.map((d) => d.tool)).toEqual([
+        'frames.get', 'frame.load.threads', 'frame.load.symbols', 'callstack.range',
+      ]);
+      expect(ev[1].explain).toContain('sampled events');
+    } finally { trace.close(); perf.close(); }
+  });
+
+  it('degrades without perf samples instead of reporting zeros', async () => {
+    const trace = traceWith('analyzer-noperf.db', `
+      (0, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0)`);
+    try {
+      const r = await new FrameLoadAnalyzer().run(ctxFor(trace));
+      expect(r.metrics.map((m) => m.id)).toEqual(['frame.load.degraded']);
+      expect(r.metrics[0].fidelity).toBe('proxy');
+      expect(String(r.metrics[0].degraded?.reason)).toMatch(/perf samples|--hiperf/);
+      expect(r.evidence[0].kind).toBe('no_data');
+    } finally { trace.close(); }
+  });
+
+  it('degrades when samples exist but none fall inside a frame window', async () => {
+    const trace = traceWith('analyzer-mismatch.db', `
+      (0, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0)`);
+    const perf = mismatchPerf('analyzer-mismatch-perf.db');
+    try {
+      const c = ctxFor(trace, perf);
+      c.window = { startNs: 0, endNs: 2_000_000 };
+      const r = await new FrameLoadAnalyzer().run(c);
+      expect(r.metrics.map((m) => m.id)).toEqual(['frame.load.degraded']);
+      expect(String(r.metrics[0].degraded?.reason)).toMatch(/time base|inside any frame/);
+    } finally { trace.close(); perf.close(); }
+  });
+
+  it('is deterministic across runs', async () => {
+    const trace = traceWith('analyzer-det.db', `
+      (0, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0),
+      (1, 1500, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 1, 0, 0)`);
+    const perf = perfDb('analyzer-det-perf.db');
+    try {
+      const a = await new FrameLoadAnalyzer().run(ctxFor(trace, perf));
+      const b = await new FrameLoadAnalyzer().run(ctxFor(trace, perf));
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    } finally { trace.close(); perf.close(); }
   });
 });

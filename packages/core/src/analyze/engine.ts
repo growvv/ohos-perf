@@ -7,6 +7,7 @@ import { ComponentReuseAnalyzer } from './components';
 import { EmptyFrameAnalyzer } from './empty-frame';
 import { FaultTreeAnalyzer } from './fault-tree';
 import { FlamegraphAnalyzer } from './flamegraph';
+import { FrameLoadAnalyzer } from './frame-load';
 import { FrameAnalyzer } from './frames';
 import { GcAnalyzer } from './gc';
 import { MemoryAnalyzer } from './memory';
@@ -222,6 +223,7 @@ export async function runAnalyzers(
 export function defaultAnalyzers(): Analyzer[] {
   return [
     new FrameAnalyzer(),
+    new FrameLoadAnalyzer(),
     new FaultTreeAnalyzer(),
     new BinderAnalyzer(),
     new ThreadAnalyzer(),

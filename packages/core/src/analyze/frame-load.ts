@@ -1,6 +1,11 @@
+import type { CapabilityId } from '../device/capability';
 import type { TimeRange } from '../types';
 import type { Frame } from '../query/frames';
 import type { PerfQuery } from '../query/perf';
+import { evidence, type Evidence } from '../report/evidence';
+import { metric, type Metric } from '../report/metric';
+import { resolveAppIpids } from './context';
+import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /** One app thread's share of a frame's sampled-event load. */
 export interface FrameLoadThread {
@@ -135,7 +140,16 @@ export class FrameLoadIndex {
 
   /** Summed sampled-event weight of every app thread inside the frame window. */
   load(frame: Pick<Frame, 'ts' | 'dur'>): number {
-    return this.threadLoads(frame).reduce((sum, row) => sum + row.samples, 0);
+    const start = frame.ts;
+    const end = frame.ts + Math.max(0, frame.dur);
+    let total = 0;
+    for (const thread of this.threads) {
+      if (thread.points.length === 0) continue;
+      const from = lowerBound(thread.timestamps, start);
+      const to = upperBound(thread.timestamps, end);
+      for (let i = from; i < to; i++) total += thread.points[i].count;
+    }
+    return total;
   }
 
   /**
@@ -160,5 +174,321 @@ export class FrameLoadIndex {
     }
     rows.sort((a, b) => b.samples - a.samples || a.threadId - b.threadId);
     return rows;
+  }
+}
+
+/** The no-samples reason shared with the empty-frame analyzer. */
+const NO_SAMPLES =
+  'no perf samples: the scene was captured without --hiperf, or the app was ' +
+  'not debuggable so perf recorded nothing';
+
+/** The proxy + explanation a caller gets when load cannot be measured. */
+function degradedResult(
+  ctx: AnalyzeContext,
+  reason: string,
+  totalFrames: number,
+): AnalyzeResult {
+  const process = ctx.app.processNames.find((name) => name !== '') ?? ctx.app.packageName;
+  return {
+    metrics: [
+      metric({
+        id: 'frame.load.degraded',
+        value: 0,
+        unit: 'count',
+        fidelity: 'proxy',
+        degraded: { reason, fallback: 'no frame load' },
+        provenance: { collector: 'hiperf', device: ctx.deviceId },
+        window: ctx.window,
+      }),
+    ],
+    evidence: [
+      evidence({
+        kind: 'no_data',
+        severity: 'info',
+        subject: { process },
+        window: ctx.window,
+        signals: {},
+        explain: reason,
+        drillDown: [
+          {
+            label: 'All frames in window',
+            tool: 'frames.all',
+            args: { window: ctx.window },
+            returns: 'Frame[]',
+            estRows: totalFrames,
+          },
+        ],
+        key: 'frame-load:no-data',
+      }),
+    ],
+  };
+}
+
+/** Plain lexicographic order; locale-independent so output is byte-stable. */
+function byMetricId(a: Metric, b: Metric): number {
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** Sort order for evidence: `(kind, window.startNs, id)`. */
+function byEvidenceOrder(a: Evidence, b: Evidence): number {
+  if (a.kind < b.kind) return -1;
+  if (a.kind > b.kind) return 1;
+  if (a.window.startNs < b.window.startNs) return -1;
+  if (a.window.startNs > b.window.startNs) return 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Per-frame sampled-event load for the app's rendered actual frames.
+ *
+ * ## What a load is
+ *
+ * The summed `perf_sample.event_count` of every app-process thread whose
+ * `timestamp_trace` falls inside the frame's own inclusive
+ * `[ts, ts + dur]`. `event_count` is sample weight; it is not an instruction
+ * count, CPU time or power.
+ *
+ * Frames from several app processes can overlap in time (ui and render in one
+ * vsync period), so a sample contributes to each frame that contains it.
+ * `frame.load.total` is therefore the sum of per-frame loads and can exceed
+ * `frame.load.span.weight`, the unique weight read for the whole span.
+ *
+ * Only **rendered** app actual frames (`type = 0`, `flag !== 2`) feed the
+ * summary and the top list: expect frames are predictions, and empty frames
+ * are measured by the empty-frame analyzer.
+ *
+ * ## Degraded cases
+ *
+ * No app process, no perf samples, no app threads, or samples that exist but
+ * never land inside a frame window all yield one `frame.load.degraded` proxy
+ * with a reason. The last case matters most: it usually means the frame and
+ * perf tables use different timestamp bases, and exact zeros would read as a
+ * workload-free app.
+ */
+export class FrameLoadAnalyzer implements Analyzer {
+  readonly id = 'frame-load';
+  readonly requires: CapabilityId[] = ['trace.frames', 'perf.samples'];
+
+  async run(ctx: AnalyzeContext): Promise<AnalyzeResult> {
+    const all = ctx.frames.all(ctx.window);
+    const ipids = resolveAppIpids(ctx.processes, ctx.app.pids);
+    if (ipids.length === 0) {
+      return degradedResult(
+        ctx,
+        'no app process was identified in this trace, so frame load cannot be attributed',
+        all.length,
+      );
+    }
+
+    const appFrames = all.filter((frame) => frame.type === 0 && ipids.includes(frame.ipid));
+    const rendered = appFrames.filter((frame) => frame.flag !== 2);
+
+    if (ctx.perf === undefined || !ctx.perf.hasSamples()) {
+      return degradedResult(ctx, NO_SAMPLES, all.length);
+    }
+    if (rendered.length === 0) {
+      return {
+        metrics: [],
+        evidence: [
+          evidence({
+            kind: 'no_data',
+            severity: 'info',
+            subject: {
+              process:
+                ctx.app.processNames.find((name) => name !== '') ?? ctx.app.packageName,
+            },
+            window: ctx.window,
+            signals: { appFrames: appFrames.length },
+            explain:
+              appFrames.length === 0
+                ? 'the app rendered no actual frames in this window, so there is no frame load to report'
+                : 'every app actual frame in this window was empty (flag 2), so there is no rendered-frame load to report',
+            drillDown: [
+              {
+                label: 'All frames in window',
+                tool: 'frames.all',
+                args: { window: ctx.window },
+                returns: 'Frame[]',
+                estRows: all.length,
+              },
+            ],
+            key: 'frame-load:no-frames',
+          }),
+        ],
+      };
+    }
+
+    const minTs = rendered[0].ts;
+    const last = rendered[rendered.length - 1];
+    const maxEnd = last.ts + Math.max(0, last.dur);
+    const index = FrameLoadIndex.build({
+      perf: ctx.perf,
+      pids: ctx.app.pids,
+      range: {
+        startNs: Math.min(ctx.window.startNs, minTs),
+        endNs: Math.max(ctx.window.endNs, maxEnd),
+      },
+    });
+    if (index === undefined) {
+      return degradedResult(
+        ctx,
+        'no perf threads or samples were found for the app processes in this window',
+        all.length,
+      );
+    }
+
+    const loads = rendered.map((frame) => ({ frame, load: index.load(frame) }));
+    const total = loads.reduce((sum, item) => sum + item.load, 0);
+    if (total === 0 && index.spanWeight > 0) {
+      return degradedResult(
+        ctx,
+        'perf samples exist but none fall inside any app frame window; frame and ' +
+          'perf timestamps may use different time bases',
+        all.length,
+      );
+    }
+
+    const prov = {
+      collector: 'hiperf',
+      table: 'perf_sample',
+      rows: index.sampleRows,
+      device: ctx.deviceId,
+    };
+    const values = loads.map((item) => item.load);
+    const max = values.reduce((a, b) => (b > a ? b : a), 0);
+    const min = values.reduce((a, b) => (b < a ? b : a), values[0] ?? 0);
+    const ranked = [...loads].sort(
+      (a, b) =>
+        b.load - a.load ||
+        a.frame.ts - b.frame.ts ||
+        a.frame.id - b.frame.id,
+    );
+    const top = ranked.slice(0, 10);
+    const topSum = top.reduce((sum, item) => sum + item.load, 0);
+    const metrics: Metric[] = [
+      metric({
+        id: 'frame.load.avg',
+        value: total / rendered.length,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'frame.load.frames.count',
+        value: rendered.length,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'frame.load.max',
+        value: max,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'frame.load.min',
+        value: min,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'frame.load.span.weight',
+        value: index.spanWeight,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'frame.load.top10.share',
+        value: total > 0 ? (topSum / total) * 100 : 0,
+        unit: '%',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'frame.load.total',
+        value: total,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+    ];
+
+    // Lowest process.id wins for a duplicate ipid, matching the other
+    // analyzers. Unresolved ipids fall back to `ipid:<n>` rather than borrowing
+    // the app's name.
+    const processNames = new Map<number, string>();
+    for (const process of ctx.processes.all()) {
+      if (!processNames.has(process.ipid)) processNames.set(process.ipid, process.name);
+    }
+    const originNs = all[0]?.ts ?? minTs;
+    const rankOf = new Map<number, number>();
+    top.forEach((item, i) => rankOf.set(item.frame.id, i + 1));
+
+    const evidenceItems: Evidence[] = top.map((item) => {
+      const { frame, load } = item;
+      const name = processNames.get(frame.ipid) ?? '';
+      const process = name === '' ? `ipid:${frame.ipid}` : name;
+      const share = total > 0 ? (load / total) * 100 : 0;
+      const offsetMs = (frame.ts - originNs) / 1e6;
+      const durMs = frame.dur / 1e6;
+      const topThread = index.threadLoads(frame)[0];
+      return evidence({
+        kind: 'frame_load',
+        severity: 'info',
+        subject: { process, frameNo: frame.frameNo },
+        window: { startNs: frame.ts, endNs: frame.ts + frame.dur },
+        signals: {
+          rank: rankOf.get(frame.id) ?? 0,
+          load,
+          share,
+          durMs,
+          offsetMs,
+          vsync: frame.vsync,
+          flag: frame.flag,
+          topThread: topThread?.threadName ?? 'unknown',
+          topThreadLoad: topThread?.samples ?? 0,
+        },
+        explain:
+          `${process} frame at ${offsetMs.toFixed(1)}ms cost ${load} sampled events ` +
+          `(${share.toFixed(1)}% of frame load, dur ${durMs.toFixed(1)}ms, flag ${frame.flag})`,
+        drillDown: [
+          { label: 'Frame detail', tool: 'frames.get', args: { id: frame.id }, returns: 'Frame' },
+          {
+            label: 'Load by thread',
+            tool: 'frame.load.threads',
+            args: { startNs: frame.ts, endNs: frame.ts + frame.dur },
+            returns: 'FrameLoadThread[]',
+            estRows: index.threadCount,
+          },
+          {
+            label: 'Load by symbol',
+            tool: 'frame.load.symbols',
+            args: { startNs: frame.ts, endNs: frame.ts + frame.dur },
+            returns: 'PerfLeafAttribution[]',
+          },
+          {
+            label: 'Callstack for frame',
+            tool: 'callstack.range',
+            args: { startNs: frame.ts, endNs: frame.ts + frame.dur },
+            returns: 'CallstackEvent[]',
+          },
+        ],
+      });
+    });
+
+    metrics.sort(byMetricId);
+    evidenceItems.sort(byEvidenceOrder);
+    return { metrics, evidence: evidenceItems };
   }
 }

@@ -95,6 +95,7 @@ export const SECTION_TITLES: Readonly<Record<string, string>> = {
   'empty-frame': 'Empty frames',
   'fault-tree': 'Fault tree',
   flamegraph: 'Flamegraph',
+  'frame-load': 'Frame load',
   frames: 'Frames',
   gc: 'GC pressure',
   'mem-measure': 'Memory measurement',

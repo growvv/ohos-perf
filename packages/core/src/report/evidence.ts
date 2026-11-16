@@ -4,6 +4,7 @@ import type { TimeRange } from '../types';
 export type EvidenceKind =
   | 'no_data'
   | 'jank'
+  | 'frame_load'
   | 'empty_frame'
   | 'vsync_anomaly'
   | 'fps_baseline'

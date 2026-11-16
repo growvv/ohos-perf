@@ -150,6 +150,7 @@ export type {
   FoldedStack,
   PerfCallchain,
   PerfFunction,
+  PerfLeafAttribution,
   PerfSampleRow,
   PerfThread,
 } from './query/perf';
@@ -167,6 +168,8 @@ export type { StartupRecord } from './query/startup';
 
 // Analysis
 export { FrameAnalyzer } from './analyze/frames';
+export { FrameLoadAnalyzer, FrameLoadIndex } from './analyze/frame-load';
+export type { FrameLoadIndexInput, FrameLoadThread } from './analyze/frame-load';
 export { FaultTreeAnalyzer, computeFaultTree } from './analyze/fault-tree';
 export type { FaultTreeSignals } from './analyze/fault-tree';
 export { BinderAnalyzer, computeBinderAnalysis } from './analyze/binder';
