@@ -1,8 +1,12 @@
 {
   "name": "ohos-perf-workspace",
   "private": true,
-  "workspaces": ["packages/*"],
-  "engines": { "node": "^22.13.0 || >=23.4.0" },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": "^22.13.0 || >=23.4.0"
+  },
   "scripts": {
     "build": "npm run build -w @ohos-perf/core",
     "test": "npm run build -w @ohos-perf/core && npm run build -w @ohos-perf/cli && npm run test:unit && npm run test:device",
@@ -14,5 +18,6 @@
     "vitest": "^2.1.0",
     "tsup": "^8.3.0",
     "@types/node": "^24.0.0"
-  }
+  },
+  "version": "0.6.2"
 }

@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.6.2 — 2026-11-17
+
+### Fixes
+
+- **`native_memory` evidence aborted the whole analysis on a real capture.**
+  `pointEvidence` passed no `key`, so every row at one point hashed to the same
+  id — same window, usually same process, thread and pid. Two live rows on one
+  thread, or a capture whose peak falls at the last event (peakTs === endTs),
+  failed `analyze`, `report` and `compare` with `DUPLICATE_EVIDENCE_ID`. The
+  spec's `native-memory:<point>:<callchainId>:<pid>:<tid>` key is now passed.
+- **The peak's unreleased set was replayed past the peak.** `unreleasedAt(ts)`
+  stopped on the timestamp alone, so a free sharing the peak's instant was
+  already applied and `mem.native.unreleased.peak` reported the post-free
+  state — often zero. The replay now stops at the peak event's `(ts, id)`
+  position, and `peakId` travels on the result.
+- **The statistic fallback fabricated a zero for the wrong app.** The presence
+  check was table-wide: with `native_hook` empty and statistic rows only for
+  another pid, the analyzer reported "0 bytes across 0 callchains" as a proxy
+  measurement. The check is app-scoped now, so that scene degrades with a
+  reason.
+- **`native-memory` never ran on a nativehook-only scene.** The offline
+  capability rule required the memory plugin's `process_measure` tables, so the
+  capture `collect --hiprofiler --plugins nativehook` produces — the
+  analyzer's own primary input — was reported as `native-memory.degraded` with
+  the data in the database. Either table family (`process_measure*` or
+  `native_hook*`) now satisfies `mem.native_hook`.
+- **A real capture could abort the query layer.** `frames()` and `dataDict()`
+  bound one `IN (?, …)` per id list and exceeded SQLite's 32 766-variable
+  limit; id lists are chunked at 500 now, as upstream does.
+- **A partial trace threw `no such table: process`** from `events()` and
+  `statistics()`, breaking the documented "returns `[]` when a table is
+  absent" contract. Both accessors guard the join.
+- **A duplicated `process.ipid` multiplied every event.** A merged trace with
+  two `process` rows for one ipid returned each `native_hook` row twice,
+  doubling alloc/free bytes and the peak. Both joins now select `DISTINCT`.
+- **A NULL `event_type` counted as an allocation.** `event_type ?? 0` inflated
+  the running total with bytes whose direction is unknown; `null` now reaches
+  the pairing layer as `other`.
+- **A zero-size free was counted as unpaired**, inflating
+  `mem.native.free.unpaired.count` with a free that consumed nothing.
+- **APP classification covered only `bundle/`.** Upstream's `APP_ABC` rule
+  covers the whole `/proc/<pid>/data/storage/` sandbox, so a cache db or a
+  hap's own `.so` was reported as `SYS_SDK`. Those paths are `APP` now.
+- **The site's statistics disagreed with its own text** — the analyzers stat
+  read 14 while the page said sixteen, and the Chinese test count read 1076
+  against the English 1126.
+
 ## 0.6.1 — 2026-11-17
 
 ### Fixes
