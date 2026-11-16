@@ -93,7 +93,7 @@ const VALUE_EXPORTS = [
   'compareResults', 'computeBinderAnalysis', 'computeFaultTree', 'computeThreadAnalysis',
   'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ftracePlugin',
   'gpuPlugin', 'ingestScene', 'lookupQuery',
-  'memoryPlugin',
+  'memoryPlugin', 'MemMeasureQuery',
   'METRIC_DIRECTIONS', 'metric', 'nativehookPlugin', 'openDb', 'parseHiperfSummary', 'queryDefinitions',
   'readSceneMetadata',
   'resolveAppIdentity', 'resolveQueryLimit',

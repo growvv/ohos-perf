@@ -120,6 +120,8 @@ export { InstantQuery, SchedQuery } from './query/sched';
 export type { SchedSlice, WakeupEvent } from './query/sched';
 export { ThreadStateQuery } from './query/thread-state';
 export type { ThreadState } from './query/thread-state';
+export { MemMeasureQuery } from './query/mem-measure';
+export type { ProcessMeasure, ProcessMeasureFilter } from './query/mem-measure';
 export { CallstackQuery } from './query/callstack';
 export type { CallstackEvent, CallstackEventWithArgs } from './query/callstack';
 export { PerfQuery } from './query/perf';
