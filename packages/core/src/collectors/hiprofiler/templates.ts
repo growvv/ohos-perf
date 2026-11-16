@@ -110,6 +110,40 @@ export function xpowerPlugin(): HiprofilerPlugin {
   return { pluginName: 'xpower-plugin', configData: '' };
 }
 
+export interface MemoryPluginOptions {
+  /**
+   * `statistics_interval` in milliseconds. The measured value that produced
+   * `process_measure` on the Mate 60 was 500; every field here was verified on
+   * the device. An empty `config_data` yields only `stat` rows.
+   */
+  readonly statisticsIntervalMs?: number;
+}
+
+/**
+ * Process memory measures (`process_measure`, `process_measure_filter`).
+ *
+ * Consumed by the `mem-measure` analyzer, which reads the converted trace
+ * database. `report_process_tree` and `report_sysmem` are what make the
+ * per-process rows appear; without them the plugin captures `stat` only.
+ */
+export function memoryPlugin(opts: MemoryPluginOptions = {}): HiprofilerPlugin {
+  const interval = opts.statisticsIntervalMs ?? 500;
+  if (!Number.isSafeInteger(interval) || interval <= 0) {
+    throw new OhosPerfError(
+      `invalid memory statistics interval ${String(interval)}`,
+      { code: 'HIPROFILER_BAD_SAMPLE_INTERVAL' },
+    );
+  }
+  return {
+    pluginName: 'memory-plugin',
+    configData: [
+      `statistics_interval: ${interval}`,
+      'report_process_tree: true',
+      'report_sysmem: true',
+    ].join('\n'),
+  };
+}
+
 /** The plugins that need no per-capture arguments. */
 export const PLANE_A_PLUGINS: readonly HiprofilerPlugin[] = [
   ftracePlugin(),

@@ -17,6 +17,7 @@ import { MIN_BUFFER_PAGES, type HiprofilerPlugin } from '../collectors/hiprofile
 import {
   ftracePlugin,
   gpuPlugin,
+  memoryPlugin,
   nativehookPlugin,
   xpowerPlugin,
 } from '../collectors/hiprofiler/templates';
@@ -55,7 +56,7 @@ export interface ConnectOptions {
 }
 
 /** The hiprofiler plugins a caller can request by name. */
-export const HIPROFILER_PLUGIN_NAMES = ['ftrace', 'gpu', 'xpower', 'nativehook'] as const;
+export const HIPROFILER_PLUGIN_NAMES = ['ftrace', 'gpu', 'xpower', 'nativehook', 'memory'] as const;
 export type HiprofilerPluginName = (typeof HIPROFILER_PLUGIN_NAMES)[number];
 
 export interface HiprofilerCollectRequest {
@@ -344,16 +345,27 @@ export class Device {
         let nativehookPids: number[] | undefined;
         if (wantsHiprofiler) {
           hiprofilerPlugins = [];
+          // Explicit per-name dispatch: a name added to the enum without a
+          // branch here is a compile error rather than a silent nativehook
+          // capture (the previous else-fallback would have done exactly that).
           for (const name of pluginNames) {
-            if (name === 'ftrace') {
-              hiprofilerPlugins.push(ftracePlugin());
-            } else if (name === 'gpu') {
-              hiprofilerPlugins.push(gpuPlugin());
-            } else if (name === 'xpower') {
-              hiprofilerPlugins.push(xpowerPlugin());
-            } else {
-              nativehookPids = await resolvePids(hdc, this.id, opts.app);
-              hiprofilerPlugins.push(nativehookPlugin({ pids: nativehookPids }));
+            switch (name) {
+              case 'ftrace':
+                hiprofilerPlugins.push(ftracePlugin());
+                break;
+              case 'gpu':
+                hiprofilerPlugins.push(gpuPlugin());
+                break;
+              case 'xpower':
+                hiprofilerPlugins.push(xpowerPlugin());
+                break;
+              case 'memory':
+                hiprofilerPlugins.push(memoryPlugin());
+                break;
+              case 'nativehook':
+                nativehookPids = await resolvePids(hdc, this.id, opts.app);
+                hiprofilerPlugins.push(nativehookPlugin({ pids: nativehookPids }));
+                break;
             }
           }
         }

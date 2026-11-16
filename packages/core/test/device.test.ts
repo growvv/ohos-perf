@@ -839,6 +839,31 @@ describe('CollectSession.ingest through hiprofiler', () => {
     }
   });
 
+  it('routes a memory capture through memory-plugin with its three measured fields', async () => {
+    // Measured: an empty config_data yields only `stat`; these fields are the
+    // difference between a successful-but-empty capture and process_measure.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-hipro-memory-'));
+    try {
+      const h = hiprofilerHarness();
+      const session = await h.device().collect({
+        app: 'com.example',
+        durationMs: 1000,
+        sceneRoot: root,
+        hiprofiler: { plugins: ['memory'] },
+      });
+      (await session.ingest()).close();
+
+      expect(h.calls[0].opts.plugins).toHaveLength(1);
+      const plugin = h.calls[0].opts.plugins[0];
+      expect(plugin.pluginName).toBe('memory-plugin');
+      expect(plugin.configData).toContain('statistics_interval: 500');
+      expect(plugin.configData).toContain('report_process_tree: true');
+      expect(plugin.configData).toContain('report_sysmem: true');
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('defaults to the ftrace plugin when no plugin list is given', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ohosperf-hipro-default-'));
     try {

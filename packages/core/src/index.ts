@@ -65,10 +65,13 @@ export {
   FTRACE_CATEGORIES,
   ftracePlugin,
   gpuPlugin,
+  memoryPlugin,
   nativehookPlugin,
   xpowerPlugin,
 } from './collectors/hiprofiler/templates';
-export type { FtraceOptions, NativehookOptions } from './collectors/hiprofiler/templates';
+export type {
+  FtraceOptions, MemoryPluginOptions, NativehookOptions,
+} from './collectors/hiprofiler/templates';
 export {
   ProcfsCollector,
   parseProcfsStatus,

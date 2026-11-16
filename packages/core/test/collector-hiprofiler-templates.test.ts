@@ -3,6 +3,7 @@ import {
   PLANE_A_PLUGINS,
   ftracePlugin,
   gpuPlugin,
+  memoryPlugin,
   nativehookPlugin,
   xpowerPlugin,
 } from '../src/collectors/hiprofiler/templates';
@@ -49,6 +50,21 @@ describe('hiprofiler plugin templates', () => {
 
   it('rejects a non-integer pid', () => {
     expect(codeOf(() => nativehookPlugin({ pids: [1.5] }))).toBe('HIPROFILER_BAD_PIDS');
+  });
+
+  it('configures memory-plugin so it emits per-process rows', () => {
+    // Measured: an empty config_data yields only `stat`; these three fields are
+    // what makes `process_measure` appear.
+    const plugin = memoryPlugin({ statisticsIntervalMs: 500 });
+    expect(plugin.pluginName).toBe('memory-plugin');
+    expect(plugin.configData).toContain('statistics_interval: 500');
+    expect(plugin.configData).toContain('report_process_tree: true');
+    expect(plugin.configData).toContain('report_sysmem: true');
+  });
+
+  it('rejects a non-positive memory statistics interval before any device call', () => {
+    expect(codeOf(() => memoryPlugin({ statisticsIntervalMs: 0 })))
+      .toBe('HIPROFILER_BAD_SAMPLE_INTERVAL');
   });
 
   it('defines gpu and xpower as empty config blocks', () => {
