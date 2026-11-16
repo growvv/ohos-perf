@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ohos-perf — HarmonyOS performance, made measurable</title>
-<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace, procfs, hiprofiler, hiperf, hidumper and uitest capture, trace ingest, typed queries, seven analyzers (frames, fault tree, binder, threads, memory, startup, render), baseline comparison and a CLI. Deterministic, evidence-backed, zero native dependencies.">
+<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace, procfs, hiprofiler, hiperf, hidumper and uitest capture, trace ingest, typed queries, eight analyzers (frames, fault tree, binder, threads, memory, memory measure, startup, render), baseline comparison and a CLI. Deterministic, evidence-backed, zero native dependencies.">
 <meta property="og:title" content="ohos-perf — HarmonyOS performance, made measurable">
-<meta property="og:description" content="Capability probing, five concurrent collectors, trace ingest, typed queries over 88 tables, seven analyzers with HapRay-verified parity, baseline comparison, and a CLI in one TypeScript toolkit.">
+<meta property="og:description" content="Capability probing, five concurrent collectors, trace ingest, typed queries over 88 tables, eight analyzers with HapRay-verified parity, baseline comparison, and a CLI in one TypeScript toolkit.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://growvv.github.io/ohos-perf/">
 <meta property="og:image" content="https://growvv.github.io/ohos-perf/assets/poster.jpg">
@@ -59,14 +59,14 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P4 are complete — seven analyzers, five collectors, drill-down queries, baseline comparison, 818 tests" data-zh="P1–P4 已完成 — 七个分析器、五个采集器、下钻查询、基线对比、818 个测试">P1–P4 are complete — seven analyzers, five collectors, drill-down queries, baseline comparison, 818 tests</span>
+        <span data-en="P1–P5 are complete — eight analyzers, five collectors, drill-down queries, baseline comparison, 842 tests" data-zh="P1–P5 已完成 — 八个分析器、五个采集器、下钻查询、基线对比、842 个测试">P1–P5 are complete — eight analyzers, five collectors, drill-down queries, baseline comparison, 842 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
         <span class="grad" data-en="made measurable." data-zh="从此可度量。">made measurable.</span>
       </h1>
-      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, seven analyzers — frames, fault tree, binder, threads, memory, startup, render — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测，hitrace、hiprofiler、procfs、hiperf、hidumper 与 uitest 采集，trace 入库，类型化查询，七个分析器（帧、故障树、binder、线程、内存、启动、渲染），基线对比与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
-        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, seven analyzers — frames, fault tree, binder, threads, memory, startup, render — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies.
+      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, eight analyzers — frames, fault tree, binder, threads, memory, memory measure, startup, render — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测，hitrace、hiprofiler、procfs、hiperf、hidumper 与 uitest 采集，trace 入库，类型化查询，八个分析器（帧、故障树、binder、线程、内存、内存测量、启动、渲染），基线对比与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
+        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, eight analyzers — frames, fault tree, binder, threads, memory, memory measure, startup, render — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies.
       </p>
       <div class="cta-row reveal">
         <a class="btn btn-primary" href="#quickstart">
@@ -94,7 +94,7 @@
         </div>
         <pre class="term"><code><span class="p">$</span> <span class="c">ohos-perf analyze ./scene --json</span>
 {
-  <span class="k">"metrics"</span>: [   <span class="cm">/* 38 metrics from seven analyzers */</span>
+  <span class="k">"metrics"</span>: [   <span class="cm">/* 38 metrics from the analyzers this trace supports */</span>
     { <span class="k">"id"</span>: <span class="s">"frame.jank.rate"</span>, <span class="k">"value"</span>: <span class="n">37.267080745341616</span>,
       <span class="k">"unit"</span>: <span class="s">"%"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
@@ -121,8 +121,8 @@
   <div class="wrap">
     <div class="stats reveal">
       <div class="stat"><b>20</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
-      <div class="stat"><b>7</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>818</b><span data-en="tests pass with a device and spike fixtures; 787 + 31 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 787 通过 + 31 跳过">tests pass with a device and spike fixtures; 787 + 31 skipped on a clean checkout</span></div>
+      <div class="stat"><b>8</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
+      <div class="stat"><b>842</b><span data-en="tests pass with a device and spike fixtures; 809 + 33 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 809 通过 + 33 跳过">tests pass with a device and spike fixtures; 809 + 33 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -179,9 +179,9 @@
 <section class="section" id="analyzers">
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Analyzers" data-zh="分析器">Analyzers</p>
-    <h2 class="reveal" data-en="Seven analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，七个分析器。每个结论都带证据。">Seven analyzers over one trace. Every finding carries its evidence.</h2>
-    <p class="section-lead reveal" data-en="`analyze` runs all seven against a scene and merges the result into one report: 38 metrics and 75 evidence items on the recorded emulator trace, byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部七个分析器，合并成一份报告：在录制的模拟器 trace 上产出 38 个指标与 75 条证据，跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
-      <code>analyze</code> runs all seven against a scene and merges the result into one report: 38 metrics and 75 evidence items on the recorded emulator trace, byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
+    <h2 class="reveal" data-en="Eight analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，八个分析器。每个结论都带证据。">Eight analyzers over one trace. Every finding carries its evidence.</h2>
+    <p class="section-lead reveal" data-en="`analyze` runs all eight against a scene and merges the result into one report: 38 metrics and 75 evidence items on the recorded emulator trace — the eighth, memory measure, needs a hiprofiler memory capture and is gated off there — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部八个分析器，合并成一份报告：在录制的模拟器 trace 上产出 38 个指标与 75 条证据（第八个分析器“内存测量”需要 hiprofiler memory 采集，在该 trace 上被能力矩阵关闭），跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
+      <code>analyze</code> runs all eight against a scene and merges the result into one report: 38 metrics and 75 evidence items on the recorded emulator trace — the eighth, memory measure, needs a hiprofiler memory capture and is gated off there — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
     </p>
 
     <div class="table-wrap reveal">
@@ -248,8 +248,8 @@
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Capability matrix" data-zh="能力矩阵">Capability matrix</p>
     <h2 class="reveal" data-en="Know what the device can actually give you." data-zh="先知道这台设备到底能给你什么。">Know what the device can actually give you.</h2>
-    <p class="section-lead reveal" data-en="Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports all 20 capabilities; the HarmonyOS emulator reports 9. Both numbers are first-class results — the missing ones carry a reason." data-zh="实测，而非假设。一台 OpenHarmony 7.0.0.111 的 Mate 60 报告 20 项全部可用；鸿蒙模拟器报告 9 项。两个数字都是一等结果——缺失项会带上原因。">
-      Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports all 20 capabilities; the HarmonyOS emulator reports 9. Both numbers are first-class results — the missing ones carry a reason.
+    <p class="section-lead reveal" data-en="Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 19 of 20 capabilities; the HarmonyOS emulator reports 9. Both numbers are first-class results — the missing ones carry a reason." data-zh="实测，而非假设。一台 OpenHarmony 7.0.0.111 的 Mate 60 报告 20 项中 19 项可用；鸿蒙模拟器报告 9 项。两个数字都是一等结果——缺失项会带上原因。">
+      Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 19 of 20 capabilities; the HarmonyOS emulator reports 9. Both numbers are first-class results — the missing ones carry a reason.
     </p>
 
     <div class="table-wrap reveal">
@@ -277,7 +277,7 @@
           <tr><td><code>power.xpower</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>net.io</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>disk.io</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
-          <tr><td><code>js.heap</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>js.heap</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center no">—</td><td><span class="fid na">unavailable</span></td></tr>
           <tr><td><code>coverage</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>startup.app_startup</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>render.fps_live</code></td><td><span class="badge hidumper">hidumper</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span> <span class="fid proxy">proxy on emu</span></td></tr>
@@ -287,8 +287,8 @@
         </tbody>
       </table>
     </div>
-    <p class="footnote reveal" data-en="Measured on 2026-11-14. † uitest was verified separately with `uitest dumpLayout` (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Emulator rows marked — report a reason through the matrix; they are never silently zero." data-zh="实测于 2026-11-14。† uitest 曾用 `uitest dumpLayout` 单独验证（输出 117 KB）；但生成矩阵所用的探针快照没有该命令，因此模拟器一列保持保守。标 — 的行会在矩阵里给出原因，而不是静默给 0。">
-      Measured on 2026-11-14. † uitest was verified separately with <code>uitest dumpLayout</code> (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Emulator rows marked — report a reason through the matrix; they are never silently zero.
+    <p class="footnote reveal" data-en="Measured on 2026-11-16 (Mate 60) and 2026-11-14 (emulator). † uitest was verified separately with `uitest dumpLayout` (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Rows marked — report a reason through the matrix; they are never silently zero. `js.heap` is unavailable on every device because no analyzer in this package consumes the `js_heap_*` tables." data-zh="实测于 2026-11-16（Mate 60）与 2026-11-14（模拟器）。† uitest 曾用 `uitest dumpLayout` 单独验证（输出 117 KB）；但生成矩阵所用的探针快照没有该命令，因此模拟器一列保持保守。标 — 的行会在矩阵里给出原因，而不是静默给 0。`js.heap` 在任何设备上都不可用，因为本包没有分析器消费 `js_heap_*` 表。">
+      Measured on 2026-11-16 (Mate 60) and 2026-11-14 (emulator). † uitest was verified separately with <code>uitest dumpLayout</code> (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Rows marked — report a reason through the matrix; they are never silently zero. <code>js.heap</code> is unavailable on every device because no analyzer in this package consumes the <code>js_heap_*</code> tables.
     </p>
   </div>
 </section>
@@ -302,10 +302,10 @@
     <ol class="layers">
       <li class="reveal"><span class="ln">L7</span><div><h3>API / CLI / Skill</h3><p data-en="Programmatic API, `ohos-perf` CLI, named `query` drill-downs, `compare` against a baseline, and the shipped `ohos-perf` agent skill." data-zh="编程 API、`ohos-perf` CLI、命名 `query` 下钻、`compare` 基线对比，以及随仓库发布的 `ohos-perf` agent skill。">Programmatic API, <code>ohos-perf</code> CLI, named <code>query</code> drill-downs, <code>compare</code> against a baseline, and the shipped <code>ohos-perf</code> agent skill.</p></div></li>
       <li class="reveal"><span class="ln">L6</span><div><h3>Report</h3><p data-en="Metric and Evidence models, provenance, fidelity, stable ordering." data-zh="Metric 与 Evidence 模型、provenance、保真度、稳定排序。">Metric and Evidence models, provenance, fidelity, stable ordering.</p></div></li>
-      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Seven analyzers: frames, fault tree, binder, threads, memory, startup and render, with a capability matrix that degrades what the trace cannot support." data-zh="七个分析器：帧、故障树、binder、线程、内存、启动与渲染；能力矩阵会让 trace 不支持的分析器显式降级。">Seven analyzers: frames, fault tree, binder, threads, memory, startup and render, with a capability matrix that degrades what the trace cannot support.</p></div></li>
-      <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Ten typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup and perf." data-zh="十个类型化查询类，覆盖 trace_streamer 产出的 88 张表：帧、进程、线程、调度、瞬时事件、调用栈、binder、线程状态、启动与 perf。">Ten typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup and perf.</p></div></li>
+      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Eight analyzers: frames, fault tree, binder, threads, memory, memory measure, startup and render, with a capability matrix that degrades what the trace cannot support." data-zh="八个分析器：帧、故障树、binder、线程、内存、内存测量、启动与渲染；能力矩阵会让 trace 不支持的分析器显式降级。">Eight analyzers: frames, fault tree, binder, threads, memory, memory measure, startup and render, with a capability matrix that degrades what the trace cannot support.</p></div></li>
+      <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Eleven typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup, perf and memory measurements." data-zh="十一个类型化查询类，覆盖 trace_streamer 产出的 88 张表：帧、进程、线程、调度、瞬时事件、调用栈、binder、线程状态、启动、perf 与内存测量。">Eleven typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup, perf and memory measurements.</p></div></li>
       <li class="reveal"><span class="ln">L3</span><div><h3>Ingest</h3><p data-en="trace_streamer wrapper, scene artifact layout, read-only database handle." data-zh="trace_streamer 封装、场景产物布局、只读数据库句柄。">trace_streamer wrapper, scene artifact layout, read-only database handle.</p></div></li>
-      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace, procfs, hiprofiler, hiperf, hidumper and uitest. One `collect` runs every requested collector concurrently: `--procfs` memory samples, `--hiprofiler --plugins gpu,xpower,nativehook`, `--hiperf` perf.data for a debuggable app (converted into a second perf.db), `--hidumper` render counters, `--uitest` the UI tree. A failure restores the previous scene's artifacts rather than presenting a partial scene as complete." data-zh="hitrace、procfs、hiprofiler、hiperf、hidumper 与 uitest。一次 `collect` 并发运行所有被请求的采集器：`--procfs` 内存采样、`--hiprofiler --plugins gpu,xpower,nativehook`、`--hiperf` 为可调试应用录制 perf.data（转换成第二个 perf.db）、`--hidumper` 渲染计数、`--uitest` UI 树。任一失败都会还原上一份场景产物，而不是把残缺场景当作完整场景。">hitrace, procfs, hiprofiler, hiperf, hidumper and uitest. One <code>collect</code> runs every requested collector concurrently: <code>--procfs</code> memory samples, <code>--hiprofiler --plugins gpu,xpower,nativehook</code>, <code>--hiperf</code> perf.data for a debuggable app (converted into a second perf.db), <code>--hidumper</code> render counters, <code>--uitest</code> the UI tree. A failure restores the previous scene's artifacts rather than presenting a partial scene as complete.</p></div></li>
+      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace, procfs, hiprofiler, hiperf, hidumper and uitest. One `collect` runs every requested collector concurrently: `--procfs` memory samples, `--hiprofiler --plugins gpu,xpower,nativehook,memory` (the memory plugin records per-process `process_measure` without needing an app), `--hiperf` perf.data for a debuggable app (converted into a second perf.db), `--hidumper` render counters, `--uitest` the UI tree. `--app` is required only by the modes that resolve a pid. A failure restores the previous scene's artifacts rather than presenting a partial scene as complete." data-zh="hitrace、procfs、hiprofiler、hiperf、hidumper 与 uitest。一次 `collect` 并发运行所有被请求的采集器：`--procfs` 内存采样、`--hiprofiler --plugins gpu,xpower,nativehook,memory`（memory 插件记录每进程 `process_measure`，无需应用）、`--hiperf` 为可调试应用录制 perf.data（转换成第二个 perf.db）、`--hidumper` 渲染计数、`--uitest` UI 树。只有需要解析 pid 的采集器才必填 `--app`。任一失败都会还原上一份场景产物，而不是把残缺场景当作完整场景。">hitrace, procfs, hiprofiler, hiperf, hidumper and uitest. One <code>collect</code> runs every requested collector concurrently: <code>--procfs</code> memory samples, <code>--hiprofiler --plugins gpu,xpower,nativehook,memory</code> (the memory plugin records per-process <code>process_measure</code> without needing an app), <code>--hiperf</code> perf.data for a debuggable app (converted into a second perf.db), <code>--hidumper</code> render counters, <code>--uitest</code> the UI tree. <code>--app</code> is required only by the modes that resolve a pid. A failure restores the previous scene's artifacts rather than presenting a partial scene as complete.</p></div></li>
       <li class="reveal"><span class="ln">L1</span><div><h3>Device</h3><p data-en="Device model, one-shot capability probe, cached CapabilityMatrix." data-zh="设备模型、一次性能力探测、缓存的 CapabilityMatrix。">Device model, one-shot capability probe, cached CapabilityMatrix.</p></div></li>
       <li class="reveal"><span class="ln">L0</span><div><h3>Transport</h3><p data-en="hdc client: shell, port forwarding, file send/recv, target listing, connect." data-zh="hdc 客户端：shell、端口转发、文件收发、目标枚举与连接。">hdc client: shell, port forwarding, file send/recv, target listing, connect.</p></div></li>
     </ol>
@@ -352,7 +352,7 @@
 });
 <span class="k">const</span> scene = <span class="k">await</span> session.ingest();
 
-<span class="cm">// All seven analyzers, one context. A capability the trace cannot</span>
+<span class="cm">// All analyzers, one context. A capability the trace cannot</span>
 <span class="cm">// support degrades to a named proxy — never a silent zero.</span>
 <span class="k">const</span> processes = <span class="k">new</span> ProcessQuery(scene.traceDb);
 <span class="k">const</span> result = <span class="k">await</span> runAnalyzers(defaultAnalyzers(), {
@@ -386,7 +386,7 @@ ohos-perf caps --json
 ohos-perf collect --app com.example.app --duration 10 \
   --out ./scene --procfs --hiperf --hidumper --uitest
 
-<span class="cm"># Run all seven analyzers over it.</span>
+<span class="cm"># Run all analyzers over it.</span>
 ohos-perf analyze ./scene --json
 
 <span class="cm"># Compare against a baseline capture.</span>
@@ -429,10 +429,10 @@ ohos-perf compare ./before ./after --json
 <span class="p">$</span> node packages/cli/dist/index.js collect --app com.example.app \
     --duration 10 --out ./scene --procfs --cold-start EntryAbility
 
-<span class="cm"># Run all seven analyzers over the scene, offline.</span>
+<span class="cm"># Run all analyzers over the scene, offline.</span>
 <span class="p">$</span> node packages/cli/dist/index.js analyze ./scene --json
 
-<span class="cm"># Run the suite: 787 pass + 31 skip on a clean checkout; 818 with a device.</span>
+<span class="cm"># Run the suite: 809 pass + 33 skip on a clean checkout; 842 with a device.</span>
 <span class="p">$</span> npm test</code></pre>
       </div>
     </div>

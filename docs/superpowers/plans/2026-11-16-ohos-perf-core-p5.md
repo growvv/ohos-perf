@@ -37,6 +37,19 @@ These were verified on the attached device while writing this plan; the tasks de
 | HapRay has no `memory-plugin` config either | its `HIPROFILER_CMD_TEMPLATE` carries a `{memory_config}` placeholder that is never filled |
 | `hdc file recv -cwd / <rel-device> <abs-local>` needs the local path relative to the server cwd | passing a Windows absolute path produced `path:D:/Application/Git/E:/…`; the project's `Hdc.recv` already handles this |
 
+### Execution corrections (2026-11-16, during Tasks 3, 5 and 6)
+
+Three facts above were re-verified on the same device during execution and did
+not hold. The implementation and its tests follow the corrections below; the
+rows above are left as written so this plan records what was believed when it
+was written.
+
+| Plan said | Measured during execution | Consequence |
+| --- | --- | --- |
+| `process_measure` timestamps are microseconds (table row above, Review Focus 2) | They are **nanoseconds** on the trace clock: `trace_range.start_ts` equals `MIN(process_measure.ts)` exactly (`818480085343198`), and a 3 s capture spans `1.996e9` | No ×1000 conversion; `MemMeasureQuery` copies `ts`/`dur` unchanged, and `collect-memory.device.test.ts` pins every row inside `trace_range` |
+| `mem.*` filter values are bytes | They are **KiB**: `mem.rss` 664420 against live `VmRSS: 664584 kB`, and `mem.vm.size` 106161468 against `VmSize: 106161468 kB` exactly | `MemoryMeasureAnalyzer` multiplies by 1024 once and reports `mem.measure.rss.*` in bytes, pinned by `analyze-mem-measure.test.ts` |
+| `process_measure_filter.ipid` is a pid | It is the trace's internal **ipid**: sceneboard has `pid=6500` but `ipid=117` | `MemMeasureQuery.forIpids` plus translation through `ProcessQuery.byPid`; comparing pids directly would read another process's rows |
+
 ## Out of scope
 
 - **`js.heap` analysis.** The tables exist (`js_heap_info`, `js_heap_nodes`, …) but are populated only by an ArkTS-side `memory-plugin` mode that HapRay itself does not configure. P5 makes the capability **honest** (report unavailable with a reason) rather than implementing a heap walker.

@@ -1,6 +1,6 @@
 ---
 name: ohos-perf
-description: Measure HarmonyOS app performance on real devices and drill down into captured traces — probe capabilities, collect a scene, read evidence, and follow drillDown handles into frames, callstacks, binder transactions and thread patterns with the ohos-perf CLI.
+description: Measure HarmonyOS app performance on real devices and drill down into captured traces — probe capabilities, collect a scene, read evidence, and follow drillDown handles into frames, callstacks, binder transactions, thread patterns and memory measurements with the ohos-perf CLI.
 ---
 
 # ohos-perf
@@ -17,9 +17,14 @@ the interface; every command speaks stable JSON with `--json`.
    never invent its metric.
 3. Capture a scene (10 seconds is a useful default):
    `ohos-perf collect --app <pkg> --duration 10s --out <dir> --json`
+   - `--app` is required by the modes that resolve a pid (`--procfs`,
+     `--cold-start`, `--hiperf` and the hiprofiler `nativehook` plugin). The
+     device-wide collectors run without it.
    - `--procfs` samples `/proc` memory state for the app.
    - `--hiprofiler` captures through hiprofiler instead of hitrace; `--plugins`
-     selects its plugins.
+     selects its plugins: `ftrace` (default), `gpu`, `xpower`, `nativehook`
+     and `memory`. The `memory` plugin records per-process `process_measure`
+     and needs no app.
    - `--hiperf` also records a `perf.data` for CPU samples and callstacks. It
      needs a **debuggable** app; a non-debuggable one is refused by the device.
    - `--hidumper` also samples the RenderService fps and hitch counters.
@@ -28,6 +33,11 @@ the interface; every command speaks stable JSON with `--json`.
      yields `samples: 0` with exit 0. The JSON says `hiperf: { samples: 0 }`
      and the human summary prints `hiperf 0`; report that, never a silent zero.
 4. Analyze it offline: `ohos-perf analyze <dir> --json`
+   - A scene captured with `--hiprofiler --plugins memory` carries exact
+     per-process RSS: `mem.measure.rss.peak` and `mem.measure.rss.avg`, both
+     in bytes. They cover only the analyzed app (`--app`); an app-less
+     analysis reports `mem.measure.degraded` with the reason rather than
+     attributing device-wide rows to an app.
 5. Read `evidence[].drillDown`. Each handle names a `tool`, its `args`, and a
    one-line `returns` shape with an optional `estRows`.
 

@@ -97,7 +97,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--hiprofiler', 'capture through hiprofiler instead of hitrace')
     .option(
       '--plugins <list>',
-      'hiprofiler plugins, comma-separated: ftrace, gpu, xpower, nativehook',
+      'hiprofiler plugins, comma-separated: ftrace, gpu, xpower, nativehook, memory',
     )
     .option('--hiperf', 'also capture a hiperf perf.data (debuggable app only)')
     .option('--hidumper', 'also sample the RenderService fps and hitch counters')
