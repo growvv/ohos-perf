@@ -132,4 +132,37 @@ describe('pairNativeMemory', () => {
     const events = [ev(0, 0, 100, 4096, 10), ev(1, 0, 100, 8192, 20)];
     expect(JSON.stringify(pairNativeMemory(events))).toBe(JSON.stringify(pairNativeMemory(events)));
   });
+
+  it('replays the peak to its own position, not past every event at its timestamp', () => {
+    // An alloc and a free share a timestamp. The peak is the alloc's 100 bytes;
+    // replaying the whole timestamp would also apply the free and report an
+    // empty unreleased set for a peak that was 100 bytes high.
+    const r = pairNativeMemory([ev(0, 0, 1000, 4096, 100), ev(1, 1, 1000, 4096, 100)]);
+    expect(r.peak).toBe(100);
+    expect(r.peakTs).toBe(1000);
+    expect(r.peakId).toBe(0);
+    expect(r.unreleasedAt(r.peakTs, r.peakId!).map((a) => a.size)).toEqual([100]);
+    // Without the id the timestamp means "after every event at it".
+    expect(r.unreleasedAt(r.peakTs)).toEqual([]);
+  });
+
+  it('does not count a zero-size free as unpaired', () => {
+    // A `heap_size` of 0 (or a NULL read as 0) frees nothing, so there is no
+    // unmatched allocation to report; counting it inflates
+    // `mem.native.free.unpaired.count` with a free that consumed nothing.
+    const r = pairNativeMemory([ev(0, 0, 100, 4096, 100), ev(1, 1, 200, 4096, 0)]);
+    expect(r.unpairedFrees).toBe(0);
+    expect(r.endTotal).toBe(100);
+  });
+
+  it('treats a NULL event type as neither alloc nor free', () => {
+    const r = pairNativeMemory([
+      ev(0, 0, 100, 4096, 100),
+      ev(1, null as unknown as number, 150, 8192, 999),
+    ]);
+    expect(r.events).toBe(2);
+    expect(r.allocBytes).toBe(100);
+    expect(r.freeBytes).toBe(0);
+    expect(r.endTotal).toBe(100);
+  });
 });

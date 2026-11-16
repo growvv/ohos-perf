@@ -46,6 +46,12 @@ interface Fixture {
   events?: boolean;
   /** `native_hook_statistic` rows, used when `events` is absent. */
   statistics?: boolean;
+  /** Write the statistic row for ipid 18 (pid 5000) instead of the app's. */
+  otherPid?: boolean;
+  /** Add a second live callchain (11) on the same thread. */
+  extraLiveCallchain?: boolean;
+  /** Only growing allocations, so the peak is the last event. */
+  growingOnly?: boolean;
   /** Process rows; an empty array leaves the app unresolved. */
   processes?: Array<[number, number, number, string]>;
 }
@@ -64,9 +70,27 @@ function dbWith(name: string, fixture: Fixture): QueryHandle {
       .run(id, ipid, pid, processName);
   }
   d.exec("INSERT INTO thread VALUES (0, 100, 500, 'main', 0, 0, 17, 1, 0)");
-  if (fixture.events !== false) d.exec(EVENTS);
+  if (fixture.events === false) {
+    // No events.
+  } else if (fixture.growingOnly === true) {
+    d.exec(`INSERT INTO native_hook VALUES
+      (0, 10, 17, 100, 0, 0, 1000, 0, 0, 4096, 100, 0, 0, 1, 2),
+      (1, 10, 17, 100, 0, 0, 2000, 0, 0, 8192, 50, 0, 0, 1, 3)`);
+  } else {
+    d.exec(EVENTS);
+    if (fixture.extraLiveCallchain === true) {
+      // Still live at the end, on the same thread as callchain 10.
+      d.exec(`INSERT INTO native_hook VALUES
+        (4, 11, 17, 100, 0, 0, 5000, 0, 0, 4096, 70, 0, 0, 1, 2)`);
+      d.exec('INSERT INTO native_hook_frame VALUES (2, 11, 0, 4096, 2, 1, 0, 0, 0)');
+    }
+  }
   if (fixture.statistics === true) {
-    d.exec('INSERT INTO native_hook_statistic VALUES (0, 10, 17, 5000, 0, 0, 3, 1, 170, 50, 1, 2)');
+    // ipid 18 is a second process, used to prove the table-wide presence check
+    // does not stand in for an app-scoped one.
+    d.exec('INSERT INTO process VALUES (1, 18, 5000, \'other\', 0, 0, 1, 0, 0)');
+    d.exec(`INSERT INTO native_hook_statistic VALUES
+      (0, 10, ${fixture.otherPid === true ? 18 : 17}, 5000, 0, 0, 3, 1, 170, 50, 1, 2)`);
   }
   d.exec(`INSERT INTO native_hook_frame VALUES
     (0, 10, 0, 4096, 2, 1, 0, 0, 0),
@@ -141,6 +165,49 @@ describe('NativeMemoryAnalyzer', () => {
       expect(metricOf(r, 'mem.native.total.peak').provenance).toMatchObject({
         collector: 'hiprofiler', table: 'native_hook', rows: 4,
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('keeps evidence ids distinct when several live rows share a thread', async () => {
+    // Two live callchains on `main` at the same point share kind, process,
+    // thread, pid and window. Without a key their ids collide, and the engine
+    // turns that into DUPLICATE_EVIDENCE_ID — the whole analysis fails.
+    const db = dbWith('collide.db', { extraLiveCallchain: true });
+    try {
+      const r = await new NativeMemoryAnalyzer().run(ctxWith(db));
+      const items = r.evidence.filter((e) => e.kind === 'native_memory');
+      expect(items.length).toBeGreaterThan(2);
+      expect(new Set(items.map((e) => e.id)).size).toBe(items.length);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('keeps the peak and end evidence distinct when both fall at the same instant', async () => {
+    // A monotonically growing capture peaks at its last event, so peakTs equals
+    // endTs and both points share one window. Same thread, same process: the
+    // ids collide unless the point participates in the key.
+    const db = dbWith('same-instant.db', { growingOnly: true });
+    try {
+      const r = await new NativeMemoryAnalyzer().run(ctxWith(db));
+      const items = r.evidence.filter((e) => e.kind === 'native_memory');
+      expect(items.map((e) => e.signals.point).sort()).toEqual(['end', 'peak']);
+      expect(new Set(items.map((e) => e.id)).size).toBe(2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('degrades instead of reporting a zero when only another pid has statistics', async () => {
+    // `hasStatistics()` is table-wide; the rows belong to pid 5000 while the
+    // app is 4999. The fallback would report "0 bytes across 0 callchains".
+    const db = dbWith('other-pid-stats.db', { events: false, statistics: true, otherPid: true });
+    try {
+      const r = await new NativeMemoryAnalyzer().run(ctxWith(db));
+      expect(r.metrics.map((m) => m.id)).toEqual(['mem.native.degraded']);
+      expect(r.evidence.map((e) => e.kind)).toEqual(['no_data']);
     } finally {
       db.close();
     }

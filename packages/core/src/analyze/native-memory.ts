@@ -17,10 +17,11 @@ export type NativeEventKind = 'alloc' | 'free' | 'other';
  * Classifies `native_hook.event_type`.
  *
  * The column is numeric on the recorded traces but upstream compares it to
- * strings, so both forms are accepted. Anything unrecognised is `other`: it is
- * counted, but it must not move the total in either direction.
+ * strings, so both forms are accepted. `null` — the column was NULL — and
+ * anything else unrecognised is `other`: it is counted, but it must not move
+ * the total in either direction.
  */
-export function nativeEventKind(eventType: number | string): NativeEventKind {
+export function nativeEventKind(eventType: number | string | null): NativeEventKind {
   if (eventType === 0 || eventType === 'AllocEvent' || eventType === 'MmapEvent') return 'alloc';
   if (eventType === 1 || eventType === 'FreeEvent' || eventType === 'MunmapEvent') return 'free';
   return 'other';
@@ -49,6 +50,14 @@ export interface NativeMemoryResult {
   /** Highest running total and the timestamp of the event that produced it. */
   peak: number;
   peakTs: number;
+  /**
+   * Id of the event that produced the peak, `null` when the peak is the initial
+   * zero before any event. `(peakTs, peakId)` is the position the peak's
+   * unreleased set must be replayed to: several events can share a timestamp,
+   * and replaying all of them would report the set after later events already
+   * ran.
+   */
+  peakId: number | null;
   /** Lowest running total; negative when the capture started mid-lifetime. */
   trough: number;
   /** Running total after the last event. */
@@ -59,8 +68,11 @@ export interface NativeMemoryResult {
   unpairedFrees: number;
   /** Live bytes at the end whose event carried no callchain. */
   unattributedBytes: number;
-  /** Live allocations at `ts`, in event order. */
-  unreleasedAt(ts: number): ActiveAlloc[];
+  /**
+   * Live allocations at the `(ts, id)` position, in event order. Omit `id` to
+   * take the state after every event at `ts`.
+   */
+  unreleasedAt(ts: number, id?: number): ActiveAlloc[];
 }
 
 /** Events ordered by `(start_ts, id)`; the tie-break makes the walk stable. */
@@ -72,6 +84,7 @@ interface Replay {
   total: number;
   peak: number;
   peakTs: number;
+  peakId: number | null;
   trough: number;
   unpairedFrees: number;
   unaddressedAllocs: number;
@@ -85,18 +98,21 @@ interface Replay {
 }
 
 /**
- * Walks the events up to and including `untilTs` (all events when omitted).
+ * Walks the events up to and including the `(untilTs, untilId)` position (all
+ * events when omitted). The id bounds a timestamp shared by several events:
+ * without it a peak at `ts` would be reported after every event at `ts` ran.
  *
  * Pairing is per address and LIFO: a runtime can reuse an address before the
  * previous block is released, so a free must consume the newest block first and
  * continue into older ones when it is larger. A partial free leaves a smaller
  * active block behind.
  */
-function replay(events: readonly NativeHookEvent[], untilTs?: number): Replay {
+function replay(events: readonly NativeHookEvent[], untilTs?: number, untilId?: number): Replay {
   const state: Replay = {
     total: 0,
     peak: 0,
     peakTs: events[0]?.startTs ?? 0,
+    peakId: null,
     trough: 0,
     unpairedFrees: 0,
     unaddressedAllocs: 0,
@@ -110,7 +126,10 @@ function replay(events: readonly NativeHookEvent[], untilTs?: number): Replay {
   const origin = events[0]?.startTs ?? 0;
 
   for (const event of events) {
-    if (untilTs !== undefined && event.startTs > untilTs) break;
+    if (untilTs !== undefined) {
+      if (event.startTs > untilTs) break;
+      if (event.startTs === untilTs && untilId !== undefined && event.id > untilId) break;
+    }
     state.lastTs = event.startTs;
     const kind = nativeEventKind(event.eventType);
     if (kind === 'other') continue;
@@ -159,12 +178,16 @@ function replay(events: readonly NativeHookEvent[], untilTs?: number): Replay {
       // A free with nothing to consume still moves the total — dropping it
       // would understate a free-heavy capture — but it is counted so the
       // reader can see the total is not fully explained by paired events.
-      if (stack === undefined || size === remaining) state.unpairedFrees += 1;
+      // A zero-size free consumes nothing and is not evidence of a missing
+      // allocation, so it is not unpaired: `heap_size` of 0 (or a NULL read as
+      // 0) would otherwise inflate the count with a free that freed nothing.
+      if (size > 0 && (stack === undefined || size === remaining)) state.unpairedFrees += 1;
     }
 
     if (state.total > state.peak) {
       state.peak = state.total;
       state.peakTs = event.startTs;
+      state.peakId = event.id;
     }
     if (state.total < state.trough) state.trough = state.total;
   }
@@ -207,13 +230,14 @@ export function pairNativeMemory(
     freeBytes: full.freeBytes,
     peak: full.peak,
     peakTs: full.peakTs,
+    peakId: full.peakId,
     trough: full.trough,
     endTotal: full.total,
     unaddressedAllocs: full.unaddressedAllocs,
     unpairedFrees: full.unpairedFrees,
     unattributedBytes,
-    unreleasedAt(ts: number): ActiveAlloc[] {
-      const state = replay(sorted, ts);
+    unreleasedAt(ts: number, id?: number): ActiveAlloc[] {
+      const state = replay(sorted, ts, id);
       const live: ActiveAlloc[] = [];
       for (const stack of state.active.values()) {
         for (const alloc of stack) {
@@ -591,7 +615,10 @@ export class NativeMemoryAnalyzer implements Analyzer {
     const snapshot = loadNativeMemory(ctx.db, ctx.app.pids, ctx.window);
     if (snapshot === undefined) {
       const query = new NativeHookQuery(ctx.db);
-      if (!query.hasStatistics()) {
+      // App-scoped, not table-wide: another process's statistic rows cannot
+      // stand in for this app's, and the fallback would otherwise report
+      // "0 bytes across 0 callchains" as if it had measured something.
+      if (query.statistics(ctx.app.pids).length === 0) {
         return degradedResult(
           ctx,
           'the trace has no native_hook or native_hook_statistic rows for the app; ' +
@@ -602,7 +629,13 @@ export class NativeMemoryAnalyzer implements Analyzer {
     }
 
     const { pair, names, endTs } = snapshot;
-    const peakRows = aggregateUnreleased(pair.unreleasedAt(pair.peakTs), names);
+    // The peak's set is the state right after the peak event, not after every
+    // event sharing its timestamp: `(peakTs, peakId)` is the position. A peak
+    // that never rose above zero (`peakId === null`) has nothing live.
+    const peakRows =
+      pair.peakId === null
+        ? []
+        : aggregateUnreleased(pair.unreleasedAt(pair.peakTs, pair.peakId), names);
     const endRows = aggregateUnreleased(pair.unreleasedAt(endTs), names);
     const process = appProcessName(ctx);
     const prov = {
@@ -770,6 +803,11 @@ export class NativeMemoryAnalyzer implements Analyzer {
         severity: share >= WARN_SHARE ? 'warn' : 'info',
         subject: { process, thread: row.thread, pid: row.pid },
         window,
+        // Every row at one point shares the window, and usually the process,
+        // thread and pid, so the id material alone collides — and the engine
+        // turns a collision into DUPLICATE_EVIDENCE_ID, failing the whole run.
+        // The point and the callchain are what actually distinguish the rows.
+        key: `native-memory:${point}:${row.callchainId}:${row.pid}:${row.tid}`,
         signals: {
           point,
           size: row.size,

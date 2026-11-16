@@ -116,4 +116,67 @@ describe('NativeHookQuery', () => {
     expect(new NativeHookQuery(db).frames([])).toEqual(new Map());
     expect(new NativeHookQuery(db).dataDict([])).toEqual(new Map());
   });
+
+  it('chunks id lists past the SQLite variable limit', () => {
+    // A real nativehook capture has tens of thousands of callchains. One
+    // `IN (?, …)` per list throws `too many SQL variables` (the limit is
+    // 32 766), which aborts the analyzer and the named queries.
+    const many = Array.from({ length: 40_000 }, (_, index) => 1000 + index);
+    const query = new NativeHookQuery(db);
+    expect(() => query.frames(many)).not.toThrow();
+    expect(() => query.dataDict(many)).not.toThrow();
+    expect(query.frames(many).size).toBe(0);
+    expect(query.dataDict(many).size).toBe(0);
+  });
+
+  it('degrades instead of throwing when the process table is absent', () => {
+    // The documented contract is that a missing table yields `[]`, never
+    // `no such table`; `events`/`statistics` join `process` unguarded.
+    const path = join(dir, 'no-process.db');
+    const raw = new DatabaseSync(path);
+    raw.exec(NATIVE_HOOK_DDL);
+    raw.exec(STATISTIC_DDL);
+    raw.exec(`INSERT INTO native_hook VALUES
+      (0, 10, 17, 100, 0, 1, 300, 0, 0, 4096, 64, 0, 0, 1, 2)`);
+    raw.exec('INSERT INTO native_hook_statistic VALUES (0, 10, 17, 900, 0, 1, 2, 1, 96, 32, 1, 2)');
+    raw.close();
+    const handle = openDb(path);
+    extraHandles.push(handle);
+    const query = new NativeHookQuery(handle);
+    expect(query.events([4999])).toEqual([]);
+    expect(query.statistics([4999])).toEqual([]);
+  });
+
+  it('returns each event once when a duplicated ipid maps to two process rows', () => {
+    // A merged trace can carry two `process` rows with the same `ipid`. A plain
+    // join then returns the event once per process row, doubling every byte.
+    const path = join(dir, 'dup-ipid.db');
+    const raw = new DatabaseSync(path);
+    raw.exec(NATIVE_HOOK_DDL);
+    raw.exec(PROCESS_DDL);
+    raw.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo'),
+      (1, 17, 4999, 'com.demo')`);
+    raw.exec(`INSERT INTO native_hook VALUES
+      (0, 10, 17, 100, 0, 1, 300, 0, 0, 4096, 64, 0, 0, 1, 2)`);
+    raw.close();
+    const handle = openDb(path);
+    extraHandles.push(handle);
+    expect(new NativeHookQuery(handle).events([4999]).map((r) => r.id)).toEqual([0]);
+  });
+
+  it('reports a NULL event type as neither alloc nor free', () => {
+    // `event_type ?? 0` turns an absent type into an allocation, inflating the
+    // running total with bytes whose direction is unknown.
+    const path = join(dir, 'null-type.db');
+    const raw = new DatabaseSync(path);
+    raw.exec(NATIVE_HOOK_DDL);
+    raw.exec(PROCESS_DDL);
+    raw.exec("INSERT INTO process VALUES (0, 17, 4999, 'com.demo')");
+    raw.exec(`INSERT INTO native_hook VALUES
+      (0, 10, 17, 100, NULL, 1, 300, 0, 0, 4096, 64, 0, 0, 1, 2)`);
+    raw.close();
+    const handle = openDb(path);
+    extraHandles.push(handle);
+    expect(new NativeHookQuery(handle).events([4999])[0]!.eventType).toBeNull();
+  });
 });

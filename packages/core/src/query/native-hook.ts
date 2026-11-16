@@ -8,10 +8,12 @@ import { num, str } from './rows';
  * One `native_hook` row with camelCase field names.
  *
  * `event_type` is alloc for `'AllocEvent'`/`'MmapEvent'`/`0`, free for
- * `'FreeEvent'`/`'MunmapEvent'`/`1`, and anything else is neither. `heapSize`
- * is a magnitude: the stored sign carries no meaning, the pairing layer applies
- * the direction. `allHeapSize` and `currentSizeDur` are read for callers but are
- * never interpreted — their semantics are undocumented upstream.
+ * `'FreeEvent'`/`'MunmapEvent'`/`1`, and anything else is neither. `null` means
+ * the column itself was NULL, which is not an allocation: the direction is
+ * unknown, so it stays `null` and the pairing layer counts it as `other`.
+ * `heapSize` is a magnitude: the stored sign carries no meaning, the pairing
+ * layer applies the direction. `allHeapSize` and `currentSizeDur` are read for
+ * callers but are never interpreted — their semantics are undocumented upstream.
  */
 export interface NativeHookEvent {
   id: number;
@@ -20,7 +22,7 @@ export interface NativeHookEvent {
   /** `process.pid` resolved through `ipid`; the number space an app is known by. */
   pid: number;
   itid: number;
-  eventType: number | string;
+  eventType: number | string | null;
   subTypeId: number;
   startTs: number;
   endTs: number;
@@ -112,6 +114,21 @@ interface NativeHookStatisticRow {
   last_symbol_id: number | null;
 }
 
+/**
+ * SQLite's bound-variable limit is 32 766; upstream chunks `data_dict` lookups
+ * at 500 for the same reason. Chunking keeps a real capture (tens of thousands
+ * of callchains) from aborting the analyzer with `too many SQL variables`.
+ */
+const ID_CHUNK = 500;
+
+function chunks<T>(values: readonly T[]): T[][] {
+  const out: T[][] = [];
+  for (let index = 0; index < values.length; index += ID_CHUNK) {
+    out.push(values.slice(index, index + ID_CHUNK));
+  }
+  return out;
+}
+
 function placeholders(count: number): string {
   return Array.from({ length: count }, () => '?').join(', ');
 }
@@ -123,7 +140,9 @@ function toEvent(row: NativeHookEventRow): NativeHookEvent {
     ipid: num(row.ipid),
     pid: num(row.pid),
     itid: num(row.itid),
-    eventType: row.event_type ?? 0,
+    // `?? 0` would turn an absent type into an allocation and inflate the
+    // total; an unknown direction is `other`, and `null` is how that travels.
+    eventType: row.event_type ?? null,
     subTypeId: num(row.sub_type_id),
     startTs: num(row.start_ts),
     endTs: num(row.end_ts),
@@ -203,9 +222,18 @@ export class NativeHookQuery {
    *
    * The `(start_ts, id)` tie-break is ours; upstream orders by timestamp alone,
    * which makes a capture with equal timestamps depend on row order.
+   *
+   * `DISTINCT` on the event columns collapses the duplicate rows a repeated
+   * `process.ipid` would produce: a merged trace can carry two `process` rows
+   * with the same ipid, and a plain join then returns each event once per row,
+   * doubling every byte. `p.pid` is selected from the same ipid group, so the
+   * duplicate rows are identical.
    */
   events(pids: readonly number[], range?: TimeRange): NativeHookEvent[] {
     if (pids.length === 0 || !this.hasTable('native_hook')) return [];
+    // The join is unguarded SQL, so a trace with `native_hook` but no
+    // `process` table must degrade here rather than throw `no such table`.
+    if (!this.hasTable('process')) return [];
     const conditions = [`p.pid IN (${placeholders(pids.length)})`];
     const params: unknown[] = [...pids];
     if (range !== undefined) {
@@ -214,7 +242,7 @@ export class NativeHookQuery {
     }
     return this.db
       .query<NativeHookEventRow>(
-        `SELECT nh.id, nh.callchain_id, nh.ipid, p.pid AS pid, nh.itid,
+        `SELECT DISTINCT nh.id, nh.callchain_id, nh.ipid, p.pid AS pid, nh.itid,
        nh.event_type, nh.sub_type_id, nh.start_ts, nh.end_ts, nh.dur, nh.addr,
        nh.heap_size, nh.all_heap_size, nh.current_size_dur, nh.last_lib_id,
        nh.last_symbol_id
@@ -232,30 +260,39 @@ ORDER BY nh.start_ts, nh.id`,
     const grouped = new Map<number, NativeHookFrame[]>();
     if (callchainIds.length === 0 || !this.hasTable('native_hook_frame')) return grouped;
     const unique = [...new Set(callchainIds)];
-    const rows = this.db
-      .query<NativeHookFrameRow>(
-        `SELECT id, callchain_id, depth, ip, symbol_id, file_id, offset,
+    for (const chunk of chunks(unique)) {
+      const rows = this.db
+        .query<NativeHookFrameRow>(
+          `SELECT id, callchain_id, depth, ip, symbol_id, file_id, offset,
        symbol_offset, vaddr
 FROM native_hook_frame
-WHERE callchain_id IN (${placeholders(unique.length)})
+WHERE callchain_id IN (${placeholders(chunk.length)})
 ORDER BY callchain_id, depth, id`,
-        unique,
-      )
-      .map(toFrame);
-    for (const row of rows) {
-      const list = grouped.get(row.callchainId);
-      if (list === undefined) grouped.set(row.callchainId, [row]);
-      else list.push(row);
+          chunk,
+        )
+        .map(toFrame);
+      for (const row of rows) {
+        const list = grouped.get(row.callchainId);
+        if (list === undefined) grouped.set(row.callchainId, [row]);
+        else list.push(row);
+      }
     }
     return grouped;
   }
 
-  /** Statistics rows for the app, ordered by `(ts, id)`. */
+  /**
+   * Statistics rows for the app, ordered by `(ts, id)`.
+   *
+   * `DISTINCT` and the `process` guard mirror {@link events} for the same two
+   * reasons: a repeated ipid must not multiply rows, and a missing join table
+   * must degrade rather than throw.
+   */
   statistics(pids: readonly number[]): NativeHookStatistic[] {
     if (pids.length === 0 || !this.hasTable('native_hook_statistic')) return [];
+    if (!this.hasTable('process')) return [];
     return this.db
       .query<NativeHookStatisticRow>(
-        `SELECT s.id, s.callchain_id, s.ipid, s.ts, s.type, s.sub_type_id,
+        `SELECT DISTINCT s.id, s.callchain_id, s.ipid, s.ts, s.type, s.sub_type_id,
        s.apply_count, s.release_count, s.apply_size, s.release_size,
        s.last_lib_id, s.last_symbol_id
 FROM native_hook_statistic s
@@ -272,11 +309,13 @@ ORDER BY s.ts, s.id`,
     const resolved = new Map<number, string>();
     if (ids.length === 0 || !this.hasTable('data_dict')) return resolved;
     const unique = [...new Set(ids)];
-    const rows = this.db.query<{ id: number | null; data: string | null }>(
-      `SELECT id, data FROM data_dict WHERE id IN (${placeholders(unique.length)}) ORDER BY id`,
-      unique,
-    );
-    for (const row of rows) resolved.set(num(row.id), str(row.data));
+    for (const chunk of chunks(unique)) {
+      const rows = this.db.query<{ id: number | null; data: string | null }>(
+        `SELECT id, data FROM data_dict WHERE id IN (${placeholders(chunk.length)}) ORDER BY id`,
+        chunk,
+      );
+      for (const row of rows) resolved.set(num(row.id), str(row.data));
+    }
     return resolved;
   }
 

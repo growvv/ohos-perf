@@ -92,4 +92,19 @@ describe('classifyNativePath', () => {
       classifyNativePath('/system/lib64/platformsdk/libabilityXmanagerYzXso', null, null),
     ).toMatchObject({ categoryName: 'SYS_SDK' });
   });
+
+  it('classifies any app data/storage path as APP, not just bundle/', () => {
+    // Upstream's APP_ABC rule is `/proc/.*/data/storage/(?!…bundle/.*\.so$)…`,
+    // so a sandbox file outside `bundle/` is the app's, not the system's.
+    expect(
+      classifyNativePath('/proc/1234/data/storage/el2/base/files/cache.db', null, null),
+    ).toMatchObject({ category: 1, categoryName: 'APP', subCategory: 'cache.db' });
+    expect(
+      classifyNativePath(
+        '/proc/1234/data/storage/el2/base/haps/entry/files/libmyapp.so',
+        null,
+        null,
+      ),
+    ).toMatchObject({ category: 1, categoryName: 'APP' });
+  });
 });

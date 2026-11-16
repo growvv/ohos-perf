@@ -495,6 +495,49 @@ describe('realDeps().analyze', () => {
     }
   });
 
+  it('claims mem.native_hook for a nativehook-only scene, not just a memory-plugin one', async () => {
+    // `collect --hiprofiler --plugins nativehook` produces `native_hook*` and
+    // neither `process_measure` table. The old rule required the memory
+    // plugin's tables, so the analyzer never ran on the capture its own
+    // collector produces: `analyze` reported `native-memory.degraded` with the
+    // data sitting in the database. Either table family satisfies the row.
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-nativehook-scene-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      const raw = new DatabaseSync(join(parent, 'trace.db'));
+      raw.exec(`CREATE TABLE native_hook(id INT, callchain_id INT, ipid INT,
+        itid INT, event_type INT, sub_type_id INT, start_ts INT, end_ts INT, dur INT,
+        addr INT, heap_size INT, all_heap_size INT, current_size_dur INT,
+        last_lib_id INT, last_symbol_id INT)`);
+      raw.exec('CREATE TABLE native_hook_frame(id INT, callchain_id INT, depth INT,' +
+        ' ip INT, symbol_id INT, file_id INT, offset INT, symbol_offset INT, vaddr INT)');
+      raw.exec("INSERT INTO process VALUES (0, 17, 4999, 'com.demo', 0, 0, 1, 0, 0)");
+      raw.exec(`INSERT INTO native_hook VALUES
+        (0, 10, 17, 100, 0, 0, 1000, 0, 0, 4096, 100, 0, 0, 1, 2)`);
+      raw.exec('CREATE TABLE data_dict(id INT, data TEXT)');
+      raw.exec("INSERT INTO data_dict VALUES (1, 'libfoo.so'), (2, 'foo()')");
+      raw.close();
+
+      const result = await realDeps('0.0.0').analyze(parent, 'com.demo');
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).not.toContain('native-memory.degraded');
+      expect(ids).toContain('mem.native.total.peak');
+
+      const tableDb = (names: string[]): CapabilityMatrixDb => ({
+        query: <T = Record<string, unknown>>(): T[] =>
+          names.map((name) => ({ name })) as unknown as T[],
+      });
+      expect(offlineCapabilities(tableDb(['native_hook']), {}).has('mem.native_hook')).toBe(true);
+      // The memory plugin's tables still satisfy the row.
+      expect(offlineCapabilities(tableDb(['process_measure', 'process_measure_filter']), {})
+        .has('mem.native_hook')).toBe(true);
+      // Neither family: absent.
+      expect(offlineCapabilities(tableDb(['frame_slice']), {}).has('mem.native_hook')).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('claims perf.samples only when perf_sample has rows', () => {
     const tableDb = (names: string[]): CapabilityMatrixDb => ({
       query: <T = Record<string, unknown>>(): T[] =>

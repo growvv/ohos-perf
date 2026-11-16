@@ -167,7 +167,15 @@ export interface SceneArtifacts {
 const TABLE_RULES: ReadonlyArray<{
   id: CapabilityId;
   collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest' | 'hiprofiler';
-  tables: readonly string[];
+  /** Every listed table must be present. */
+  tables?: readonly string[];
+  /**
+   * One of these table families must be present. Two collectors satisfy
+   * `mem.native_hook`: the memory plugin (`process_measure*`) and the
+   * nativehook plugin (`native_hook*`), so requiring a single family would
+   * leave the analyzer unreachable through one of its own captures.
+   */
+  anyOf?: ReadonlyArray<readonly string[]>;
   /**
    * The rule's tables must live in the perf database, and the first must hold
    * at least one row: an empty `perf_sample` means no samples were ever
@@ -191,17 +199,21 @@ const TABLE_RULES: ReadonlyArray<{
   { id: 'render.fps_live', collector: 'hidumper', tables: ['hidumper.json'] },
   { id: 'ui.tree', collector: 'uitest', tables: ['ui.json'] },
   { id: 'perf.samples', collector: 'hiperf', tables: ['perf_sample'], perf: true },
-  // `mem.native_hook` is the design's hiprofiler-memory row. Offline it is
-  // satisfied by the memory-plugin tables, exactly as `trace.frames` is
-  // satisfied by `frame_slice` + `process` rather than by the hitrace binary.
-  // The analyzer joins both tables, so a trace missing the filter table would
-  // crash rather than degrade; requiring both keeps the matrix honest. An
-  // ftrace-only scene does not offer it, and the engine reports `mem-measure`
-  // as skipped.
+  // `mem.native_hook` is the design's hiprofiler-memory row, and two plugins
+  // feed it. The memory plugin's `process_measure` tables back `mem-measure`;
+  // the nativehook plugin's `native_hook*` tables back `native-memory`. A
+  // scene carries one family or the other, so requiring the memory tables
+  // alone would degrade `native-memory` on the very capture
+  // `--plugins nativehook` produces. Either family satisfies the row; the
+  // analyzers that need a specific one degrade on their own with a reason
+  // naming the missing input. An ftrace-only scene offers neither.
   {
     id: 'mem.native_hook',
     collector: 'hiprofiler',
-    tables: ['process_measure', 'process_measure_filter'],
+    anyOf: [
+      ['process_measure', 'process_measure_filter'],
+      ['native_hook'],
+    ],
   },
 ];
 
@@ -255,14 +267,17 @@ export function offlineCapabilities(
   const states: CapabilityState[] = [];
   for (const rule of TABLE_RULES) {
     const source = rule.perf === true ? perfTables : tables;
-    const present = rule.tables.every((name) =>
-      ARTIFACT_NAMES.has(name) ? artifactPresent(name, artifacts) : source.has(name),
-    );
+    const has = (name: string): boolean =>
+      ARTIFACT_NAMES.has(name) ? artifactPresent(name, artifacts) : source.has(name);
+    const present =
+      rule.anyOf === undefined
+        ? (rule.tables ?? []).every(has)
+        : rule.anyOf.some((family) => family.every(has));
     if (!present) continue;
     // A table that exists but holds no rows is an empty capture, not a
     // capability: `perf_sample` is only real when at least one sample landed.
     if (rule.perf === true && perfDb !== undefined) {
-      const first = rule.tables[0];
+      const first = rule.tables![0];
       if (perfDb.query(`SELECT 1 FROM ${first} LIMIT 1`).length === 0) continue;
     }
     states.push(offlineState(rule.id, rule.collector));

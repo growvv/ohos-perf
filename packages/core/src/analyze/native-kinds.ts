@@ -435,6 +435,13 @@ THREADS.sort(byPriority);
 /** Upstream's bundle rule: a path under a sandboxed app's `bundle/` directory. */
 const BUNDLE_SO = /^\/proc\/.*\/data\/storage\/.*\/bundle\/(.*\.so|libs\/.*)$/;
 const BUNDLE_ABC = /^\/proc\/.*\/data\/storage\/.*\/bundle\/.*\.abc$/;
+/**
+ * Upstream's `APP_ABC` rule, verbatim: any `/proc/<pid>/data/storage/` path that
+ * is not a bundle `.so` or under `bundle/libs/`. The lookaheads are unanchored,
+ * exactly as upstream's are, so a sandbox file outside `bundle/` (a cache db, a
+ * hap's own `.so`) is the app's rather than falling through to `SYS_SDK`.
+ */
+const APP_STORAGE = /^\/proc\/.*\/data\/storage\/(?!.*\/bundle\/.*\.so$)(?!.*\/bundle\/libs\/).*$/;
 
 /** `fn:[url:entry|package|version|path:line:col]` — group 3 is the package. */
 const ARKTS_SYMBOL = /^([^:]+):\[url:([^:|]+)\|([^|]+)\|([^:|]+)\|([^|]*):(\d+):(\d+)\]$/;
@@ -529,6 +536,17 @@ export function classifyNativePath(
       }
     }
     return { category: CATEGORY.APP, categoryName: 'APP', subCategory: base, file };
+  }
+
+  // Any other path inside the app's own sandbox is still the app's: upstream's
+  // `APP_ABC` rule covers the whole of `data/storage/`, not only `bundle/`.
+  if (APP_STORAGE.test(file)) {
+    return {
+      category: CATEGORY.APP,
+      categoryName: 'APP',
+      subCategory: basename(file),
+      file,
+    };
   }
 
   const byBase = EXACT.get(basename(file));
