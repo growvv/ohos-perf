@@ -165,7 +165,25 @@ app, which the release apps on the Mate 60 are not.
 | P7 | `ohos-perf emulator {list,start,stop,create}` lifecycle commands | shipped in `0.3.0` |
 | P8 | `ui.gesture` driven through `uitest uiInput`, plus an honest `coverage` verdict from a measured `bjc_cov` probe | shipped in `0.3.0` |
 
-The rendered roadmap, with the same content in Chinese, is on the
+The HapRay parity series (one release per major item, so far):
+
+| Phase | Workstream | Scope | Status |
+| --- | --- | --- | --- |
+| P9 | W1 report layer | typed report model, offline HTML, JSON/summary/CSV, dependency-free XLSX, `ohos-perf report` | planned |
+| P10 | W2 frame load | per-frame instruction attribution, top-N loaded frames, stutter levels with expected/actual excess, 1 s FPS windows, empty-frame load | planned |
+| P11 | W3 native memory | `native_hook` alloc/free pairing, peak and unreleased by callchain, category evidence, timeline | planned |
+| P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | planned |
+| P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | planned |
+| P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | planned |
+| P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | planned |
+| P16 | W8 symbols | symbol statistics, `--so-dir` device symbolization, offline flamegraph artifact, unresolved-symbol evidence | planned |
+
+The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
+(rev `9386e4e`): 35 user-facing capabilities, of which 6 are already ported, 9
+partial and 20 missing. Items deliberately not ported (Hypium/xdevice test
+runner, LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery, bjc
+coverage) keep their measured reasons instead of a claim. The rendered
+roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).
 
 ## Requirements
