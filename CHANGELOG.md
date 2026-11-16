@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `ohos-perf report <scene> --out <dir> [--baseline <input>]` — one analysis
+  pass rendered as a typed, deterministic artifact bundle: `report.html`
+  (self-contained, no scripts, no network), `report.json` (versioned report
+  model), `summary.json` (per-section roll-up), `metrics.csv`, `evidence.csv`
+  and `report.xlsx` (dependency-free stored-ZIP workbook with `Summary`,
+  `Metrics`, `Evidence` and, with a baseline, `Compare` sheets).
+- `runAnalyzerSections()` in the core engine: the same merged `AnalyzeResult`
+  as `runAnalyzers()` plus one section per analyzer, so a report can attribute
+  every metric to its source and label a skipped analyzer `degraded` with the
+  device's own reason.
+- Every metric in the HTML and CSV keeps its `fidelity` and `provenance`;
+  degraded sections are named in the report-wide banner, the summary and the
+  CLI's `sections` line.
+- Identical scene and package version produce byte-identical files across
+  platforms: no timestamps, no host paths, fixed ordering and a ZIP epoch
+  timestamp in the workbook.
+
 ## 0.3.0 — 2026-11-17
 
 ### Added

@@ -17,7 +17,8 @@ const skill = readNormalized(join(root, 'skill/ohos-perf/SKILL.md'));
 const readme = readNormalized(join(root, 'README.md'));
 
 const COMMANDS = new Set([
-  'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'emulator', 'gesture',
+  'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report',
+  'emulator', 'gesture',
 ]);
 
 describe('agent skill adapter', () => {

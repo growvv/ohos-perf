@@ -132,6 +132,28 @@ has one row per metric with `baseline`, `current`, `delta`, `deltaPct` and a
   collector that ran in one capture and not the other.
 - `deltaPct` is absent when the baseline is zero or either side is not numeric.
 
+## Writing a human report
+
+When a person needs the result rather than a tool call, render the artifact
+bundle:
+
+```bash
+ohos-perf report <scene-dir> --out reports/run1 [--app <pkg>] [--baseline <input>]
+```
+
+- Artifacts: `report.html` (self-contained, no scripts or network),
+  `report.json` (the typed, versioned model), `summary.json` (per-section
+  counts), `metrics.csv`, `evidence.csv` and `report.xlsx`.
+- `--baseline` accepts a scene directory or an `analyze --json` file, exactly
+  like `compare`, and adds a typed comparison to all artifacts.
+- Same scene and same package version produce byte-identical files.
+- A skipped analyzer is a `degraded` section with its reason, in the model,
+  the HTML banner, the summary and the CLI's `sections` line. Never describe a
+  degraded section as measured, and never read its `<id>.degraded` zero as a
+  measurement.
+- `--json` prints the artifact manifest (paths and counts), not the report
+  document.
+
 ## Output contract
 
 `--json` output is the same structure the library returns. Evidence is ordered

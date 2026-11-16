@@ -80,7 +80,9 @@ describe('--help', () => {
   it('lists every subcommand', async () => {
     const { out } = await parse(['--help']);
     const text = out.join('');
-    for (const name of ['doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare']) {
+    for (const name of [
+      'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report',
+    ]) {
       expect(text).toContain(name);
     }
   });

@@ -271,6 +271,20 @@ Analyze it offline — no device or toolchain needed:
 ohos-perf analyze ./scene --app com.example.app --json
 ```
 
+Write a human-readable report bundle from the same analysis:
+
+```bash
+ohos-perf report ./scene --out reports/run1 --baseline ./before
+```
+
+`report.html`, `report.json`, `summary.json`, `metrics.csv`, `evidence.csv` and
+`report.xlsx` are written in one pass. The HTML is one self-contained file with
+no scripts and no network access; every metric keeps its provenance and
+fidelity, and an analyzer skipped for a missing capability appears as a
+`degraded` section with its reason instead of disappearing. The same scene and
+package version produce byte-identical files. `--baseline` adds the typed
+comparison to every artifact.
+
 Follow an evidence item's `drillDown` handle — list the query names and their
 argument schemas first, then pass the handle's `tool` and `args` verbatim:
 
