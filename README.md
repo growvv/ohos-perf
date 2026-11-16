@@ -145,7 +145,7 @@ the matrix reports that reason instead of claiming the data is usable.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| P0–P6 | capability probing, six collectors, trace ingest, typed queries, fourteen analyzers, deterministic JSON, baseline comparison, agent skill | next (P0–P5 shipped in `0.1.0`) |
+| P0–P6 | capability probing, six collectors, trace ingest, typed queries, fourteen analyzers, deterministic JSON, baseline comparison, agent skill | on `master`, unreleased (P0–P5 shipped in `0.1.0`) |
 | P7 | `ohos-perf emulator {list,start,stop,create}` lifecycle commands | next |
 | exploring | `ui.gesture` (AAMS), `coverage` (bjc_cov), `js.heap` (ArkTS profiler) — each stays reported unavailable until a device spike proves this package can drive it | device spike first |
 

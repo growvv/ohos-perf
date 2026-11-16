@@ -87,7 +87,7 @@ require `args`/`data_dict`/`trace_range`, which GC never reads), and
 surface; this task closes that gap and edits the spec to match rather than
 leaving code and spec disagreeing.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `packages/core/test/capability.test.ts`, change the count pin and add a row test:
 
@@ -115,12 +115,12 @@ expect(offlineCapabilities(fakeDb(arkTables), {}).has('trace.ark')).toBe(true);
 expect(offlineCapabilities(fakeDb(['callstack', 'thread']), {}).has('trace.ark')).toBe(false);
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npx vitest run packages/core/test/capability.test.ts packages/cli/test/deps.test.ts`
 Expected: FAIL — `trace.ark` is not a `CapabilityId` (a compile error at the `get` call, `undefined` at runtime), and the matrix has 20 rows.
 
-- [ ] **Step 3: Implement the rule and edit the spec**
+- [x] **Step 3: Implement the rule and edit the spec**
 
 In `capability.ts`, add `| 'trace.ark'` to the union after `'trace.thread_state'`, and to `RULES` after `render.vsync`:
 
@@ -142,12 +142,12 @@ In `deps.ts`'s `TABLE_RULES`, after the `trace.thread_state` row:
 In the design doc, add `| 'trace.ark'` to the §2 union and a `trace.ark` row to
 §7's table (`✅ exact` on both device columns, path `hitrace → callstack`).
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `npx vitest run packages/core/test/capability.test.ts packages/cli/test/deps.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/device/capability.ts packages/cli/src/deps.ts \
@@ -198,7 +198,7 @@ means no process was identified, and widening to device-wide is exactly the
 attribution bug `MemoryMeasureAnalyzer` already guards against. `ipids:
 undefined` is the unscoped query, which is what the drill-down uses.
 
-- [ ] **Step 1: Write the failing query test**
+- [x] **Step 1: Write the failing query test**
 
 In `packages/core/test/query-callstack-perf.test.ts`, add a `thread` table to the
 `callstack.db` fixture in `beforeAll` — the existing fixture has none:
@@ -243,12 +243,12 @@ it('resolves perf thread ids by thread name within the given processes', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npx vitest run packages/core/test/query-callstack-perf.test.ts`
 Expected: FAIL — `opts.ipids` is ignored (3 `H:%` rows, not 2), and `eventCount` is not a function.
 
-- [ ] **Step 3: Implement the query surface**
+- [x] **Step 3: Implement the query surface**
 
 In both callstack methods, after the `range` clause:
 
@@ -267,12 +267,12 @@ an absent table → 0). `threadIdsNamed` = `SELECT thread_id FROM perf_thread
 WHERE process_id IN (…) AND thread_name = ? ORDER BY thread_id` (empty `pids`
 or absent table → `[]`).
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `npx vitest run packages/core/test/query-callstack-perf.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing analyzer test**
+- [x] **Step 5: Write the failing analyzer test**
 
 Create `packages/core/test/analyze-gc.test.ts`. Build one trace with `callstack`,
 `thread` and `process`; the app is ipid 17 / pid 4999, a second process is
@@ -331,12 +331,12 @@ it('carries one drill-down per GC type that resolves through callstack.matching'
 });
 ```
 
-- [ ] **Step 6: Run it to verify it fails**
+- [x] **Step 6: Run it to verify it fails**
 
 Run: `npx vitest run packages/core/test/analyze-gc.test.ts`
 Expected: FAIL — cannot resolve `../src/analyze/gc`.
 
-- [ ] **Step 7: Implement `resolveAppIpids`, `computeGc` and `GcAnalyzer`**
+- [x] **Step 7: Implement `resolveAppIpids`, `computeGc` and `GcAnalyzer`**
 
 `resolveAppIpids` is the body currently private in `mem-measure.ts` (`appIpids`)
 and duplicated in `startup.ts`: map each pid through `processes.byPid(pid)?.ipid`,
@@ -372,13 +372,13 @@ directions for `gc.*.count`, `gc.rate` and `gc.perf.share` to
 counts and a degraded perf proxy, because the counts were measured and
 withholding them would hide real data.
 
-- [ ] **Step 8: Run the analyzer test and the engine test**
+- [x] **Step 8: Run the analyzer test and the engine test**
 
 Run: `npx vitest run packages/core/test/analyze-gc.test.ts packages/core/test/analyze-engine.test.ts packages/core/test/compare.test.ts packages/core/test/analyze-mem-measure.test.ts packages/core/test/analyze-startup.test.ts`
 Expected: PASS after adding `'gc'` to the `defaultAnalyzers` id list pin and
 `GcAnalyzer` to its instance list in `analyze-engine.test.ts`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add packages/core/src/query/callstack.ts packages/core/src/query/perf.ts \
@@ -427,7 +427,7 @@ git commit -m "feat: port HapRay's GC pressure analyzer"
 without this task the analyzer is skipped as "capability not probed" on every
 offline analysis.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `analyze-vsync.test.ts` tests the pure function directly and the analyzer once:
 
@@ -488,12 +488,12 @@ it('emits no_data and no metrics when the app rendered no frames', async () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/core/test/analyze-vsync.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the analyzer**
+- [x] **Step 3: Implement the analyzer**
 
 Port `frame_analyzer_vsync.py` literally: group by `vsync` (keeping only frames
 with a non-null `vsync`, sorted by the group's minimum `ts`); interval =
@@ -521,7 +521,7 @@ to `TABLE_RULES`. Register the analyzer, export it, and add
 `vsync.anomaly.rate`, `vsync.mismatch.count` and `vsync.periods.count` as
 `'lower'` in `METRIC_DIRECTIONS` (`vsync.signals.count` has no direction).
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/analyze-vsync.test.ts packages/cli/test/deps.test.ts packages/core/test/analyze-engine.test.ts`
 Expected: PASS after adding `'vsync'` to the id list and `VsyncAnalyzer` to the
@@ -529,7 +529,7 @@ instance list of `analyze-engine.test.ts`'s `defaultAnalyzers` pin, and a `rende
 offline assertion (`frame_slice` + `process` → available; `frame_slice` alone →
 absent) to `deps.test.ts`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/analyze/vsync.ts packages/core/src/analyze/engine.ts \
@@ -583,7 +583,7 @@ clause is ported verbatim as a defensive filter and is therefore unreachable on
 a well-formed trace — say so in the module header rather than inventing a test
 for an impossible collision.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 it('confirms an empty frame with no buffer event and no non-empty sibling', () => {
@@ -627,12 +627,12 @@ it('never reports an exact 0% empty rate for an app with no frames', async () =>
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/core/test/analyze-empty-frame.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `filterEmptyFrames` and `EmptyFrameAnalyzer`**
+- [x] **Step 3: Implement `filterEmptyFrames` and `EmptyFrameAnalyzer`**
 
 One `db` query for the buffer events over the whole frame span, because the
 typed `CallstackQuery.matching` takes a single pattern and this needs four
@@ -658,14 +658,14 @@ subject `{ process, frameNo: frame.id }`, `signals` carrying `vsync` and
 `filtered`, drill-down `frames.get` with `{ id }`. Severity `warn` when the rate
 is ≥ 10, else `info`; when there is no rate, `info`.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/analyze-empty-frame.test.ts packages/core/test/analyze-engine.test.ts packages/core/test/compare.test.ts`
 Expected: PASS after adding `'empty-frame'` to the id list and
 `EmptyFrameAnalyzer` to the instance list of `analyze-engine.test.ts`'s pin, and
 `empty_frame.count` / `empty_frame.rate` as `'lower'`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/analyze/empty-frame.ts packages/core/src/analyze/engine.ts \
@@ -713,7 +713,7 @@ On `real_device` they differ by one (ids 292/304/312/316, rowids
 `frames.get`, so the id resolves; the divergence is documented in the module
 header rather than emulated.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 it('traces a skip to the nearest app frame through a buffer event', () => {
@@ -753,12 +753,12 @@ it('emits no_data when the trace has no DisplayNode skip events', async () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/core/test/analyze-rs-skip.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `computeRsSkip` and `RsSkipAnalyzer`**
+- [x] **Step 3: Implement `computeRsSkip` and `RsSkipAnalyzer`**
 
 Port `frame_analyzer_rs_skip.py` and `frame_rs_skip_backtrack_nw.py`, using
 `db` for the joins (no query class covers `callstack ⋈ thread ⋈ process ⋈
@@ -789,7 +789,7 @@ dur]`, severity `warn`, `signals` carrying `skipEvents`, `appFrameId`,
 traced, `frames.get`. No skip events at all → one `no_data` evidence naming
 `DisplayNode skip`.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/analyze-rs-skip.test.ts packages/core/test/analyze-engine.test.ts packages/core/test/compare.test.ts`
 Expected: PASS after adding `'rs-skip'` to the id list and `RsSkipAnalyzer` to
@@ -798,7 +798,7 @@ the instance list of `analyze-engine.test.ts`'s pin, and
 `rs_skip.traced.count` / `rs_skip.trace.accuracy` (`'higher'`) to
 `METRIC_DIRECTIONS`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/analyze/rs-skip.ts packages/core/src/report/evidence.ts \
@@ -835,7 +835,7 @@ ids and 20 chains per thread (HapRay's UI budget), which silently truncates an
 aggregate. It queries every distinct `callchain_id` of the given samples and
 weights each by `event_count`.
 
-- [ ] **Step 1: Write the failing query test**
+- [x] **Step 1: Write the failing query test**
 
 Add to `query-callstack-perf.test.ts`, against the existing `perf.db` fixture
 (chain 10: depths 0–3, `Foo()` / `Bar()` / `raw2` / `raw3`; `event_count` 5 + 7):
@@ -858,12 +858,12 @@ it('returns nothing for an empty thread list', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/core/test/query-callstack-perf.test.ts -t "folds callchains"`
 Expected: FAIL — `foldedStacks` is not a function.
 
-- [ ] **Step 3: Implement `foldedStacks`**
+- [x] **Step 3: Implement `foldedStacks`**
 
 One query for `(thread_id, callchain_id, SUM(event_count))` of the threads in
 range (`callchain_id IS NOT NULL`), one for the frames of those chain ids
@@ -874,12 +874,12 @@ string, and sort by `samples` desc then `stack` asc before slicing to `top`.
 `leaf` is the last frame's symbol. A chain with no frames is skipped, as
 upstream does.
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `npx vitest run packages/core/test/query-callstack-perf.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing analyzer test**
+- [x] **Step 5: Write the failing analyzer test**
 
 Build a dedicated `perf.db` in the test (the shared fixture's extra threads make
 the shares hard to read):
@@ -904,12 +904,12 @@ it('emits the documented degraded proxy when the perf database has no samples', 
 });
 ```
 
-- [ ] **Step 6: Run it to verify it fails**
+- [x] **Step 6: Run it to verify it fails**
 
 Run: `npx vitest run packages/core/test/analyze-flamegraph.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 7: Implement `FlamegraphAnalyzer`**
+- [x] **Step 7: Implement `FlamegraphAnalyzer`**
 
 `ctx.perf` absent or `!hasSamples()` → one `flamegraph.degraded` proxy whose
 reason names `--hiperf` and the debuggable-app requirement. Otherwise resolve
@@ -921,13 +921,13 @@ and `flamegraph.top.symbol` / `flamegraph.top.samples` only when at least one
 stack exists. Register, export, and add no `METRIC_DIRECTIONS` entries — none
 of these five is better or worse in a fixed direction.
 
-- [ ] **Step 8: Run the tests**
+- [x] **Step 8: Run the tests**
 
 Run: `npx vitest run packages/core/test/analyze-flamegraph.test.ts packages/core/test/analyze-engine.test.ts`
 Expected: PASS after adding `'flamegraph'` to the id list and
 `FlamegraphAnalyzer` to the instance list of `analyze-engine.test.ts`'s pin.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add packages/core/src/query/perf.ts packages/core/src/analyze/flamegraph.ts \
@@ -980,7 +980,7 @@ attributing another process's builds to the app is the same bug
 unscoped — which is why parity holds there. The scoped behaviour has its own
 test and **no parity claim**.
 
-- [ ] **Step 1: Write the synthetic fixture and generate the golden**
+- [x] **Step 1: Write the synthetic fixture and generate the golden**
 
 `components.synthetic.sql` contains the `callstack` DDL and these seven rows.
 This exact data was already run through HapRay to produce the golden below.
@@ -1029,7 +1029,7 @@ Generate it:
 If the generator produces anything else, the SQL and the golden disagree — fix
 the SQL, do not edit the golden by hand.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```ts
 it('matches the HapRay component-reuse golden', () => {
@@ -1059,12 +1059,12 @@ it('reports no reuse rate when nothing was built', async () => {
 });
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `npx vitest run packages/core/test/analyze-components.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 4: Implement `round2HalfEven`, `computeComponentReuse` and the analyzer**
+- [x] **Step 4: Implement `round2HalfEven`, `computeComponentReuse` and the analyzer**
 
 `round2HalfEven` must be half-even on the exact double, so
 `Math.round(x * 100) / 100` (half-up) is wrong: `0.125` would become `0.13`.
@@ -1087,7 +1087,7 @@ The analyzer emits `components.builds.count` (= `max_component`'s builds),
 `'lower'` and `components.recycled.count` / `components.reuse.rate` `'higher'`
 to `METRIC_DIRECTIONS`.
 
-- [ ] **Step 5: Run the parity and integrity tests**
+- [x] **Step 5: Run the parity and integrity tests**
 
 Run: `npx vitest run packages/core/test/analyze-components.test.ts packages/core/test/parity-hapray.test.ts packages/core/test/parity-fixtures.test.ts packages/core/test/analyze-engine.test.ts`
 Expected: PASS after adding the new fixture to the integrity test's key list
@@ -1095,7 +1095,7 @@ Expected: PASS after adding the new fixture to the integrity test's key list
 'total_builds']`) and `'components'` plus `ComponentReuseAnalyzer` to
 `analyze-engine.test.ts`'s pin.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/core/src/analyze/components.ts packages/core/src/analyze/engine.ts \
@@ -1121,7 +1121,7 @@ git commit -m "feat: port HapRay's ArkUI component-reuse analyzer"
 - Consumes: the finished surface.
 - Produces: documented behaviour for the six new analyzers, the measured counts on both recorded traces, and an honest statement of what P6 did **not** port.
 
-- [ ] **Step 1: Export every new value and type**
+- [x] **Step 1: Export every new value and type**
 
 Add the new exports to `packages/core/src/index.ts` and the new value names to
 `VALUE_EXPORTS` in `types.test.ts`: `GcAnalyzer`, `computeGc`, `VsyncAnalyzer`,
@@ -1130,13 +1130,13 @@ Add the new exports to `packages/core/src/index.ts` and the new value names to
 `ComponentReuseAnalyzer`, `computeComponentReuse`, `round2HalfEven`,
 `resolveAppIpids`.
 
-- [ ] **Step 2: Run the type surface test**
+- [x] **Step 2: Run the type surface test**
 
 Run: `npm run build -w @ohos-perf/core && npx vitest run packages/core/test/types.test.ts packages/core/test/index.test.ts`
 Expected: PASS. A declared-but-unexported type fails the second test; a value
 missing from `VALUE_EXPORTS` fails the first.
 
-- [ ] **Step 3: Measure the new counts — record, do not predict**
+- [x] **Step 3: Measure the new counts — record, do not predict**
 
 `analyze` takes a **scene directory**, not a `.db`, and needs `--app` or every
 app-scoped analyzer degrades for lack of a pid (the scene has no `scene.json`).
@@ -1175,7 +1175,7 @@ is wrong, not that HapRay is wrong.
 
 Delete `.p6measure/` afterwards (it is untracked scratch).
 
-- [ ] **Step 4: Re-measure the capability matrix if a device is attached**
+- [x] **Step 4: Re-measure the capability matrix if a device is attached**
 
 ```bash
 node packages/cli/dist/index.js caps --json | node -e \
@@ -1190,7 +1190,7 @@ emulator 10. If no device is attached, update the denominators to 21 and keep
 the previously measured numerators, annotated "(measured before `trace.ark`
 was added)".
 
-- [ ] **Step 5: Update the docs**
+- [x] **Step 5: Update the docs**
 
 - `README.md`: the "20 verdicts" line becomes 21; the analyzers list and the
   metric-prefix table gain `gc.*`, `vsync.*`, `empty_frame.*`, `rs_skip.*`,
@@ -1218,19 +1218,19 @@ was added)".
   `CallstackQuery`'s `ipids` scope and `PerfQuery`'s `eventCount` /
   `threadIdsNamed` / `foldedStacks`.
 
-- [ ] **Step 6: Run the doc-reading tests and both typechecks**
+- [x] **Step 6: Run the doc-reading tests and both typechecks**
 
 Run: `npx vitest run packages/cli/test/skill.test.ts packages/cli/test/program.test.ts && npm run typecheck -w @ohos-perf/core && npm run typecheck -w @ohos-perf/cli`
 Expected: PASS and both typechecks exit 0.
 
-- [ ] **Step 7: Run the whole suite**
+- [x] **Step 7: Run the whole suite**
 
 Run: `npm test`
 Expected: green. Record the total and the clean-checkout split (move
 `spike/out` aside, run `npm run test:unit` and `npm run test:device`, restore)
 and use those numbers — not estimates — in README and the site.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add README.md site/index.html skill/ohos-perf/SKILL.md \
