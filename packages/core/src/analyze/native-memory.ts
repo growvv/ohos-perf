@@ -1,6 +1,7 @@
 // Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.
 
 import type { NativeHookEvent } from '../query/native-hook';
+import { classifyNativePath } from './native-kinds';
 
 /** What an event does to the running total. */
 export type NativeEventKind = 'alloc' | 'free' | 'other';
@@ -228,4 +229,173 @@ export function nativeOrigin(events: readonly NativeHookEvent[]): number {
 export function nativeEndTs(events: readonly NativeHookEvent[]): number {
   const sorted = ordered(events);
   return sorted[sorted.length - 1]?.startTs ?? 0;
+}
+
+/** Name lookups the aggregation needs, all resolved by the caller once. */
+export interface NativeNames {
+  /** `process.pid` → process name. */
+  processes: Map<number, string>;
+  /** `thread.itid` → thread name. */
+  threads: Map<number, string>;
+  /** `data_dict` id → file path. */
+  files: Map<number, string>;
+  /** `data_dict` id → symbol. */
+  symbols: Map<number, string>;
+  /** `callchain_id` → its deepest frame, the one that owns the allocation. */
+  frameLeaves: Map<number, { fileId: number; symbolId: number }>;
+}
+
+/** One unreleased-memory row: a callchain and thread at one instant. */
+export interface UnreleasedRow {
+  callchainId: number;
+  pid: number;
+  process: string;
+  tid: number;
+  thread: string;
+  file: string;
+  symbol: string;
+  /** Summed remaining bytes. */
+  size: number;
+  /** Active allocations merged into this row. */
+  count: number;
+  /** Earliest allocation instant, relative to the first app event. */
+  firstRelativeNs: number;
+  category: number;
+  categoryName: string;
+  subCategory: string;
+}
+
+function rowOrder(a: UnreleasedRow, b: UnreleasedRow): number {
+  return (
+    b.size - a.size ||
+    a.callchainId - b.callchainId ||
+    a.pid - b.pid ||
+    a.tid - b.tid
+  );
+}
+
+/**
+ * Merges live allocations into rows keyed by `(callchainId, pid, tid)`.
+ *
+ * The process, thread, file and symbol come from the trace's own name tables;
+ * a name the trace does not carry is `''` for a process and `'unknown'` for a
+ * thread, matching how the rest of the package renders a missing name. The
+ * category is resolved from the leaf frame, because the leaf is the allocation
+ * site, not the outermost caller.
+ */
+export function aggregateUnreleased(
+  allocs: readonly ActiveAlloc[],
+  names: NativeNames,
+): UnreleasedRow[] {
+  const rows = new Map<string, UnreleasedRow>();
+  for (const alloc of allocs) {
+    const key = `${alloc.callchainId}:${alloc.pid}:${alloc.tid}`;
+    const existing = rows.get(key);
+    if (existing !== undefined) {
+      existing.size += alloc.size;
+      existing.count += 1;
+      existing.firstRelativeNs = Math.min(existing.firstRelativeNs, alloc.relativeNs);
+      continue;
+    }
+    const leaf = names.frameLeaves.get(alloc.callchainId);
+    const file = leaf === undefined ? '' : names.files.get(leaf.fileId) ?? '';
+    const symbol = leaf === undefined ? '' : names.symbols.get(leaf.symbolId) ?? '';
+    const thread = names.threads.get(alloc.tid) ?? 'unknown';
+    const category = classifyNativePath(file.length > 0 ? file : null, symbol.length > 0 ? symbol : null, thread);
+    rows.set(key, {
+      callchainId: alloc.callchainId,
+      pid: alloc.pid,
+      process: names.processes.get(alloc.pid) ?? '',
+      tid: alloc.tid,
+      thread,
+      file,
+      symbol,
+      size: alloc.size,
+      count: 1,
+      firstRelativeNs: alloc.relativeNs,
+      category: category.category,
+      categoryName: category.categoryName,
+      subCategory: category.subCategory,
+    });
+  }
+  return [...rows.values()].sort(rowOrder);
+}
+
+/** One timeline bucket; only buckets that saw an event are emitted. */
+export interface NativeTimelineBucket {
+  startNs: number;
+  endNs: number;
+  allocBytes: number;
+  freeBytes: number;
+  /** `allocBytes - freeBytes` for this bucket. */
+  deltaBytes: number;
+  /** Running total after the bucket's last event. */
+  totalBytes: number;
+  isPeak: boolean;
+}
+
+/** Default bucket width: one second. */
+const DEFAULT_BUCKET_NS = 1_000_000_000;
+
+/**
+ * Buckets the events into fixed windows anchored at the first event.
+ *
+ * An empty bucket is omitted rather than emitted as zeros: "the capture
+ * recorded nothing here" and "nothing changed here" are different facts, and a
+ * zero would conflate them. `isPeak` marks the bucket holding the peak event,
+ * so a reader can find the worst instant without re-deriving it.
+ */
+export function buildNativeTimeline(
+  events: readonly NativeHookEvent[],
+  bucketNs: number = DEFAULT_BUCKET_NS,
+): NativeTimelineBucket[] {
+  if (!Number.isFinite(bucketNs) || bucketNs <= 0) {
+    throw new Error(`bucketNs must be a positive finite number of nanoseconds, got ${bucketNs}`);
+  }
+  const sorted = ordered(events);
+  const origin = sorted[0]?.startTs ?? 0;
+  const buckets = new Map<number, NativeTimelineBucket>();
+  let total = 0;
+  let peak = Number.NEGATIVE_INFINITY;
+  let peakIndex = -1;
+
+  for (const event of sorted) {
+    const kind = nativeEventKind(event.eventType);
+    if (kind === 'other') continue;
+    const size = Math.abs(event.heapSize);
+    const index = Math.floor((event.startTs - origin) / bucketNs);
+    let bucket = buckets.get(index);
+    if (bucket === undefined) {
+      const startNs = origin + index * bucketNs;
+      bucket = {
+        startNs,
+        endNs: startNs + bucketNs,
+        allocBytes: 0,
+        freeBytes: 0,
+        deltaBytes: 0,
+        totalBytes: 0,
+        isPeak: false,
+      };
+      buckets.set(index, bucket);
+    }
+    if (kind === 'alloc') {
+      bucket.allocBytes += size;
+      bucket.deltaBytes += size;
+      total += size;
+    } else {
+      bucket.freeBytes += size;
+      bucket.deltaBytes -= size;
+      total -= size;
+    }
+    bucket.totalBytes = total;
+    if (total > peak) {
+      peak = total;
+      peakIndex = index;
+    }
+  }
+
+  const result = [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([, bucket]) => bucket);
+  const peakBucket = buckets.get(peakIndex);
+  if (peakBucket !== undefined) peakBucket.isPeak = true;
+  return result;
 }
