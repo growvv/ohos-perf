@@ -232,21 +232,31 @@ export class Device {
             { code: 'HIPROFILER_BAD_BUFFER' },
           );
         }
+        // An app-less capture is valid for the device-wide collectors, so the
+        // requirement lives with the modes that resolve a pid from it. Every
+        // check below runs before the first device call.
+        const app = opts.app;
+        const requireApp = (mode: string, reason: string): string => {
+          if (app === undefined || app === '') {
+            throw new OhosPerfError(
+              `${mode} capture requires an app (CollectOptions.app)${reason}`,
+              { code: 'COLLECT_APP_REQUIRED' },
+            );
+          }
+          return app;
+        };
         const wantsNativehook = wantsHiprofiler && pluginNames.includes('nativehook');
-        if ((wantsProcfs || wantsNativehook) && (opts.app === undefined || opts.app === '')) {
-          throw new OhosPerfError(
-            `${wantsNativehook ? 'nativehook' : 'procfs'} capture requires an app` +
-              ` (CollectOptions.app) to resolve a pid`,
-            { code: 'COLLECT_APP_REQUIRED' },
-          );
-        }
-        if (
-          (wantsProcfs || wantsNativehook || opts.coldStart !== undefined) &&
-          !BARE_NAME.test(opts.app)
-        ) {
+        const needsPid = wantsProcfs || wantsNativehook || opts.coldStart !== undefined;
+        const pidApp = needsPid
+          ? requireApp(
+              wantsNativehook ? 'nativehook' : wantsProcfs ? 'procfs' : 'cold start',
+              wantsNativehook || wantsProcfs ? ' to resolve a pid' : ' to launch an ability',
+            )
+          : undefined;
+        if (pidApp !== undefined && !BARE_NAME.test(pidApp)) {
           throw new OhosPerfError(
             `app must be a bare name matching ${String(BARE_NAME)}` +
-              ` (got ${JSON.stringify(opts.app)})`,
+              ` (got ${JSON.stringify(pidApp)})`,
             { code: 'COLLECT_BAD_APP' },
           );
         }
@@ -266,16 +276,11 @@ export class Device {
         const wantsUitest = opts.uitest === true;
         // Only hiperf needs a pid. hidumper and uitest read the whole screen,
         // so they work with no app at all.
-        if (wantsHiperf && (opts.app === undefined || opts.app === '')) {
-          throw new OhosPerfError(
-            'hiperf capture requires an app (CollectOptions.app) to profile',
-            { code: 'COLLECT_APP_REQUIRED' },
-          );
-        }
-        if (wantsHiperf && !BARE_NAME.test(opts.app)) {
+        const hiperfApp = wantsHiperf ? requireApp('hiperf', ' to profile') : undefined;
+        if (hiperfApp !== undefined && !BARE_NAME.test(hiperfApp)) {
           throw new OhosPerfError(
             `app must be a bare name matching ${String(BARE_NAME)}` +
-              ` (got ${JSON.stringify(opts.app)})`,
+              ` (got ${JSON.stringify(hiperfApp)})`,
             { code: 'COLLECT_BAD_APP' },
           );
         }
@@ -324,13 +329,15 @@ export class Device {
         const startedAtNs = await readUptimeNs(hdc, this.id);
 
         if (opts.coldStart !== undefined) {
+          // `pidApp` is defined whenever `coldStart` is set: the gate above
+          // includes it in `needsPid`.
           const result = await hdc.shell(
             this.id,
-            `aa start -a ${opts.coldStart.ability} -b ${opts.app}`,
+            `aa start -a ${opts.coldStart.ability} -b ${pidApp!}`,
           );
           if (result.code !== 0) {
             throw new OhosPerfError(
-              `aa start failed for ${opts.app}/${opts.coldStart.ability}` +
+              `aa start failed for ${pidApp!}/${opts.coldStart.ability}` +
                 ` (exit ${result.code})`,
               { code: 'COLLECT_COLD_START_FAILED' },
             );
@@ -363,7 +370,7 @@ export class Device {
                 hiprofilerPlugins.push(memoryPlugin());
                 break;
               case 'nativehook':
-                nativehookPids = await resolvePids(hdc, this.id, opts.app);
+                nativehookPids = await resolvePids(hdc, this.id, pidApp!);
                 hiprofilerPlugins.push(nativehookPlugin({ pids: nativehookPids }));
                 break;
             }
@@ -372,7 +379,7 @@ export class Device {
 
         const collector = this.deps.collector ?? new HitraceCollector();
         const traceOpts: TraceCollectOptions = {
-          app: opts.app,
+          app,
           durationMs: opts.durationMs,
           bufferKb: opts.bufferKb,
           categories: opts.categories,
@@ -407,7 +414,7 @@ export class Device {
             runs.push(procfs.collect(
               hdc,
               this.id,
-              { app: opts.app, durationMs: opts.durationMs, intervalMs },
+              { app: pidApp!, durationMs: opts.durationMs, intervalMs },
               layout,
             ));
           }
@@ -415,7 +422,7 @@ export class Device {
             const hiperf = this.deps.hiperf ?? new HiperfCollector();
             runs.push(hiperf.collect(hdc, this.id, {
               durationMs: opts.durationMs,
-              app: opts.app,
+              app: hiperfApp!,
               ...(opts.hiperf?.frequency === undefined
                 ? {}
                 : { frequency: opts.hiperf.frequency }),
@@ -534,7 +541,13 @@ export class Device {
 
         writeSceneMetadata(layout, {
           version: 1,
-          app: { packageName: opts.app, processNames: [opts.app] },
+          // An app-less capture records the absence rather than an undefined
+          // name: scene.json stays a valid descriptor a later analyze reads,
+          // and the empty name resolves to no pid, never to a fabricated app.
+          app: {
+            packageName: app ?? '',
+            processNames: app === undefined || app === '' ? [] : [app],
+          },
           // The procfs collector resolves the pid for its samples; reuse it
           // instead of issuing another `pidof` device call. Without procfs the
           // nativehook resolution (if any) already holds the app's pids.

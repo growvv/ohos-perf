@@ -257,12 +257,29 @@ describe('command wiring', () => {
     expect(emitted[0].exitCode).toBe(0);
   });
 
+  it('collect forwards an app-less hidumper and uitest request', async () => {
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1', '--hidumper', '--uitest'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return {
+            sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' },
+            collectors: ['hitrace', 'hidumper', 'uitest'],
+          };
+        },
+      },
+    );
+    expect(seen).toEqual([{ durationMs: 10_000, out: 'scene1', hidumper: true, uitest: true }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
   it('collect rejects --hiperf without --app before any device work', async () => {
-    // `--app` is a required option of `collect` in every mode, so the rejection
-    // happens in commander and never reaches deps.collect. hiperf additionally
-    // needs the app inside the collector, which is the core's gate, not ours.
+    // `--app` is optional now, so the action owns this gate: a request that
+    // cannot be served must fail before deps.collect connects to a device.
     let called = false;
-    const { emitted, err, error } = await parse(
+    const { emitted } = await parse(
       ['collect', '--duration', '10', '--out', 'scene1', '--hiperf'],
       {
         collect: async () => {
@@ -272,9 +289,44 @@ describe('command wiring', () => {
       },
     );
     expect(called).toBe(false);
-    expect(emitted).toHaveLength(0);
-    expect(error?.exitCode).toBe(1);
-    expect(err.join('')).toContain('--app');
+    expect(emitted).toEqual([
+      { stdout: '', stderr: expect.stringContaining('--app'), exitCode: 1 },
+    ]);
+  });
+
+  it('collect rejects --procfs and --cold-start without --app before any device work', async () => {
+    for (const mode of [['--procfs'], ['--cold-start', 'EntryAbility']]) {
+      let called = false;
+      const { emitted } = await parse(
+        ['collect', '--duration', '10', '--out', 'scene1', ...mode],
+        {
+          collect: async () => {
+            called = true;
+            return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' }, collectors: [] };
+          },
+        },
+      );
+      expect(called, mode.join(' ')).toBe(false);
+      expect(emitted[0].exitCode, mode.join(' ')).toBe(1);
+      expect(emitted[0].stderr, mode.join(' ')).toContain('--app');
+    }
+  });
+
+  it('collect rejects --hiprofiler --plugins nativehook without --app', async () => {
+    let called = false;
+    const { emitted } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1',
+        '--hiprofiler', '--plugins', 'nativehook'],
+      {
+        collect: async () => {
+          called = true;
+          return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' }, collectors: [] };
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stderr).toContain('--app');
   });
 
   it('collect rejects an invalid --duration before calling deps.collect', async () => {

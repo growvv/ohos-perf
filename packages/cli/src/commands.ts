@@ -67,7 +67,12 @@ export interface AnalyzeOutput {
 
 /** The arguments `collect` forwards to the IO layer. */
 export interface CollectRequest {
-  app: string;
+  /**
+   * Application under test. Optional because `hidumper` and `uitest` capture
+   * the whole screen; the modes that need a pid are rejected by the action
+   * before the IO layer connects to a device.
+   */
+  app?: string;
   durationMs: number;
   out: string;
   procfs?: boolean;

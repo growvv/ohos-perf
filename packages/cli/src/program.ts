@@ -86,7 +86,10 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
   program
     .command('collect')
     .description('capture a scene from the attached device')
-    .requiredOption('--app <pkg>', 'application package name')
+    .option(
+      '--app <pkg>',
+      'application package name (required for --procfs, --cold-start, --hiperf and hiprofiler nativehook)',
+    )
     .requiredOption('--duration <seconds>', 'capture duration in seconds (10 or 10s)')
     .requiredOption('--out <dir>', 'scene output directory')
     .option('--procfs', 'also sample /proc memory state for the app')
@@ -101,7 +104,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--uitest', 'also dump the on-screen UI tree')
     .option('--json', 'print the result as JSON')
     .action(async (opts: {
-      app: string;
+      app?: string;
       duration: string;
       out: string;
       procfs?: boolean;
@@ -147,8 +150,27 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         }
       }
 
+      // `--app` is optional for the device-wide collectors, so this action is
+      // the gate for the modes that cannot run without one. The core repeats
+      // the check; here it must happen before deps.collect connects to a
+      // device at all.
+      const needsApp =
+        opts.procfs === true ||
+        opts.coldStart !== undefined ||
+        opts.hiperf === true ||
+        (hiprofilerRequest?.plugins?.includes('nativehook') ?? false);
+      if (needsApp && (opts.app === undefined || opts.app === '')) {
+        io.emit({
+          stdout: '',
+          stderr: 'missing --app: --procfs, --cold-start, --hiperf and the nativehook' +
+            ' plugin require an application package name\n',
+          exitCode: 1,
+        });
+        return;
+      }
+
       io.emit(await runCollect(deps, {
-        app: opts.app,
+        ...(opts.app === undefined ? {} : { app: opts.app }),
         durationMs,
         out: opts.out,
         ...(opts.procfs === true ? { procfs: true } : {}),

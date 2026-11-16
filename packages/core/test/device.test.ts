@@ -1080,6 +1080,63 @@ function extraCollectors(opts: {
 }
 
 describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
+  it('captures hidumper and uitest with no app at all', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-appless-'));
+    try {
+      const h = extraCollectors();
+      const scene = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, hidumper: true, uitest: true,
+      }).then((s) => s.ingest());
+      scene.close();
+
+      expect(h.started.sort()).toEqual(['hidumper', 'hitrace', 'uitest']);
+      // An app-less scene records that there is no app rather than omitting
+      // the field: scene.json must stay a valid descriptor a later analyze
+      // can read, and "no app" is a fact, not a malformed document.
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.app).toEqual({ packageName: '', processNames: [] });
+      expect(meta.pids).toEqual([]);
+      expect(meta.capture.collectors).toEqual(['hitrace', 'hidumper', 'uitest']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects hiperf with no app before any device call', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-appless-hiperf-'));
+    try {
+      const h = extraCollectors();
+      const session = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, hiperf: {},
+      });
+      await expect(session.ingest()).rejects.toMatchObject({
+        code: 'COLLECT_APP_REQUIRED',
+      });
+      expect(h.started).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects a cold start with no app before any device call', async () => {
+    // `BARE_NAME.test(undefined)` coerces to "undefined" and passes, so
+    // without an explicit gate the device would run `aa start ... -b
+    // undefined` and the capture would silently analyze nothing.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-appless-cold-'));
+    try {
+      const h = extraCollectors();
+      const session = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, coldStart: { ability: 'EntryAbility' },
+      });
+      await expect(session.ingest()).rejects.toMatchObject({
+        code: 'COLLECT_APP_REQUIRED',
+      });
+      expect(h.started).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('runs every requested collector and records what each captured', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-extra-'));
     try {
