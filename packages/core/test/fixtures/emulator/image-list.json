@@ -1,0 +1,18 @@
+[
+    {
+        "SoftWareVersion": "6.1.0.126",
+        "deviceType": "phone",
+        "downloaded": "true",
+        "osVersion": "HarmonyOS 6.1.1(24)",
+        "releaseType": "Release",
+        "upgradable": "false"
+    },
+    {
+        "SoftWareVersion": "6.1.0.126",
+        "deviceType": "foldable",
+        "downloaded": "true",
+        "osVersion": "HarmonyOS 6.1.1(24)",
+        "releaseType": "Release",
+        "upgradable": "false"
+    }
+]

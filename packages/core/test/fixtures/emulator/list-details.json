@@ -1,0 +1,35 @@
+[
+    {
+        "deviceModel": "PHEMU-FD00",
+        "deviceType": "phone",
+        "hw.cpu.arch": "x86_64",
+        "hw.cpu.ncore": "4",
+        "hw.dataPartitionSize": "6144",
+        "hw.hdc.port": "notset",
+        "hw.lcd.density": "560",
+        "hw.lcd.number": "1",
+        "hw.lcd.phy.height": "163",
+        "hw.lcd.phy.width": "78",
+        "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z",
+        "hw.lcd.single.diagonalSize": "6.84",
+        "hw.lcd.single.height": "2856",
+        "hw.lcd.single.width": "1320",
+        "hw.ramSize": "4096",
+        "imageRoot": "E:/HarmonyRuntime/LocalAppData/Huawei/Sdk",
+        "imageSubPath": "system-image/HarmonyOS-6.1.1/phone_all_x86/",
+        "instancePath": "E:/HarmonyRuntime/LocalAppData/Huawei/Emulator/deployed/ProbePhone",
+        "isCustomize": "false",
+        "isHotBoot": "true",
+        "isRunning": "false",
+        "isUseWhitelist": "false",
+        "name": "ProbePhone",
+        "os.apiVersion": "24",
+        "os.isPublic": "true",
+        "os.osVersion": "HarmonyOS 6.1.1(24)",
+        "os.softwareVersion": "6.1.0.126",
+        "productModel": "nova 15 Pronova 15 Ultra",
+        "uuid": "1813e81f-a5ec-4cd2-b347-b5074c756dbd",
+        "vendorCountry": "CN"
+    }
+]
+

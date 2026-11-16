@@ -49,6 +49,14 @@ export class StreamerNotFoundError extends OhosPerfError {
   }
 }
 
+export class EmulatorCommandError extends OhosPerfError {
+  readonly output: string;
+  constructor(message: string, output: string, opts: { cause?: unknown; code?: string } = {}) {
+    super(message, opts);
+    this.output = output;
+  }
+}
+
 export class EmulatorNotFoundError extends OhosPerfError {
   readonly searchedPaths: string[];
   constructor(searchedPaths: string[], opts: { cause?: unknown; code?: string } = {}) {
