@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status: complete (verified 2026-11-16).** All 8 tasks shipped. Re-verified: `hdc` emits `-cwd /` with a relative device path; the HapRay plugin templates and `expand_pids` expansion are pinned by tests; the recorded Mate 60 probe fixture is committed at `test/fixtures/probe-mate60-hiprofiler.txt` (the plan's path said `packages/core/test/fixtures/`, which is a plan typo — the test reads the real one); `collect-hiprofiler.device.test.ts` passes against the attached device.
+
 **Goal:** Add the rich-collection plane: a hiprofiler collector driven by `hiprofiler_cmd` with plugin configurations ported from HapRay (ftrace, nativehook, gpu, xpower), producing a scene that converts through `trace_streamer` into the same 88-table SQLite the existing analyzers already read — plus honest capability reporting for those plugins.
 
 **Architecture:** A pure config builder renders hiprofiler's protobuf-text session config from a list of plugins. A collector writes that config to the device, runs one `hiprofiler_cmd` session, pulls the resulting `.htrace` into the scene, and hands it to the existing `Streamer`. No gRPC and no proto extraction: `hiprofiler_cmd` is the control path HapRay itself uses, and it is verified working on the real device as the shell user.
@@ -58,7 +60,7 @@ These drive several decisions below; do not re-litigate them without new measure
 - Consumes: nothing new.
 - Produces: `Hdc.recv(target, devicePath, localPath)` and `Hdc.send(target, localPath, devicePath)` now emit `file recv|send -cwd / <relative-device-path> <absolute-local-path>`, so every later collector can transfer files on this hdc build.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 it('passes -cwd / and a relative device path to file recv', async () => {
@@ -72,25 +74,25 @@ it('passes -cwd / and a relative device path to file recv', async () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/core/test/hdc.test.ts -t "file recv"`
 Expected: FAIL — the argv has no `-cwd /` and keeps the leading slash.
 
-- [ ] **Step 3: Implement the argv change**
+- [x] **Step 3: Implement the argv change**
 
 In `buildArgv`, for `recv`/`send`, emit `['-t', target, 'file', op, '-cwd', '/', relativeDevicePath, localPath]`. Add `toRelativeDevicePath(path)` that strips exactly one leading `/` (and rejects a path that is not absolute, so a caller cannot silently rely on the server cwd).
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/hdc.test.ts`
 Expected: PASS, including the existing send/recv assertions updated to the new argv.
 
-- [ ] **Step 5: Verify on the device**
+- [x] **Step 5: Verify on the device**
 
 Send a small config file and receive it back; record both commands and their output in the task report.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/core/src/transport/hdc.ts packages/core/test/hdc.test.ts
@@ -121,7 +123,7 @@ git commit -m "fix: transfer hdc files with -cwd / and relative device paths"
   export function buildHiprofilerConfig(opts: HiprofilerConfigOptions): string;
   ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 it('emits the session envelope the daemon requires', () => {
@@ -151,21 +153,21 @@ it('rejects a buffer page count below the measured minimum', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run packages/core/test/collector-hiprofiler-config.test.ts`
 Expected: FAIL — module does not exist.
 
-- [ ] **Step 3: Implement the builder**
+- [x] **Step 3: Implement the builder**
 
 Validate each `pluginName` against `/^[a-z][a-z0-9_-]*$/` and each `configData` line against `^[a-zA-Z0-9_]+: .+$` (protobuf text is line-oriented; rejecting anything else prevents both injection and silently malformed configs). Always emit `config_data {` … `}` even when empty. Indent `configData` by four spaces inside the block.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/collector-hiprofiler-config.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/collectors/hiprofiler/config.ts packages/core/test/collector-hiprofiler-config.test.ts
@@ -192,7 +194,7 @@ git commit -m "feat: build hiprofiler session configs with the required envelope
   export const PLANE_A_PLUGINS: readonly HiprofilerPlugin[];
   ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('expands nativehook pids into repeated expand_pids lines', () => {
@@ -208,21 +210,21 @@ it('keeps the HapRay ftrace event set verbatim', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run packages/core/test/collector-hiprofiler-templates.test.ts`
 Expected: FAIL — module does not exist.
 
-- [ ] **Step 3: Implement the templates**
+- [x] **Step 3: Implement the templates**
 
 Copy `FTRACE_PLUGIN_CONFIG`, `MEMORY_PLUGIN_CONFIG` (as `nativehookPlugin`) and `PERF_PLUGIN_CONFIG` text from `hapray/core/collection/command_templates.py`, unescaping the doubled braces. `gpuPlugin()` and `xpowerPlugin()` are empty `config_data` blocks — measured to work. Add the license header to this file.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/collector-hiprofiler-templates.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/collectors/hiprofiler/templates.ts THIRD_PARTY_NOTICES.md packages/core/test/collector-hiprofiler-templates.test.ts
@@ -254,25 +256,25 @@ git commit -m "feat: port HapRay plugin templates for hiprofiler"
   }
   ```
 
-- [ ] **Step 1: Write the failing tests** (fake `Hdc` records shell/send/recv calls)
+- [x] **Step 1: Write the failing tests** (fake `Hdc` records shell/send/recv calls)
 
 Cover: stale device file removed before the session; config sent; `hiprofiler_cmd -c … -o … -t N -s -k` issued; `DONE` required; size > 0 required before recv; `--kill` issued when the session fails; no partial `layout.traceFile` on failure.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run packages/core/test/collector-hiprofiler.test.ts`
 Expected: FAIL — module does not exist.
 
-- [ ] **Step 3: Implement the collector**
+- [x] **Step 3: Implement the collector**
 
 Mirror `HitraceCollector`'s safety ordering: remove the fixed device paths, `send` the config, run the session, require the `DONE` marker, require a positive file size, then `recv` into `layout.traceFile`. In `finally`, always issue `hiprofiler_cmd --kill` (swallow its error). Validate duration (`(0, 2^31-1]`), pid lists (positive integers) and buffer pages before the first device call.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/collector-hiprofiler.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/collectors/hiprofiler/index.ts packages/core/src/index.ts packages/core/test/collector-hiprofiler.test.ts
@@ -291,25 +293,25 @@ git commit -m "feat: add the hiprofiler collector"
 - Consumes: `HiprofilerCollector` (Task 4).
 - Produces: ``CollectOptions.hiprofiler?: { plugins?: readonly HiprofilerPlugin[]; bufferPages?: number }``. When set, the trace artifact comes from hiprofiler instead of hitrace, and `scene.json` records `collectors: ['hiprofiler']`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `collect({ hiprofiler: { plugins: [gpuPlugin()] } })` calls `HiprofilerCollector.collect` once and not `HitraceCollector.collect`; `scene.json` records `['hiprofiler']`; a hiprofiler failure leaves the previous scene's `trace.db` and `scene.json` untouched.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run packages/core/test/device.test.ts -t hiprofiler`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement the branch**
+- [x] **Step 3: Implement the branch**
 
 Gate on the same `trace.frames` capability. Keep the existing conversion ordering: the new `.htrace` is written to the scene's `traceFile` and converted by the existing `Streamer`; `scene.json` is written only after conversion succeeds.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/device.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/device/device.ts packages/core/test/device.test.ts
@@ -328,25 +330,25 @@ git commit -m "feat: collect scenes through hiprofiler"
 - Consumes: the existing probe snapshot.
 - Produces: `ProbeSnapshot.hiprofilerPlugins: string[] | undefined` parsed from `hiprofiler_cmd --list` (tolerating `Service not started`), and capability verdicts that cite the plugin list as their evidence.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `parseHiprofilerPlugins` extracts `cpu-plugin`, `gpu-plugin`, `nativehook`, … from the `capabilities { name: "…" }` blocks and returns `undefined` for `Service not started`. `mem.gpu` is available only when `gpu-plugin` is listed, not merely when `hiprofiler_cmd` exists.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run packages/core/test/probe.test.ts packages/core/test/capability.test.ts -t hiprofiler`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add one probe command (`hiprofiler_cmd --list`) to the fixed command order; when it reports `Service not started`, treat the plugin list as unknown and keep today's binary-based verdicts (documented in the matrix reason). When it returns a list, gate each hiprofiler-backed capability on its plugin.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npx vitest run packages/core/test/probe.test.ts packages/core/test/capability.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/device/probe.ts packages/core/src/device/capability.ts packages/core/test/probe.test.ts packages/core/test/capability.test.ts
@@ -366,25 +368,25 @@ git commit -m "feat: gate hiprofiler capabilities on the device's plugin list"
 - Consumes: Task 5's `CollectOptions.hiprofiler`.
 - Produces: `collect --hiprofiler --plugins gpu,xpower,nativehook`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `--plugins gpu,xpower` maps to the two plugin factories; an unknown name exits 1 with one stderr line and empty stdout.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run packages/cli/test/program.test.ts packages/cli/test/deps.test.ts -t hiprofiler`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement and document**
+- [x] **Step 3: Implement and document**
 
 Add the flag, wire it through `runCollect`, and update README's collector list and the site's L2 line (both languages).
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `npm test`
 Expected: all green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/cli/src README.md site/index.html packages/cli/test
@@ -403,10 +405,10 @@ git commit -m "feat(cli): expose hiprofiler collection"
 - Consumes: everything above.
 - Produces: a skipped-unless-a-device-is-attached test that captures 3 s with `ftrace-plugin`, converts, and asserts `sched_slice` is non-empty; plus the recorded probe fixture used by Task 6's tests.
 
-- [ ] **Step 1: Record the fixture** from the connected device and commit it.
-- [ ] **Step 2: Write the acceptance test** using `it.skipIf(!deviceAttached)`.
-- [ ] **Step 3: Run it on the device** and paste the full command/output in the task report.
-- [ ] **Step 4: Commit**
+- [x] **Step 1: Record the fixture** from the connected device and commit it.
+- [x] **Step 2: Write the acceptance test** using `it.skipIf(!deviceAttached)`.
+- [x] **Step 3: Run it on the device** and paste the full command/output in the task report.
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/core/test/collect-hiprofiler.device.test.ts packages/core/test/fixtures/probe-mate60-hiprofiler.txt

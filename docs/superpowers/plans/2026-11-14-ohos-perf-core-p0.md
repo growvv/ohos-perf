@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status: complete (verified 2026-11-16).** All 16 tasks shipped. Re-verified: every file this plan names exists; the four measured row counts it pins match `spike/out/emu_big.db` exactly (`sched_slice` 60053, `thread_state` 121076, `callstack` 35415, binder 3583); `analyze` over a real scene produces 14 metrics / 66 evidence without an app identity and 38 / 75 with `--app pbench.baseline`, byte-identical across two runs. Checkboxes below were ticked from that evidence, not from the ledger.
+
 **Goal:** 构建 `@ohos-perf/core` 的 P0 底座——能在真机与模拟器上探测设备能力、采集 trace、用 `trace_streamer` 解析成 SQLite、并提供带溯源与保真度标注的帧指标与证据。
 
 **Architecture:** 七层分层，但 P0 只实现其中五层的骨架：L0 Transport（hdc 客户端）、L1 Device（设备模型 + 能力探测 + 能力矩阵）、L2 Collectors（hitrace 与 hiperf 两个采集器）、L3 Ingest（trace_streamer 封装 + 场景目录）、L4 Query（帧与进程/线程访问器）、L5 Analyze（帧分析器）、L6 Report（Metric/Evidence 模型）。每个分析器是纯函数，输入查询句柄与时间窗，输出 `Metric[]` 与 `Evidence[]`。
@@ -108,7 +110,7 @@ P0 的边界：`collectors/hiprofiler`、`analyze/{binder,threads,fault-tree,mem
   - `type TimeRange = { startNs: number; endNs: number }`
   - `type AppIdentity = { packageName: string; pids: number[]; processNames: string[] }`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/errors.test.ts
@@ -131,12 +133,12 @@ describe('errors', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/errors.test.ts`
 Expected: FAIL — 无法解析 `../src/errors`
 
-- [ ] **Step 3: 实现骨架与错误类型**
+- [x] **Step 3: 实现骨架与错误类型**
 
 `package.json`（根，workspace）：
 ```json
@@ -177,12 +179,12 @@ export class OhosPerfError extends Error {
 
 `types.ts` 定义 `TimeRange` 与 `AppIdentity`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/errors.test.ts`
 Expected: PASS（2 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git init && git add -A
@@ -210,7 +212,7 @@ git commit -m "chore: scaffold @ohos-perf workspace with error types"
   - `Hdc.send(target: string, localPath: string, devicePath: string): Promise<void>`
   - `Hdc.fport(target: string, local: number, remote: number): Promise<void>`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/hdc.test.ts
@@ -240,12 +242,12 @@ describe('Hdc', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/hdc.test.ts`
 Expected: FAIL — `Hdc` 未定义
 
-- [ ] **Step 3: 实现 `Hdc`**
+- [x] **Step 3: 实现 `Hdc`**
 
 `buildArgv(op, params)` 是纯函数，便于测试。`shell` 的命令作为**单个 argv 元素**传递（不经 shell），避免引号问题。`recv`/`send` 分别产出 `['-t', target, 'file', 'recv', device, local]` 与 `['-t', target, 'file', 'send', local, device]`。
 
@@ -258,12 +260,12 @@ Expected: FAIL — `Hdc` 未定义
 
 `run()` 用 `child_process.spawn`，不经 shell（`shell: false`），以 `buildEnv` 为 env。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/hdc.test.ts`
 Expected: PASS（3 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/transport/hdc.ts packages/core/test/hdc.test.ts
@@ -293,7 +295,7 @@ git commit -m "feat: add hdc transport with MSYS path-conversion guard"
   - `function buildMatrix(input: CapabilityInputs): CapabilityMatrix`
   - `interface CapabilityInputs`：`{ abi: string; isEmulator: boolean; binaries: Record<string, boolean>; hiperfHwEvents: string[]; hiperfSwEvents: string[]; probes: Record<string, ProbeResult> }`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/capability.test.ts
@@ -361,12 +363,12 @@ describe('buildMatrix', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/capability.test.ts`
 Expected: FAIL — `buildMatrix` 未定义
 
-- [ ] **Step 3: 实现 `capability.ts`**
+- [x] **Step 3: 实现 `capability.ts`**
 
 `buildMatrix` 的判定规则（每条都要落到代码，`reason` 用测试里断言的原文）：
 
@@ -392,12 +394,12 @@ Expected: FAIL — `buildMatrix` 未定义
 
 `all()` 与 `satisfies().missing` 均按 `id` 字典序排序。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/capability.test.ts`
 Expected: PASS（5 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/device/capability.ts packages/core/test/capability.test.ts
@@ -424,7 +426,7 @@ git commit -m "feat: add capability model and matrix with degradation reasons"
   - `function parseBinaries(whichOutputs: Record<string, string>): Record<string, boolean>`
   - `function parseHiperfEvents(listOutput: string): { hw: string[]; sw: string[] }`
 
-- [ ] **Step 1: 录制并保存 fixtures**
+- [x] **Step 1: 录制并保存 fixtures**
 
 先用手上证据构造两个 fixture 文件（真机取 `spike/logs/probe_*.log` 与 Phase A 记录；模拟器取 Phase B 记录）。格式为每行 `CMD\tSTDOUT_ESCAPED`：
 
@@ -443,7 +445,7 @@ which uitest	/bin/uitest
 hiperf list hw	Supported events for hardware:\n
 ```
 
-- [ ] **Step 2: 写失败测试**
+- [x] **Step 2: 写失败测试**
 
 ```ts
 // packages/core/test/probe.test.ts
@@ -507,12 +509,12 @@ describe('runProbe', () => {
 });
 ```
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/probe.test.ts`
 Expected: FAIL — `parseBinaries` 未定义
 
-- [ ] **Step 4: 实现 `probe.ts`**
+- [x] **Step 4: 实现 `probe.ts`**
 
 `parseBinaries`：输出含 `MISSING`、`No such file`、空串 → `false`；否则 `true`。
 
@@ -537,12 +539,12 @@ hiperf list
 
 `probes` 记录每条命令的 `ProbeResult`（`command` 为命令原文）。
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/probe.test.ts`
 Expected: PASS（5 tests）
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add packages/core/src/device/probe.ts packages/core/test/probe.test.ts test/fixtures/
@@ -564,7 +566,7 @@ git commit -m "feat: add device probe with recorded real/emulator fixtures"
   - `function openDb(path: string): QueryHandle`
   - `function tableRowCounts(db: QueryHandle): Record<string, number>`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/driver.test.ts
@@ -611,23 +613,23 @@ describe('openDb', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/driver.test.ts`
 Expected: FAIL — 无法解析 `../src/db/driver`
 
-- [ ] **Step 3: 实现 `driver.ts`**
+- [x] **Step 3: 实现 `driver.ts`**
 
 用 `node:sqlite` 的 `DatabaseSync`，以只读方式打开（`{ readOnly: true }`）。`query` 返回普通对象数组（`DatabaseSync` 的 `all()` 已返回对象）。`tableRowCounts` 查询 `sqlite_master` 中 `type='table'` 的表名，逐表 `SELECT COUNT(*)`，返回按表名排序的对象。
 
 若 `DatabaseSync` 打开失败且错误信息包含 `readonly`，回退为可写打开（`trace_streamer` 产物偶尔需要 `-wal` 恢复）。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/driver.test.ts`
 Expected: PASS（3 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/db/driver.ts packages/core/test/driver.test.ts
@@ -653,7 +655,7 @@ git commit -m "feat: add node:sqlite driver with read-only open"
     - `convert(inputPath: string, outputDbPath: string): Promise<void>`
   - `function buildConvertArgv(inputPath: string, outputDbPath: string): string[]`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/streamer.test.ts
@@ -684,12 +686,12 @@ describe('Streamer path handling', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/streamer.test.ts`
 Expected: FAIL — `buildConvertArgv` 未定义
 
-- [ ] **Step 3: 实现 `streamer.ts`**
+- [x] **Step 3: 实现 `streamer.ts`**
 
 `buildConvertArgv` 返回 `[inputPath, '-e', outputDbPath]`（实测 trace_streamer 4.3.7 的参数形式）。
 
@@ -705,12 +707,12 @@ Expected: FAIL — `buildConvertArgv` 未定义
 
 `convert()` 用 `spawn` 执行，收集 stderr；非零退出抛 `IngestError(message, stderr, 'STREAMER_EXIT_<code>')`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/streamer.test.ts`
 Expected: PASS（3 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/ingest/streamer.ts packages/core/test/streamer.test.ts
@@ -738,7 +740,7 @@ git commit -m "feat: add trace_streamer wrapper with space-safe spawn"
   - `interface Evidence { id: string; kind: EvidenceKind; severity: 'info' | 'warn' | 'critical'; subject: { process: string; thread?: string; frameNo?: number; pid?: number }; window: TimeRange; signals: Record<string, number | string>; explain: string; drillDown: DrillDownHandle[] }`
   - `function evidence(input: Omit<Evidence, 'id'>): Evidence` —— id 由 `kind + subject + window` 稳定哈希生成
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/report.test.ts
@@ -781,23 +783,23 @@ describe('evidence', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/report.test.ts`
 Expected: FAIL — `metric` 未定义
 
-- [ ] **Step 3: 实现 `metric.ts` 与 `evidence.ts`**
+- [x] **Step 3: 实现 `metric.ts` 与 `evidence.ts`**
 
 `metric()` 返回 `{ ...input, unit: input.unit ?? 'none' }`。
 
 `evidence()` 的 id：对 `JSON.stringify({ kind, subject, window })` 用 `node:crypto` 的 `createHash('sha1')` 取前 12 位十六进制。`JSON.stringify` 的 key 顺序由对象字面量决定，为保证确定性，显式按 `kind|process|thread|frameNo|pid|startNs|endNs` 拼接字符串再哈希。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/report.test.ts`
 Expected: PASS（3 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/report/ packages/core/test/report.test.ts
@@ -824,7 +826,7 @@ git commit -m "feat: add metric and evidence models with stable ids"
     - `close(): void`
   - `async function ingestScene(streamer: Streamer, layout: SceneLayout): Promise<Scene>`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/scene.test.ts
@@ -868,23 +870,23 @@ describe('ingestScene', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/scene.test.ts`
 Expected: FAIL — `createSceneLayout` 未定义
 
-- [ ] **Step 3: 实现 `scene.ts`**
+- [x] **Step 3: 实现 `scene.ts`**
 
 `createSceneLayout(root)`：`traceFile = join(root, 'trace.htrace')`、`traceDb = join(root, 'trace.db')`、`perfFile = join(root, 'perf.data')`、`perfDb = join(root, 'perf.db')`。
 
 `ingestScene`：若 `traceDb` 不存在则调用 `streamer.convert(traceFile, traceDb)`，然后 `openDb(traceDb)` 构造 `Scene`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/scene.test.ts`
 Expected: PASS（2 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/ingest/scene.ts packages/core/test/scene.test.ts
@@ -915,7 +917,7 @@ git commit -m "feat: add scene layout and ingest pipeline"
     - `mapped(): Array<{ src: Frame; dst: Frame }>`
     - `stats(range?: TimeRange): FrameStats`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/query-frames.test.ts
@@ -996,12 +998,12 @@ describe('FrameQuery', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/query-frames.test.ts`
 Expected: FAIL — `FrameQuery` 未定义
 
-- [ ] **Step 3: 实现 `frames.ts`**
+- [x] **Step 3: 实现 `frames.ts`**
 
 `all()` 的 SQL 固定为：
 ```sql
@@ -1019,12 +1021,12 @@ ORDER BY ts
 
 映射：`callstack_id → callstackId`、`type_desc → typeDesc`、`frame_no → frameNo`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/query-frames.test.ts`
 Expected: PASS（6 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/query/frames.ts packages/core/test/query-frames.test.ts
@@ -1053,7 +1055,7 @@ git commit -m "feat: add FrameQuery with flag/type semantics"
     - `mainThreads(): ThreadInfo[]`
     - `forProcess(ipid: number): ThreadInfo[]`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/query-process.test.ts
@@ -1110,21 +1112,21 @@ describe('ThreadQuery', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/query-process.test.ts`
 Expected: FAIL — `ProcessQuery` 未定义
 
-- [ ] **Step 3: 实现 `process.ts`**
+- [x] **Step 3: 实现 `process.ts`**
 
 `pidsFor(names)` 按**传入顺序**返回，跳过未找到的名字（测试固定此行为）。`ThreadQuery.all()` 按 `id` 排序。`isMainThread` 由 `is_main_thread === 1` 得出。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/query-process.test.ts`
 Expected: PASS（6 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/query/process.ts packages/core/test/query-process.test.ts
@@ -1150,7 +1152,7 @@ git commit -m "feat: add process and thread queries"
     - `id = 'frames'`、`requires = ['trace.frames']`
     - `run(ctx)` 产出指标 id：`frame.count`、`frame.jank.rate`、`frame.empty.rate`、`frame.avg.duration`、`frame.fps`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/analyze-frames.test.ts
@@ -1254,12 +1256,12 @@ describe('FrameAnalyzer', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/analyze-frames.test.ts`
 Expected: FAIL — `FrameAnalyzer` 未定义
 
-- [ ] **Step 3: 实现 `analyze/types.ts` 与 `analyze/frames.ts`**
+- [x] **Step 3: 实现 `analyze/types.ts` 与 `analyze/frames.ts`**
 
 `analyze/types.ts` 只放 Interfaces 中的三个类型。
 
@@ -1278,12 +1280,12 @@ Expected: FAIL — `FrameAnalyzer` 未定义
 
 `provenance` 统一为 `{ collector: 'hitrace+streamer', table: 'frame_slice', rows: frames.length, device: ctx.deviceId }`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/analyze-frames.test.ts`
 Expected: PASS（6 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/analyze/ packages/core/test/analyze-frames.test.ts
@@ -1311,7 +1313,7 @@ git commit -m "feat: add frame analyzer with provenance and evidence drilldown"
     - `finishCommand(devicePath: string): string`
     - `collect(hdc: Hdc, target: string, opts: TraceCollectOptions, layout: SceneLayout): Promise<void>`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/collector-hitrace.test.ts
@@ -1350,12 +1352,12 @@ describe('HitraceCollector', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/collector-hitrace.test.ts`
 Expected: FAIL — `HitraceCollector` 未定义
 
-- [ ] **Step 3: 实现 `collectors/types.ts` 与 `collectors/hitrace.ts`**
+- [x] **Step 3: 实现 `collectors/types.ts` 与 `collectors/hitrace.ts`**
 
 `HITRACE_DEFAULT_CATEGORIES` 与 HapRay `command_templates.py` 一致：
 ```ts
@@ -1369,12 +1371,12 @@ Expected: FAIL — `HitraceCollector` 未定义
 
 `collect()`：`hdc.shell(begin)` → 等待 `durationMs` → `hdc.shell(finishCommand(devicePath))` → `hdc.recv(target, devicePath, layout.traceFile)`。`devicePath` 固定为 `/data/local/tmp/ohosperf_trace.htrace`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/collector-hitrace.test.ts`
 Expected: PASS（5 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/collectors/ packages/core/test/collector-hitrace.test.ts
@@ -1404,7 +1406,7 @@ git commit -m "feat: add hitrace collector matching HapRay category set"
   - `interface CollectSession { ingest(): Promise<Scene> }`
   - `async function connect(opts?: ConnectOptions): Promise<Device>`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/device.test.ts
@@ -1481,12 +1483,12 @@ describe('Device', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/device.test.ts`
 Expected: FAIL — `Device` 未定义
 
-- [ ] **Step 3: 实现 `device.ts`**
+- [x] **Step 3: 实现 `device.ts`**
 
 构造参数 `(id: string, snapshot: ProbeSnapshot, deps: { hdc?: Hdc; streamer?: Streamer; collector?: HitraceCollector })`——`deps` 允许注入以便测试。
 
@@ -1500,12 +1502,12 @@ Expected: FAIL — `Device` 未定义
 
 **关键**：判定成功依据是 `listTargets()` 返回的 `connected` 字段，**不是**任何进程退出码。无可用 target 时抛 `DeviceNotFoundError`，其 `targetsOutput` 为原始 `listTargets` 文本。这直接对应 Review Focus 中"hdc 端口静默失败"——模拟器启动失败时退出码为 0，只有 `hdc list targets` 能暴露真相。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/device.test.ts`
 Expected: PASS（6 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/src/device/device.ts packages/core/test/device.test.ts
@@ -1524,7 +1526,7 @@ git commit -m "feat: add Device with cached capability matrix and collect orches
 - Consumes: 全部前置任务的公开符号
 - Produces: 包的唯一入口，导出 `connect`、`Device`、`CapabilityMatrix`、`buildMatrix`、`FrameQuery`、`ProcessQuery`、`ThreadQuery`、`FrameAnalyzer`、`Scene`、`metric`、`evidence`、全部错误类、全部公开类型
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/core/test/index.test.ts
@@ -1552,26 +1554,26 @@ describe('public surface', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/core/test/index.test.ts`
 Expected: FAIL — 未导出
 
-- [ ] **Step 3: 实现 `index.ts`**
+- [x] **Step 3: 实现 `index.ts`**
 
 显式具名导出（`export { ... }` 与 `export type { ... }`），不用 `export *`，以便导出面稳定可控。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/core/test/index.test.ts`
 Expected: PASS（3 tests）
 
-- [ ] **Step 5: 全量测试**
+- [x] **Step 5: 全量测试**
 
 Run: `npm test`
 Expected: 全部 PASS
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add packages/core/src/index.ts packages/core/test/index.test.ts
@@ -1595,7 +1597,7 @@ git commit -m "feat: expose stable public API surface"
   - `interface DoctorReport { hdc: { ok: boolean; path?: string; error?: string }; streamer: { ok: boolean; path?: string; version?: string; error?: string }; device?: { id: string; kind: string; abi: string }; capabilities: CapabilityState[] }`
   - CLI 命令：`ohos-perf doctor [--json]`、`ohos-perf caps [--json]`、`ohos-perf analyze <scene-dir> [--json]`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 // packages/cli/test/doctor.test.ts
@@ -1637,23 +1639,23 @@ describe('doctorReport', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run packages/cli/test/doctor.test.ts`
 Expected: FAIL — `doctorReport` 未定义
 
-- [ ] **Step 3: 实现 `doctor.ts` 与 CLI 入口**
+- [x] **Step 3: 实现 `doctor.ts` 与 CLI 入口**
 
 `doctorReport(deps)` 只依赖注入的三个函数，不直接 IO，便于测试。三个函数各自 try/catch，失败写入 `error` 字段，**绝不抛出**（Spec §9：诊断命令不能因单项失败而中断）。
 
 CLI 入口用 `commander`。`--json` 时 `process.stdout.write(JSON.stringify(report, null, 2) + '\n')`；否则打印人类可读表格，能力行格式为 `✓ trace.frames   hitrace   exact` / `✗ perf.pmu       —         no hardware PMU events reported by hiperf list hw`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `npx vitest run packages/cli/test/doctor.test.ts`
 Expected: PASS（2 tests）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/cli/ packages/cli/test/doctor.test.ts
@@ -1672,7 +1674,7 @@ git commit -m "feat: add ohos-perf CLI with doctor diagnostics"
 - Consumes: 全部前置任务
 - Produces: 一个不依赖设备的端到端测试，用 `spike/out/emu_big.db` 验证整条分析链
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 ```ts
 // packages/core/test/e2e-offline.test.ts
@@ -1706,21 +1708,21 @@ describe.skipIf(!existsSync(DB))('e2e on recorded emulator trace', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试**
+- [x] **Step 2: 运行测试**
 
 Run: `npx vitest run packages/core/test/e2e-offline.test.ts`
 Expected: PASS（若 trace.db 不存在则 skip）
 
-- [ ] **Step 3: 记录 fixture 来源**
+- [x] **Step 3: 记录 fixture 来源**
 
 `test/fixtures/README.md` 说明两个探针 fixture 的来源与录制日期，以及 `emu_big.db` 的生成方式。端口不要写死：`spike/logs/probe_emulator.log` 记录快照采集时是 `127.0.0.1:10178`，而 2026-11-15 的 `hdc list targets -v` 显示当时运行的模拟器是 `127.0.0.1:5555`——两次不同的会话，两个都是真实观测。
 
-- [ ] **Step 4: 全量测试与构建**
+- [x] **Step 4: 全量测试与构建**
 
 Run: `npm test`
 Expected: 全部 PASS，`packages/core/dist/` 生成
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/core/test/e2e-offline.test.ts test/fixtures/README.md

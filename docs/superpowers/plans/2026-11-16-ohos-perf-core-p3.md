@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status: complete (verified 2026-11-16).** All 5 tasks shipped. Re-verified: `tools` lists the registered queries with arguments; `query` rejects a malformed `--args` and an out-of-range `--limit`; `frames.all` over a real scene returns 177 rows; the skill adapter is `skill/ohos-perf/SKILL.md`.
+
 **Goal:** Give agents a working drill-down loop — named queries over a scene database, a resolver for `Evidence.drillDown`, `ohos-perf query` / `ohos-perf tools`, and a shipped skill adapter — with every analyzer-emitted handle resolving on a recorded real trace.
 
 **Architecture:** A pure registry in core maps stable tool names to deterministic row producers backed by the existing typed queries and analysis helpers. The CLI opens a scene exactly like `analyze`, runs one named query, and emits the same structure the library returns. A static scan of analyzer sources and a fixture end-to-end test keep the emitted handles and the registry from drifting apart.
@@ -100,7 +102,7 @@ export function runNamedQuery(
 
 Registered names (exact, `queryDefinitions()` returns them in this order): `binder.processStats`, `callstack.matching`, `callstack.range`, `caps.get`, `frames.all`, `frames.get`, `threads.pattern`.
 
-- [ ] **Step 1: Write the failing registry test**
+- [x] **Step 1: Write the failing registry test**
 
 Create `packages/core/test/query-registry.test.ts`:
 
@@ -320,12 +322,12 @@ describe('runNamedQuery', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/core/test/query-registry.test.ts`
 Expected: FAIL — cannot resolve `../src/query/registry`.
 
-- [ ] **Step 3: Implement the registry, `FrameQuery.get`, the handle rename, and the exports**
+- [x] **Step 3: Implement the registry, `FrameQuery.get`, the handle rename, and the exports**
 
 Create `packages/core/src/query/registry.ts` with the interfaces above. Implementation rules:
 
@@ -386,12 +388,12 @@ export type {
 } from './query/registry';
 ```
 
-- [ ] **Step 4: Run the registry test to verify it passes**
+- [x] **Step 4: Run the registry test to verify it passes**
 
 Run: `npx vitest run packages/core/test/query-registry.test.ts`
 Expected: PASS (all tests).
 
-- [ ] **Step 5: Update the pinned value surface and verify the build**
+- [x] **Step 5: Update the pinned value surface and verify the build**
 
 Add to `VALUE_EXPORTS` in `packages/core/test/types.test.ts`, in the existing alphabetical position:
 `DEFAULT_QUERY_LIMIT`, `MAX_QUERY_LIMIT`, `lookupQuery`, `queryDefinitions`, `resolveQueryLimit`, `runNamedQuery`, `unknownQueryError`.
@@ -399,12 +401,12 @@ Add to `VALUE_EXPORTS` in `packages/core/test/types.test.ts`, in the existing al
 Run: `npm run build -w @ohos-perf/core && npx vitest run packages/core/test/types.test.ts`
 Expected: build succeeds; types tests PASS.
 
-- [ ] **Step 6: Typecheck the core workspace**
+- [x] **Step 6: Typecheck the core workspace**
 
 Run: `npm run typecheck -w @ohos-perf/core`
 Expected: exit 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/core/src/query/registry.ts packages/core/src/query/frames.ts \
@@ -435,7 +437,7 @@ export function runDrillDown(
 ): NamedQueryResult;
 ```
 
-- [ ] **Step 1: Write the failing resolver + coverage tests**
+- [x] **Step 1: Write the failing resolver + coverage tests**
 
 Create `packages/core/test/drilldown.test.ts`:
 
@@ -521,12 +523,12 @@ describe('analyzer drill-down coverage', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/core/test/drilldown.test.ts`
 Expected: FAIL — `runDrillDown` is not exported by `../src/query/registry`.
 
-- [ ] **Step 3: Implement `runDrillDown` and export it**
+- [x] **Step 3: Implement `runDrillDown` and export it**
 
 In `packages/core/src/query/registry.ts`:
 
@@ -543,17 +545,17 @@ export function runDrillDown(
 
 Import `DrillDownHandle` as a type. Add `runDrillDown` to the value exports in `packages/core/src/index.ts` and to `VALUE_EXPORTS` in `packages/core/test/types.test.ts`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run packages/core/test/drilldown.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Rebuild and verify the pinned surface**
+- [x] **Step 5: Rebuild and verify the pinned surface**
 
 Run: `npm run build -w @ohos-perf/core && npx vitest run packages/core/test/types.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/core/src/query/registry.ts packages/core/src/index.ts \
@@ -599,7 +601,7 @@ export function parseQueryArgs(raw: string): Record<string, unknown>;
 export function parseLimit(raw: string): number;
 ```
 
-- [ ] **Step 1: Write the failing parser/renderer tests**
+- [x] **Step 1: Write the failing parser/renderer tests**
 
 Create `packages/cli/test/query-cli.test.ts` with a `deps()` factory (copy the shape from `commands.test.ts`, adding `query` and `tools` defaults) and these assertions:
 
@@ -671,12 +673,12 @@ describe('runTools', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/cli/test/query-cli.test.ts`
 Expected: FAIL — cannot resolve `../src/query` / `runQuery` is not exported.
 
-- [ ] **Step 3: Implement `query.ts`, the command layer, and the deps wiring**
+- [x] **Step 3: Implement `query.ts`, the command layer, and the deps wiring**
 
 `packages/cli/src/query.ts`:
 
@@ -806,7 +808,7 @@ program
   // action: io.emit(runTools(deps, opts))
 ```
 
-- [ ] **Step 4: Add the deps-level tests for app resolution and fail-before-open**
+- [x] **Step 4: Add the deps-level tests for app resolution and fail-before-open**
 
 Add to `packages/cli/test/deps.test.ts` (reusing `createFullTraceDb` and its `processRows` parameter):
 
@@ -910,7 +912,7 @@ it('exposes the same sorted tool list as the registry', () => {
 });
 ```
 
-- [ ] **Step 5: Add the program wiring tests**
+- [x] **Step 5: Add the program wiring tests**
 
 In `packages/cli/test/program.test.ts`:
 
@@ -953,17 +955,17 @@ it('tools forwards --json to the definitions', async () => {
 
 Also extend the `--help` test to assert `query` and `tools` appear.
 
-- [ ] **Step 6: Run the CLI tests**
+- [x] **Step 6: Run the CLI tests**
 
 Run: `npx vitest run packages/cli/test/query-cli.test.ts packages/cli/test/deps.test.ts packages/cli/test/program.test.ts packages/cli/test/commands.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Typecheck the CLI workspace**
+- [x] **Step 7: Typecheck the CLI workspace**
 
 Run: `npm run typecheck -w @ohos-perf/cli`
 Expected: exit 0.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/cli/src/query.ts packages/cli/src/commands.ts packages/cli/src/deps.ts \
@@ -986,7 +988,7 @@ git commit -m "feat(cli): expose drill-down queries and tool definitions"
 - Consumes: the CLI surface from Task 3 (`query`, `tools`). No API imports.
 - Produces: a shipped skill document whose commands cannot drift from the CLI.
 
-- [ ] **Step 1: Write the failing drift test**
+- [x] **Step 1: Write the failing drift test**
 
 Create `packages/cli/test/skill.test.ts`:
 
@@ -1031,12 +1033,12 @@ describe('agent skill adapter', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/cli/test/skill.test.ts`
 Expected: FAIL — `skill/ohos-perf/SKILL.md` does not exist.
 
-- [ ] **Step 3: Write the skill document**
+- [x] **Step 3: Write the skill document**
 
 Create `skill/ohos-perf/SKILL.md`:
 
@@ -1096,7 +1098,7 @@ by `(kind, window.startNs, id)`, so repeated runs over the same scene and the
 same query arguments are byte-identical.
 ```
 
-- [ ] **Step 4: Update the README**
+- [x] **Step 4: Update the README**
 
 - Status: change the opening to **"**P1, P2 and P3 are complete**"** and add to
   the implemented list:
@@ -1114,7 +1116,7 @@ same query arguments are byte-identical.
 - Architecture L7 line:
   `L7  API / CLI / Skill      programmatic API · ohos-perf CLI · agent skill (skill/ohos-perf/)`
 
-- [ ] **Step 5: Update the site**
+- [x] **Step 5: Update the site**
 
 In `site/index.html`, update both languages of the "Built to be called by
 agents" paragraph (line ~168) so it names the shipped loop — `ohos-perf query`
@@ -1123,7 +1125,7 @@ packages that workflow. Update the L7 description (line ~297) both languages to
 name the shipped skill instead of "the seam for". Keep the `data-en`/`data-zh`
 pair balanced.
 
-- [ ] **Step 6: Run the skill test and the CLI suite**
+- [x] **Step 6: Run the skill test and the CLI suite**
 
 Run: `npx vitest run packages/cli/test/skill.test.ts`
 Expected: PASS.
@@ -1131,7 +1133,7 @@ Expected: PASS.
 Run: `npx vitest run packages/cli`
 Expected: all CLI tests PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add skill/ohos-perf/SKILL.md README.md site/index.html packages/cli/test/skill.test.ts
@@ -1150,7 +1152,7 @@ git commit -m "feat: ship the ohos-perf agent skill"
 - Consumes: `runAnalyzers` / `defaultAnalyzers` (`src/analyze/engine.ts`), the typed queries, `CapabilityMatrix`, `runDrillDown` (Task 2), and the fixture resolution pattern from `packages/core/test/e2e-offline.test.ts:26-46`.
 - Produces: the P3 acceptance proof — every handle from a real analysis resolves to rows.
 
-- [ ] **Step 1: Write the failing end-to-end test**
+- [x] **Step 1: Write the failing end-to-end test**
 
 Create `packages/core/test/drilldown-e2e.test.ts`:
 
@@ -1272,7 +1274,7 @@ describe.skipIf(!HAVE_DB)('drill-down on a recorded trace', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/core/test/drilldown-e2e.test.ts`
 Expected at this point: PASS — this test consumes only code delivered by
@@ -1282,14 +1284,14 @@ weakening this test.
 (If `spike/out/emu_big.db` is absent, the suite reports the file as skipped —
 run it on a machine with the fixture before claiming P3 done.)
 
-- [ ] **Step 3: Run the whole suite and record the real counts**
+- [x] **Step 3: Run the whole suite and record the real counts**
 
 Run: `npm test`
 Expected: build + all suites green. Note the exact `Test Files` and `Tests`
 lines — with the fixture and a device attached everything runs; on a clean
 checkout the fixture suites are skipped.
 
-- [ ] **Step 4: Update the published counts**
+- [x] **Step 4: Update the published counts**
 
 Update the test counts in `README.md` (Status paragraph and Quickstart comment)
 and `site/index.html` (`<b>` stat and the status pill) to the numbers from
@@ -1297,7 +1299,7 @@ Step 3, keeping the "N with fixtures/device, M + K skipped on a clean
 checkout" phrasing. Do not change the prose beyond the counts and the
 "P1, P2 and P3" status wording from Task 4.
 
-- [ ] **Step 5: Verify both workspaces typecheck and the site stays balanced**
+- [x] **Step 5: Verify both workspaces typecheck and the site stays balanced**
 
 Run: `npm run typecheck -w @ohos-perf/core && npm run typecheck -w @ohos-perf/cli`
 Expected: exit 0.
@@ -1305,7 +1307,7 @@ Expected: exit 0.
 Run: `node -e "const t=require('fs').readFileSync('site/index.html','utf8'); const en=(t.match(/data-en=/g)||[]).length, zh=(t.match(/data-zh=/g)||[]).length; console.log(en, zh)"`
 Expected: equal counts.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/core/test/drilldown-e2e.test.ts README.md site/index.html

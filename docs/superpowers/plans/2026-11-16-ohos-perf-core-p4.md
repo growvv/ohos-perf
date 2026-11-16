@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status: complete (verified 2026-11-16).** All 7 tasks shipped, plus a whole-branch review fix pass and real-device acceptance. Re-verified: `compare` reports 17 unchanged / 21 incomparable over two identical analyses; the `ui.tree` capability rule and the `scene.json` gate are pinned by tests; the three new collectors now have real-device coverage (`collect-capture.device.test.ts`, `analyze-capture.device.test.ts`) — and that run found a real defect, the hiperf not-debuggable marker, which is fixed.
+
 **Goal:** Close the last functional gaps against HapRay and DevEco Studio — the `hiperf`, `hidumper` and `uitest` collectors and baseline comparison — and finish the residue the P3 review deferred.
 
 **Architecture:** Three new collectors follow the existing `Collector` contract: validate everything before the first device call, capture to a fixed device path, require the tool's own success marker, then `recv` into the scene layout. `hiperf` produces a `perf.data` that `trace_streamer` converts into a second database (`perf.db`), so `Scene` grows an optional `perfDb` handle and `ingestScene` converts it. `hidumper` and `uitest` produce scene artifacts (`hidumper.json`, `ui.json`) that a new `RenderAnalyzer` and a new `ui.get` named query consume. Baseline comparison is a pure function over two `AnalyzeResult` values plus a `compare` CLI command.
@@ -67,7 +69,7 @@ The spec also lists `ohos-perf emulator {list,start,stop,create}` (§8) and `dev
 - Consumes: `runNamedQuery`, `MAX_QUERY_LIMIT` (`src/query/registry.ts`); the recorded fixture path convention from `e2e-offline.test.ts:29-40`.
 - Produces: nothing later tasks import. This task only hardens what P3 shipped.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `packages/core/test/drilldown-e2e.test.ts`, replace the warn-and-skip block with the `REQUIRED` pattern already used by `e2e-offline.test.ts`:
 
@@ -132,13 +134,13 @@ it('runs query against a scene with --json', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify the expected failures**
+- [x] **Step 2: Run the tests to verify the expected failures**
 
 Run: `npx vitest run packages/cli/test/deps.test.ts packages/cli/test/index.test.ts`
 Expected: **`index.test.ts` FAILS** — the new subprocess test is the RED one, because `query` has never been exercised through the built entry point and the built bundle predates the test (the suite's "bundle is not older than sources" check may also fire; rebuild with `npm run build -w @ohos-perf/cli` before judging the assertion itself).
 Expected: **`deps.test.ts` PASSES immediately.** That is deliberate: `deps.query` already applies `--app` before the descriptor (`if (app !== undefined)` at the top of the branch), so this test is a **pin** on correct behaviour, not a reproduction of a bug. Record it as a pin in the commit message; do not weaken it to make it red.
 
-- [ ] **Step 3: Write the argument-wording tests**
+- [x] **Step 3: Write the argument-wording tests**
 
 In `packages/core/test/query-registry.test.ts`:
 
@@ -179,12 +181,12 @@ it('names the offending --limit value', () => {
 });
 ```
 
-- [ ] **Step 4: Run to verify the wording tests fail**
+- [x] **Step 4: Run to verify the wording tests fail**
 
 Run: `npx vitest run packages/core/test/query-registry.test.ts packages/cli/test/query-cli.test.ts`
 Expected: FAIL — `frames.get` with `{id:'2'}` currently says `missing number argument "id"`, and `parseLimit('abc')` says `got NaN`.
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 `packages/core/src/query/registry.ts` — split the type check from the presence check in `numberArg` and `stringArg`:
 
@@ -232,17 +234,17 @@ Create `.gitattributes`:
 *.png binary
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `npx vitest run packages/core/test/query-registry.test.ts packages/cli/test/query-cli.test.ts packages/cli/test/deps.test.ts packages/cli/test/index.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Run the whole suite**
+- [x] **Step 7: Run the whole suite**
 
 Run: `npm test`
 Expected: PASS, 44+ files green.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add .gitattributes packages/core/test/drilldown-e2e.test.ts packages/core/src/query/registry.ts packages/core/test/query-registry.test.ts packages/cli/src/query.ts packages/cli/test/query-cli.test.ts packages/cli/test/deps.test.ts packages/cli/test/index.test.ts
@@ -305,7 +307,7 @@ export class HiperfCollector implements Collector {
 }
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/core/test/collector-hiperf.test.ts`. Use the structural fake-hdc pattern from `collector-hitrace.test.ts` (an object with `shell`/`recv` recording every call):
 
@@ -464,12 +466,12 @@ describe('HiperfCollector', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run packages/core/test/collector-hiperf.test.ts`
 Expected: FAIL — `Cannot find module '../src/collectors/hiperf'`.
 
-- [ ] **Step 3: Implement `packages/core/src/collectors/hiperf.ts`**
+- [x] **Step 3: Implement `packages/core/src/collectors/hiperf.ts`**
 
 Rules the implementation must satisfy:
 - Fixed device path `export const DEVICE_PERF_PATH = '/data/local/tmp/ohosperf_perf.data'`.
@@ -480,7 +482,7 @@ Rules the implementation must satisfy:
 - `parseHiperfSummary` returns `undefined` unless both markers parse; `lost` comes from the first number of the `Sample lost` line.
 - Reuse the `detail()` and `combined()` helpers by copying the five-line form used in `hitrace.ts` (do not export them from there; they are per-collector).
 
-- [ ] **Step 4: Export from `packages/core/src/index.ts`**
+- [x] **Step 4: Export from `packages/core/src/index.ts`**
 
 Add next to the other collectors:
 
@@ -493,12 +495,12 @@ export type { HiperfCapture, HiperfCollectOptions } from './collectors/hiperf';
 
 Add `'HiperfCollector'`, `'DEVICE_PERF_PATH'`, `'hiperfRecordCommand'`, `'parseHiperfSummary'` to `VALUE_EXPORTS` in `packages/core/test/types.test.ts`.
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `npx vitest run packages/core/test/collector-hiperf.test.ts packages/core/test/types.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/core/src/collectors/hiperf.ts packages/core/src/index.ts packages/core/test/collector-hiperf.test.ts packages/core/test/types.test.ts
@@ -529,7 +531,7 @@ export class Scene {
 }
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `packages/core/test/scene.test.ts` add a case using the existing stub-streamer pattern:
 
@@ -610,12 +612,12 @@ it('leaves perf.samples absent when the scene has no perf.db', () => {
 
 `fakeDb({ tables, rows })` is a local helper in the test file: it answers the `sqlite_master` query from `tables` and `SELECT 1 FROM <t> LIMIT 1` from `rows`. Add it next to the existing helpers; it replaces nothing.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run packages/core/test/scene.test.ts packages/cli/test/deps.test.ts`
 Expected: FAIL — `scene.perfDb` is `undefined`, and `converted` holds only `[layout.traceDb]`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/core/src/ingest/scene.ts`:
 
@@ -662,17 +664,17 @@ if (layout.perfDb !== undefined && layout.perfFile !== undefined) {
 - In `analyze`, `perf: new PerfQuery(opened.perfDb ?? db)`.
 - In `query`, pass the same `perfDb` through `QueryContext` only if a later task needs it (Task 5 adds `uiTree`; leave `QueryContext` unchanged here).
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run packages/core/test/scene.test.ts packages/cli/test/deps.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Run the whole suite**
+- [x] **Step 5: Run the whole suite**
 
 Run: `npm test`
 Expected: PASS. The existing scene tests must still pass with `perfDb` absent.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/core/src/ingest/scene.ts packages/cli/src/deps.ts packages/core/test/scene.test.ts packages/cli/test/deps.test.ts
@@ -737,7 +739,7 @@ export class RenderAnalyzer implements Analyzer {
 }
 ```
 
-- [ ] **Step 1: Write the parser tests first**
+- [x] **Step 1: Write the parser tests first**
 
 Create `packages/core/test/collector-hidumper.test.ts` with the **measured** device output quoted verbatim:
 
@@ -800,12 +802,12 @@ it('keeps buckets with non-zero counts', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run packages/core/test/collector-hidumper.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the analyzer tests**
+- [x] **Step 3: Write the analyzer tests**
 
 Create `packages/core/test/analyze-render.test.ts` with a `HidumperCapture` literal whose two snapshots differ. Add one local helper, `ctxWith(capture?: HidumperCapture): AnalyzeContext`, which builds the minimal context the analyzer reads (an empty `CapabilityMatrix`, `window: { startNs: 0, endNs: 1 }`, `deviceId: 'test'`, and `hidumper` only when `capture` is defined) — every test below calls it:
 
@@ -864,12 +866,12 @@ it('does not claim a capability the matrix lacks', async () => {
 });
 ```
 
-- [ ] **Step 4: Run to verify they fail**
+- [x] **Step 4: Run to verify they fail**
 
 Run: `npx vitest run packages/core/test/analyze-render.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 5: Implement the collector**
+- [x] **Step 5: Implement the collector**
 
 `packages/core/src/collectors/hidumper.ts` rules:
 - Two commands, measured verbatim: `hidumper -s RenderService -a 'fpsCount'` and `hidumper -s RenderService -a 'hitchs'`. The single quotes are part of the command; the service name is validated against `/^[A-Za-z0-9_.]+$/` before interpolation.
@@ -878,7 +880,7 @@ Expected: FAIL — module not found.
 - Writes `layout.root/hidumper.json` (add `hidumperFile` to `SceneLayout`) with `JSON.stringify(capture, null, 2) + '\n'`, creating the directory first. It removes a stale file before the first snapshot so a failed capture leaves none.
 - Export `readHidumperCapture(path)` that returns `undefined` for a missing file, invalid JSON, `version !== 1`, or a `samples` array that is not exactly two snapshots.
 
-- [ ] **Step 6: Implement the analyzer**
+- [x] **Step 6: Implement the analyzer**
 
 `packages/core/src/analyze/render.ts` rules:
 - `id = 'render'`, `requires = ['render.fps_live']`.
@@ -889,7 +891,7 @@ Expected: FAIL — module not found.
 - Sort metrics by `id`; evidence by `(kind, window.startNs, id)` using `ctx.window` for the window.
 - Negative deltas (a counter that went backwards, e.g. the service restarted) clamp to 0 — document that in the metric's doc comment.
 
-- [ ] **Step 7: Wire it**
+- [x] **Step 7: Wire it**
 
 - `packages/core/src/ingest/scene.ts`: add `hidumperFile: join(root, 'hidumper.json')` to `SceneLayout` and `createSceneLayout`.
 - `packages/core/src/analyze/types.ts`: `hidumper?: HidumperCapture;`.
@@ -897,12 +899,12 @@ Expected: FAIL — module not found.
 - `packages/core/src/index.ts`: export `HidumperCollector`, `parseFpsCounts`, `parseHitches`, `readHidumperCapture`, `RenderAnalyzer`; types `FpsBucket`, `WindowHitches`, `HidumperSnapshot`, `HidumperCapture`.
 - `packages/core/test/types.test.ts`: add the five value names to `VALUE_EXPORTS`.
 
-- [ ] **Step 8: Run to verify everything passes**
+- [x] **Step 8: Run to verify everything passes**
 
 Run: `npx vitest run packages/core/test/collector-hidumper.test.ts packages/core/test/analyze-render.test.ts packages/core/test/types.test.ts packages/core/test/analyze-engine.test.ts`
 Expected: PASS. `analyze-engine` must still pass with the new analyzer in the default list.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add packages/core/src/collectors/hidumper.ts packages/core/src/analyze/render.ts packages/core/src/analyze/engine.ts packages/core/src/analyze/types.ts packages/core/src/ingest/scene.ts packages/core/src/index.ts packages/core/test/collector-hidumper.test.ts packages/core/test/analyze-render.test.ts packages/core/test/types.test.ts
@@ -953,7 +955,7 @@ export class UitestCollector implements Collector {
 }
 ```
 
-- [ ] **Step 1: Write the flattening test with the measured shape**
+- [x] **Step 1: Write the flattening test with the measured shape**
 
 Create `packages/core/test/query-ui.test.ts`:
 
@@ -1025,23 +1027,23 @@ it('returns the flattened UI tree filtered by bundle', () => {
 
 And the registry name list test gains `'ui.get'` in sorted position (`threads.pattern`, `ui.get`).
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run packages/core/test/query-ui.test.ts packages/core/test/query-registry.test.ts`
 Expected: FAIL — module not found, and `queryDefinitions()` does not yet list `ui.get`.
 
-- [ ] **Step 3: Implement `packages/core/src/query/ui.ts`**
+- [x] **Step 3: Implement `packages/core/src/query/ui.ts`**
 
 `flattenUiTree(root)` walks `children` recursively; a node without an `attributes` object is skipped **with its subtree**; numeric/string attributes are read through `str()`-style coercion; the three flags are `=== 'true'`. Depth is the tree depth, starting at 0 for the root. `readUiTree(path)` returns `undefined` for a missing/invalid file and `[]` for a document that is not a tree.
 
-- [ ] **Step 4: Add the query**
+- [x] **Step 4: Add the query**
 
 In `packages/core/src/query/registry.ts`:
 - `QueryContext` gains `readonly uiTree?: readonly UiNode[];`.
 - New definition `ui.get`, `returns: 'UiNode[]'`, args: `bundleName` (optional string, non-empty), `maxDepth` (optional finite number ≥ 0).
 - `run` filters `ctx.uiTree ?? []` by `bundleName` (exact match) and `depth <= maxDepth` when given. Document that rows are already in document order.
 
-- [ ] **Step 5: Implement the collector**
+- [x] **Step 5: Implement the collector**
 
 `packages/core/src/collectors/uitest.ts`:
 - Device path `export const DEVICE_UI_PATH = '/data/local/tmp/ohosperf_ui.json'`.
@@ -1051,18 +1053,18 @@ In `packages/core/src/query/registry.ts`:
 - Writes to `layout.root/ui.json` via the `uiFile` layout field.
 - Return the flattened nodes so the caller can report `nodes: N`.
 
-- [ ] **Step 6: Wire**
+- [x] **Step 6: Wire**
 
 - `SceneLayout` gains `uiFile: join(root, 'ui.json')`.
 - `deps.ts` `openOfflineScene` reads `readUiTree(layout.uiFile)` and exposes it; `query` passes `uiTree` into `QueryContext`.
 - Exports + `VALUE_EXPORTS`: `UitestCollector`, `DEVICE_UI_PATH`, `flattenUiTree`, `readUiTree`.
 
-- [ ] **Step 7: Run to verify it passes**
+- [x] **Step 7: Run to verify it passes**
 
 Run: `npx vitest run packages/core/test/query-ui.test.ts packages/core/test/query-registry.test.ts packages/core/test/collector-uitest.test.ts packages/core/test/types.test.ts`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/core/src/collectors/uitest.ts packages/core/src/query/ui.ts packages/core/src/query/registry.ts packages/core/src/ingest/scene.ts packages/cli/src/deps.ts packages/core/src/index.ts packages/core/test/query-ui.test.ts packages/core/test/query-registry.test.ts packages/core/test/collector-uitest.test.ts packages/core/test/types.test.ts
@@ -1116,7 +1118,7 @@ export function compareResults(
 ): BaselineComparison;
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/core/test/compare.test.ts`:
 
@@ -1218,12 +1220,12 @@ it('fails with one stderr line and empty stdout when an input is unreadable', as
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run packages/core/test/compare.test.ts packages/cli/test/compare-cli.test.ts`
 Expected: FAIL — modules not found.
 
-- [ ] **Step 3: Implement `compareResults`**
+- [x] **Step 3: Implement `compareResults`**
 
 Rules:
 - Rows are the union of both metric id sets, sorted by id (`<`/`>` comparison, no locale).
@@ -1234,7 +1236,7 @@ Rules:
 - `fidelity` is the current side's; for `removed` it is the baseline's.
 - `totals` counts every status, all six keys always present.
 
-- [ ] **Step 4: Implement the CLI**
+- [x] **Step 4: Implement the CLI**
 
 `packages/cli/src/commands.ts`:
 
@@ -1260,16 +1262,16 @@ program.command('compare')
   .action(async (baseline, current, opts) => { io.emit(await runCompare(deps, { baseline, current }, { json: opts.json })); });
 ```
 
-- [ ] **Step 5: Exports and tests**
+- [x] **Step 5: Exports and tests**
 
 `index.ts`: export `compareResults`, `METRIC_DIRECTIONS`; types `MetricDelta`, `BaselineComparison`, `DeltaStatus`, `MetricDirection`. Add the two value names to `VALUE_EXPORTS`.
 
-- [ ] **Step 6: Run to verify it passes**
+- [x] **Step 6: Run to verify it passes**
 
 Run: `npx vitest run packages/core/test/compare.test.ts packages/cli/test/compare-cli.test.ts packages/cli/test/program.test.ts packages/core/test/types.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/core/src/report/compare.ts packages/core/src/index.ts packages/cli/src/commands.ts packages/cli/src/deps.ts packages/cli/src/program.ts packages/core/test/compare.test.ts packages/cli/test/compare-cli.test.ts packages/core/test/types.test.ts
@@ -1291,7 +1293,7 @@ git commit -m "feat: compare an analysis against a baseline"
 - Consumes: `HiperfCollector`, `HidumperCollector`, `UitestCollector` (Tasks 2, 4, 5).
 - Produces: the final `collect` surface.
 
-- [ ] **Step 1: Write the failing device test**
+- [x] **Step 1: Write the failing device test**
 
 In `packages/core/test/device.test.ts`, with fake collectors injected through `DeviceDeps`:
 
@@ -1329,12 +1331,12 @@ it('restores the previous scene when a collector fails', async () => {
 
 Also in `packages/cli/test/program.test.ts`: `collect --hiperf` without `--app` → exit 1; `--hidumper` and `--uitest` are accepted and forwarded; help mentions `compare`.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run packages/core/test/device.test.ts packages/cli/test/program.test.ts`
 Expected: FAIL — `hiperf`/`hidumper`/`uitest` are not `CollectOptions` fields and `DeviceDeps` has no such slots.
 
-- [ ] **Step 3: Extend `CollectOptions` and `DeviceDeps`**
+- [x] **Step 3: Extend `CollectOptions` and `DeviceDeps`**
 
 ```ts
 export interface CollectOptions extends TraceCollectOptions {
@@ -1353,7 +1355,7 @@ export interface CollectOptions extends TraceCollectOptions {
 
 `DeviceDeps` gains `hiperf?: HiperfCollector`, `hidumper?: HidumperCollector`, `uitest?: UitestCollector` (typed structurally: `{ collect(...): Promise<unknown> }` is enough for the fakes, so type the slots as the minimal method shape).
 
-- [ ] **Step 4: Implement the orchestration**
+- [x] **Step 4: Implement the orchestration**
 
 - Validation before any device call: `hiperf`/`hidumper`/`uitest` all require `app` when they need a pid — only `hiperf` does; `hidumper` and `uitest` do not (they dump the whole screen). `hiperf` reuses the existing `COLLECT_APP_REQUIRED` and `COLLECT_BAD_APP` gates. `uitest` requires `ui.tree` in the matrix and `hidumper` requires `render.fps_live`; a missing capability throws `MISSING_CAPABILITY` naming the id and reason, before capture.
 - **Gate `hiperf` on `perf.samples` only, never on `perf.pmu`.** `perf.pmu` is false wherever the hardware has no PMU (the emulator) while `perf.samples` is true on any device whose `hiperf` binary exists. When `perf.pmu` is false the collector defaults `events` to a software event (`sw-task-clock`); an explicitly requested hardware event on a PMU-less device is rejected with `HIPERF_BAD_EVENT` naming the software events the probe found, rather than recording nothing and reporting a quiet app.
@@ -1365,7 +1367,7 @@ export interface CollectOptions extends TraceCollectOptions {
 - Metadata: `capture.collectors` lists them in fixed order `['hitrace'|'hiprofiler', ...(procfs), ...(hiperf), ...(hidumper), ...(uitest)]`; `capture.hiperf = { samples }` when a hiperf capture ran. `SceneMetadata.capture.hiperf` is optional and validated (`samples` a finite number ≥ 0) by `readSceneMetadata`; a malformed value drops the whole descriptor, consistent with the existing rules.
 - Remove a stale `perf.data`/`perf.db`/`hidumper.json`/`ui.json` on the success path when that collector did not run, exactly like `removeStaleProcfs`.
 
-- [ ] **Step 5: Extend the CLI**
+- [x] **Step 5: Extend the CLI**
 
 `CollectRequest` gains `hiperf?: { frequency?: number }`, `hidumper?: boolean`, `uitest?: boolean`. `program.ts` gains `--hiperf`, `--hidumper`, `--uitest` flags; `--hiperf` without `--app` is rejected in the action with the standard contract (empty stdout, one line, exit 1). `runCollect`'s human output gains the capture summary:
 
@@ -1377,7 +1379,7 @@ samples  hiperf 150, ui 76
 
 Only the lines for collectors that ran are printed; `hiperf 0` is printed explicitly (Review Focus 1). `--json` returns `{ sceneDir, device, collectors, hiperf?: { samples }, ui?: { nodes } }`.
 
-- [ ] **Step 6: Update the skill and the docs**
+- [x] **Step 6: Update the skill and the docs**
 
 `skill/ohos-perf/SKILL.md`:
 - Add the four collectors to the workflow's collect step (`--procfs`, `--hiprofiler`, `--hiperf`, `--hidumper`, `--uitest`).
@@ -1389,12 +1391,12 @@ Only the lines for collectors that ran are printed; `hiperf 0` is printed explic
 
 `site/index.html`: update the agent card, the collector list and the stats in both languages, keeping the `data-en`/`data-zh` counts balanced.
 
-- [ ] **Step 7: Run the whole suite and both typechecks**
+- [x] **Step 7: Run the whole suite and both typechecks**
 
 Run: `npm test && npm run typecheck -w @ohos-perf/core && npm run typecheck -w @ohos-perf/cli`
 Expected: PASS. Update the README/site counts to the new total.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A
