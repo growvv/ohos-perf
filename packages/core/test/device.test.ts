@@ -964,3 +964,227 @@ describe('CollectSession.ingest through hiprofiler', () => {
     }
   });
 });
+
+/**
+ * A device whose trace collector writes a trace file, plus fake hiperf,
+ * hidumper and uitest collectors. Each fake records that it ran and writes the
+ * artifact its real counterpart would, so the restore path can be exercised
+ * with real files.
+ */
+function extraCollectors(opts: {
+  failHiperf?: boolean;
+  failHidumper?: boolean;
+  failUitest?: boolean;
+} = {}) {
+  const started: string[] = [];
+  const hdc = {
+    shell: async (_target: string, cmd: string) => {
+      if (cmd === 'cat /proc/uptime') {
+        return { stdout: '1234.56 9999.00\n', stderr: '', code: 0 };
+      }
+      return { stdout: '', stderr: '', code: 0 };
+    },
+  };
+  const hitrace = {
+    collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+      started.push('hitrace');
+      writeFileSync(layout.traceFile, 'trace');
+    },
+  };
+  const streamer = {
+    convert: async (input: string, output: string) => {
+      // Only the trace converts here; perf conversion is asserted separately.
+      if (input.endsWith('trace.htrace')) {
+        rmSync(output, { force: true });
+        const db = new DatabaseSync(output);
+        db.exec('CREATE TABLE frame_slice(id INT)');
+        db.close();
+        return;
+      }
+      rmSync(output, { force: true });
+      const db = new DatabaseSync(output);
+      db.exec('CREATE TABLE perf_sample(id INT, thread_id INT)');
+      db.exec('INSERT INTO perf_sample VALUES (0, 1)');
+      db.close();
+    },
+  };
+  const hiperf = {
+    collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+      started.push('hiperf');
+      if (opts.failHiperf === true) throw new Error('hiperf exploded');
+      writeFileSync(layout.perfFile!, 'perf bytes');
+      return { samples: 150, nonSamples: 1, lost: 0, bytes: 9 };
+    },
+  };
+  const hidumper = {
+    collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+      started.push('hidumper');
+      if (opts.failHidumper === true) throw new Error('hidumper exploded');
+      const capture = {
+        version: 1, intervalMs: 1000,
+        samples: [
+          { ts: 1, fpsCounts: [{ refreshRate: 60, count: 1 }], hitches: [] },
+          { ts: 2, fpsCounts: [{ refreshRate: 60, count: 2 }], hitches: [] },
+        ],
+      };
+      writeFileSync(layout.hidumperFile, JSON.stringify(capture));
+      return capture;
+    },
+  };
+  const uitest = {
+    collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+      started.push('uitest');
+      if (opts.failUitest === true) throw new Error('uitest exploded');
+      writeFileSync(layout.uiFile,
+        JSON.stringify({ attributes: { type: 'Root' }, children: [] }));
+      return [{ depth: 0, type: 'Root' }];
+    },
+  };
+  return {
+    started,
+    // The pieces a test needs when it substitutes one collector and keeps the
+    // rest, e.g. a zero-sample hiperf fake over the same trace capture.
+    hdcLike: hdc,
+    streamerLike: streamer,
+    hitraceLike: hitrace,
+    device: () => new Device('t1', probe as any, {
+      hdc: hdc as any, streamer: streamer as any, collector: hitrace as any,
+      hiperf: hiperf as any, hidumper: hidumper as any, uitest: uitest as any,
+    }),
+  };
+}
+
+describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
+  it('runs every requested collector and records what each captured', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-extra-'));
+    try {
+      const h = extraCollectors();
+      const scene = await h.device().collect({
+        app: 'com.demo', durationMs: 3000, sceneRoot: root,
+        hiperf: {}, hidumper: true, uitest: true,
+      }).then((s) => s.ingest());
+      scene.close();
+
+      expect(h.started.sort()).toEqual(['hidumper', 'hiperf', 'hitrace', 'uitest']);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hitrace', 'hiperf', 'hidumper', 'uitest']);
+      expect(meta.capture.hiperf).toEqual({ samples: 150 });
+      expect(existsSync(join(root, 'perf.db'))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('records a zero-sample hiperf capture instead of dropping it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-zero-'));
+    try {
+      const h = extraCollectors();
+      // An idle app: the collector still succeeds and reports 0 samples.
+      const device = new Device('t1', probe as any, {
+        hdc: h.hdcLike as any,
+        streamer: h.streamerLike as any,
+        collector: h.hitraceLike as any,
+        hiperf: { collect: async (_h2: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+          writeFileSync(layout.perfFile!, 'perf');
+          return { samples: 0, nonSamples: 4107, lost: 0, bytes: 5 };
+        } } as any,
+      });
+      const scene = await device.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root, hiperf: {},
+      }).then((s) => s.ingest());
+      scene.close();
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.hiperf).toEqual({ samples: 0 });
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects a hiperf request without an app before any device call', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-noapp-'));
+    try {
+      const h = extraCollectors();
+      const session = await h.device().collect({
+        app: '', durationMs: 1000, sceneRoot: root, hiperf: {},
+      });
+      await expect(session.ingest()).rejects.toMatchObject({ code: 'COLLECT_APP_REQUIRED' });
+      expect(h.started).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects uitest on a device whose probe found no uitest binary', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-noui-'));
+    try {
+      const noUitest = { ...probe, binaries: { ...probe.binaries, uitest: false } };
+      const device = new Device('t1', noUitest as any, {
+        hdc: { shell: async () => ({ stdout: '', stderr: '', code: 0 }) } as any,
+        streamer: {} as any,
+        collector: { collect: async () => {} } as any,
+      });
+      // The capability gate runs in collect(), before any session exists, so a
+      // device that cannot dump a UI tree never starts a capture.
+      await expect(device.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root, uitest: true,
+      })).rejects.toMatchObject({ code: 'MISSING_CAPABILITY' });
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('restores every previous artifact when a collector fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-restore-'));
+    try {
+      // A complete previous scene: all five artifacts exist with known bytes.
+      const before: Record<string, string> = {
+        'perf.data': 'old perf',
+        'perf.db': 'old perf db',
+        'hidumper.json': 'old hidumper',
+        'ui.json': 'old ui',
+        'procfs.jsonl': 'old procfs',
+      };
+      for (const [name, content] of Object.entries(before)) {
+        writeFileSync(join(root, name), content);
+      }
+
+      const h = extraCollectors({ failHiperf: true });
+      const session = await h.device().collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+        procfs: true, hiperf: {}, hidumper: true, uitest: true,
+      });
+      await expect(session.ingest()).rejects.toThrow(/hiperf exploded/);
+
+      for (const [name, content] of Object.entries(before)) {
+        expect(readFileSync(join(root, name), 'utf8'), name).toBe(content);
+      }
+      // No new metadata: the directory still describes the old scene.
+      expect(existsSync(join(root, 'scene.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('removes stale artifacts for collectors that did not run', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-stale-'));
+    try {
+      // A previous capture had all four; this one asks for none of them.
+      for (const name of ['perf.data', 'perf.db', 'hidumper.json', 'ui.json']) {
+        writeFileSync(join(root, name), 'stale');
+      }
+      const h = extraCollectors();
+      const scene = await h.device().collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+      }).then((s) => s.ingest());
+      scene.close();
+
+      for (const name of ['perf.data', 'perf.db', 'hidumper.json', 'ui.json']) {
+        expect(existsSync(join(root, name)), name).toBe(false);
+      }
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hitrace']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});

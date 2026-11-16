@@ -41,7 +41,7 @@ function deps(
     },
     capsReport: async () => ({ hdcOk: true, capabilities: [] }),
     analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
+    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
     compare: async () => { throw new Error('compare not stubbed'); },
@@ -294,7 +294,7 @@ describe('runAnalyze', () => {
 
 describe('runCollect', () => {
   const req = { app: 'com.demo', durationMs: 10_000, out: 'scene1' };
-  const output = { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' } };
+  const output = { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' }, collectors: [] };
 
   it('prints the scene path in human mode', async () => {
     const r = await runCollect(deps({ collect: async () => output }), req, {});
@@ -306,6 +306,58 @@ describe('runCollect', () => {
     expect(r.exitCode).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual(output);
     expect(r.stdout.endsWith('\n')).toBe(true);
+  });
+
+  it('lists the collectors that ran and what each captured', async () => {
+    const r = await runCollect(
+      deps({
+        collect: async () => ({
+          sceneDir: '/abs/scene1',
+          device: { id: 't1', kind: 'emulator' },
+          collectors: ['hitrace', 'hiperf', 'hidumper', 'uitest'],
+          hiperf: { samples: 150 },
+          ui: { nodes: 76 },
+        }),
+      }),
+      req,
+      {},
+    );
+    expect(r.stdout).toBe(
+      'scene  /abs/scene1\n' +
+      'collectors  hitrace, hiperf, hidumper, uitest\n' +
+      'samples  hiperf 150, ui 76\n',
+    );
+  });
+
+  it('prints a zero-sample hiperf capture explicitly rather than dropping the line', async () => {
+    const r = await runCollect(
+      deps({
+        collect: async () => ({
+          sceneDir: '/abs/scene1',
+          device: { id: 't1', kind: 'emulator' },
+          collectors: ['hitrace', 'hiperf'],
+          hiperf: { samples: 0 },
+        }),
+      }),
+      req,
+      {},
+    );
+    expect(r.stdout).toContain('samples  hiperf 0\n');
+  });
+
+  it('omits the samples line when no extra collector ran', async () => {
+    const r = await runCollect(
+      deps({
+        collect: async () => ({
+          sceneDir: '/abs/scene1',
+          device: { id: 't1', kind: 'emulator' },
+          collectors: ['hitrace'],
+        }),
+      }),
+      req,
+      {},
+    );
+    expect(r.stdout).toBe('scene  /abs/scene1\ncollectors  hitrace\n');
   });
 
   it('keeps the failure contract: empty stdout, message on stderr, exit 1', async () => {

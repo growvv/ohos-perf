@@ -17,6 +17,16 @@ the interface; every command speaks stable JSON with `--json`.
    never invent its metric.
 3. Capture a scene (10 seconds is a useful default):
    `ohos-perf collect --app <pkg> --duration 10s --out <dir> --json`
+   - `--procfs` samples `/proc` memory state for the app.
+   - `--hiprofiler` captures through hiprofiler instead of hitrace; `--plugins`
+     selects its plugins.
+   - `--hiperf` also records a `perf.data` for CPU samples and callstacks. It
+     needs a **debuggable** app; a non-debuggable one is refused by the device.
+   - `--hidumper` also samples the RenderService fps and hitch counters.
+   - `--uitest` also dumps the on-screen UI tree (device-wide, not app-filtered).
+   - A capture that produced nothing is not an error: `hiperf` on an idle app
+     yields `samples: 0` with exit 0. The JSON says `hiperf: { samples: 0 }`
+     and the human summary prints `hiperf 0`; report that, never a silent zero.
 4. Analyze it offline: `ohos-perf analyze <dir> --json`
 5. Read `evidence[].drillDown`. Each handle names a `tool`, its `args`, and a
    one-line `returns` shape with an optional `estRows`.
@@ -45,6 +55,33 @@ Rules:
 - `/` in a query result is not a path: rows are data from the trace database.
 - If a query fails, the CLI writes one line to stderr and exits 1 with empty
   stdout; the message names the available queries or the invalid argument.
+
+Not every query reads the trace database. `ui.get` reads the scene's captured
+UI tree (`ui.json`) and returns nodes by `bundleName` and `maxDepth`; a scene
+captured without `--uitest` has no rows, and that is not a failure. Use it to
+name what was on screen when a frame was slow.
+
+## Comparing against a baseline
+
+To measure a change, analyze the same app before and after and compare:
+
+```bash
+ohos-perf compare <baseline-dir-or-json> <current-dir-or-json> --json
+```
+
+Each argument is a scene directory or a saved `analyze --json` file. The result
+has one row per metric with `baseline`, `current`, `delta`, `deltaPct` and a
+`status`, plus `totals` counting each status.
+
+- `improved` / `regressed` mean the metric moved in the direction that matters
+  for that metric — frame throughput is higher-is-better, every latency,
+  memory, hitch and redundant-thread figure is lower-is-better.
+- `incomparable` means **the direction is unknown**, not that nothing changed.
+  The metric moved and no one has said which way is good; read the values and
+  decide yourself. Never report it as unchanged.
+- `added` / `removed` mean the metric exists on one side only — usually a
+  collector that ran in one capture and not the other.
+- `deltaPct` is absent when the baseline is zero or either side is not numeric.
 
 ## Output contract
 

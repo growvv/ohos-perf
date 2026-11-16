@@ -19,7 +19,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     },
     capsReport: async () => ({ hdcOk: true, capabilities: [] }),
     analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
+    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
     compare: async () => { throw new Error('compare not stubbed'); },
@@ -28,8 +28,8 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
 }
 
 const comparison: BaselineComparison = compareResults(
-  { metrics: [metricOf('frame.jank.rate', 40)] },
-  { metrics: [metricOf('frame.jank.rate', 30)] },
+  { metrics: [metricOf('frame.jank.rate', 40)], evidence: [] },
+  { metrics: [metricOf('frame.jank.rate', 30)], evidence: [] },
 );
 
 describe('runCompare', () => {
@@ -48,7 +48,7 @@ describe('runCompare', () => {
   });
 
   it('omits the percentage when it cannot be computed', async () => {
-    const added = compareResults({ metrics: [] }, { metrics: [metricOf('frame.count', 5)] });
+    const added = compareResults({ metrics: [], evidence: [] }, { metrics: [metricOf('frame.count', 5)], evidence: [] });
     const r = await runCompare(
       deps({ compare: async () => added }),
       { baseline: 'a', current: 'b' },
@@ -91,7 +91,7 @@ describe('runCompare', () => {
   });
 
   it('reports an empty comparison as the totals line alone', async () => {
-    const empty = compareResults({ metrics: [] }, { metrics: [] });
+    const empty = compareResults({ metrics: [], evidence: [] }, { metrics: [], evidence: [] });
     const r = await runCompare(
       deps({ compare: async () => empty }),
       { baseline: 'a', current: 'b' },

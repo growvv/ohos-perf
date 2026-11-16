@@ -19,7 +19,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     },
     capsReport: async () => ({ hdcOk: true, capabilities: [] }),
     analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
+    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
     compare: async () => { throw new Error('compare not stubbed'); },
@@ -131,7 +131,7 @@ describe('command wiring', () => {
       {
         collect: async (req) => {
           seen.push(req);
-          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' } };
+          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' }, collectors: [] };
         },
       },
     );
@@ -147,6 +147,7 @@ describe('command wiring', () => {
     expect(JSON.parse(emitted[0].stdout)).toEqual({
       sceneDir: '/abs/scene1',
       device: { id: 't1', kind: 'emulator' },
+      collectors: [],
     });
   });
 
@@ -158,7 +159,7 @@ describe('command wiring', () => {
       {
         collect: async (req) => {
           seen.push(req);
-          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' } };
+          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' }, collectors: [] };
         },
       },
     );
@@ -178,7 +179,7 @@ describe('command wiring', () => {
       {
         collect: async (req) => {
           seen.push(req);
-          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' } };
+          return { sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' }, collectors: [] };
         },
       },
     );
@@ -199,7 +200,7 @@ describe('command wiring', () => {
       {
         collect: async () => {
           called = true;
-          return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' } };
+          return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' }, collectors: [] };
         },
       },
     );
@@ -219,7 +220,7 @@ describe('command wiring', () => {
       {
         collect: async () => {
           called = true;
-          return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' } };
+          return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' }, collectors: [] };
         },
       },
     );
@@ -229,11 +230,58 @@ describe('command wiring', () => {
     expect(emitted[0].stderr).toContain('--hiprofiler');
   });
 
+  it('collect forwards --hiperf, --hidumper and --uitest to one CollectRequest', async () => {
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', '10', '--out', 'scene1',
+        '--hiperf', '--hidumper', '--uitest'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return {
+            sceneDir: '/abs/scene1',
+            device: { id: 't1', kind: 'emulator' },
+            collectors: ['hitrace', 'hiperf', 'hidumper', 'uitest'],
+          };
+        },
+      },
+    );
+    expect(seen).toEqual([{
+      app: 'com.demo',
+      durationMs: 10_000,
+      out: 'scene1',
+      hiperf: {},
+      hidumper: true,
+      uitest: true,
+    }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('collect rejects --hiperf without --app before any device work', async () => {
+    // `--app` is a required option of `collect` in every mode, so the rejection
+    // happens in commander and never reaches deps.collect. hiperf additionally
+    // needs the app inside the collector, which is the core's gate, not ours.
+    let called = false;
+    const { emitted, err, error } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1', '--hiperf'],
+      {
+        collect: async () => {
+          called = true;
+          return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' }, collectors: [] };
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(emitted).toHaveLength(0);
+    expect(error?.exitCode).toBe(1);
+    expect(err.join('')).toContain('--app');
+  });
+
   it('collect rejects an invalid --duration before calling deps.collect', async () => {
     let called = false;
     const { emitted } = await parse(
       ['collect', '--app', 'com.demo', '--duration', 'abc', '--out', 'scene1'],
-      { collect: async () => { called = true; return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' } }; } },
+      { collect: async () => { called = true; return { sceneDir: '/x', device: { id: 't1', kind: 'emulator' }, collectors: [] }; } },
     );
     expect(called).toBe(false);
     expect(emitted).toHaveLength(1);

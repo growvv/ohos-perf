@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ohos-perf — HarmonyOS performance, made measurable</title>
-<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace, procfs and hiprofiler capture, trace ingest, typed queries, six analyzers (frames, fault tree, binder, threads, memory, startup) and a CLI. Deterministic, evidence-backed, zero native dependencies.">
+<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace, procfs, hiprofiler, hiperf, hidumper and uitest capture, trace ingest, typed queries, seven analyzers (frames, fault tree, binder, threads, memory, startup, render), baseline comparison and a CLI. Deterministic, evidence-backed, zero native dependencies.">
 <meta property="og:title" content="ohos-perf — HarmonyOS performance, made measurable">
-<meta property="og:description" content="Capability probing, hitrace/procfs/hiprofiler capture, trace ingest, typed queries over 88 tables, six analyzers with HapRay-verified parity, and a CLI in one TypeScript toolkit.">
+<meta property="og:description" content="Capability probing, five concurrent collectors, trace ingest, typed queries over 88 tables, seven analyzers with HapRay-verified parity, baseline comparison, and a CLI in one TypeScript toolkit.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://growvv.github.io/ohos-perf/">
 <meta property="og:image" content="https://growvv.github.io/ohos-perf/assets/poster.jpg">
@@ -59,14 +59,14 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P3 are complete — six analyzers, hiprofiler collection, drill-down queries, 677 tests" data-zh="P1–P3 已完成 — 六个分析器、hiprofiler 采集、下钻查询、677 个测试">P1–P3 are complete — six analyzers, hiprofiler collection, drill-down queries, 677 tests</span>
+        <span data-en="P1–P4 are complete — seven analyzers, five collectors, drill-down queries, baseline comparison, 794 tests" data-zh="P1–P4 已完成 — 七个分析器、五个采集器、下钻查询、基线对比、794 个测试">P1–P4 are complete — seven analyzers, five collectors, drill-down queries, baseline comparison, 794 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
         <span class="grad" data-en="made measurable." data-zh="从此可度量。">made measurable.</span>
       </h1>
-      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace, procfs and hiprofiler capture, trace ingest, typed queries, six analyzers — frames, fault tree, binder, threads, memory, startup — and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测、hitrace、procfs 与 hiprofiler 采集、trace 入库、类型化查询、六个分析器（帧、故障树、binder、线程、内存、启动）与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
-        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, hitrace and procfs capture, trace ingest, typed queries, six analyzers — frames, fault tree, binder, threads, memory, startup — and a CLI, in one TypeScript toolkit with zero native dependencies.
+      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, seven analyzers — frames, fault tree, binder, threads, memory, startup, render — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测，hitrace、hiprofiler、procfs、hiperf、hidumper 与 uitest 采集，trace 入库，类型化查询，七个分析器（帧、故障树、binder、线程、内存、启动、渲染），基线对比与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
+        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, seven analyzers — frames, fault tree, binder, threads, memory, startup, render — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies.
       </p>
       <div class="cta-row reveal">
         <a class="btn btn-primary" href="#quickstart">
@@ -94,7 +94,7 @@
         </div>
         <pre class="term"><code><span class="p">$</span> <span class="c">ohos-perf analyze ./scene --json</span>
 {
-  <span class="k">"metrics"</span>: [   <span class="cm">/* 37 metrics from six analyzers */</span>
+  <span class="k">"metrics"</span>: [   <span class="cm">/* 38 metrics from seven analyzers */</span>
     { <span class="k">"id"</span>: <span class="s">"frame.jank.rate"</span>, <span class="k">"value"</span>: <span class="n">37.267080745341616</span>,
       <span class="k">"unit"</span>: <span class="s">"%"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
@@ -108,12 +108,12 @@
       <span class="k">"unit"</span>: <span class="s">"count"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
                       <span class="k">"table"</span>: <span class="s">"callstack"</span>, <span class="k">"rows"</span>: <span class="n">372</span> } },
-    <span class="cm">/* … 34 more, including binder.latency.avg, thread.*, mem.* */</span>
+    <span class="cm">/* … 35 more, including binder.latency.avg, thread.*, mem.*, render.* */</span>
   ],
-  <span class="k">"evidence"</span>: [ <span class="cm">/* 74 items: 60 jank, 6 fault patterns, 5 binder */</span>
-                 <span class="cm">/* hotspots, 1 startup, 1 no_data, 1 degraded */</span> ]
+  <span class="k">"evidence"</span>: [ <span class="cm">/* 75 items: 60 jank, 6 fault patterns, 5 binder */</span>
+                 <span class="cm">/* hotspots, 1 startup, 1 no_data, 2 degraded */</span> ]
 }</code></pre>
-        <p class="terminal-note reveal" data-en="Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 37 metrics, 74 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的 17.9 MB 真实 trace 的实际输出：37 个指标、74 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 37 metrics, 74 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
+        <p class="terminal-note reveal" data-en="Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 38 metrics, 75 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的 17.9 MB 真实 trace 的实际输出：38 个指标、75 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 38 metrics, 75 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
       </div>
     </div>
   </div>
@@ -121,8 +121,8 @@
   <div class="wrap">
     <div class="stats reveal">
       <div class="stat"><b>20</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
-      <div class="stat"><b>6</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>677</b><span data-en="tests pass with a device and spike fixtures; 651 + 26 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 651 通过 + 26 跳过">tests pass with a device and spike fixtures; 651 + 26 skipped on a clean checkout</span></div>
+      <div class="stat"><b>7</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
+      <div class="stat"><b>794</b><span data-en="tests pass with a device and spike fixtures; 769 + 25 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 769 通过 + 25 跳过">tests pass with a device and spike fixtures; 769 + 25 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -165,7 +165,7 @@
       <article class="card reveal">
         <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7 9 2.5 2L7 13m5 0h4"/></svg></div>
         <h3 data-en="Built to be called by agents" data-zh="为被 Agent 调用而设计">Built to be called by agents</h3>
-        <p data-en="The CLI speaks stable JSON, and `ohos-perf query` turns every `drillDown` handle into the next call. `skill/ohos-perf/SKILL.md` packages that loop, so an agent can go from an evidence item to its frames, callstacks and binder pairs without screen-scraping or parsing prose." data-zh="CLI 输出稳定的 JSON，`ohos-perf query` 把每个 `drillDown` 句柄变成下一次调用。`skill/ohos-perf/SKILL.md` 封装了这条循环，agent 可以从一条证据直接下钻到帧、调用栈与 binder 调用对，不用截屏，也不用解析自然语言。">The CLI speaks stable JSON, and <code>ohos-perf query</code> turns every <code>drillDown</code> handle into the next call. <code>skill/ohos-perf/SKILL.md</code> packages that loop, so an agent can go from an evidence item to its frames, callstacks and binder pairs without screen-scraping or parsing prose.</p>
+        <p data-en="The CLI speaks stable JSON, `ohos-perf query` turns every `drillDown` handle into the next call, and `ohos-perf compare` classifies what changed between two captures — including `incomparable`, which means the direction is unknown rather than nothing changed. `skill/ohos-perf/SKILL.md` packages that loop, so an agent can go from an evidence item to its frames, callstacks and binder pairs, then check the fix against a baseline, without screen-scraping or parsing prose." data-zh="CLI 输出稳定的 JSON，`ohos-perf query` 把每个 `drillDown` 句柄变成下一次调用，`ohos-perf compare` 判定两次采集之间发生了什么变化——包括 `incomparable`，它表示方向未知，而不是没有变化。`skill/ohos-perf/SKILL.md` 封装了这条循环，agent 可以从一条证据直接下钻到帧、调用栈与 binder 调用对，再用基线验证修复，不用截屏，也不用解析自然语言。">The CLI speaks stable JSON, <code>ohos-perf query</code> turns every <code>drillDown</code> handle into the next call, and <code>ohos-perf compare</code> classifies what changed between two captures — including <code>incomparable</code>, which means the direction is unknown rather than nothing changed. <code>skill/ohos-perf/SKILL.md</code> packages that loop, so an agent can go from an evidence item to its frames, callstacks and binder pairs, then check the fix against a baseline, without screen-scraping or parsing prose.</p>
       </article>
       <article class="card reveal">
         <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h6m4 0h6M8 8v8m8-8v8"/><circle cx="12" cy="12" r="2"/></svg></div>
@@ -179,9 +179,9 @@
 <section class="section" id="analyzers">
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Analyzers" data-zh="分析器">Analyzers</p>
-    <h2 class="reveal" data-en="Six analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，六个分析器。每个结论都带证据。">Six analyzers over one trace. Every finding carries its evidence.</h2>
-    <p class="section-lead reveal" data-en="`analyze` runs all six against a scene and merges the result into one report: 37 metrics and 74 evidence items on the recorded emulator trace, byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部六个分析器，合并成一份报告：在录制的模拟器 trace 上产出 37 个指标与 74 条证据，跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
-      <code>analyze</code> runs all six against a scene and merges the result into one report: 37 metrics and 74 evidence items on the recorded emulator trace, byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
+    <h2 class="reveal" data-en="Seven analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，七个分析器。每个结论都带证据。">Seven analyzers over one trace. Every finding carries its evidence.</h2>
+    <p class="section-lead reveal" data-en="`analyze` runs all seven against a scene and merges the result into one report: 38 metrics and 75 evidence items on the recorded emulator trace, byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部七个分析器，合并成一份报告：在录制的模拟器 trace 上产出 38 个指标与 75 条证据，跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
+      <code>analyze</code> runs all seven against a scene and merges the result into one report: 38 metrics and 75 evidence items on the recorded emulator trace, byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
     </p>
 
     <div class="table-wrap reveal">
@@ -229,6 +229,12 @@
             <td><code>startup</code></td>
             <td data-en="Cold-start duration from `app_startup`, with a start-marker fallback" data-zh="基于 `app_startup` 的冷启动耗时，带启动标记回退">Cold-start duration from <code>app_startup</code>, with a start-marker fallback</td>
             <td><code>startup.*</code></td>
+            <td class="center"><span class="no">—</span></td>
+          </tr>
+          <tr>
+            <td><code>render</code></td>
+            <td data-en="Live FPS from RenderService refresh-rate deltas and hitch counts above 16.67 / 33 / 66 ms, sampled with `--hidumper`" data-zh="来自 RenderService 刷新率差值的实时 FPS，以及超过 16.67 / 33 / 66 ms 的卡顿计数，由 `--hidumper` 采样">Live FPS from RenderService refresh-rate deltas and hitch counts above 16.67 / 33 / 66 ms, sampled with <code>--hidumper</code></td>
+            <td><code>render.*</code></td>
             <td class="center"><span class="no">—</span></td>
           </tr>
         </tbody>
@@ -294,12 +300,12 @@
     <p class="section-lead reveal" data-en="Start from the transport, or start from a metric. Every layer is a typed seam, so an agent, a CLI command and a library caller walk the same path." data-zh="你可以从传输层开始，也可以直接从一个指标开始。每一层都是类型化接缝，agent、CLI 与库调用者走的是同一条路。">Start from the transport, or start from a metric. Every layer is a typed seam, so an agent, a CLI command and a library caller walk the same path.</p>
 
     <ol class="layers">
-      <li class="reveal"><span class="ln">L7</span><div><h3>API / CLI / Skill</h3><p data-en="Programmatic API, `ohos-perf` CLI, named `query` drill-downs, and the shipped `ohos-perf` agent skill." data-zh="编程 API、`ohos-perf` CLI、命名 `query` 下钻，以及随仓库发布的 `ohos-perf` agent skill。">Programmatic API, <code>ohos-perf</code> CLI, named <code>query</code> drill-downs, and the shipped <code>ohos-perf</code> agent skill.</p></div></li>
+      <li class="reveal"><span class="ln">L7</span><div><h3>API / CLI / Skill</h3><p data-en="Programmatic API, `ohos-perf` CLI, named `query` drill-downs, `compare` against a baseline, and the shipped `ohos-perf` agent skill." data-zh="编程 API、`ohos-perf` CLI、命名 `query` 下钻、`compare` 基线对比，以及随仓库发布的 `ohos-perf` agent skill。">Programmatic API, <code>ohos-perf</code> CLI, named <code>query</code> drill-downs, <code>compare</code> against a baseline, and the shipped <code>ohos-perf</code> agent skill.</p></div></li>
       <li class="reveal"><span class="ln">L6</span><div><h3>Report</h3><p data-en="Metric and Evidence models, provenance, fidelity, stable ordering." data-zh="Metric 与 Evidence 模型、provenance、保真度、稳定排序。">Metric and Evidence models, provenance, fidelity, stable ordering.</p></div></li>
-      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Six analyzers: frames, fault tree, binder, threads, memory and startup, with a capability matrix that degrades what the trace cannot support." data-zh="六个分析器：帧、故障树、binder、线程、内存与启动；能力矩阵会让 trace 不支持的分析器显式降级。">Six analyzers: frames, fault tree, binder, threads, memory and startup, with a capability matrix that degrades what the trace cannot support.</p></div></li>
+      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Seven analyzers: frames, fault tree, binder, threads, memory, startup and render, with a capability matrix that degrades what the trace cannot support." data-zh="七个分析器：帧、故障树、binder、线程、内存、启动与渲染；能力矩阵会让 trace 不支持的分析器显式降级。">Seven analyzers: frames, fault tree, binder, threads, memory, startup and render, with a capability matrix that degrades what the trace cannot support.</p></div></li>
       <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Ten typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup and perf." data-zh="十个类型化查询类，覆盖 trace_streamer 产出的 88 张表：帧、进程、线程、调度、瞬时事件、调用栈、binder、线程状态、启动与 perf。">Ten typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup and perf.</p></div></li>
       <li class="reveal"><span class="ln">L3</span><div><h3>Ingest</h3><p data-en="trace_streamer wrapper, scene artifact layout, read-only database handle." data-zh="trace_streamer 封装、场景产物布局、只读数据库句柄。">trace_streamer wrapper, scene artifact layout, read-only database handle.</p></div></li>
-      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace, procfs and hiprofiler capture today: `--procfs` memory sampling, `--cold-start` launch capture, and `--hiprofiler --plugins gpu,xpower,nativehook` sessions whose `.htrace` converts through the same trace_streamer path; hiperf, hidumper and uitest collectors are still missing." data-zh="当前实现 hitrace、procfs 与 hiprofiler 采集：`--procfs` 内存采样、`--cold-start` 启动采集，以及 `--hiprofiler --plugins gpu,xpower,nativehook` 会话（`.htrace` 走同一条 trace_streamer 入库路径）；hiperf、hidumper 与 uitest 采集器仍待补齐。">hitrace, procfs and hiprofiler capture today: <code>--procfs</code> memory sampling, <code>--cold-start</code> launch capture, and <code>--hiprofiler --plugins gpu,xpower,nativehook</code> sessions whose <code>.htrace</code> converts through the same <code>trace_streamer</code> path; hiperf, hidumper and uitest collectors are still missing.</p></div></li>
+      <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace, procfs, hiprofiler, hiperf, hidumper and uitest. One `collect` runs every requested collector concurrently: `--procfs` memory samples, `--hiprofiler --plugins gpu,xpower,nativehook`, `--hiperf` perf.data for a debuggable app (converted into a second perf.db), `--hidumper` render counters, `--uitest` the UI tree. A failure restores the previous scene's artifacts rather than presenting a partial scene as complete." data-zh="hitrace、procfs、hiprofiler、hiperf、hidumper 与 uitest。一次 `collect` 并发运行所有被请求的采集器：`--procfs` 内存采样、`--hiprofiler --plugins gpu,xpower,nativehook`、`--hiperf` 为可调试应用录制 perf.data（转换成第二个 perf.db）、`--hidumper` 渲染计数、`--uitest` UI 树。任一失败都会还原上一份场景产物，而不是把残缺场景当作完整场景。">hitrace, procfs, hiprofiler, hiperf, hidumper and uitest. One <code>collect</code> runs every requested collector concurrently: <code>--procfs</code> memory samples, <code>--hiprofiler --plugins gpu,xpower,nativehook</code>, <code>--hiperf</code> perf.data for a debuggable app (converted into a second perf.db), <code>--hidumper</code> render counters, <code>--uitest</code> the UI tree. A failure restores the previous scene's artifacts rather than presenting a partial scene as complete.</p></div></li>
       <li class="reveal"><span class="ln">L1</span><div><h3>Device</h3><p data-en="Device model, one-shot capability probe, cached CapabilityMatrix." data-zh="设备模型、一次性能力探测、缓存的 CapabilityMatrix。">Device model, one-shot capability probe, cached CapabilityMatrix.</p></div></li>
       <li class="reveal"><span class="ln">L0</span><div><h3>Transport</h3><p data-en="hdc client: shell, port forwarding, file send/recv, target listing, connect." data-zh="hdc 客户端：shell、端口转发、文件收发、目标枚举与连接。">hdc client: shell, port forwarding, file send/recv, target listing, connect.</p></div></li>
     </ol>
@@ -346,7 +352,7 @@
 });
 <span class="k">const</span> scene = <span class="k">await</span> session.ingest();
 
-<span class="cm">// All six analyzers, one context. A capability the trace cannot</span>
+<span class="cm">// All seven analyzers, one context. A capability the trace cannot</span>
 <span class="cm">// support degrades to a named proxy — never a silent zero.</span>
 <span class="k">const</span> processes = <span class="k">new</span> ProcessQuery(scene.traceDb);
 <span class="k">const</span> result = <span class="k">await</span> runAnalyzers(defaultAnalyzers(), {
@@ -376,12 +382,15 @@ ohos-perf doctor
 <span class="cm"># Machine-readable capability matrix.</span>
 ohos-perf caps --json
 
-<span class="cm"># Capture a scene; --procfs adds memory, --cold-start adds launch.</span>
+<span class="cm"># Capture a scene; every collector runs concurrently.</span>
 ohos-perf collect --app com.example.app --duration 10 \
-  --out ./scene --procfs --cold-start EntryAbility
+  --out ./scene --procfs --hiperf --hidumper --uitest
 
-<span class="cm"># Run all six analyzers over it.</span>
+<span class="cm"># Run all seven analyzers over it.</span>
 ohos-perf analyze ./scene --json
+
+<span class="cm"># Compare against a baseline capture.</span>
+ohos-perf compare ./before ./after --json
 
 <span class="cm"># Exit codes are real: a failed analysis is 1.</span>
 <span class="p">$</span> ohos-perf analyze ./missing; <span class="k">echo</span> $?
@@ -420,10 +429,10 @@ ohos-perf analyze ./scene --json
 <span class="p">$</span> node packages/cli/dist/index.js collect --app com.example.app \
     --duration 10 --out ./scene --procfs --cold-start EntryAbility
 
-<span class="cm"># Run all six analyzers over the scene, offline.</span>
+<span class="cm"># Run all seven analyzers over the scene, offline.</span>
 <span class="p">$</span> node packages/cli/dist/index.js analyze ./scene --json
 
-<span class="cm"># Run the suite: 651 pass + 26 skip on a clean checkout; 677 with a device.</span>
+<span class="cm"># Run the suite: 769 pass + 25 skip on a clean checkout; 794 with a device.</span>
 <span class="p">$</span> npm test</code></pre>
       </div>
     </div>

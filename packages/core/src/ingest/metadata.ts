@@ -15,7 +15,16 @@ export interface SceneMetadata {
   pids: number[];
   deviceId: string;
   startedAtNs?: number;
-  capture?: { startedAtMs: number; durationMs: number; collectors: string[] };
+  capture?: {
+    startedAtMs: number;
+    durationMs: number;
+    collectors: string[];
+    /**
+     * Present only when a hiperf capture ran. `samples` may be 0: an idle app
+     * yields no samples, which is a real capture, not a missing one.
+     */
+    hiperf?: { samples: number };
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,12 +47,17 @@ function isApp(value: unknown): value is SceneMetadata['app'] {
   );
 }
 
+function isHiperfCapture(value: unknown): value is { samples: number } {
+  return isRecord(value) && isFiniteNumber(value.samples) && value.samples >= 0;
+}
+
 function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture']> {
   return (
     isRecord(value) &&
     isFiniteNumber(value.startedAtMs) &&
     isFiniteNumber(value.durationMs) &&
-    isStringArray(value.collectors)
+    isStringArray(value.collectors) &&
+    (value.hiperf === undefined || isHiperfCapture(value.hiperf))
   );
 }
 
@@ -107,6 +121,9 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
       startedAtMs: parsed.capture.startedAtMs,
       durationMs: parsed.capture.durationMs,
       collectors: [...parsed.capture.collectors],
+      ...(parsed.capture.hiperf === undefined
+        ? {}
+        : { hiperf: { samples: parsed.capture.hiperf.samples } }),
     };
   }
   if (isFiniteNumber(parsed.startedAtNs) && parsed.startedAtNs > 0) {

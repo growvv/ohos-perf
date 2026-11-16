@@ -15,7 +15,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     },
     capsReport: async () => ({ hdcOk: true, capabilities: [] }),
     analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
+    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
     compare: async () => { throw new Error('compare not stubbed'); },

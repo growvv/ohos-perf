@@ -96,6 +96,9 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       '--plugins <list>',
       'hiprofiler plugins, comma-separated: ftrace, gpu, xpower, nativehook',
     )
+    .option('--hiperf', 'also capture a hiperf perf.data (debuggable app only)')
+    .option('--hidumper', 'also sample the RenderService fps and hitch counters')
+    .option('--uitest', 'also dump the on-screen UI tree')
     .option('--json', 'print the result as JSON')
     .action(async (opts: {
       app: string;
@@ -105,6 +108,9 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       coldStart?: string;
       hiprofiler?: boolean;
       plugins?: string;
+      hiperf?: boolean;
+      hidumper?: boolean;
+      uitest?: boolean;
       json?: boolean;
     }) => {
       // Validation lives in the action (not a commander option parser) so a bad
@@ -148,6 +154,9 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         ...(opts.procfs === true ? { procfs: true } : {}),
         ...(opts.coldStart !== undefined ? { coldStart: opts.coldStart } : {}),
         ...(hiprofilerRequest === undefined ? {} : { hiprofiler: hiprofilerRequest }),
+        ...(opts.hiperf === true ? { hiperf: {} } : {}),
+        ...(opts.hidumper === true ? { hidumper: true } : {}),
+        ...(opts.uitest === true ? { uitest: true } : {}),
       }, { json: opts.json }));
     });
 

@@ -65,12 +65,24 @@ export interface CollectRequest {
   coldStart?: string;
   /** Capture through hiprofiler; an empty object selects Device's default. */
   hiprofiler?: { plugins?: readonly HiprofilerPluginName[] };
+  /** Also record a hiperf perf.data (requires a debuggable app). */
+  hiperf?: { frequency?: number };
+  /** Also sample the RenderService fps/hitch counters. */
+  hidumper?: boolean;
+  /** Also dump the on-screen UI tree. */
+  uitest?: boolean;
 }
 
 /** What a successful `collect` returns to the renderer. */
 export interface CollectOutput {
   sceneDir: string;
   device: { id: string; kind: string };
+  /** The collectors that ran, in fixed order, as recorded in scene.json. */
+  collectors: string[];
+  /** Present only when a hiperf capture ran; `samples: 0` is a valid idle app. */
+  hiperf?: { samples: number };
+  /** Present only when a uitest capture ran. */
+  ui?: { nodes: number };
 }
 
 /** The arguments `query` forwards to the IO layer. */
@@ -241,7 +253,12 @@ export async function runAnalyze(
  *
  * As with `analyze`, any failure is exit 1 with an empty stdout: a half-written
  * JSON document would be worse than none. `--json` reports the absolute scene
- * directory and the device identity the capture used.
+ * directory, the device identity the capture used, which collectors ran and
+ * what each captured.
+ *
+ * The human summary prints one line per fact that exists. `hiperf 0` is printed
+ * explicitly: an idle app producing no samples is a real capture and the reader
+ * must see the zero rather than infer it from a missing line.
  */
 export async function runCollect(
   deps: CliDeps,
@@ -251,7 +268,17 @@ export async function runCollect(
   try {
     const result = await deps.collect(req);
     if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
-    return { stdout: `scene  ${result.sceneDir}\n`, stderr: '', exitCode: 0 };
+
+    let stdout = `scene  ${result.sceneDir}\n`;
+    if (result.collectors.length > 0) {
+      stdout += `collectors  ${result.collectors.join(', ')}\n`;
+    }
+    const samples = [
+      ...(result.hiperf === undefined ? [] : [`hiperf ${result.hiperf.samples}`]),
+      ...(result.ui === undefined ? [] : [`ui ${result.ui.nodes}`]),
+    ];
+    if (samples.length > 0) stdout += `samples  ${samples.join(', ')}\n`;
+    return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }

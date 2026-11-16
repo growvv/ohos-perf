@@ -7,10 +7,10 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
 
 A TypeScript toolkit for HarmonyOS performance analysis. It turns an attached device
-into structured, evidence-backed data: capability probing, hitrace capture,
-`trace_streamer` ingest, typed queries over the resulting SQLite database, frame
-metrics with provenance, an evidence graph, and a CLI designed to be called by
-agents.
+into structured, evidence-backed data: capability probing, five concurrent
+collectors, `trace_streamer` ingest, typed queries over the resulting SQLite
+databases, metrics with provenance, an evidence graph, baseline comparison, and
+a CLI designed to be called by agents.
 
 - Website: <https://growvv.github.io/ohos-perf/>
 - Design: [`design/2026-11-14-ohos-perf-core-design.md`](design/2026-11-14-ohos-perf-core-design.md)
@@ -35,12 +35,12 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1, P2 and P3 are complete**: 677 tests, two workspace typechecks and two builds,
-all green on the declared minimum Node (`22.13.0`). On a clean checkout — where
-the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures
-and any attached device are absent — `npm test` reports **651 passed, 26
-skipped (2 files skipped)**; with both fixtures present and a device attached
-all 677 pass. The fixture-dependent suites are
+**P1 through P4 are complete**: 794 tests, two workspace typechecks and two
+builds, all green on the declared minimum Node (`22.13.0`). On a clean checkout
+— where the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db`
+fixtures and any attached device are absent — `npm test` reports **769 passed,
+25 skipped (2 files skipped)**; with both fixtures present and a device
+attached all 794 pass. The fixture-dependent suites are
 `e2e-offline`, `drilldown-e2e`, `parity-hapray`, `analyze-thread-wakeup`,
 `query-binder-startup`, `query-callstack-perf`, `query-sched-state` and the CLI
 `index` end-to-end tests.
@@ -50,10 +50,14 @@ Implemented today:
 - `hdc` transport: shell, port forwarding, file send/recv, target listing
 - one-shot capability probe → 20 verdicts with evidence
 - collectors: hitrace (marker checks, stale-file protection, stop-on-failure),
-  procfs (`/proc` memory/thread sampling with `pidof` resolution), and
-  hiprofiler (`hiprofiler_cmd` sessions with the ftrace, nativehook, gpu and
-  xpower plugins ported from HapRay; the `.htrace` converts through the same
-  `trace_streamer` path)
+  procfs (`/proc` memory/thread sampling with `pidof` resolution), hiprofiler
+  (`hiprofiler_cmd` sessions with the ftrace, nativehook, gpu and xpower
+  plugins ported from HapRay; the `.htrace` converts through the same
+  `trace_streamer` path), hiperf (`perf.data` for a debuggable app, converted
+  into a second `perf.db`), hidumper (RenderService fps and hitch counters) and
+  uitest (the on-screen UI tree); all five run concurrently in one `collect`
+- baseline comparison: `ohos-perf compare <baseline> <current>` classifies each
+  metric as improved, regressed, unchanged, added, removed or incomparable
 - `trace_streamer` wrapper and scene layout, with `scene.json` metadata
   (device-uptime start marker, pids, collector list)
 - typed queries over the 88-table trace database: frames, processes, threads,
@@ -62,13 +66,15 @@ Implemented today:
   every `Evidence.drillDown` handle, and the agent skill adapter in
   `skill/ohos-perf/SKILL.md`
 - analyzers: frames, fault tree (`fault.*`), binder (`binder.*`), threads
-  (`thread.*`), memory (`mem.*`) and startup (`startup.*`), driven by an
-  offline capability matrix derived from table presence
+  (`thread.*`), memory (`mem.*`), startup (`startup.*`) and render
+  (`render.*`), driven by an offline capability matrix derived from table
+  presence
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
-- `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`
+- `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
+  `compare`
 
-Metric ids emitted by the P1 analyzers:
+Metric ids emitted by the analyzers:
 
 | Prefix | Analyzer | Examples |
 | --- | --- | --- |
@@ -77,6 +83,7 @@ Metric ids emitted by the P1 analyzers:
 | `thread.*` | threads | `thread.patterns.count`, `thread.redundant.count` |
 | `mem.*` | memory | `mem.rss.*`, `mem.pss.*` |
 | `startup.*` | startup | `startup.count`, `startup.duration` |
+| `render.*` | render | `render.fps.live` (proxy), `render.hitch.count` |
 
 The recorded traces pin field-level output for the binder, threads and fault-tree
 analyzers against golden outputs from ArkAnalyzer-HapRay revision `9386e4e`.
@@ -87,8 +94,7 @@ Memory (procfs) and startup have no HapRay equivalent on the emulator; their
 tests pin the parser, aggregation and marker fallback instead, and no parity is
 claimed for them.
 
-Not implemented yet: hiperf, hidumper and uitest collectors, and baseline
-comparison.
+Not implemented yet: `ui.gesture`, `coverage` and `js.heap`.
 
 ## Requirements
 
@@ -125,6 +131,22 @@ node packages/cli/dist/index.js collect \
 node packages/cli/dist/index.js collect \
   --app com.example.app --duration 10s --out ./hipro-scene \
   --hiprofiler --plugins gpu,xpower,nativehook --json
+
+# everything at once: perf samples, render counters and the UI tree
+node packages/cli/dist/index.js collect \
+  --app com.example.app --duration 10s --out ./full-scene \
+  --procfs --hiperf --hidumper --uitest --json
+```
+
+`--hiperf` needs a **debuggable** app; the device refuses others. An idle app
+legitimately produces `hiperf: { samples: 0 }` — a real capture, reported as
+`hiperf 0` in the human summary rather than dropped from it.
+
+Compare two captures — each argument is a scene directory or a saved
+`analyze --json` file:
+
+```bash
+node packages/cli/dist/index.js compare ./before ./after --json
 ```
 
 Analyze it offline — no device or toolchain needed:
@@ -145,7 +167,7 @@ node packages/cli/dist/index.js query ./scene frames.get \
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
-npm test        # 677 tests; 651 pass + 26 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 794 tests; 769 pass + 25 skip on a clean checkout (no device, spike/out/ absent)
 ```
 
 ## Library
@@ -206,10 +228,10 @@ crash: a crash is not the documented answer to missing input.
 ```
 L7  API / CLI / Skill      programmatic API · ohos-perf CLI · agent skill (skill/ohos-perf/)
 L6  Report                 Metric · Evidence · provenance · fidelity
-L5  Analyze                frames · fault tree · binder · threads · memory · startup
+L5  Analyze                frames · fault tree · binder · threads · memory · startup · render
 L4  Query                  typed accessors over 88 trace tables
-L3  Ingest                 trace_streamer wrapper · scene layout · scene.json · db handle
-L2  Collectors             hitrace · procfs · hiprofiler (hiperf/hidumper/uitest missing)
+L3  Ingest                 trace_streamer wrapper · scene layout · scene.json · db handles
+L2  Collectors             hitrace · procfs · hiprofiler · hiperf · hidumper · uitest
 L1  Device                 device model · capability probe · matrix
 L0  Transport              hdc client
 ```
@@ -239,15 +261,20 @@ TypeScript 编写。它把设备能力探测、hitrace 采集、trace_streamer �
 2. **确定性输出**：同一输入两次运行字节一致，CI diff 有意义。
 3. **零原生依赖**：只用 Node 内置 `node:sqlite`，无编译、无 Python。
 
-当前 P0–P3 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler 采集、
-trace_streamer 入库、类型化查询、帧 / 故障树 / binder / 线程 / 内存 / 启动分析、
-降级指标引擎、证据图与命名下钻查询，以及
-`doctor` / `caps` / `collect` / `analyze` / `query` / `tools` 六个命令和
-`skill/ohos-perf/` 中的 agent skill 适配器。录制的真实 trace 已将 binder、
-线程与故障树分析器的逐字段输出与 HapRay 修订 `9386e4e` 对齐；线程评分另有一个
-由 HapRay 生成的合成 golden，专门覆盖冗余评分路径——真实 trace 既没有冗余线程模式
-也没有 perf 采样，其线程 golden 全为零值。内存与启动分析没有 HapRay 对应实现，
-不声称对齐。hiperf、hidumper、uitest 采集器与基线对比仍待实现。
+当前 P0–P4 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
+hidumper / uitest 采集、trace_streamer 入库（含 perf.data → perf.db）、类型化查询、
+帧 / 故障树 / binder / 线程 / 内存 / 启动 / 渲染分析、降级指标引擎、证据图与命名下钻
+查询、基线对比，以及 `doctor` / `caps` / `collect` / `analyze` / `query` / `tools` /
+`compare` 七个命令和 `skill/ohos-perf/` 中的 agent skill 适配器。录制的真实 trace
+已将 binder、线程与故障树分析器的逐字段输出与 HapRay 修订 `9386e4e` 对齐；线程评分
+另有一个由 HapRay 生成的合成 golden，专门覆盖冗余评分路径——真实 trace 既没有冗余
+线程模式也没有 perf 采样，其线程 golden 全为零值。内存与启动分析没有 HapRay 对应
+实现，不声称对齐。`ui.gesture`、`coverage` 与 `js.heap` 仍待实现。
+
+`--hiperf` 需要可调试应用，空闲应用产生 `samples: 0` 也是一次有效采集，CLI 会明确
+打印 `hiperf 0` 而不是省略。`compare` 把每个指标标为 improved / regressed /
+unchanged / added / removed / incomparable，其中 `incomparable` 表示方向未知，而不是
+没有变化。
 
 ## License
 

@@ -18,7 +18,11 @@ import {
   nativehookPlugin,
   xpowerPlugin,
 } from '../collectors/hiprofiler/templates';
+import { HidumperCollector, type HidumperCapture } from '../collectors/hidumper';
+import { HiperfCollector, type HiperfCapture } from '../collectors/hiperf';
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
+import { UitestCollector } from '../collectors/uitest';
+import type { UiNode } from '../query/ui';
 import type { TraceCollectOptions } from '../collectors/types';
 import { buildMatrix, type CapabilityMatrix } from './capability';
 import { DeviceNotFoundError, OhosPerfError } from '../errors';
@@ -77,6 +81,15 @@ export interface CollectOptions extends TraceCollectOptions {
    * `.htrace` converts through the same Streamer into the same schema.
    */
   hiprofiler?: HiprofilerCollectRequest;
+  /**
+   * Also record a `perf.data` with `hiperf record --app`. Requires a
+   * **debuggable** app; a release app is rejected with `HIPERF_NOT_DEBUGGABLE`.
+   */
+  hiperf?: { frequency?: number; events?: readonly string[]; callStacks?: boolean };
+  /** Also sample the RenderService fps/hitch counters for `durationMs`. */
+  hidumper?: boolean;
+  /** Also dump the on-screen UI tree. */
+  uitest?: boolean;
 }
 
 export interface CollectSession {
@@ -91,6 +104,9 @@ export interface DeviceDeps {
   collector?: HitraceCollector;
   hiprofiler?: HiprofilerCollector;
   procfs?: ProcfsCollector;
+  hiperf?: HiperfCollector;
+  hidumper?: HidumperCollector;
+  uitest?: UitestCollector;
 }
 
 /** Bare device/application/ability names, safe to interpolate into a shell command. */
@@ -144,13 +160,22 @@ export class Device {
    */
   async collect(opts: CollectOptions): Promise<CollectSession> {
     const caps = await this.capabilities();
-    if (!caps.has('trace.frames')) {
-      const reason = caps.get('trace.frames')?.reason;
+    const require = (id: 'trace.frames' | 'perf.samples' | 'render.fps_live' | 'ui.tree'): void => {
+      if (caps.has(id)) return;
+      const reason = caps.get(id)?.reason;
       throw new OhosPerfError(
-        'collect requires trace.frames capability' + (reason ? ` (${reason})` : ''),
+        `collect requires ${id} capability` + (reason ? ` (${reason})` : ''),
         { code: 'MISSING_CAPABILITY' },
       );
-    }
+    };
+    require('trace.frames');
+    // hiperf is gated on `perf.samples` only, never on `perf.pmu`: the PMU is
+    // absent on the emulator while the hiperf binary (and software events) is
+    // present, and a hardware-event request there is rejected by the collector
+    // with the software events the probe found.
+    if (opts.hiperf !== undefined) require('perf.samples');
+    if (opts.hidumper === true) require('render.fps_live');
+    if (opts.uitest === true) require('ui.tree');
 
     return {
       /**
@@ -232,14 +257,46 @@ export class Device {
           }
         }
 
+        const wantsHiperf = opts.hiperf !== undefined;
+        const wantsHidumper = opts.hidumper === true;
+        const wantsUitest = opts.uitest === true;
+        // Only hiperf needs a pid. hidumper and uitest read the whole screen,
+        // so they work with no app at all.
+        if (wantsHiperf && (opts.app === undefined || opts.app === '')) {
+          throw new OhosPerfError(
+            'hiperf capture requires an app (CollectOptions.app) to profile',
+            { code: 'COLLECT_APP_REQUIRED' },
+          );
+        }
+        if (wantsHiperf && !BARE_NAME.test(opts.app)) {
+          throw new OhosPerfError(
+            `app must be a bare name matching ${String(BARE_NAME)}` +
+              ` (got ${JSON.stringify(opts.app)})`,
+            { code: 'COLLECT_BAD_APP' },
+          );
+        }
+
         mkdirSync(layout.root, { recursive: true });
 
-        // The procfs collector overwrites procfs.jsonl during the capture. If
-        // conversion later fails, the old scene must stay exactly as it was,
-        // so remember the previous file (if any) before anything writes it.
-        const previousProcfs = wantsProcfs && existsSync(layout.procfsFile)
-          ? readFileSync(layout.procfsFile)
-          : undefined;
+        // Every optional collector overwrites its artifact during the capture.
+        // If a collector or the conversion later fails, the old scene must stay
+        // exactly as it was, so remember the previous bytes (if any) before
+        // anything writes them. Only requested artifacts are remembered: a
+        // stale file for a collector that did not run is removed on success,
+        // not restored.
+        const previous = new Map<string, Buffer | undefined>();
+        const remember = (path: string): void => {
+          previous.set(path, existsSync(path) ? readFileSync(path) : undefined);
+        };
+        if (wantsProcfs) remember(layout.procfsFile);
+        if (wantsHiperf) {
+          remember(layout.perfFile!);
+          // A previous perf.db is converted output, not collector output, but
+          // a failed perf conversion must leave the old one in place too.
+          remember(layout.perfDb!);
+        }
+        if (wantsHidumper) remember(layout.hidumperFile);
+        if (wantsUitest) remember(layout.uiFile);
 
         // Host wall-clock at capture start, recorded for humans only.
         const startedAtMs = Date.now();
@@ -306,34 +363,67 @@ export class Device {
         };
 
         let procfsSamples: ProcfsSample[] | undefined;
+        let hiperfCapture: HiperfCapture | undefined;
+        let hidumperCapture: HidumperCapture | undefined;
+        let uiNodes: UiNode[] | undefined;
         try {
+          // Every requested collector starts in the same tick with the same
+          // duration, and `Promise.all` rejects with the first failure: a
+          // partial scene must never be presented as complete. The trace is
+          // first in the array so a failure message names it first.
+          const runs: Array<Promise<unknown>> = [runTrace()];
           if (wantsProcfs) {
             const procfs = this.deps.procfs ?? new ProcfsCollector();
             const intervalMs =
               typeof opts.procfs === 'object' ? opts.procfs.intervalMs : undefined;
-            // Both collectors start in the same tick and receive the same
-            // duration. Promise.all rejects with the first failure: a partial
-            // scene must never be presented as complete.
-            const [, samples] = await Promise.all([
-              runTrace(),
-              procfs.collect(
-                hdc,
-                this.id,
-                { app: opts.app, durationMs: opts.durationMs, intervalMs },
-                layout,
-              ),
-            ]);
-            procfsSamples = samples;
-          } else {
-            await runTrace();
+            runs.push(procfs.collect(
+              hdc,
+              this.id,
+              { app: opts.app, durationMs: opts.durationMs, intervalMs },
+              layout,
+            ));
           }
+          if (wantsHiperf) {
+            const hiperf = this.deps.hiperf ?? new HiperfCollector();
+            runs.push(hiperf.collect(hdc, this.id, {
+              durationMs: opts.durationMs,
+              app: opts.app,
+              ...(opts.hiperf?.frequency === undefined
+                ? {}
+                : { frequency: opts.hiperf.frequency }),
+              ...(opts.hiperf?.events === undefined ? {} : { events: opts.hiperf.events }),
+              ...(opts.hiperf?.callStacks === undefined
+                ? {}
+                : { callStacks: opts.hiperf.callStacks }),
+            }, layout));
+          }
+          if (wantsHidumper) {
+            const hidumper = this.deps.hidumper ?? new HidumperCollector();
+            runs.push(hidumper.collect(
+              hdc,
+              this.id,
+              { durationMs: opts.durationMs },
+              layout,
+            ));
+          }
+          if (wantsUitest) {
+            const uitest = this.deps.uitest ?? new UitestCollector();
+            runs.push(uitest.collect(hdc, this.id, {}, layout));
+          }
+
+          // Index-aligned results: the trace is [0] and contributes nothing.
+          const results = await Promise.all(runs);
+          let index = 1;
+          if (wantsProcfs) procfsSamples = results[index++] as ProcfsSample[];
+          if (wantsHiperf) hiperfCapture = results[index++] as HiperfCapture;
+          if (wantsHidumper) hidumperCapture = results[index++] as HidumperCapture;
+          if (wantsUitest) uiNodes = results[index] as UiNode[];
         } catch (err) {
-          // A hitrace failure rejects the pair while the procfs collector may
-          // already have written this attempt's samples. The old scene must
-          // stay coherent, so put the previous file back (or remove the new
-          // one). This mirrors the conversion-failure path and never masks the
-          // capture error.
-          if (wantsProcfs) restorePreviousProcfs(layout.procfsFile, previousProcfs);
+          // A collector failure rejects the group while the others may already
+          // have written this attempt's artifacts. The old scene must stay
+          // coherent, so put every remembered file back (or remove the new
+          // one). Never mask the capture error.
+          restoreArtifacts(previous);
           throw err;
         }
 
@@ -354,22 +444,33 @@ export class Device {
         const streamer = this.deps.streamer ?? new Streamer();
         try {
           await streamer.convert(layout.traceFile, layout.traceDb);
+          // The perf capture converts the same way and must succeed before the
+          // metadata is written: a scene.json that claims a hiperf capture
+          // whose database never appeared would be a lie the analyzers act on.
+          if (wantsHiperf) await streamer.convert(layout.perfFile!, layout.perfDb!);
         } catch (err) {
-          // The procfs collector has already written this attempt's samples.
-          // Restore the previous file byte-for-byte, or remove it when the
+          // The collectors have already written this attempt's artifacts.
+          // Restore the previous files byte-for-byte, or remove them when the
           // previous scene had none, so the directory holds exactly the old
           // scene's artifacts. Never mask the conversion error.
-          if (wantsProcfs) restorePreviousProcfs(layout.procfsFile, previousProcfs);
+          restoreArtifacts(previous);
           throw err;
         }
 
-        // A re-capture into the same sceneRoot without --procfs must not leave
-        // the previous capture's memory samples behind: analyze would otherwise
-        // report `mem.*` as exact for a capture that never sampled memory. This
-        // is a scene mutation, so it belongs on the success path with the
-        // metadata write; a failed conversion leaves the whole old scene intact.
+        // A re-capture into the same sceneRoot that did not run a collector must
+        // not leave the previous capture's artifact behind: analyze would
+        // otherwise report `mem.*` as exact, `perf.samples` as available, or
+        // `ui.get` rows, for a capture that never produced them. This is a
+        // scene mutation, so it belongs on the success path with the metadata
+        // write; a failed conversion leaves the whole old scene intact.
         // ENOENT is the normal case and is ignored.
-        if (!wantsProcfs) removeStaleProcfs(layout.procfsFile);
+        if (!wantsProcfs) removeIfPresent(layout.procfsFile);
+        if (!wantsHiperf) {
+          removeIfPresent(layout.perfFile!);
+          removeIfPresent(layout.perfDb!);
+        }
+        if (!wantsHidumper) removeIfPresent(layout.hidumperFile);
+        if (!wantsUitest) removeIfPresent(layout.uiFile);
 
         writeSceneMetadata(layout, {
           version: 1,
@@ -385,10 +486,19 @@ export class Device {
           capture: {
             startedAtMs,
             durationMs: opts.durationMs,
+            // Fixed order, so two captures of the same request are identical.
             collectors: [
               wantsHiprofiler ? 'hiprofiler' : 'hitrace',
               ...(wantsProcfs ? ['procfs'] : []),
+              ...(wantsHiperf ? ['hiperf'] : []),
+              ...(wantsHidumper ? ['hidumper'] : []),
+              ...(wantsUitest ? ['uitest'] : []),
             ],
+            // A zero-sample capture is recorded explicitly: "hiperf ran and
+            // the app was idle" is a different fact from "hiperf did not run".
+            ...(hiperfCapture === undefined
+              ? {}
+              : { hiperf: { samples: hiperfCapture.samples } }),
           },
         });
 
@@ -409,11 +519,11 @@ export class Device {
 }
 
 /**
- * Remove another capture's `procfs.jsonl` from a scene that did not sample
- * memory. Only ENOENT is ignored; any other filesystem error is a real failure
- * and must not leave stale samples silently in place.
+ * Remove another capture's artifact from a scene that did not produce it.
+ * Only ENOENT is ignored; any other filesystem error is a real failure and
+ * must not leave stale data silently in place.
  */
-function removeStaleProcfs(path: string): void {
+function removeIfPresent(path: string): void {
   try {
     unlinkSync(path);
   } catch (err) {
@@ -422,19 +532,21 @@ function removeStaleProcfs(path: string): void {
 }
 
 /**
- * Undo a procfs capture on the conversion-failure path: put the previous file
- * back byte-for-byte, or delete this attempt's file when there was none. Errors
- * here are best-effort — the conversion error is the one the caller must see.
+ * Undo a failed capture: put every remembered file back byte-for-byte, or
+ * delete this attempt's file when the previous scene had none. Errors here are
+ * best-effort — the capture or conversion error is the one the caller must see.
  */
-function restorePreviousProcfs(path: string, previous: Buffer | undefined): void {
-  try {
-    if (previous === undefined) {
-      removeStaleProcfs(path);
-    } else {
-      writeFileSync(path, previous);
+function restoreArtifacts(previous: Map<string, Buffer | undefined>): void {
+  for (const [path, bytes] of previous) {
+    try {
+      if (bytes === undefined) {
+        removeIfPresent(path);
+      } else {
+        writeFileSync(path, bytes);
+      }
+    } catch {
+      // Deliberately swallowed: never replace the real failure.
     }
-  } catch {
-    // Deliberately swallowed: never replace the conversion failure.
   }
 }
 

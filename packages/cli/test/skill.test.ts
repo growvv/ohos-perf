@@ -16,7 +16,7 @@ function readNormalized(path: string): string {
 const skill = readNormalized(join(root, 'skill/ohos-perf/SKILL.md'));
 const readme = readNormalized(join(root, 'README.md'));
 
-const COMMANDS = new Set(['doctor', 'caps', 'collect', 'analyze', 'query', 'tools']);
+const COMMANDS = new Set(['doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare']);
 
 describe('agent skill adapter', () => {
   it('has frontmatter with a name and a description', () => {
@@ -35,6 +35,13 @@ describe('agent skill adapter', () => {
   it('describes the evidence-to-query workflow it relies on', () => {
     for (const needle of ['drillDown', 'ohos-perf tools --json', 'ohos-perf query',
       '--limit', '--json']) {
+      expect(skill).toContain(needle);
+    }
+  });
+
+  it('documents every collector flag and the baseline comparison', () => {
+    for (const needle of ['--procfs', '--hiprofiler', '--hiperf', '--hidumper', '--uitest',
+      'ohos-perf compare', 'incomparable', 'ui.get']) {
       expect(skill).toContain(needle);
     }
   });

@@ -727,10 +727,14 @@ describe('realDeps().collect', () => {
     const result = await deps.collect({
       app: 'com.demo', durationMs: 10_000, out: 'relative-scene',
       procfs: true, coldStart: 'EntryAbility',
+      hiperf: { frequency: 500 }, hidumper: true, uitest: true,
     });
+    // No scene.json exists beside the fake scene, so the collectors list is
+    // empty rather than invented: the output reports what the descriptor says.
     expect(result).toEqual({
       sceneDir: resolve('relative-scene'),
       device: { id: 't1', kind: 'emulator' },
+      collectors: [],
     });
     expect(seen).toEqual([{
       app: 'com.demo',
@@ -738,8 +742,57 @@ describe('realDeps().collect', () => {
       sceneRoot: resolve('relative-scene'),
       procfs: true,
       coldStart: { ability: 'EntryAbility' },
+      hiperf: { frequency: 500 },
+      hidumper: true,
+      uitest: true,
     }]);
     expect(closed).toBe(true);
+  });
+
+  it('reports the collectors and capture counts written to scene.json', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-collect-out-'));
+    try {
+      const deps = realDeps('0.0.0', {
+        collectDevice: async () => ({
+          id: 't1',
+          kind: 'emulator',
+          collect: async () => ({
+            ingest: async () => {
+              // The real collectors write these before ingest; the output must
+              // come from the descriptor, not from the request flags.
+              writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+                version: 1,
+                app: { packageName: 'com.demo', processNames: ['com.demo'] },
+                pids: [], deviceId: 't1',
+                capture: {
+                  startedAtMs: 1, durationMs: 2,
+                  collectors: ['hitrace', 'hiperf', 'hidumper', 'uitest'],
+                  hiperf: { samples: 150 },
+                },
+              }));
+              writeFileSync(join(parent, 'ui.json'), JSON.stringify({
+                attributes: { type: 'root' },
+                children: [{ attributes: { type: 'text', text: 'a' }, children: [] }],
+              }));
+              return { close: () => {} } as unknown as Scene;
+            },
+          }),
+        }),
+      });
+      const result = await deps.collect({
+        app: 'com.demo', durationMs: 10_000, out: parent,
+        hiperf: {}, hidumper: true, uitest: true,
+      });
+      expect(result).toEqual({
+        sceneDir: parent,
+        device: { id: 't1', kind: 'emulator' },
+        collectors: ['hitrace', 'hiperf', 'hidumper', 'uitest'],
+        hiperf: { samples: 150 },
+        ui: { nodes: 2 },
+      });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
   });
 });
 

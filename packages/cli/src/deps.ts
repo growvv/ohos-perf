@@ -489,10 +489,26 @@ export function realDeps(
                   ? {}
                   : { plugins: req.hiprofiler.plugins },
             }),
+        ...(req.hiperf === undefined ? {} : { hiperf: req.hiperf }),
+        ...(req.hidumper === true ? { hidumper: true } : {}),
+        ...(req.uitest === true ? { uitest: true } : {}),
       });
       const scene = await session.ingest();
       try {
-        return { sceneDir, device: { id: device.id, kind: device.kind } };
+        // scene.json is the authority on what ran: the collectors list and the
+        // capture summary come from the same descriptor a later analyze reads.
+        const layout = createSceneLayout(sceneDir);
+        const meta = readSceneMetadata(layout);
+        const nodes = readUiTree(layout.uiFile)?.length;
+        return {
+          sceneDir,
+          device: { id: device.id, kind: device.kind },
+          collectors: meta?.capture?.collectors ?? [],
+          ...(meta?.capture?.hiperf === undefined
+            ? {}
+            : { hiperf: { samples: meta.capture.hiperf.samples } }),
+          ...(nodes === undefined ? {} : { ui: { nodes } }),
+        };
       } finally {
         scene.close();
       }
