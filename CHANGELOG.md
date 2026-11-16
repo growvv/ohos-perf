@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.6.1 — 2026-11-17
+
+### Fixes
+
+- **`frame.load.*` drill-downs returned nothing on a real `--hiperf` scene.**
+  A perf capture converts into `perf.db`, so `perf_sample` and `perf_thread`
+  are not in `trace.db`; every `frame.load.threads`, `.symbols` and `.files`
+  query read the trace handle and answered `[]`, while `analyze` reported a
+  non-zero `frame.load.total` and offered those very handles. `QueryContext`
+  gains `perfDb`, the four queries go through one resolver, and the CLI query
+  path passes `scene.perfDb`. Measured on a split scene: `[]` before, the
+  attributed rows after.
+- **Empty-frame evidence no longer fabricates load.** Without perf samples, or
+  with samples that fall in no frame window, each `empty_frame` item reported
+  `load: 0`, `loadShare: 0` and a `loadRank` of 1..n while the same result
+  carried `empty_frame.load.degraded`. The load signals and the
+  `frame.load.symbols` drill-down now appear only when a load was measured.
+- **Frame load read samples only up to the last-by-`ts` frame's end**, so a
+  frame that started earlier but ended later lost its tail. The read now ends
+  at the maximum frame end.
+- **`compare` reported every 0.5.0 and 0.6.0 metric family as `incomparable`.**
+  `frame.load.*`, `frame.stutter.*`, `frame.fps.window.*`,
+  `empty_frame.load.*` and the retained-memory `mem.native.*` figures now have
+  directions; activity volumes (`mem.native.events.count`, `.peak.offset`,
+  `frame.fps.window.count`, `frame.load.span.weight`) deliberately keep none.
+- **The empty-frame degraded reason always claimed `--hiperf` was missing**,
+  even when the capture had samples for another process. It now names the real
+  gap.
+- **A long capture could crash the empty-frame and `rs_skip` analyzers.**
+  `Math.min(...frames)` spreads one argument per frame and throws past V8's
+  argument limit (~124k); the three sites use a reduce.
+- **Two `frame_load` evidence items could share an id.** `frame_no` is 0 on
+  every real row, so same-process frames with equal `(ts, dur)` hashed
+  identically and the engine failed the whole analysis with
+  `DUPLICATE_EVIDENCE_ID`; the row id now separates them.
+
 ## 0.6.0 — 2026-11-17
 
 ### Added
