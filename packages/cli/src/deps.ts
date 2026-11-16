@@ -28,6 +28,8 @@ import {
   queryDefinitions,
   readHidumperCapture,
   readProcfsSamples,
+  readHilogText,
+  parseHilogText,
   buildReport,
   compareResults,
   renderEvidenceCsv,
@@ -53,6 +55,7 @@ import {
   type GestureResult,
   type NamedQueryInfo,
   type HidumperCapture,
+  type HilogLine,
   type ProcfsSample,
   type TimeRange,
   type UiNode,
@@ -126,7 +129,7 @@ const OFFLINE_PROBE = (): CapabilityState['probe'] =>
 /** An available state in the offline matrix, with the exact probe shape. */
 function offlineState(
   id: CapabilityId,
-  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest' | 'hiprofiler',
+  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest' | 'hiprofiler' | 'hilog',
 ): CapabilityState {
   return {
     id,
@@ -162,11 +165,13 @@ export interface SceneArtifacts {
   hidumper?: HidumperCapture;
   /** Flattened UI nodes; absent when the scene carried no trusted `ui.json`. */
   uiTree?: readonly unknown[];
+  /** Parsed log rows; absent when the scene carried no trusted `hilog.log`. */
+  hilog?: readonly unknown[];
 }
 
 const TABLE_RULES: ReadonlyArray<{
   id: CapabilityId;
-  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest' | 'hiprofiler';
+  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest' | 'hiprofiler' | 'hilog';
   /** Every listed table must be present. */
   tables?: readonly string[];
   /**
@@ -198,6 +203,7 @@ const TABLE_RULES: ReadonlyArray<{
   { id: 'mem.procfs', collector: 'procfs', tables: ['procfs.jsonl'] },
   { id: 'render.fps_live', collector: 'hidumper', tables: ['hidumper.json'] },
   { id: 'ui.tree', collector: 'uitest', tables: ['ui.json'] },
+  { id: 'hilog.stream', collector: 'hilog', tables: ['hilog.log'] },
   { id: 'perf.samples', collector: 'hiperf', tables: ['perf_sample'], perf: true },
   // `mem.native_hook` is the design's hiprofiler-memory row, and two plugins
   // feed it. The memory plugin's `process_measure` tables back `mem-measure`;
@@ -226,13 +232,15 @@ function artifactPresent(name: string, artifacts: SceneArtifacts): boolean {
       return artifacts.hidumper !== undefined;
     case 'ui.json':
       return (artifacts.uiTree?.length ?? 0) > 0;
+    case 'hilog.log':
+      return (artifacts.hilog?.length ?? 0) > 0;
     default:
       return false;
   }
 }
 
 /** Table names in the rules that are scene artifacts rather than DB tables. */
-const ARTIFACT_NAMES = new Set(['procfs.jsonl', 'hidumper.json', 'ui.json']);
+const ARTIFACT_NAMES = new Set(['procfs.jsonl', 'hidumper.json', 'ui.json', 'hilog.log']);
 
 /**
  * Build the offline capability matrix from what the scene actually contains.
@@ -302,6 +310,13 @@ interface OpenedScene {
   uiTree?: readonly UiNode[];
   /** The scene's render counters, when it carried a trusted `hidumper.json`. */
   hidumper?: HidumperCapture;
+  /**
+   * The scene's parsed log rows, when it carried a trusted `hilog.log`.
+   * Parsing needs the capture year, which only `scene.json` supplies, so a
+   * hand-built scene without metadata reads its lines as unparsed raw rows
+   * rather than guessing a year.
+   */
+  hilog?: readonly HilogLine[];
 }
 
 /** True when `path` exists and is a directory (a scene, not an `analyze --json` file). */
@@ -336,6 +351,7 @@ function analyzeContext(opened: OpenedScene) {
     memMeasure: new MemMeasureQuery(db),
     ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
     ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
+    ...(opened.hilog === undefined ? {} : { hilog: [...opened.hilog] }),
     ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
     app: opened.app,
     // The whole database: a CLI run has no capture window to honour.
@@ -556,6 +572,18 @@ export function realDeps(
       // A UI dump is a scene artifact, not a table: the query layer receives
       // the flattened rows, and a scene without one simply has no tree.
       const uiTree = declared('uitest') ? readUiTree(layout.uiFile) : undefined;
+      // The log is captured raw and parsed here, not at capture time, so a
+      // parser change is a re-analysis. The year is the capture's, which only
+      // scene.json knows; a hand-built scene without one reads raw rows.
+      const hilogText = declared('hilog') ? readHilogText(layout) : undefined;
+      const hilog = hilogText === undefined
+        ? undefined
+        : parseHilogText(hilogText, {
+            ...(metadata?.capture === undefined
+              ? {}
+              : { year: new Date(metadata.capture.startedAtMs).getUTCFullYear() }),
+            captureNs: (metadata?.capture?.startedAtMs ?? 0) * 1e6,
+          });
       // `collect` writes scene.json precisely so a later `analyze` does not
       // need to be told the app again; a scene whose descriptor names the app
       // must not be analyzed as `unknown`. An explicit --app always wins.
@@ -593,11 +621,13 @@ export function realDeps(
             procfsSamples: samples,
             ...(hidumper === undefined ? {} : { hidumper }),
             ...(uiTree === undefined ? {} : { uiTree }),
+            ...(hilog === undefined ? {} : { hilog }),
           },
           scene.perfDb,
         ),
         ...(uiTree === undefined ? {} : { uiTree }),
         ...(hidumper === undefined ? {} : { hidumper }),
+        ...(hilog === undefined ? {} : { hilog }),
       };
     } catch (err) {
       scene.close();
@@ -655,6 +685,7 @@ export function realDeps(
             app: opened.app,
             caps: opened.caps,
             ...(opened.uiTree === undefined ? {} : { uiTree: opened.uiTree }),
+            ...(opened.hilog === undefined ? {} : { hilog: opened.hilog }),
           },
           req.name,
           args,

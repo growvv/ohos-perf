@@ -11,6 +11,8 @@ import {
   type UnreleasedRow,
 } from '../analyze/native-memory';
 import { NativeHookQuery } from './native-hook';
+import { compileRules, DEFAULT_HILOG_RULES, matchRules } from '../hilog/rules';
+import type { HilogLine } from '../hilog/parse';
 import {
   computeThreadAnalysis, type RedundantThreadPattern,
 } from '../analyze/threads-score';
@@ -63,6 +65,12 @@ export interface QueryContext {
    * rows rather than failing.
    */
   readonly uiTree?: readonly UiNode[];
+  /**
+   * The scene's parsed hilog rows, when the capture included `--hilog`. Absent
+   * means the scene has no `hilog.log`; every `hilog.*` query then returns no
+   * rows rather than failing, and the analyzer reports a degraded proxy.
+   */
+  readonly hilog?: readonly HilogLine[];
 }
 
 /** One argument a query accepts, for `ohos-perf tools` and validation. */
@@ -580,6 +588,86 @@ const DEFINITIONS: NamedQueryDefinition[] = [
     run(ctx, args) {
       const frame = new FrameQuery(ctx.db).get(numberArg('frames.get', args, 'id'));
       return frame === undefined ? [] : [frame];
+    },
+  },
+  {
+    name: 'hilog.around',
+    description:
+      'The captured log lines inside an inclusive nanosecond window, in capture ' +
+      'order. Use it to correlate a frame or an evidence window with what the app ' +
+      'was printing.',
+    args: [
+      { name: 'startNs', type: 'number', required: true, description: 'range start (ns)' },
+      { name: 'endNs', type: 'number', required: true, description: 'range end (ns)' },
+    ],
+    returns: 'HilogLine[]',
+    parseArgs(args) {
+      rejectUnknownArgs('hilog.around', args, ['startNs', 'endNs']);
+      requiredRange('hilog.around', args);
+    },
+    run(ctx, args) {
+      const lines = ctx.hilog;
+      if (lines === undefined) return [] as HilogLine[];
+      const { startNs, endNs } = requiredRange('hilog.around', args);
+      // An unparsed row has `ts: 0`, which is not a time: it can only be in a
+      // window that starts at 0, and even then it is not evidence of a line
+      // printed then. Only parsed rows can answer "around this instant".
+      return lines.filter(
+        (line) => line.parsed && line.ts >= startNs && line.ts <= endNs,
+      );
+    },
+  },
+  {
+    name: 'hilog.matches',
+    description:
+      'Every rule match in the captured log, ordered by (line, rule), optionally ' +
+      'narrowed to one rule. A match is a pattern hit, not a diagnosis.',
+    args: [
+      {
+        name: 'rule',
+        type: 'string',
+        required: false,
+        description: 'keep matches of exactly this rule name',
+      },
+    ],
+    returns: 'HilogMatch[]',
+    parseArgs(args) {
+      rejectUnknownArgs('hilog.matches', args, ['rule']);
+      const rule = optionalStringArg('hilog.matches', args, 'rule');
+      if (rule === undefined) return;
+      if (!DEFAULT_HILOG_RULES.some((candidate) => candidate.name === rule)) {
+        throw badArgs('hilog.matches', `unknown rule "${rule}"`);
+      }
+    },
+    run(ctx, args) {
+      const lines = ctx.hilog;
+      if (lines === undefined) return [];
+      const rule = optionalStringArg('hilog.matches', args, 'rule');
+      const compiled = compileRules(DEFAULT_HILOG_RULES);
+      const matches = matchRules(compiled, lines);
+      return rule === undefined ? matches : matches.filter((match) => match.ruleName === rule);
+    },
+  },
+  {
+    name: 'hilog.rules',
+    description:
+      'The effective rule set with its per-rule match count, in rule-name order. ' +
+      'A zero count is a measurement: the rule was evaluated and nothing matched.',
+    args: [],
+    returns: 'HilogRuleCount[]',
+    parseArgs(args) {
+      rejectUnknownArgs('hilog.rules', args, []);
+    },
+    run(ctx, args) {
+      const lines = ctx.hilog;
+      const compiled = compileRules(DEFAULT_HILOG_RULES);
+      const matches = lines === undefined ? [] : matchRules(compiled, lines);
+      const counts = new Map<string, number>();
+      for (const rule of compiled) counts.set(rule.name, 0);
+      for (const match of matches) {
+        counts.set(match.ruleName, (counts.get(match.ruleName) ?? 0) + 1);
+      }
+      return [...counts].map(([name, count]) => ({ name, count }));
     },
   },
   {

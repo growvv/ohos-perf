@@ -62,7 +62,11 @@ export interface AnalyzeOutput {
    */
   evidence: ReadonlyArray<{
     kind: string;
-    signals?: Readonly<Record<string, number | string>>;
+    /**
+     * Scalars are the common case; a `hilog_match` item carries its sample
+     * messages as a list, and the renderer must accept that without a cast.
+     */
+    signals?: Readonly<Record<string, number | string | readonly string[]>>;
   }>;
 }
 

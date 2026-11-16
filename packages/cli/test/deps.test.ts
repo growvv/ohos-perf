@@ -538,6 +538,57 @@ describe('realDeps().analyze', () => {
     }
   });
 
+  it('feeds a hilog.log capture into the hilog analyzer', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-hilog-scene-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'hilog.log'), [
+        '11-17 05:12:10.000  4999  5010 I A00000/com.demo/Image: CreatePixelMap success, memType : 3, cost 1 us',
+        '11-17 05:12:11.000  4999  5010 I A00000/com.demo/Image: CreatePixelMap success, memType : 3, cost 2 us',
+        '11-17 05:12:12.000  4999  5010 I A00000/com.demo/Image: unrelated',
+        '',
+      ].join('\n'));
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: {
+          startedAtMs: Date.UTC(2026, 10, 17, 5, 12), durationMs: 10_000,
+          collectors: ['hitrace', 'hilog'], hilog: { lines: 3 },
+        },
+      }));
+
+      const result = await realDeps('0.0.0').analyze(parent);
+      const value = (id: string): unknown => result.metrics.find((m) => m.id === id)?.value;
+      expect(value('hilog.lines.count')).toBe(3);
+      expect(value('hilog.rule.no_dmp.count')).toBe(2);
+      expect(result.metrics.some((m) => m.id === 'hilog.degraded')).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('ignores a stale hilog.log that scene.json does not list', async () => {
+    // A re-capture without --hilog leaves the previous log in the directory.
+    // The descriptor is the authority, so the stale log must not be analyzed.
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-hilog-stale-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'hilog.log'),
+        '11-17 05:12:10.000  4999  5010 I A00000/com.demo/Image: CreatePixelMap success, memType : 3, cost 1 us\n');
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace'] },
+      }));
+      const result = await realDeps('0.0.0').analyze(parent);
+      expect(result.metrics.map((m) => m.id)).toContain('hilog.degraded');
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('claims perf.samples only when perf_sample has rows', () => {
     const tableDb = (names: string[]): CapabilityMatrixDb => ({
       query: <T = Record<string, unknown>>(): T[] =>
@@ -1121,6 +1172,62 @@ describe('realDeps().query', () => {
     }
   });
 
+  it('answers hilog.matches from the scene\'s hilog.log', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-query-hilog-'));
+    try {
+      createFullTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'hilog.log'), [
+        '11-17 05:12:10.000  4999  5010 I A00000/com.demo/Image: CreatePixelMap success, memType : 3, cost 1 us',
+        '11-17 05:12:11.000  4999  5010 I A00000/com.demo/Image: CreatePixelMap success, memType : 4, cost 2 us',
+        '',
+      ].join('\n'));
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: {
+          startedAtMs: Date.UTC(2026, 10, 17, 5, 12), durationMs: 10_000,
+          collectors: ['hitrace', 'hilog'], hilog: { lines: 2 },
+        },
+      }));
+
+      const r = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'hilog.matches', args: { rule: 'no_dmp' },
+      });
+      expect(r.rows).toEqual([expect.objectContaining({ ruleName: 'no_dmp', lineIndex: 0 })]);
+
+      const rules = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'hilog.rules', args: {},
+      });
+      expect(rules.rows).toContainEqual({ name: 'no_dmp', count: 1 });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('ignores a hilog.log that scene.json does not list', async () => {
+    // Same staleness rule as every other scene artifact: the descriptor is the
+    // authority, so a re-capture without --hilog must not answer hilog queries.
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-query-hilogstale-'));
+    try {
+      createFullTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'hilog.log'),
+        '11-17 05:12:10.000  4999  5010 I A00000/com.demo/Image: CreatePixelMap success, memType : 3, cost 1 us\n');
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace'] },
+      }));
+      const r = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'hilog.matches', args: {},
+      });
+      expect(r).toMatchObject({ rows: [], total: 0, truncated: false });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('rejects an unknown query name before opening the scene', async () => {
     await expect(realDeps('0.0.0').query({
       sceneDir: join(tmpdir(), 'ohosperf-does-not-exist'),
@@ -1209,6 +1316,7 @@ describe('realDeps().query', () => {
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
       'frame.load.files', 'frame.load.symbols', 'frame.load.threads',
       'frames.all', 'frames.fpsSeries', 'frames.get',
+      'hilog.around', 'hilog.matches', 'hilog.rules',
       'mem.native.callchain', 'mem.native.categories', 'mem.native.timeline',
       'mem.native.unreleased',
       'threads.pattern', 'ui.get',
