@@ -146,12 +146,18 @@ not require the same ipid either.
 - `empty_frame.load.total` — summed per-frame load of confirmed empty frames.
 - `empty_frame.load.share` — that total over the summed per-frame load of all
   app actual frames × 100. It is a load share, hence its id says load; the
-  existing frames-based `empty_frame.rate` keeps its own name. With exact
-  non-expanded windows the share is normally ≤ 100; overlapping app frames
-  can still push it above, and the metric documentation says so.
+  existing frames-based `empty_frame.rate` keeps its own name. The numerator
+  is a subset of the denominator by construction, so the share is always
+  ≤ 100; the metric documentation says so.
 - `empty_frame.load.severity` — `normal` (< 3%), `moderate` (< 10%),
-  `severe` (≤ 100%), `extreme` (> 100%), the upstream ladder applied to our
-  exact share. The metric value is the label, unit `none`, fidelity `exact`.
+  `severe` (≥ 10%), the upstream ladder applied to our exact share. The
+  metric value is the label, unit `none`, fidelity `exact`.
+- `extreme` is **not** ported. Upstream only reaches it when its ±1 ms window
+  expansion makes empty-frame load exceed the total; with the exact frame
+  windows this package uses, the empty numerator is a subset of the
+  denominator and a share above 100% is arithmetically impossible. Shipping an
+  unreachable severity label would make the ladder lie about what it can
+  report.
 - Without perf samples the three metrics are replaced by one
   `empty_frame.load.degraded` proxy naming the capture requirement; the
   frame-count metrics stay measured.

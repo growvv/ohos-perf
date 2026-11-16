@@ -6,6 +6,7 @@ import type { Frame } from '../query/frames';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import { resolveAppIpids } from './context';
+import { FrameLoadIndex, NO_SAMPLES } from './frame-load';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /**
@@ -227,6 +228,27 @@ function degradedResult(ctx: AnalyzeContext, reason: string): AnalyzeResult {
 /** The rate above which a confirmed empty frame is a warning, in percent. */
 const WARN_RATE = 10;
 
+/** How many confirmed empties carry a rank in their evidence signals. */
+const RANK_LIMIT = 10;
+
+const MODERATE_SHARE = 3;
+const SEVERE_SHARE = 10;
+
+/**
+ * The documented severity ladder for a load share.
+ *
+ * `severe` is the top rung: the numerator is a subset of the denominator by
+ * construction, so a share above 100% cannot occur and upstream's unreachable
+ * `extreme` label is deliberately not ported.
+ */
+type EmptyLoadSeverity = 'normal' | 'moderate' | 'severe';
+
+function severityOf(share: number): EmptyLoadSeverity {
+  if (share < MODERATE_SHARE) return 'normal';
+  if (share < SEVERE_SHARE) return 'moderate';
+  return 'severe';
+}
+
 /**
  * Emits `empty_frame.*` metrics and one `empty_frame` evidence per confirmed
  * frame.
@@ -324,6 +346,112 @@ export class EmptyFrameAnalyzer implements Analyzer {
       }),
     ];
 
+    // Empty-frame load: the summed per-frame load of confirmed empties over
+    // the summed per-frame load of every app actual frame. The range is the
+    // union of the requested window and the frames' own span, so samples
+    // outside the window but inside a frame are visible to the mismatch guard.
+    let loadOf = new Map<Frame, number>();
+    let totalLoad = 0;
+    let loadIndex: FrameLoadIndex | undefined;
+    if (ctx.perf !== undefined && ctx.perf.hasSamples()) {
+      const firstTs = Math.min(...actual.map((frame) => frame.ts));
+      const lastEnd = Math.max(...actual.map((frame) => frame.ts + Math.max(0, frame.dur)));
+      loadIndex = FrameLoadIndex.build({
+        perf: ctx.perf,
+        pids: ctx.app.pids,
+        range: {
+          startNs: Math.min(ctx.window.startNs, firstTs),
+          endNs: Math.max(ctx.window.endNs, lastEnd),
+        },
+      });
+    }
+
+    const loadProv = {
+      collector: 'hiperf',
+      table: 'perf_sample',
+      rows: loadIndex?.sampleRows ?? 0,
+      device: ctx.deviceId,
+    };
+
+    if (loadIndex === undefined) {
+      metrics.push(
+        metric({
+          id: 'empty_frame.load.degraded',
+          value: 0,
+          unit: 'count',
+          fidelity: 'proxy',
+          degraded: { reason: NO_SAMPLES, fallback: 'no empty-frame load' },
+          provenance: { collector: 'hiperf', device: ctx.deviceId },
+          window: ctx.window,
+        }),
+      );
+    } else {
+      loadOf = new Map(actual.map((frame) => [frame, loadIndex.load(frame)] as const));
+      totalLoad = [...loadOf.values()].reduce((sum, load) => sum + load, 0);
+      const emptyLoad = filter.confirmed.reduce(
+        (sum, frame) => sum + (loadOf.get(frame) ?? 0),
+        0,
+      );
+      if (totalLoad === 0 && loadIndex.spanWeight > 0) {
+        metrics.push(
+          metric({
+            id: 'empty_frame.load.degraded',
+            value: 0,
+            unit: 'count',
+            fidelity: 'proxy',
+            degraded: {
+              reason:
+                'perf samples exist but none fall inside any app frame window; frame ' +
+                'and perf timestamps may use different time bases',
+              fallback: 'no empty-frame load',
+            },
+            provenance: { collector: 'hiperf', device: ctx.deviceId },
+            window: ctx.window,
+          }),
+        );
+      } else {
+        const share = totalLoad > 0 ? (emptyLoad / totalLoad) * 100 : 0;
+        metrics.push(
+          metric({
+            id: 'empty_frame.load.total',
+            value: emptyLoad,
+            unit: 'count',
+            provenance: loadProv,
+            fidelity: 'exact',
+            window: ctx.window,
+          }),
+          metric({
+            id: 'empty_frame.load.share',
+            value: share,
+            unit: '%',
+            provenance: loadProv,
+            fidelity: 'exact',
+            window: ctx.window,
+          }),
+          metric({
+            id: 'empty_frame.load.severity',
+            value: severityOf(share),
+            unit: 'none',
+            provenance: loadProv,
+            fidelity: 'exact',
+            window: ctx.window,
+          }),
+        );
+      }
+    }
+
+    // Rank among confirmed empties by load, highest first; only the top
+    // `RANK_LIMIT` carry their ordinal, the rest read 0. The evidence array
+    // itself stays chronological, so the rank travels as a signal.
+    const rankedEmpties = [...filter.confirmed].sort(
+      (a, b) =>
+        (loadOf.get(b) ?? 0) - (loadOf.get(a) ?? 0) ||
+        a.ts - b.ts ||
+        a.id - b.id,
+    );
+    const loadRankOf = new Map<number, number>();
+    rankedEmpties.slice(0, RANK_LIMIT).forEach((frame, i) => loadRankOf.set(frame.id, i + 1));
+
     // How many empties sharing this frame's (vsync, itid) the rules dropped.
     // Usually 0 — a frame that survived both rules had no filtered sibling —
     // but it tells a reader that a group was partially filtered.
@@ -344,12 +472,22 @@ export class EmptyFrameAnalyzer implements Analyzer {
         signals: {
           vsync: frame.vsync,
           filtered: filteredByGroup.get(`${frame.vsync}:${frame.itid}`) ?? 0,
+          load: loadOf.get(frame) ?? 0,
+          loadShare:
+            totalLoad > 0 ? ((loadOf.get(frame) ?? 0) / totalLoad) * 100 : 0,
+          loadRank: loadRankOf.get(frame.id) ?? 0,
         },
         explain:
           `${process} frame at vsync ${frame.vsync} drew nothing ` +
           `(flag 2, dur ${(frame.dur / 1e6).toFixed(1)}ms) and no buffer was submitted for it`,
         drillDown: [
           { label: 'Frame detail', tool: 'frames.get', args: { id: frame.id }, returns: 'Frame' },
+          {
+            label: 'Load by symbol',
+            tool: 'frame.load.symbols',
+            args: { startNs: frame.ts, endNs: frame.ts + frame.dur },
+            returns: 'PerfLeafAttribution[]',
+          },
         ],
       }));
 

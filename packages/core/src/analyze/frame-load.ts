@@ -178,7 +178,7 @@ export class FrameLoadIndex {
 }
 
 /** The no-samples reason shared with the empty-frame analyzer. */
-const NO_SAMPLES =
+export const NO_SAMPLES =
   'no perf samples: the scene was captured without --hiperf, or the app was ' +
   'not debuggable so perf recorded nothing';
 

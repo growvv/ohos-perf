@@ -7,6 +7,7 @@ import { openDb, type QueryHandle } from '../src/db/driver';
 import { CapabilityMatrix } from '../src/device/capability';
 import type { Frame } from '../src/query/frames';
 import { FrameQuery } from '../src/query/frames';
+import { PerfQuery } from '../src/query/perf';
 import { ProcessQuery } from '../src/query/process';
 import { EmptyFrameAnalyzer, filterEmptyFrames } from '../src/analyze/empty-frame';
 import type { AnalyzeContext, AnalyzeResult } from '../src/analyze/types';
@@ -54,7 +55,15 @@ function event(ts: number, name: string, callid = 44, id = 1): {
 interface Fixture {
   frames?: Frame[];
   events?: ReturnType<typeof event>[];
+  perf?: Array<{ id: number; ts: number; threadId: number; count: number }>;
 }
+
+const PERF_THREAD_DDL = `CREATE TABLE perf_thread(id INT, thread_id INT,
+  process_id INT, thread_name TEXT)`;
+
+const PERF_SAMPLE_DDL = `CREATE TABLE perf_sample(id INT, callchain_id INT,
+  timeStamp INT, thread_id INT, event_count INT, event_type_id INT,
+  timestamp_trace INT, cpu_id INT, thread_state TEXT)`;
 
 /** Writes a fixture into a fresh trace database and returns its handle. */
 function dbWith(name: string, fixture: Fixture): QueryHandle {
@@ -83,6 +92,19 @@ function dbWith(name: string, fixture: Fixture): QueryHandle {
   for (const e of fixture.events ?? []) {
     insertEvent.run(e.id, e.ts, e.dur, e.callid, e.cat, e.name);
   }
+
+  if (fixture.perf !== undefined) {
+    d.exec(PERF_THREAD_DDL);
+    d.exec(PERF_SAMPLE_DDL);
+    d.exec(`INSERT INTO perf_thread VALUES (0, 100, 4999, 'main'),
+      (1, 101, 4999, 'worker')`);
+    const insertSample = d.prepare(
+      'INSERT INTO perf_sample VALUES (?, 0, ?, ?, ?, 0, ?, 0, 0)',
+    );
+    for (const sample of fixture.perf) {
+      insertSample.run(sample.id, sample.ts, sample.threadId, sample.count, sample.ts);
+    }
+  }
   d.close();
   return openDb(path);
 }
@@ -100,6 +122,7 @@ function ctxWith(target: QueryHandle, appPids: number[] = [4999]): AnalyzeContex
   return {
     db: target,
     frames: new FrameQuery(target),
+    perf: new PerfQuery(target),
     processes: new ProcessQuery(target),
     app: { packageName: 'com.demo', pids: appPids, processNames: ['com.demo'] },
     window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
@@ -217,7 +240,74 @@ describe('EmptyFrameAnalyzer', () => {
     expect(items[0].signals).toMatchObject({ vsync: 100, filtered: 0 });
     expect(items[0].drillDown).toEqual([
       { label: 'Frame detail', tool: 'frames.get', args: { id: 7 }, returns: 'Frame' },
+      {
+        label: 'Load by symbol',
+        tool: 'frame.load.symbols',
+        args: { startNs: 1e9, endNs: 1e9 + 16e6 },
+        returns: 'PerfLeafAttribution[]',
+      },
     ]);
+    db.close();
+  });
+
+  it('reports empty-frame load, share and severity from exact windows', async () => {
+    const db = dbWith('empty-load.db', {
+      frames: [
+        frame(0, 1_000_000_000, 1, 0, 44, 17, 100_000_000), // rendered, 50+50
+        frame(1, 2_000_000_000, 2, 2, 44, 17, 100_000_000), // empty, 3
+        frame(2, 3_000_000_000, 3, 0, 44, 17, 100_000_000), // rendered, 0
+      ],
+      perf: [
+        { id: 0, ts: 1_050_000_000, threadId: 100, count: 50 },
+        { id: 1, ts: 1_080_000_000, threadId: 101, count: 50 },
+        { id: 2, ts: 2_050_000_000, threadId: 100, count: 3 },
+      ],
+    });
+    const r = await new EmptyFrameAnalyzer().run(ctxWith(db));
+    const get = (id: string) => metricOf(r, id);
+    expect(get('empty_frame.load.total').value).toBe(3);
+    // Loads: 100 + 3 + 0 = 103; 3 / 103 * 100 = 2.9126...% -> normal.
+    expect(get('empty_frame.load.share').value).toBeCloseTo(2.9126, 3);
+    expect(get('empty_frame.load.severity').value).toBe('normal');
+    expect(metricOf(r, 'empty_frame.count').value).toBe(1);
+    db.close();
+  });
+
+  it('grades load share at 3 and 10 percent boundaries', async () => {
+    const severity = async (emptyCount: number) => {
+      const db = dbWith(`empty-sev-${emptyCount}.db`, {
+        frames: [
+          frame(0, 1_000_000_000, 1, 0, 44, 17, 100_000_000),
+          frame(1, 2_000_000_000, 2, 2, 44, 17, 100_000_000),
+        ],
+        perf: [
+          { id: 0, ts: 1_050_000_000, threadId: 100, count: 97 },
+          { id: 1, ts: 2_050_000_000, threadId: 100, count: emptyCount },
+        ],
+      });
+      try {
+        return metricOf(
+          await new EmptyFrameAnalyzer().run(ctxWith(db)),
+          'empty_frame.load.severity',
+        ).value;
+      } finally {
+        db.close();
+      }
+    };
+    expect(await severity(2)).toBe('normal'); // 2/99 = 2.02%
+    expect(await severity(3)).toBe('moderate'); // 3/100 = 3%
+    expect(await severity(10)).toBe('moderate'); // 10/107 = 9.35%
+    expect(await severity(11)).toBe('severe'); // 11/108 = 10.19%
+  });
+
+  it('degrades empty-frame load without perf samples', async () => {
+    const db = dbWith('empty-load-noperf.db', {
+      frames: [frame(0, 1_000_000_000, 1, 2)],
+    });
+    const r = await new EmptyFrameAnalyzer().run(ctxWith(db));
+    expect(r.metrics.map((m) => m.id)).toContain('empty_frame.load.degraded');
+    expect(r.metrics.some((m) => m.id === 'empty_frame.load.total')).toBe(false);
+    expect(metricOf(r, 'empty_frame.count').value).toBe(1);
     db.close();
   });
 
