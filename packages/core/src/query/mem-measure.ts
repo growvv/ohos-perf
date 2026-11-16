@@ -5,10 +5,16 @@ import { num, str } from './rows';
 /**
  * One `process_measure` observation, joined to its filter.
  *
- * `tsNs`/`durNs` are not the stored values: `process_measure` stores
- * **microseconds** since boot, and the query multiplies them by 1000 so every
- * consumer works in the trace database's nanosecond clock. Comparing the raw
- * stored value against a trace `ts` would put every row outside the window.
+ * `tsNs`/`durNs` are the stored values unchanged: measured on the Mate 60,
+ * `trace_range.start_ts` equals `MIN(process_measure.ts)` exactly and a 3 s
+ * capture spans ~2.0e9, so this table is already in the trace's nanosecond
+ * clock. The names carry the unit so consumers never have to guess.
+ *
+ * `value` is the filter's raw measured value. For the `mem.*` filters the
+ * unit is **KiB**, not bytes: measured against `/proc/<pid>/status`, a
+ * `mem.rss` row of 664420 matched `VmRSS: 664584 kB` and `mem.vm.size`
+ * 106161468 matched `VmSize: 106161468 kB` exactly. Converting to bytes is
+ * the analyzer's job, because only it knows which filter it read.
  */
 export interface ProcessMeasure {
   tsNs: number;
@@ -18,6 +24,7 @@ export interface ProcessMeasure {
   name: string;
   /** Process id the filter was recorded for. */
   ipid: number;
+  /** Raw filter value; `mem.*` values are KiB (see the interface note). */
   value: number;
 }
 
@@ -43,9 +50,6 @@ interface FilterRow {
   ipid: number | null;
 }
 
-/** `process_measure` timestamps are microseconds; trace `ts` values are ns. */
-const NS_PER_US = 1000;
-
 const SELECT_MEASURES = `SELECT m.ts, m.dur, m.filter_id, m.value, f.name, f.ipid
 FROM process_measure m
 JOIN process_measure_filter f ON f.id = m.filter_id`;
@@ -53,14 +57,14 @@ JOIN process_measure_filter f ON f.id = m.filter_id`;
 const SELECT_FILTERS = 'SELECT id, name, ipid FROM process_measure_filter ORDER BY id';
 
 /**
- * The single µs → ns boundary: every timestamp conversion in this class goes
- * through {@link toProcessMeasure}, and range filtering compares the converted
- * value (never the raw column) against the caller's nanosecond bounds.
+ * The single row → interface boundary. Timestamps are copied unchanged: the
+ * table shares the trace's nanosecond clock (measured), so no scaling belongs
+ * in the query layer at all.
  */
 function toProcessMeasure(row: ProcessMeasureRow): ProcessMeasure {
   return {
-    tsNs: num(row.ts) * NS_PER_US,
-    durNs: num(row.dur) * NS_PER_US,
+    tsNs: num(row.ts),
+    durNs: num(row.dur),
     filterId: num(row.filter_id),
     name: str(row.name),
     ipid: num(row.ipid),
@@ -120,8 +124,6 @@ export class MemMeasureQuery {
       )
       .map(toProcessMeasure);
     if (range === undefined) return rows;
-    // The bound is ns and tsNs is the converted value; comparing the raw µs
-    // column would include rows a thousand-fold outside the requested window.
     return rows.filter((row) => row.tsNs >= range.startNs && row.tsNs <= range.endNs);
   }
 

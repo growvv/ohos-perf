@@ -23,8 +23,9 @@ const MEASURE_DDL = 'CREATE TABLE process_measure(type INT, ts INT, dur INT, val
 /**
  * A trace db carrying the two memory-plugin tables.
  *
- * The defaults are the measured shape: `process_measure.ts` is µs-since-boot
- * (817469134282415 for a ~3 s capture is minutes of uptime, not nanoseconds).
+ * The defaults are the measured shape: `process_measure.ts` uses the same
+ * nanosecond clock as the trace (a real 3 s capture spanned 1.996e9, and
+ * `trace_range.start_ts` equals `MIN(process_measure.ts)` exactly).
  */
 function dbWith(
   measures: Array<{ ts?: number; dur?: number; value?: number; filterId?: number }> = [{}],
@@ -58,13 +59,13 @@ function emptyDb(): QueryHandle {
 }
 
 describe('MemMeasureQuery', () => {
-  it('converts microsecond timestamps to nanoseconds', () => {
-    // process_measure stores µs-since-boot; a consumer comparing against trace
-    // `ts` (ns) would put every row outside the window without this.
-    const q = new MemMeasureQuery(dbWith([{ ts: 817469134282415, dur: 505478125 }]));
+  it('keeps nanosecond timestamps unchanged', () => {
+    // Measured: trace_range.start_ts equals MIN(process_measure.ts) exactly,
+    // and a 3 s capture spans ~2.0e9 — the table shares the trace's ns clock.
+    const q = new MemMeasureQuery(dbWith([{ ts: 817469134282415, dur: 996745833 }]));
     const [row] = q.all();
-    expect(row.tsNs).toBe(817469134282415 * 1000);
-    expect(row.durNs).toBe(505478125 * 1000);
+    expect(row.tsNs).toBe(817469134282415);
+    expect(row.durNs).toBe(996745833);
   });
 
   it('joins the filter name so a row is readable without a second query', () => {
@@ -94,9 +95,9 @@ describe('MemMeasureQuery', () => {
       ],
     ));
     expect(q.all().map((row) => [row.tsNs, row.filterId])).toEqual([
-      [1_000_000, 1],
-      [1_000_000, 2],
-      [2_000_000, 2],
+      [1000, 1],
+      [1000, 2],
+      [2000, 2],
     ]);
   });
 
@@ -112,12 +113,10 @@ describe('MemMeasureQuery', () => {
     expect(q.forPids([])).toEqual([]);
   });
 
-  it('compares a nanosecond range against the converted timestamp', () => {
-    // A raw-SQL comparison would see ts=1000 <= endNs=1_000_001 and wrongly
-    // include the row; the bound is ns and the stored value is µs.
+  it('filters on the nanosecond range inclusively', () => {
     const q = new MemMeasureQuery(dbWith([{ ts: 1000 }]));
-    expect(q.all({ startNs: 1_000_000, endNs: 1_000_000 })).toHaveLength(1);
-    expect(q.all({ startNs: 1_000_001, endNs: 2_000_000 })).toEqual([]);
+    expect(q.all({ startNs: 1000, endNs: 1000 })).toHaveLength(1);
+    expect(q.all({ startNs: 1001, endNs: 2000 })).toEqual([]);
   });
 
   it('lists the filters ordered by id', () => {
