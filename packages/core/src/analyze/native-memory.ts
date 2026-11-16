@@ -1,10 +1,14 @@
 // Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.
 
+import type { CapabilityId } from '../device/capability';
 import type { QueryHandle } from '../db/driver';
+import { evidence, type Evidence } from '../report/evidence';
+import { metric, type Metric } from '../report/metric';
 import { NativeHookQuery, type NativeHookEvent } from '../query/native-hook';
 import { ProcessQuery, ThreadQuery } from '../query/process';
 import type { TimeRange } from '../types';
 import { classifyNativePath } from './native-kinds';
+import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /** What an event does to the running total. */
 export type NativeEventKind = 'alloc' | 'free' | 'other';
@@ -489,4 +493,387 @@ export function buildNativeTimeline(
   const peakBucket = buckets.get(peakIndex);
   if (peakBucket !== undefined) peakBucket.isPeak = true;
   return result;
+}
+
+/** Rows that carry an evidence item at each point. */
+const EVIDENCE_LIMIT = 10;
+/** A row at or above this share of the point's total is a warning. */
+const WARN_SHARE = 5;
+
+/** First non-empty app process name, matching the other analyzers. */
+function appProcessName(ctx: AnalyzeContext): string {
+  return ctx.app.processNames.find((name) => name !== '') ?? ctx.app.packageName;
+}
+
+function byMetricId(a: Metric, b: Metric): number {
+  if (a.id < b.id) return -1;
+  if (a.id > b.id) return 1;
+  return 0;
+}
+
+function byEvidenceOrder(a: Evidence, b: Evidence): number {
+  if (a.kind < b.kind) return -1;
+  if (a.kind > b.kind) return 1;
+  if (a.window.startNs < b.window.startNs) return -1;
+  if (a.window.startNs > b.window.startNs) return 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** The proxy + explanation a caller gets when nothing can be measured. */
+function degradedResult(ctx: AnalyzeContext, reason: string): AnalyzeResult {
+  return {
+    metrics: [
+      metric({
+        id: 'mem.native.degraded',
+        value: 0,
+        unit: 'count',
+        fidelity: 'proxy',
+        degraded: { reason, fallback: 'no native memory measurement' },
+        provenance: { collector: 'hiprofiler', device: ctx.deviceId },
+        window: ctx.window,
+      }),
+    ],
+    evidence: [
+      evidence({
+        kind: 'no_data',
+        severity: 'info',
+        subject: { process: appProcessName(ctx) },
+        window: ctx.window,
+        signals: {},
+        explain: reason,
+        drillDown: [],
+        key: 'native-memory:no-data',
+      }),
+    ],
+  };
+}
+
+const STATISTIC_REASON =
+  'native_hook_statistic carries no per-allocation timestamp, thread or address, ' +
+  'so peak, timeline and the per-thread split are unavailable';
+
+function sumRows(rows: readonly UnreleasedRow[]): number {
+  return rows.reduce((sum, row) => sum + row.size, 0);
+}
+
+function distinctCallchains(rows: readonly UnreleasedRow[]): number {
+  return new Set(rows.map((row) => row.callchainId)).size;
+}
+
+/**
+ * Native heap growth from the `nativehook` hiprofiler plugin.
+ *
+ * The analyzer pairs alloc and free events per address and reports the running
+ * total, its peak and trough, and what was still live at the peak and at the
+ * end. "Unreleased" is a statement about the capture window, not a leak claim:
+ * memory still held when the trace stopped may be freed a millisecond later,
+ * and a trace that began mid-lifetime starts at zero and can trough negative.
+ *
+ * When only `native_hook_statistic` exists the analyzer reports the end-of-
+ * capture unreleased bytes per callchain as a proxy and deliberately omits the
+ * peak, the timeline and the thread split — those rows cannot support them.
+ */
+export class NativeMemoryAnalyzer implements Analyzer {
+  readonly id = 'native-memory';
+  readonly requires: CapabilityId[] = ['mem.native_hook'];
+
+  async run(ctx: AnalyzeContext): Promise<AnalyzeResult> {
+    if (ctx.db === undefined) {
+      return degradedResult(ctx, 'the trace database handle is not available');
+    }
+    if (ctx.app.pids.length === 0) {
+      return degradedResult(
+        ctx,
+        'the capture has no pid for the app, so native_hook rows cannot be attributed',
+      );
+    }
+
+    const snapshot = loadNativeMemory(ctx.db, ctx.app.pids, ctx.window);
+    if (snapshot === undefined) {
+      const query = new NativeHookQuery(ctx.db);
+      if (!query.hasStatistics()) {
+        return degradedResult(
+          ctx,
+          'the trace has no native_hook or native_hook_statistic rows for the app; ' +
+            'capture with `hiprofiler --plugins nativehook` against a debuggable app',
+        );
+      }
+      return this.statisticsOnly(ctx, query);
+    }
+
+    const { pair, names, endTs } = snapshot;
+    const peakRows = aggregateUnreleased(pair.unreleasedAt(pair.peakTs), names);
+    const endRows = aggregateUnreleased(pair.unreleasedAt(endTs), names);
+    const process = appProcessName(ctx);
+    const prov = {
+      collector: 'hiprofiler',
+      table: 'native_hook',
+      rows: snapshot.events.length,
+      device: ctx.deviceId,
+    };
+
+    const metrics: Metric[] = [
+      metric({
+        id: 'mem.native.events.count',
+        value: snapshot.events.length,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.alloc.count',
+        value: pair.allocCount,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.alloc.bytes',
+        value: pair.allocBytes,
+        unit: 'bytes',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.free.count',
+        value: pair.freeCount,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.free.bytes',
+        value: pair.freeBytes,
+        unit: 'bytes',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.total.peak',
+        value: pair.peak,
+        unit: 'bytes',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.total.trough',
+        value: pair.trough,
+        unit: 'bytes',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.total.end',
+        value: pair.endTotal,
+        unit: 'bytes',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.unreleased.peak',
+        value: sumRows(peakRows),
+        unit: 'bytes',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.unreleased.end',
+        value: sumRows(endRows),
+        unit: 'bytes',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.unreleased.unattributed.bytes',
+        value: pair.unattributedBytes,
+        unit: 'bytes',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.alloc.unaddressed.count',
+        value: pair.unaddressedAllocs,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.free.unpaired.count',
+        value: pair.unpairedFrees,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.callchains.count',
+        value: distinctCallchains(endRows),
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.peak.offset',
+        value: (pair.peakTs - snapshot.origin) / 1e6,
+        unit: 'ms',
+        provenance: prov,
+        fidelity: 'exact',
+        window: ctx.window,
+      }),
+    ];
+
+    const items: Evidence[] = [
+      ...this.pointEvidence(ctx, process, 'peak', pair.peakTs, peakRows),
+      ...this.pointEvidence(ctx, process, 'end', endTs, endRows),
+    ];
+
+    metrics.sort(byMetricId);
+    items.sort(byEvidenceOrder);
+    return { metrics, evidence: items };
+  }
+
+  /**
+   * The top rows at one instant, each with the queries that explain it.
+   *
+   * The severity threshold is a concentration signal — a row holding a large
+   * share of live memory is worth a look — not a judgment that it is wrong.
+   */
+  private pointEvidence(
+    ctx: AnalyzeContext,
+    process: string,
+    point: 'peak' | 'end',
+    ts: number,
+    rows: readonly UnreleasedRow[],
+  ): Evidence[] {
+    const total = sumRows(rows);
+    return rows.slice(0, EVIDENCE_LIMIT).map((row) => {
+      const share = total > 0 ? (row.size / total) * 100 : 0;
+      const window = {
+        startNs: Math.max(ctx.window.startNs, ts - 500_000_000),
+        endNs: Math.min(ctx.window.endNs, ts + 500_000_000),
+      };
+      return evidence({
+        kind: 'native_memory',
+        severity: share >= WARN_SHARE ? 'warn' : 'info',
+        subject: { process, thread: row.thread, pid: row.pid },
+        window,
+        signals: {
+          point,
+          size: row.size,
+          count: row.count,
+          share,
+          relativeMs: row.firstRelativeNs / 1e6,
+          callchainId: row.callchainId,
+          pid: row.pid,
+          tid: row.tid,
+          category: row.category,
+          categoryName: row.categoryName,
+          subCategory: row.subCategory,
+          file: row.file,
+          symbol: row.symbol,
+        },
+        explain:
+          `${row.size} bytes still allocated at the ${point} of the capture ` +
+          `(${row.count} block${row.count === 1 ? '' : 's'}) in ` +
+          `${row.symbol || row.file || 'an unknown frame'} on thread ${row.thread}; ` +
+          'unreleased means "still live when the capture stopped", not "leaked"',
+        drillDown: [
+          {
+            label: 'Full callchain',
+            tool: 'mem.native.callchain',
+            args: { callchainId: row.callchainId },
+            returns: 'NativeCallchainFrame[]',
+          },
+          {
+            label: `All unreleased rows at the ${point}`,
+            tool: 'mem.native.unreleased',
+            args: { point },
+            returns: 'UnreleasedRow[]',
+          },
+          {
+            label: 'Frames around this instant',
+            tool: 'frames.all',
+            args: { window },
+            returns: 'Frame[]',
+          },
+        ],
+      });
+    });
+  }
+
+  /** The statistic-only path: end-of-capture totals, explicitly a proxy. */
+  private statisticsOnly(ctx: AnalyzeContext, query: NativeHookQuery): AnalyzeResult {
+    const rows = query.statistics(ctx.app.pids);
+    const byCallchain = new Map<number, number>();
+    for (const row of rows) {
+      const live = row.applySize - row.releaseSize;
+      byCallchain.set(row.callchainId, (byCallchain.get(row.callchainId) ?? 0) + live);
+    }
+    const end = [...byCallchain.values()].reduce((sum, value) => sum + value, 0);
+    const prov = {
+      collector: 'hiprofiler',
+      table: 'native_hook_statistic',
+      rows: rows.length,
+      device: ctx.deviceId,
+    };
+    const metrics: Metric[] = [
+      metric({
+        id: 'mem.native.statistic.fallback',
+        value: 1,
+        unit: 'count',
+        fidelity: 'proxy',
+        degraded: { reason: STATISTIC_REASON, fallback: 'native_hook_statistic' },
+        provenance: prov,
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.unreleased.end',
+        value: end,
+        unit: 'bytes',
+        fidelity: 'proxy',
+        degraded: { reason: STATISTIC_REASON, fallback: 'apply_size - release_size' },
+        provenance: prov,
+        window: ctx.window,
+      }),
+      metric({
+        id: 'mem.native.callchains.count',
+        value: byCallchain.size,
+        unit: 'count',
+        fidelity: 'proxy',
+        degraded: { reason: STATISTIC_REASON, fallback: 'distinct statistic callchains' },
+        provenance: prov,
+        window: ctx.window,
+      }),
+    ];
+    metrics.sort(byMetricId);
+    return {
+      metrics,
+      evidence: [
+        evidence({
+          kind: 'native_memory',
+          severity: 'info',
+          subject: { process: appProcessName(ctx) },
+          window: ctx.window,
+          signals: { point: 'end', size: end, count: byCallchain.size },
+          explain:
+            `native_hook_statistic reports ${end} bytes still allocated across ` +
+            `${byCallchain.size} callchains at the end of the capture; ${STATISTIC_REASON}`,
+          drillDown: [],
+        }),
+      ],
+    };
+  }
 }

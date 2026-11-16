@@ -12,6 +12,7 @@ import { FrameAnalyzer } from './frames';
 import { GcAnalyzer } from './gc';
 import { MemoryAnalyzer } from './memory';
 import { MemoryMeasureAnalyzer } from './mem-measure';
+import { NativeMemoryAnalyzer } from './native-memory';
 import { StartupAnalyzer } from './startup';
 import { RenderAnalyzer } from './render';
 import { RsSkipAnalyzer } from './rs-skip';
@@ -229,6 +230,7 @@ export function defaultAnalyzers(): Analyzer[] {
     new ThreadAnalyzer(),
     new MemoryAnalyzer(),
     new MemoryMeasureAnalyzer(),
+    new NativeMemoryAnalyzer(),
     new StartupAnalyzer(),
     new RenderAnalyzer(),
     new GcAnalyzer(),

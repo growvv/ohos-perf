@@ -146,6 +146,12 @@ export type { ProcessMeasure, ProcessMeasureFilter } from './query/mem-measure';
 export { CallstackQuery } from './query/callstack';
 export type { CallstackEvent, CallstackEventWithArgs } from './query/callstack';
 export { PerfQuery } from './query/perf';
+export { NativeHookQuery } from './query/native-hook';
+export type {
+  NativeHookEvent,
+  NativeHookFrame,
+  NativeHookStatistic,
+} from './query/native-hook';
 export type {
   FoldedStack,
   PerfCallchain,
@@ -195,6 +201,23 @@ export type {
 export { ThreadAnalyzer, computeThreadAnalysis } from './analyze/threads-score';
 export { MemoryAnalyzer } from './analyze/memory';
 export { MemoryMeasureAnalyzer } from './analyze/mem-measure';
+export {
+  NativeMemoryAnalyzer,
+  pairNativeMemory,
+  aggregateUnreleased,
+  buildNativeTimeline,
+  nativeEventKind,
+} from './analyze/native-memory';
+export type {
+  ActiveAlloc,
+  NativeEventKind,
+  NativeMemoryResult,
+  NativeNames,
+  NativeTimelineBucket,
+  UnreleasedRow,
+} from './analyze/native-memory';
+export { classifyNativePath } from './analyze/native-kinds';
+export type { NativeCategory } from './analyze/native-kinds';
 export { StartupAnalyzer } from './analyze/startup';
 export { RenderAnalyzer } from './analyze/render';
 export { GcAnalyzer, computeGc } from './analyze/gc';

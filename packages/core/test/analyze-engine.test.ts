@@ -21,6 +21,7 @@ import { FlamegraphAnalyzer } from '../src/analyze/flamegraph';
 import { GcAnalyzer } from '../src/analyze/gc';
 import { MemoryAnalyzer } from '../src/analyze/memory';
 import { MemoryMeasureAnalyzer } from '../src/analyze/mem-measure';
+import { NativeMemoryAnalyzer } from '../src/analyze/native-memory';
 import { StartupAnalyzer } from '../src/analyze/startup';
 import { RenderAnalyzer } from '../src/analyze/render';
 import { RsSkipAnalyzer } from '../src/analyze/rs-skip';
@@ -356,6 +357,7 @@ describe('defaultAnalyzers', () => {
       'threads',
       'memory',
       'mem-measure',
+      'native-memory',
       'startup',
       'render',
       'gc',
@@ -372,14 +374,15 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[4]).toBeInstanceOf(ThreadAnalyzer);
     expect(analyzers[5]).toBeInstanceOf(MemoryAnalyzer);
     expect(analyzers[6]).toBeInstanceOf(MemoryMeasureAnalyzer);
-    expect(analyzers[7]).toBeInstanceOf(StartupAnalyzer);
-    expect(analyzers[8]).toBeInstanceOf(RenderAnalyzer);
-    expect(analyzers[9]).toBeInstanceOf(GcAnalyzer);
-    expect(analyzers[10]).toBeInstanceOf(VsyncAnalyzer);
-    expect(analyzers[11]).toBeInstanceOf(EmptyFrameAnalyzer);
-    expect(analyzers[12]).toBeInstanceOf(RsSkipAnalyzer);
-    expect(analyzers[13]).toBeInstanceOf(FlamegraphAnalyzer);
-    expect(analyzers[14]).toBeInstanceOf(ComponentReuseAnalyzer);
+    expect(analyzers[7]).toBeInstanceOf(NativeMemoryAnalyzer);
+    expect(analyzers[8]).toBeInstanceOf(StartupAnalyzer);
+    expect(analyzers[9]).toBeInstanceOf(RenderAnalyzer);
+    expect(analyzers[10]).toBeInstanceOf(GcAnalyzer);
+    expect(analyzers[11]).toBeInstanceOf(VsyncAnalyzer);
+    expect(analyzers[12]).toBeInstanceOf(EmptyFrameAnalyzer);
+    expect(analyzers[13]).toBeInstanceOf(RsSkipAnalyzer);
+    expect(analyzers[14]).toBeInstanceOf(FlamegraphAnalyzer);
+    expect(analyzers[15]).toBeInstanceOf(ComponentReuseAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

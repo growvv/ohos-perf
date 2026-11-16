@@ -99,6 +99,7 @@ export const SECTION_TITLES: Readonly<Record<string, string>> = {
   frames: 'Frames',
   gc: 'GC pressure',
   'mem-measure': 'Memory measurement',
+  'native-memory': 'Native memory',
   memory: 'Memory trend',
   render: 'Render',
   'rs-skip': 'RenderService skips',
