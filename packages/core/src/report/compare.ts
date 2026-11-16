@@ -70,6 +70,10 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
   'vsync.anomaly.rate': 'lower',
   'vsync.mismatch.count': 'lower',
   'vsync.periods.count': 'lower',
+
+  'empty_frame.count': 'lower',
+  'empty_frame.filtered.count': 'lower',
+  'empty_frame.rate': 'lower',
 };
 
 export type DeltaStatus =

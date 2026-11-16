@@ -12,6 +12,7 @@ import {
   type CapabilityState,
 } from '../src/device/capability';
 import { BinderAnalyzer } from '../src/analyze/binder';
+import { EmptyFrameAnalyzer } from '../src/analyze/empty-frame';
 import { FaultTreeAnalyzer } from '../src/analyze/fault-tree';
 import { FrameAnalyzer } from '../src/analyze/frames';
 import { GcAnalyzer } from '../src/analyze/gc';
@@ -334,6 +335,7 @@ describe('defaultAnalyzers', () => {
       'render',
       'gc',
       'vsync',
+      'empty-frame',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FaultTreeAnalyzer);
@@ -345,6 +347,7 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[7]).toBeInstanceOf(RenderAnalyzer);
     expect(analyzers[8]).toBeInstanceOf(GcAnalyzer);
     expect(analyzers[9]).toBeInstanceOf(VsyncAnalyzer);
+    expect(analyzers[10]).toBeInstanceOf(EmptyFrameAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

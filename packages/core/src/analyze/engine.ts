@@ -3,6 +3,7 @@ import { OhosPerfError } from '../errors';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import { BinderAnalyzer } from './binder';
+import { EmptyFrameAnalyzer } from './empty-frame';
 import { FaultTreeAnalyzer } from './fault-tree';
 import { FrameAnalyzer } from './frames';
 import { GcAnalyzer } from './gc';
@@ -186,5 +187,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new RenderAnalyzer(),
     new GcAnalyzer(),
     new VsyncAnalyzer(),
+    new EmptyFrameAnalyzer(),
   ];
 }

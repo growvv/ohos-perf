@@ -196,6 +196,15 @@ describe('METRIC_DIRECTIONS', () => {
     expect(METRIC_DIRECTIONS['startup.duration']).toBe('lower');
     expect(METRIC_DIRECTIONS['render.fps.live']).toBe('higher');
     expect(METRIC_DIRECTIONS['render.hitch.count']).toBe('lower');
+    expect(METRIC_DIRECTIONS['empty_frame.count']).toBe('lower');
+    expect(METRIC_DIRECTIONS['empty_frame.rate']).toBe('lower');
+  });
+
+  it('leaves a count with no better direction incomparable', () => {
+    // More vsync signals is neither better nor worse; only the anomaly rate
+    // built on them is. `undefined` is what makes the comparison say so.
+    expect(METRIC_DIRECTIONS['vsync.signals.count']).toBeUndefined();
+    expect(METRIC_DIRECTIONS['vsync.anomaly.rate']).toBe('lower');
   });
 
   it('has no direction for a degraded proxy', () => {

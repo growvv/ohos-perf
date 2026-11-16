@@ -75,6 +75,7 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 const VALUE_EXPORTS = [
   'BinderAnalyzer', 'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device',
   'DEFAULT_QUERY_LIMIT', 'DEVICE_PERF_PATH', 'DEVICE_UI_PATH', 'DeviceNotFoundError',
+  'EmptyFrameAnalyzer',
   'FaultTreeAnalyzer',
   'FPS_COMMAND', 'flattenUiTree', 'FrameAnalyzer', 'FrameQuery', 'FTRACE_CATEGORIES',
   'GcAnalyzer', 'computeGc',
@@ -94,7 +95,7 @@ const VALUE_EXPORTS = [
   'ThreadStateQuery', 'analyzeThreadWakeup', 'buildHiprofilerConfig', 'buildMatrix',
   'compareResults', 'computeBinderAnalysis', 'computeFaultTree', 'computeThreadAnalysis',
   'computeVsyncAnomalies',
-  'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ftracePlugin',
+  'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence', 'filterEmptyFrames', 'ftracePlugin',
   'gpuPlugin', 'ingestScene', 'lookupQuery',
   'memoryPlugin', 'MemMeasureQuery',
   'METRIC_DIRECTIONS', 'metric', 'nativehookPlugin', 'openDb', 'parseHiperfSummary', 'queryDefinitions',

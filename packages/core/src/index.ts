@@ -175,6 +175,8 @@ export type {
   VsyncPeriodKind,
   VsyncSeverity,
 } from './analyze/vsync';
+export { EmptyFrameAnalyzer, filterEmptyFrames } from './analyze/empty-frame';
+export type { EmptyFrameFilter } from './analyze/empty-frame';
 export type {
   BelowThresholdPattern,
   CallchainSample,
