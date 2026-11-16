@@ -35,14 +35,14 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P6 are complete**: 906 tests (898 unit, 8 in the device project),
+**P1 through P7 are complete**: 988 tests (980 unit, 8 in the device project),
 two workspace typechecks and two builds, all green on the declared minimum
 Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **873 passed, 25
+attached device are absent — `npm run test:unit` reports **955 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-seven device-gated skips, so the combined clean checkout is **874 passed, 32
-skipped**. With both fixtures present and a device attached all 906 pass. The
+seven device-gated skips, so the combined clean checkout is **956 passed, 32
+skipped**. With both fixtures present and a device attached all 988 pass. The
 fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
 `query-sched-state` and the CLI `index` end-to-end tests. The eight tests in
@@ -87,7 +87,10 @@ Implemented today:
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
-  `compare`
+  `compare`, `emulator {list,start,stop,create}`
+- emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
+  (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
+  instance to its `hdc` TCP target so `collect --target` can use it
 
 Metric ids emitted by the analyzers:
 
@@ -146,7 +149,7 @@ the matrix reports that reason instead of claiming the data is usable.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | P0–P6 | capability probing, six collectors, trace ingest, typed queries, fourteen analyzers, deterministic JSON, baseline comparison, agent skill | shipped in `0.2.0` |
-| P7 | `ohos-perf emulator {list,start,stop,create}` lifecycle commands | next |
+| P7 | `ohos-perf emulator {list,start,stop,create}` lifecycle commands | in `master`, unreleased |
 | exploring | `ui.gesture` (AAMS), `coverage` (bjc_cov), `js.heap` (ArkTS profiler) — each stays reported unavailable until a device spike proves this package can drive it | device spike first |
 
 The rendered roadmap, with the same content in Chinese, is on the
@@ -227,6 +230,48 @@ ohos-perf query ./scene frames.get \
   --args '{"id":42}' --json
 ```
 
+## Emulators
+
+`ohos-perf emulator` drives the `Emulator.exe` that DevEco Studio installs, so a
+run with no physical device still has something to measure.
+
+```bash
+ohos-perf emulator list                 # name, running state, target, API, image
+ohos-perf emulator start ProbePhone     # waits until the guest has booted
+ohos-perf emulator stop ProbePhone
+ohos-perf emulator create SpecProbe \
+  --device-type phone --os-version 'HarmonyOS 6.1.1(24)' --memory 6 --storage 8
+```
+
+`list` is the handoff to capture: `--json` prints each instance's `target`, and
+that id goes straight to `collect --target`:
+
+```bash
+TARGET=$(ohos-perf emulator list --json | python -c 'import json,sys; print(json.load(sys.stdin)["instances"][0]["target"])')
+ohos-perf collect --target "$TARGET" --app com.example.app --duration 10s --out ./scene
+```
+
+`start` blocks until `bootevent.boot.completed` reads `true` on the guest, so a
+capture never races the boot. It takes `--timeout <seconds>` (default 180) and
+reports how long the boot took; starting an instance that is already up is a
+safe no-op that says so. A timeout never kills the emulator — the message names
+the `stop` command that removes it.
+
+`create` never downloads an image. It refuses when no image for that
+`--device-type`/`--os-version` pair is already downloaded, and prints the exact
+`Emulator.exe -install …` command to run first.
+
+Path discovery, for both the binary and the instance/image roots, is: an
+explicit flag (`--emulator`, `--instance-path`, `--image-root`), then an
+environment variable (`OHOS_PERF_EMULATOR`, `OHOS_PERF_EMULATOR_INSTANCE`,
+`OHOS_PERF_EMULATOR_ROOT`), then DevEco's `.emu_config` (which is what
+redirects the roots on a machine that moved them off `%LOCALAPPDATA%`), then
+the default install and `%LOCALAPPDATA%` locations.
+
+Unlike `analyze`, these four commands are **not** byte-deterministic: `--json`
+promises stable key and array order, and `waitedMs` is wall-clock. They are
+lifecycle operations on a real machine, not measurements.
+
 ## Development
 
 ```bash
@@ -234,7 +279,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 906 tests; 874 pass + 32 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 988 tests; 956 pass + 32 skip on a clean checkout (no device, spike/out/ absent)
 ```
 
 `npm test` builds both packages first, so a clean checkout is never red.
@@ -301,7 +346,7 @@ L5  Analyze                frames · fault tree · binder · threads · memory �
 L4  Query                  typed accessors over 88 trace tables
 L3  Ingest                 trace_streamer wrapper · scene layout · scene.json · db handles
 L2  Collectors             hitrace · procfs · hiprofiler · hiperf · hidumper · uitest
-L1  Device                 device model · capability probe · matrix
+L1  Device                 device model · capability probe · matrix · emulator lifecycle
 L0  Transport              hdc client
 ```
 

@@ -60,7 +60,7 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P6 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, 906 tests" data-zh="P1–P6 已完成 — 十四个分析器、六个采集器、下钻查询、基线对比、906 个测试">P1–P6 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, 906 tests</span>
+        <span data-en="P1–P7 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, 988 tests" data-zh="P1–P7 已完成 — 十四个分析器、六个采集器、下钻查询、基线对比、模拟器生命周期、988 个测试">P1–P7 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, 988 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
@@ -125,7 +125,7 @@
     <div class="stats reveal">
       <div class="stat"><b>21</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
       <div class="stat"><b>14</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>906</b><span data-en="tests pass with a device and spike fixtures; 874 + 32 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 874 通过 + 32 跳过">tests pass with a device and spike fixtures; 874 + 32 skipped on a clean checkout</span></div>
+      <div class="stat"><b>988</b><span data-en="tests pass with a device and spike fixtures; 956 + 32 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 956 通过 + 32 跳过">tests pass with a device and spike fixtures; 956 + 32 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -438,6 +438,11 @@ ohos-perf analyze ./scene --json
 <span class="cm"># Compare against a baseline capture.</span>
 ohos-perf compare ./before ./after --json
 
+<span class="cm"># Boot an emulator when no device is attached.</span>
+ohos-perf emulator list --json
+ohos-perf emulator start ProbePhone --timeout 300
+ohos-perf emulator stop ProbePhone
+
 <span class="cm"># Exit codes are real: a failed analysis is 1.</span>
 <span class="p">$</span> ohos-perf analyze ./missing; <span class="k">echo</span> $?
 <span class="n">1</span></code></pre>
@@ -457,7 +462,7 @@ ohos-perf compare ./before ./after --json
       <article class="card reveal">
         <span class="status shipped" data-en="Shipped · v0.2.0" data-zh="已发布 · v0.2.0">Shipped · v0.2.0</span>
         <h3 data-en="The measurable core" data-zh="可度量的内核">The measurable core</h3>
-        <p data-en="P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests, 20 of 21 capabilities driven on a Mate 60." data-zh="P0–P6：能力探测、六个采集器、trace 入库、类型化查询、十四个带溯源与保真度的分析器、确定性 JSON、基线对比与 agent skill。906 个测试；在 Mate 60 上驱动 21 项能力中的 20 项。">P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests, 20 of 21 capabilities driven on a Mate 60.</p>
+        <p data-en="P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests at release, 20 of 21 capabilities driven on a Mate 60." data-zh="P0–P6：能力探测、六个采集器、trace 入库、类型化查询、十四个带溯源与保真度的分析器、确定性 JSON、基线对比与 agent skill。发布时 906 个测试；在 Mate 60 上驱动 21 项能力中的 20 项。">P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests at release, 20 of 21 capabilities driven on a Mate 60.</p>
       </article>
       <article class="card reveal">
         <span class="status shipped" data-en="Shipped · v0.2.0" data-zh="已发布 · v0.2.0">Shipped · v0.2.0</span>
@@ -465,9 +470,9 @@ ohos-perf compare ./before ./after --json
         <p data-en="P6: GC pressure, VSync anomaly periods, empty frames with HapRay's false-positive filters, RenderService skips reverse-traced through NativeWindow, folded flamegraph stacks, and ArkUI component reuse. Every one is pinned against HapRay rev 9386e4e — on the recorded traces where they have data, on synthetic goldens where they do not. HapRay's UI animation diff stays out: it needs per-step pages.json, element trees and screenshots no collector here produces." data-zh="P6：GC 压力、VSync 异常周期、带 HapRay 误报过滤的空帧、经 NativeWindow 反向追溯的 RenderService 跳过、折叠火焰图栈，以及 ArkUI 组件复用。每一项都对拍 HapRay 修订 9386e4e——有数据的部分用录制 trace，没数据的部分用合成 golden。HapRay 的 UI 动画 diff 仍不在范围内：它需要每步的 pages.json、元素树与截图，而本包的采集器都不产出这些。">P6: GC pressure, VSync anomaly periods, empty frames with HapRay's false-positive filters, RenderService skips reverse-traced through NativeWindow, folded flamegraph stacks, and ArkUI component reuse. Every one is pinned against HapRay rev 9386e4e — on the recorded traces where they have data, on synthetic goldens where they do not. HapRay's UI animation diff stays out: it needs per-step pages.json, element trees and screenshots no collector here produces.</p>
       </article>
       <article class="card reveal">
-        <span class="status next" data-en="Next · P7" data-zh="下一步 · P7">Next · P7</span>
+        <span class="status shipped" data-en="In master · unreleased" data-zh="已在 master · 未发布">In master · unreleased</span>
         <h3 data-en="Emulator lifecycle" data-zh="模拟器生命周期">Emulator lifecycle</h3>
-        <p data-en="`ohos-perf emulator {list,start,stop,create}` so CI and an agent can boot their own target instead of relying on an attached device. The design already reserves the command group and the device module." data-zh="`ohos-perf emulator {list,start,stop,create}`，让 CI 与 agent 自己启动目标设备，而不依赖已连接的真机。设计文档已经为这组命令与设备模块预留了位置。">`ohos-perf emulator {list,start,stop,create}` so CI and an agent can boot their own target instead of relying on an attached device. The design already reserves the command group and the device module.</p>
+        <p data-en="P7: `ohos-perf emulator {list,start,stop,create}` so CI and an agent can boot their own target instead of relying on an attached device. `start` waits for `bootevent.boot.completed` and reports the target `collect --target` needs; `create` never downloads an image and prints the exact `-install` command instead. Verified against a real 6.1.1.200 install: a warm start returns in 4 s, a cold one in 35 s." data-zh="P7：`ohos-perf emulator {list,start,stop,create}`，让 CI 与 agent 自己启动目标设备，而不依赖已连接的真机。`start` 等到 `bootevent.boot.completed` 并给出 `collect --target` 需要的目标；`create` 不下载镜像，而是打印准确的 `-install` 命令。已在真实的 6.1.1.200 安装上验证：热启动 4 秒返回，冷启动 35 秒。">P7: <code>ohos-perf emulator {list,start,stop,create}</code> so CI and an agent can boot their own target instead of relying on an attached device. <code>start</code> waits for <code>bootevent.boot.completed</code> and reports the target <code>collect --target</code> needs; <code>create</code> never downloads an image and prints the exact <code>-install</code> command instead. Verified against a real 6.1.1.200 install: a warm start returns in 4 s, a cold one in 35 s.</p>
       </article>
       <article class="card reveal">
         <span class="status exploring" data-en="Exploring" data-zh="探索中">Exploring</span>

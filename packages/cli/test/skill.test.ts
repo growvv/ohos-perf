@@ -16,7 +16,9 @@ function readNormalized(path: string): string {
 const skill = readNormalized(join(root, 'skill/ohos-perf/SKILL.md'));
 const readme = readNormalized(join(root, 'README.md'));
 
-const COMMANDS = new Set(['doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare']);
+const COMMANDS = new Set([
+  'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'emulator',
+]);
 
 describe('agent skill adapter', () => {
   it('has frontmatter with a name and a description', () => {
@@ -42,6 +44,20 @@ describe('agent skill adapter', () => {
   it('documents every collector flag and the baseline comparison', () => {
     for (const needle of ['--procfs', '--hiprofiler', '--hiperf', '--hidumper', '--uitest',
       'ohos-perf compare', 'incomparable', 'ui.get']) {
+      expect(skill).toContain(needle);
+    }
+  });
+
+  it('tells an agent how to boot an emulator when no device is attached', () => {
+    // The step exists so an agent with no phone does not stop at `doctor`;
+    // each command it names must be real, which the command-set test enforces.
+    for (const needle of [
+      'ohos-perf emulator list --json',
+      'ohos-perf emulator start',
+      'ohos-perf emulator stop',
+      '--target',
+      'already downloaded',
+    ]) {
       expect(skill).toContain(needle);
     }
   });

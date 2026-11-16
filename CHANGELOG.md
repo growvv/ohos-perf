@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `ohos-perf emulator {list,start,stop,create}` — the HarmonyOS emulator
+  lifecycle, so CI and an agent can boot their own target instead of relying on
+  an attached device.
+  - `list` reports each instance and the `hdc` TCP target it owns; `--json`
+    prints that `target`, which `collect --target` consumes directly. A target
+    is attributed only when exactly one running instance maps to exactly one
+    connected TCP target, and the reason is reported when it is not.
+  - `start` blocks until `bootevent.boot.completed` reads `true` on the guest
+    and reports the boot time. `--timeout <seconds>` bounds the wait (default
+    180); starting an already-running instance is a safe no-op. A timeout never
+    kills the emulator — the message names the `stop` command.
+  - `stop` waits until the instance reports `isRunning: false`, because
+    `-stop` returns success before the state changes.
+  - `create` builds an instance from an **already-downloaded** image. It never
+    downloads one: a missing image exits 1 with the exact `-install` command to
+    run first, and the name, duplicate and memory/storage ranges are all
+    validated before anything is spawned.
+- `EmulatorClient` and `EmulatorLifecycle` exported from `@ohos-perf/core`,
+  split so spawn-and-parse is testable against recorded output and the waiting
+  logic is testable with a plain object. Instance and image roots follow
+  `--instance-path`/`--image-root` → `OHOS_PERF_EMULATOR_INSTANCE`/
+  `OHOS_PERF_EMULATOR_ROOT` → DevEco's `.emu_config` → `%LOCALAPPDATA%`.
+- `EmulatorCommandError`, `EmulatorImageMissingError` and
+  `EmulatorNotFoundError`, so a failure the binary reports with exit code 0 is
+  still a typed error.
+
+### Fixes
+
+- The emulator's exit code carries no information: every measured failure exits
+  0. Success is proven by re-reading state, and a `-start` that keeps running
+  (the process becomes the emulator) is no longer mistaken for a hang.
+
 ## 0.2.0 — 2026-11-16
 
 ### Analyzers

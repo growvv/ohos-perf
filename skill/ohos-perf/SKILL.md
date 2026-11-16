@@ -12,6 +12,18 @@ the interface; every command speaks stable JSON with `--json`.
 ## Workflow
 
 1. Check the toolchain and the attached device: `ohos-perf doctor`
+   - When it reports no attached device, boot an emulator instead of giving up:
+     `ohos-perf emulator list --json` names the instances, then
+     `ohos-perf emulator start <name> --json` blocks until the guest has booted
+     and returns its `target`. Pass that id to every later command with
+     `--target <id>` (e.g. `ohos-perf collect --target 127.0.0.1:5555 …`).
+     `ohos-perf emulator stop <name>` shuts it down again. Never fabricate a
+     target: `list` reports `target` only when exactly one running instance can
+     be attributed to exactly one connected TCP target.
+   - `ohos-perf emulator create <name> --device-type … --os-version …` builds a
+     new instance from an image that is **already downloaded**. It never
+     downloads one; when the image is missing it exits 1 with the exact
+     `Emulator.exe -install …` command to run first.
 2. Read the capability matrix before asking for data that may not exist:
    `ohos-perf caps --json`. An unavailable capability is absent by design —
    never invent its metric.
