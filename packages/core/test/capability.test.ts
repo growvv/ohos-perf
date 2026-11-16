@@ -13,6 +13,7 @@ const FULL_DEVICE = {
     hidumper: true,
     hiprofiler_cmd: true,
     uitest: true,
+    bjc_cov: false,
   },
   hiperfHwEvents: ['hw-cpu-cycles'],
   hiperfSwEvents: ['sw-cpu-clock'],
@@ -28,6 +29,7 @@ const EMULATOR = {
     hidumper: true,
     hiprofiler_cmd: false,
     uitest: true,
+    bjc_cov: false,
   },
   hiperfHwEvents: [] as string[],
   hiperfSwEvents: ['sw-cpu-clock'],
@@ -121,7 +123,10 @@ describe('buildMatrix availability rules', () => {
     // js.heap has no serving collector: no analyzer consumes the heap tables,
     // so the state carries no `collector` (as with every unavailable state).
     expect(m.get('js.heap')!.available).toBe(false);
-    expect(m.get('coverage')!.collector).toBe('hiprofiler');
+    // coverage has no serving collector in this package either; the row stays
+    // in the matrix (pinned separately) so it reads as "unavailable", not
+    // "never asked".
+    expect(m.get('coverage')!.available).toBe(false);
     expect(m.get('startup.app_startup')!.collector).toBe('hiprofiler');
     expect(m.get('render.hitch')!.collector).toBe('hidumper');
     expect(m.get('ui.tree')!.collector).toBe('uitest');
@@ -152,7 +157,7 @@ describe('buildMatrix availability rules', () => {
     const m = buildMatrix(EMULATOR);
     for (const id of [
       'mem.native_hook', 'mem.gpu', 'power.xpower', 'net.io', 'disk.io',
-      'js.heap', 'coverage', 'startup.app_startup',
+      'js.heap', 'startup.app_startup',
     ] as CapabilityId[]) {
       const s = m.get(id)!;
       expect(s.available).toBe(false);
@@ -333,6 +338,22 @@ describe('plugin-aware hiprofiler verdicts', () => {
       available: false,
       reason: expect.stringContaining('no analyzer'),
     });
+    // The measured hidumper route is permission-gated too; an agent reading
+    // the reason should not go hunting for a debug-signed build thinking that
+    // alone would make the capability available.
+    expect(caps.get('js.heap')!.reason).toContain('debug-signed or profilerable');
+  });
+
+  it('serves coverage from bjc_cov, and never claims it available', () => {
+    // Before P8 coverage was gated on hiprofiler_cmd, so every device with
+    // hiprofiler reported a capability nothing in the package could produce.
+    const present = buildMatrix({ ...FULL_DEVICE, binaries: { ...FULL_DEVICE.binaries, bjc_cov: true } });
+    const absent = buildMatrix({ ...FULL_DEVICE, binaries: { ...FULL_DEVICE.binaries, bjc_cov: false } });
+    expect(present.get('coverage')!.available).toBe(false);
+    expect(present.get('coverage')!.collector).toBeUndefined();
+    expect(absent.get('coverage')!.reason).toBe('bjc_cov not present on device');
+    expect(present.get('coverage')!.reason)
+      .toBe('no coverage collector in this package consumes bjc_cov output');
   });
 
   it('keeps the binary-based verdicts when the plugin list is unknown', () => {

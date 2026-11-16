@@ -27,6 +27,12 @@ field is unescaped back to a newline by the fixture runner in
 snapshot carries only the measured `hiperf list` hardware section; no missing
 software events were invented for it.
 
+P8 note: both snapshots predate 2026-11-17 and contain no `which bjc_cov`
+line. The fixture runner answers an unrecorded command with empty output, which
+`parseBinaries` treats as absent — the same verdict the live Mate 60 probe
+reached (`which bjc_cov` printed nothing), so `coverage` reports
+`bjc_cov not present on device` for these fixtures without inventing a line.
+
 Provenance exception: the `which uitest<TAB>/bin/uitest` line in
 `probe-emulator.txt` is **not** in the saved probe log
 (`spike/logs/probe_emulator.log` has no `uitest` line). It comes from PHASE_B's

@@ -43,13 +43,15 @@ const PARAM_SOFTWARE_VERSION = 'param get const.product.software.version';
 const PARAM_OS_FULLNAME = 'param get const.ohos.fullname';
 const PARAM_DEVICE_TYPE = 'param get const.product.devicetype';
 
-const BINARIES = ['hiprofiler_cmd', 'hiperf', 'hitrace', 'hidumper', 'uitest'] as const;
+const BINARIES = [
+  'hiprofiler_cmd', 'hiperf', 'hitrace', 'hidumper', 'uitest', 'bjc_cov',
+] as const;
 
 const CMD_LIST_HW = 'hiperf list hw';
 const CMD_LIST = 'hiperf list';
 const CMD_HIPROFILER_LIST = 'hiprofiler_cmd --list';
 
-/** Fixed order: five params, five `which`, the hiprofiler list, then hiperf. */
+/** Fixed order: five params, six `which`, the hiprofiler list, then hiperf. */
 const COMMANDS: readonly string[] = [
   PARAM_ABI,
   PARAM_PRODUCT_NAME,

@@ -178,16 +178,33 @@ const RULES: Rule[] = [
   hiprofiler('disk.io', 'diskio-plugin'),
   // The device can run memory-plugin, but that says nothing about heap data:
   // nothing in this package consumes the js_heap_* tables, so the row stays in
-  // the matrix (a dropped row reads as "not probed") and reports why.
+  // the matrix (a dropped row reads as "not probed") and reports why. The
+  // measured hidumper route is gated too: on the Mate 60 a release app and
+  // com.ohos.sceneboard both answered `--mem-jsheap needs a debug-signed
+  // application` even with developer mode enabled, so naming the analyzer gap
+  // alone would send an agent chasing a build that still would not work.
   {
     id: 'js.heap',
     collector: 'hiprofiler',
     binary: 'hiprofiler_cmd',
     missingReason: () => HIPROFILER_MISSING,
     available: () => false,
-    unavailableReason: 'no analyzer in this package consumes js_heap_* tables',
+    unavailableReason:
+      'no analyzer in this package consumes js_heap_* tables;' +
+      ' hidumper --mem-jsheap needs a debug-signed or profilerable app',
   },
-  hiprofiler('coverage'),
+  // Coverage comes from bjc_cov, not hiprofiler. The binary gate is real
+  // (measured absent on the Mate 60, and `aa` prints nothing over plain
+  // shell), but its presence would still not make the capability available:
+  // no collector in this package consumes bjc_cov output.
+  {
+    id: 'coverage',
+    collector: 'bjc_cov',
+    binary: 'bjc_cov',
+    missingReason: () => 'bjc_cov not present on device',
+    available: () => false,
+    unavailableReason: 'no coverage collector in this package consumes bjc_cov output',
+  },
   hiprofiler('startup.app_startup', 'ftrace-plugin'),
 
   {
@@ -201,6 +218,9 @@ const RULES: Rule[] = [
   { id: 'render.hitch', collector: 'hidumper', binary: 'hidumper' },
 
   { id: 'ui.tree', collector: 'uitest', binary: 'uitest' },
+  // Driven by GestureDriver over `uitest uiInput`, measured working over plain
+  // shell on the Mate 60. The old "needs the AAMS test framework" claim
+  // belonged to `uitest uiRecord`, a different command.
   { id: 'ui.gesture', collector: 'uitest', binary: 'uitest' },
 ];
 
