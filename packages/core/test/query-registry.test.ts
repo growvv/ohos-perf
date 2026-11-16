@@ -105,11 +105,14 @@ afterAll(() => {
 });
 
 describe('queryDefinitions', () => {
-  it('lists the twelve registered names in sorted order', () => {
+  it('lists the sixteen registered names in sorted order', () => {
     expect(queryDefinitions().map((d) => d.name)).toEqual([
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
       'frame.load.files', 'frame.load.symbols', 'frame.load.threads',
-      'frames.all', 'frames.fpsSeries', 'frames.get', 'threads.pattern', 'ui.get',
+      'frames.all', 'frames.fpsSeries', 'frames.get',
+      'mem.native.callchain', 'mem.native.categories', 'mem.native.timeline',
+      'mem.native.unreleased',
+      'threads.pattern', 'ui.get',
     ]);
   });
 

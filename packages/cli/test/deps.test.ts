@@ -1165,7 +1165,10 @@ describe('realDeps().query', () => {
     expect(realDeps('0.0.0').tools().map((t) => t.name)).toEqual([
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
       'frame.load.files', 'frame.load.symbols', 'frame.load.threads',
-      'frames.all', 'frames.fpsSeries', 'frames.get', 'threads.pattern', 'ui.get',
+      'frames.all', 'frames.fpsSeries', 'frames.get',
+      'mem.native.callchain', 'mem.native.categories', 'mem.native.timeline',
+      'mem.native.unreleased',
+      'threads.pattern', 'ui.get',
     ]);
   });
 });

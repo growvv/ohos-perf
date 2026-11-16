@@ -1,6 +1,9 @@
 // Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.
 
-import type { NativeHookEvent } from '../query/native-hook';
+import type { QueryHandle } from '../db/driver';
+import { NativeHookQuery, type NativeHookEvent } from '../query/native-hook';
+import { ProcessQuery, ThreadQuery } from '../query/process';
+import type { TimeRange } from '../types';
 import { classifyNativePath } from './native-kinds';
 
 /** What an event does to the running total. */
@@ -275,6 +278,43 @@ function rowOrder(a: UnreleasedRow, b: UnreleasedRow): number {
 }
 
 /**
+ * Resolves every name the aggregation needs from the trace's own tables.
+ *
+ * The leaf frame is the deepest one: `NativeHookQuery.frames` orders by
+ * `(callchain_id, depth, id)`, so the last entry of each list is the
+ * allocation site. A callchain with no frames keeps no leaf entry, and its
+ * rows then carry no file or symbol.
+ */
+export function buildNativeNames(
+  query: NativeHookQuery,
+  events: readonly NativeHookEvent[],
+  processNames: ReadonlyMap<number, string>,
+  threadNames: ReadonlyMap<number, string>,
+): NativeNames {
+  const callchainIds = [...new Set(events.map((event) => event.callchainId))].filter(
+    (id) => id > 0,
+  );
+  const frames = query.frames(callchainIds);
+  const frameLeaves = new Map<number, { fileId: number; symbolId: number }>();
+  const fileIds: number[] = [];
+  const symbolIds: number[] = [];
+  for (const [callchainId, list] of frames) {
+    const leaf = list[list.length - 1];
+    if (leaf === undefined) continue;
+    frameLeaves.set(callchainId, { fileId: leaf.fileId, symbolId: leaf.symbolId });
+    fileIds.push(leaf.fileId);
+    symbolIds.push(leaf.symbolId);
+  }
+  return {
+    processes: new Map(processNames),
+    threads: new Map(threadNames),
+    files: query.dataDict(fileIds),
+    symbols: query.dataDict(symbolIds),
+    frameLeaves,
+  };
+}
+
+/**
  * Merges live allocations into rows keyed by `(callchainId, pid, tid)`.
  *
  * The process, thread, file and symbol come from the trace's own name tables;
@@ -319,6 +359,57 @@ export function aggregateUnreleased(
     });
   }
   return [...rows.values()].sort(rowOrder);
+}
+
+/**
+ * Everything one native-memory read establishes, or `undefined` when the
+ * capture has no `native_hook` rows for the app.
+ *
+ * Both the analyzer and the named queries go through here, so "unreleased at
+ * the end" means the same rows in the report and in a drill-down.
+ */
+export interface NativeSnapshot {
+  events: NativeHookEvent[];
+  names: NativeNames;
+  pair: NativeMemoryResult;
+  /** First and last event timestamps, the instant `peak`/`end` are relative to. */
+  origin: number;
+  endTs: number;
+}
+
+/**
+ * Reads and pairs the app's native events.
+ *
+ * An absent or empty `native_hook` table yields `undefined` rather than a
+ * zero-valued result: the caller must be able to tell "no native data" from
+ * "no native allocations", and only the first is degraded.
+ */
+export function loadNativeMemory(
+  db: QueryHandle,
+  pids: readonly number[],
+  range?: TimeRange,
+): NativeSnapshot | undefined {
+  if (pids.length === 0) return undefined;
+  const query = new NativeHookQuery(db);
+  const events = query.events(pids, range);
+  if (events.length === 0) return undefined;
+
+  const processes = new Map<number, string>();
+  for (const process of new ProcessQuery(db).all()) {
+    if (!processes.has(process.pid)) processes.set(process.pid, process.name);
+  }
+  const threads = new Map<number, string>();
+  for (const thread of new ThreadQuery(db).all()) {
+    if (!threads.has(thread.itid)) threads.set(thread.itid, thread.name);
+  }
+
+  return {
+    events,
+    names: buildNativeNames(query, events, processes, threads),
+    pair: pairNativeMemory(events),
+    origin: nativeOrigin(events),
+    endTs: nativeEndTs(events),
+  };
 }
 
 /** One timeline bucket; only buckets that saw an event are emitted. */

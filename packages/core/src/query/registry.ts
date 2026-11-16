@@ -4,6 +4,14 @@ import {
   FrameLoadIndex, type FrameLoadThread, type PerfFileAttribution,
 } from '../analyze/frame-load';
 import {
+  aggregateUnreleased,
+  buildNativeTimeline,
+  loadNativeMemory,
+  type NativeTimelineBucket,
+  type UnreleasedRow,
+} from '../analyze/native-memory';
+import { NativeHookQuery } from './native-hook';
+import {
   computeThreadAnalysis, type RedundantThreadPattern,
 } from '../analyze/threads-score';
 import { analyzeThreadWakeup } from '../analyze/threads-wakeup';
@@ -88,6 +96,24 @@ export interface NamedQueryResult {
   /** Matched rows before the output limit was applied. */
   readonly total: number;
   readonly truncated: boolean;
+}
+
+/** One category total from `mem.native.categories`. */
+export interface NativeCategoryTotal {
+  category: number;
+  categoryName: string;
+  subCategory: string;
+  size: number;
+  count: number;
+}
+
+/** One frame of a `mem.native.callchain` result. */
+export interface NativeCallchainFrame {
+  callchainId: number;
+  depth: number;
+  ip: number;
+  symbol: string;
+  file: string;
 }
 
 function badArgs(query: string, detail: string): OhosPerfError {
@@ -533,6 +559,141 @@ const DEFINITIONS: NamedQueryDefinition[] = [
     run(ctx, args) {
       const frame = new FrameQuery(ctx.db).get(numberArg('frames.get', args, 'id'));
       return frame === undefined ? [] : [frame];
+    },
+  },
+  {
+    name: 'mem.native.callchain',
+    description:
+      'The full frame stack of one native callchain, ordered by depth, with each ' +
+      'frame\'s file and symbol resolved from data_dict.',
+    args: [
+      {
+        name: 'callchainId',
+        type: 'number',
+        required: true,
+        description: 'native_hook.callchain_id',
+      },
+    ],
+    returns: 'NativeCallchainFrame[]',
+    parseArgs(args) {
+      rejectUnknownArgs('mem.native.callchain', args, ['callchainId']);
+      numberArg('mem.native.callchain', args, 'callchainId');
+    },
+    run(ctx, args) {
+      const callchainId = numberArg('mem.native.callchain', args, 'callchainId');
+      const query = new NativeHookQuery(ctx.db);
+      const frames = query.frames([callchainId]).get(callchainId) ?? [];
+      if (frames.length === 0) return [];
+      const files = query.dataDict(frames.map((frame) => frame.fileId));
+      const symbols = query.dataDict(frames.map((frame) => frame.symbolId));
+      return frames.map(
+        (frame): NativeCallchainFrame => ({
+          callchainId: frame.callchainId,
+          depth: frame.depth,
+          ip: frame.ip,
+          symbol: symbols.get(frame.symbolId) ?? '',
+          file: files.get(frame.fileId) ?? '',
+        }),
+      );
+    },
+  },
+  {
+    name: 'mem.native.categories',
+    description:
+      'Unreleased native bytes at the end of the capture, aggregated by component ' +
+      'category and sub-category (APP, ArkUI, OS_Runtime, RN, Flutter, WEB, KMP, ' +
+      'SYS_SDK, Thread, UNKNOWN), sorted by size.',
+    args: [],
+    returns: 'NativeCategoryTotal[]',
+    parseArgs(args) {
+      rejectUnknownArgs('mem.native.categories', args, []);
+    },
+    run(ctx) {
+      const snapshot = loadNativeMemory(ctx.db, ctx.app.pids);
+      if (snapshot === undefined) return [];
+      const rows = aggregateUnreleased(snapshot.pair.unreleasedAt(snapshot.endTs), snapshot.names);
+      const totals = new Map<string, NativeCategoryTotal>();
+      for (const row of rows) {
+        const key = `${row.categoryName}|${row.subCategory}`;
+        const existing = totals.get(key);
+        if (existing !== undefined) {
+          existing.size += row.size;
+          existing.count += row.count;
+          continue;
+        }
+        totals.set(key, {
+          category: row.category,
+          categoryName: row.categoryName,
+          subCategory: row.subCategory,
+          size: row.size,
+          count: row.count,
+        });
+      }
+      return [...totals.values()].sort(
+        (a, b) =>
+          b.size - a.size ||
+          (a.categoryName < b.categoryName ? -1 : a.categoryName > b.categoryName ? 1 : 0) ||
+          (a.subCategory < b.subCategory ? -1 : a.subCategory > b.subCategory ? 1 : 0),
+      );
+    },
+  },
+  {
+    name: 'mem.native.timeline',
+    description:
+      'Native alloc and free bytes per fixed bucket anchored at the first app ' +
+      'event, with the running total at each bucket end and the peak bucket ' +
+      'flagged. Buckets with no events are omitted, not reported as zeros.',
+    args: [
+      {
+        name: 'bucketMs',
+        type: 'number',
+        required: false,
+        description: 'bucket width in milliseconds (default 1000, minimum 1)',
+      },
+    ],
+    returns: 'NativeTimelineBucket[]',
+    parseArgs(args) {
+      rejectUnknownArgs('mem.native.timeline', args, ['bucketMs']);
+      const bucketMs = optionalNumberArg('mem.native.timeline', args, 'bucketMs');
+      if (bucketMs !== undefined && bucketMs < 1) {
+        throw badArgs('mem.native.timeline', 'argument "bucketMs" must be at least 1');
+      }
+    },
+    run(ctx, args) {
+      const bucketMs = optionalNumberArg('mem.native.timeline', args, 'bucketMs') ?? 1000;
+      const snapshot = loadNativeMemory(ctx.db, ctx.app.pids);
+      if (snapshot === undefined) return [] as NativeTimelineBucket[];
+      return buildNativeTimeline(snapshot.events, bucketMs * 1_000_000);
+    },
+  },
+  {
+    name: 'mem.native.unreleased',
+    description:
+      'Live native allocations at one instant, merged per callchain, process and ' +
+      'thread, sorted by size. "Unreleased" means still allocated when the ' +
+      'capture ended (or at the peak) — it is not a leak claim.',
+    args: [
+      {
+        name: 'point',
+        type: 'string',
+        required: false,
+        description: '"peak" (the highest running total) or "end" (default)',
+      },
+    ],
+    returns: 'UnreleasedRow[]',
+    parseArgs(args) {
+      rejectUnknownArgs('mem.native.unreleased', args, ['point']);
+      const point = optionalStringArg('mem.native.unreleased', args, 'point');
+      if (point !== undefined && point !== 'peak' && point !== 'end') {
+        throw badArgs('mem.native.unreleased', 'argument "point" must be "peak" or "end"');
+      }
+    },
+    run(ctx, args) {
+      const point = optionalStringArg('mem.native.unreleased', args, 'point') ?? 'end';
+      const snapshot = loadNativeMemory(ctx.db, ctx.app.pids);
+      if (snapshot === undefined) return [] as UnreleasedRow[];
+      const instant = point === 'peak' ? snapshot.pair.peakTs : snapshot.endTs;
+      return aggregateUnreleased(snapshot.pair.unreleasedAt(instant), snapshot.names);
     },
   },
   {
