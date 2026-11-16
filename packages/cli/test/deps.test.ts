@@ -955,6 +955,86 @@ describe('realDeps().query', () => {
   });
 });
 
+describe('realDeps().compare', () => {
+  /** A scene whose single frame row is the only metric input compare reads. */
+  function scene(parent: string, ts: number): void {
+    createTraceDb(join(parent, 'trace.db'));
+    const raw = new DatabaseSync(join(parent, 'trace.db'));
+    raw.exec(`UPDATE frame_slice SET ts = ${ts}`);
+    raw.close();
+  }
+
+  it('compares two scene directories through the same analyzer path as analyze', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-compare-dirs-'));
+    try {
+      const base = join(parent, 'base');
+      const cur = join(parent, 'cur');
+      mkdirSync(base);
+      mkdirSync(cur);
+      scene(base, 1000);
+      scene(cur, 2000);
+
+      const c = await realDeps('0.0.0').compare({ baseline: base, current: cur });
+      // Both scenes have the same table shape, so every id is present on both
+      // sides and nothing is added or removed.
+      expect(c.totals.added).toBe(0);
+      expect(c.totals.removed).toBe(0);
+      expect(c.rows.map((row) => row.id)).toEqual(
+        [...c.rows.map((row) => row.id)].sort(),
+      );
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('reads analyze --json files as inputs', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-compare-files-'));
+    try {
+      const write = (name: string, metrics: unknown[]): string => {
+        const path = join(parent, name);
+        writeFileSync(path, JSON.stringify({ metrics, evidence: [] }));
+        return path;
+      };
+      const metric = (value: number) => ({
+        id: 'frame.jank.rate', value, unit: 'count', fidelity: 'exact',
+        provenance: { collector: 'test', device: 'd' },
+      });
+      const c = await realDeps('0.0.0').compare({
+        baseline: write('a.json', [metric(40)]),
+        current: write('b.json', [metric(30)]),
+      });
+      expect(c.rows).toEqual([expect.objectContaining({
+        id: 'frame.jank.rate', delta: -10, status: 'improved',
+      })]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects a file that is not an analyze --json document', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-compare-bad-'));
+    try {
+      const path = join(parent, 'bad.json');
+      writeFileSync(path, '{"rows":[]}');
+      await expect(realDeps('0.0.0').compare({ baseline: path, current: path }))
+        .rejects.toMatchObject({ code: 'COMPARE_BAD_INPUT' });
+      const notJson = join(parent, 'not.json');
+      writeFileSync(notJson, '{ not json');
+      await expect(realDeps('0.0.0').compare({ baseline: notJson, current: notJson }))
+        .rejects.toMatchObject({ code: 'COMPARE_BAD_INPUT' });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('fails on a path that is neither a scene nor a file', async () => {
+    await expect(realDeps('0.0.0').compare({
+      baseline: join(tmpdir(), 'ohosperf-does-not-exist.json'),
+      current: join(tmpdir(), 'ohosperf-does-not-exist.json'),
+    })).rejects.toMatchObject({ code: 'COMPARE_BAD_INPUT' });
+  });
+});
+
 describe('realDeps()', () => {
   it('defaults the version to the manifest', () => {
     expect(realDeps().version).toBe(manifest.version);

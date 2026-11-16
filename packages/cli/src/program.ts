@@ -4,6 +4,7 @@ import {
   runAnalyze,
   runCaps,
   runCollect,
+  runCompare,
   runDoctor,
   runQuery,
   runTools,
@@ -181,6 +182,16 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         ...(args !== undefined ? { args } : {}),
         ...(limit !== undefined ? { limit } : {}),
       }, { json: opts.json }));
+    });
+
+  program
+    .command('compare')
+    .description('compare a current analysis against a baseline')
+    .argument('<baseline>', 'scene directory or `analyze --json` file')
+    .argument('<current>', 'scene directory or `analyze --json` file')
+    .option('--json', 'print the comparison as JSON')
+    .action(async (baseline: string, current: string, opts: { json?: boolean }) => {
+      io.emit(await runCompare(deps, { baseline, current }, { json: opts.json }));
     });
 
   program

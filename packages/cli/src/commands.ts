@@ -1,5 +1,6 @@
 import type {
-  CapabilityState, HiprofilerPluginName, NamedQueryInfo, NamedQueryResult,
+  BaselineComparison, CapabilityState, DeltaStatus, HiprofilerPluginName,
+  NamedQueryInfo, NamedQueryResult,
 } from '@ohos-perf/core';
 import { doctorReport, safeMessage, type DoctorDeps } from './doctor';
 
@@ -84,6 +85,12 @@ export interface QueryRequest {
   limit?: number;
 }
 
+/** A `compare` invocation: two scene directories or two `analyze --json` files. */
+export interface CompareRequest {
+  baseline: string;
+  current: string;
+}
+
 /** Everything the commands touch, injected so the module performs no IO itself. */
 export interface CliDeps {
   doctor: DoctorDeps;
@@ -97,6 +104,8 @@ export interface CliDeps {
   query(req: QueryRequest): Promise<NamedQueryResult>;
   /** The named query definitions, for `tools`. */
   tools(): NamedQueryInfo[];
+  /** Compare two analyses. Throws on any failure; the caller maps it to exit 1. */
+  compare(req: CompareRequest): Promise<BaselineComparison>;
   /** Package version, for `--version` and the help banner. */
   version: string;
 }
@@ -268,6 +277,50 @@ export async function runQuery(
       `${result.truncated ? ' (truncated)' : ''}\n`;
     const rows = result.rows.map((row) => JSON.stringify(row) + '\n').join('');
     return { stdout: summary + rows, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/** The statuses in the order the totals line prints them. */
+const DELTA_ORDER: readonly DeltaStatus[] = [
+  'improved', 'regressed', 'unchanged', 'added', 'removed', 'incomparable',
+];
+
+/** `40 -> 30` or `- -> 5`; a missing side is an em dash-free `-`. */
+function compareValues(row: BaselineComparison['rows'][number]): string {
+  const show = (value: number | string | null): string => (value === null ? '-' : String(value));
+  return `${show(row.baseline)} -> ${show(row.current)}`;
+}
+
+/**
+ * Compare a current analysis against a baseline.
+ *
+ * Human output is one line per metric plus a totals line, so a reader can see
+ * both what changed and how much of the report fell into each bucket. The
+ * percentage is omitted when it cannot be computed (a zero baseline, an added
+ * or removed metric) rather than printed as `NaN%` or `Infinity%`.
+ *
+ * `--json` emits the whole {@link BaselineComparison}, which is what an agent
+ * consumes. Any failure is exit 1 with an empty stdout, like the other
+ * commands: a half-written JSON document is worse than none.
+ */
+export async function runCompare(
+  deps: CliDeps,
+  req: CompareRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const comparison = await deps.compare(req);
+    if (opts.json) return { stdout: json(comparison), stderr: '', exitCode: 0 };
+
+    const rows = comparison.rows.map((row) => {
+      const pct = row.deltaPct === undefined ? '' : `  (${row.deltaPct}%)`;
+      return `${row.id}  ${compareValues(row)}${pct}  ${row.status}\n`;
+    });
+    const totals = DELTA_ORDER.map((status) => `${status} ${comparison.totals[status]}`)
+      .join(', ');
+    return { stdout: rows.join('') + `totals  ${totals}\n`, stderr: '', exitCode: 0 };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }

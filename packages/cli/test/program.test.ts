@@ -22,6 +22,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
+    compare: async () => { throw new Error('compare not stubbed'); },
     ...overrides,
   };
 }
@@ -68,18 +69,35 @@ describe('--version', () => {
 });
 
 describe('--help', () => {
-  it('lists the three subcommands', async () => {
+  it('lists every subcommand', async () => {
     const { out } = await parse(['--help']);
     const text = out.join('');
-    expect(text).toContain('doctor');
-    expect(text).toContain('caps');
-    expect(text).toContain('analyze');
-    expect(text).toContain('query');
-    expect(text).toContain('tools');
+    for (const name of ['doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare']) {
+      expect(text).toContain(name);
+    }
   });
 });
 
 describe('command wiring', () => {
+  it('compare forwards both arguments and --json to runCompare', async () => {
+    const comparison = { rows: [], totals: {
+      improved: 0, regressed: 0, unchanged: 0, added: 0, removed: 0, incomparable: 0,
+    } };
+    const calls: Array<{ baseline: string; current: string }> = [];
+    const { emitted } = await parse(['compare', 'base', 'cur', '--json'], {
+      compare: async (req) => { calls.push(req); return comparison; },
+    });
+    expect(calls).toEqual([{ baseline: 'base', current: 'cur' }]);
+    expect(JSON.parse(emitted[0].stdout)).toEqual(comparison);
+  });
+
+  it('compare maps a failure to exit 1 with empty stdout', async () => {
+    const { emitted } = await parse(['compare', 'base', 'cur'], {
+      compare: async () => { throw new Error('cannot read base'); },
+    });
+    expect(emitted[0]).toEqual({ stdout: '', stderr: 'cannot read base\n', exitCode: 1 });
+  });
+
   it('doctor forwards --json to runDoctor', async () => {
     const { emitted } = await parse(['doctor', '--json']);
     expect(emitted).toHaveLength(1);

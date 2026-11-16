@@ -178,5 +178,9 @@ export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';
 // Reports
 export { metric } from './report/metric';
 export type { Metric, MetricUnit, Provenance } from './report/metric';
+export { compareResults, METRIC_DIRECTIONS } from './report/compare';
+export type {
+  BaselineComparison, DeltaStatus, MetricDelta, MetricDirection,
+} from './report/compare';
 export { evidence } from './report/evidence';
 export type { Evidence, EvidenceKind, DrillDownHandle } from './report/evidence';

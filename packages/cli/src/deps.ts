@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -8,6 +9,7 @@ import {
   FrameQuery,
   Hdc,
   InstantQuery,
+  OhosPerfError,
   PerfQuery,
   ProcessQuery,
   SchedQuery,
@@ -22,6 +24,7 @@ import {
   lookupQuery,
   queryDefinitions,
   readProcfsSamples,
+  compareResults,
   readSceneMetadata,
   readUiTree,
   resolveAppIdentity,
@@ -30,6 +33,7 @@ import {
   runNamedQuery,
   unknownQueryError,
   type AppIdentity,
+  type AnalyzeResult,
   type CapabilityId,
   type CapabilityState,
   type NamedQueryInfo,
@@ -203,6 +207,93 @@ interface OpenedScene {
   uiTree?: readonly UiNode[];
 }
 
+/** True when `path` exists and is a directory (a scene, not an `analyze --json` file). */
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Run every analyzer over one scene directory.
+ *
+ * Shared by `analyze` and `compare`, so a baseline directory and a current
+ * directory are measured by exactly the same code. The caller owns nothing:
+ * the scene is opened and closed here.
+ */
+async function analyzeScene(
+  open: (sceneDir: string, app?: string) => Promise<OpenedScene>,
+  sceneDir: string,
+  app?: string,
+): Promise<AnalyzeResult> {
+  const opened = await open(sceneDir, app);
+  try {
+    const db = opened.scene.traceDb;
+    const context = {
+      db,
+      frames: new FrameQuery(db),
+      processes: new ProcessQuery(db),
+      threads: new ThreadQuery(db),
+      sched: new SchedQuery(db),
+      instant: new InstantQuery(db),
+      threadStates: new ThreadStateQuery(db),
+      callstacks: new CallstackQuery(db),
+      // A hiperf capture lives in its own converted database; the trace
+      // database has no perf_* tables, so reading them from `db` would
+      // silently report no samples.
+      perf: new PerfQuery(opened.scene.perfDb ?? db),
+      binder: new BinderQuery(db),
+      startup: new StartupQuery(db),
+      ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
+      ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
+      app: opened.app,
+      // The whole database: a CLI run has no capture window to honour.
+      window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
+      caps: opened.caps,
+      deviceId: 'offline',
+    };
+    return await runAnalyzers(defaultAnalyzers(), context);
+  } finally {
+    // Windows keeps the file handle open otherwise, so a second analysis of
+    // the same scene would fail.
+    opened.scene.close();
+  }
+}
+
+/**
+ * Read an `analyze --json` document.
+ *
+ * Only the two arrays the comparison reads are validated; a file that has
+ * them but no other field is accepted, because `analyze --json` is the
+ * contract and anything else is an input this command did not produce.
+ */
+function readAnalysisFile(path: string): AnalyzeResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    throw new OhosPerfError(
+      `cannot read analysis ${path}: ${safeMessage(err)}`,
+      { code: 'COMPARE_BAD_INPUT', cause: err },
+    );
+  }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    !Array.isArray((parsed as { metrics?: unknown }).metrics) ||
+    !Array.isArray((parsed as { evidence?: unknown }).evidence)
+  ) {
+    throw new OhosPerfError(
+      `analysis ${path} has no metrics/evidence arrays;` +
+        ' pass a scene directory or the output of `ohos-perf analyze --json`',
+      { code: 'COMPARE_BAD_INPUT' },
+    );
+  }
+  return parsed as AnalyzeResult;
+}
+
 /**
  * Production wiring for {@link CliDeps}.
  *
@@ -332,40 +423,7 @@ export function realDeps(
       }
     },
 
-    async analyze(sceneDir, app) {
-      const opened = await openOfflineScene(sceneDir, app);
-      try {
-        const db = opened.scene.traceDb;
-        const context = {
-          db,
-          frames: new FrameQuery(db),
-          processes: new ProcessQuery(db),
-          threads: new ThreadQuery(db),
-          sched: new SchedQuery(db),
-          instant: new InstantQuery(db),
-          threadStates: new ThreadStateQuery(db),
-          callstacks: new CallstackQuery(db),
-          // A hiperf capture lives in its own converted database; the trace
-          // database has no perf_* tables, so reading them from `db` would
-          // silently report no samples.
-          perf: new PerfQuery(opened.scene.perfDb ?? db),
-          binder: new BinderQuery(db),
-          startup: new StartupQuery(db),
-          ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
-          ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
-          app: opened.app,
-          // The whole database: a CLI run has no capture window to honour.
-          window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
-          caps: opened.caps,
-          deviceId: 'offline',
-        };
-        return await runAnalyzers(defaultAnalyzers(), context);
-      } finally {
-        // Windows keeps the file handle open otherwise, so a second analysis
-        // of the same scene would fail.
-        opened.scene.close();
-      }
-    },
+    analyze: (sceneDir, app) => analyzeScene(openOfflineScene, sceneDir, app),
 
     async query(req) {
       // Validate the name, arguments and limit before touching the
@@ -392,6 +450,17 @@ export function realDeps(
       } finally {
         opened.scene.close();
       }
+    },
+
+    async compare(req) {
+      // Validate both inputs before opening either scene: a bad path must not
+      // depend on the other input being readable.
+      const load = async (input: string): Promise<AnalyzeResult> =>
+        (await isDirectory(input)
+          ? analyzeScene(openOfflineScene, input)
+          : readAnalysisFile(input));
+      const [baseline, current] = await Promise.all([load(req.baseline), load(req.current)]);
+      return compareResults(baseline, current);
     },
 
     tools() {

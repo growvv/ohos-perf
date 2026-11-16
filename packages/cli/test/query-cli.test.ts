@@ -18,6 +18,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' } }),
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
+    compare: async () => { throw new Error('compare not stubbed'); },
     ...overrides,
   };
 }
