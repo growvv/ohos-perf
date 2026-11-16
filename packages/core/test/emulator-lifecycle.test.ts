@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { EmulatorLifecycle, type EmulatorInstance } from '../src/device/emulator';
+import {
+  EmulatorImageMissingError, EmulatorLifecycle, type EmulatorInstance,
+} from '../src/device/emulator';
 import type { HdcTarget } from '../src/transport/hdc';
 
 const instance = (name: string, running: boolean): EmulatorInstance =>
@@ -228,5 +230,168 @@ describe('EmulatorLifecycle.start', () => {
       pollMs: 0,
     });
     await expect(lifecycle.start('A')).rejects.toThrow(/no emulator instance named "A".*B/);
+  });
+});
+
+describe('EmulatorLifecycle.stop', () => {
+  it('does nothing when the instance is not running', async () => {
+    let stopped = false;
+    const lifecycle = new EmulatorLifecycle({
+      client: { ...fakeClient([instance('A', false)]), stopInstance: async () => { stopped = true; } },
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    await expect(lifecycle.stop('A')).resolves.toEqual({ name: 'A', wasRunning: false });
+    expect(stopped).toBe(false);
+  });
+
+  it('polls until isRunning goes false, because -stop returns early', async () => {
+    let calls = 0;
+    const lifecycle = new EmulatorLifecycle({
+      client: {
+        listDetailed: async () => [instance('A', calls++ === 0)],
+        imageList: async () => [],
+        startInstance: async () => {},
+        stopInstance: async () => {},
+        createInstance: async () => {},
+      },
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    await expect(lifecycle.stop('A')).resolves.toEqual({ name: 'A', wasRunning: true });
+    expect(calls).toBeGreaterThan(1);
+  });
+
+  it('names the measured fire-and-forget behaviour on timeout', async () => {
+    // The clock must advance on the poll that stop actually performs:
+    // advancing it inside `shell` would never fire, and the loop would spin.
+    let clock = 0;
+    const lifecycle = new EmulatorLifecycle({
+      client: {
+        listDetailed: async () => { clock += 10; return [instance('A', true)]; },
+        imageList: async () => [],
+        startInstance: async () => {},
+        stopInstance: async () => {},
+        createInstance: async () => {},
+      },
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+      stopTimeoutMs: 100,
+      now: () => clock,
+    });
+    await expect(lifecycle.stop('A')).rejects.toThrow(/still reports isRunning: true/);
+  });
+
+  it('fails when the named instance does not exist', async () => {
+    const lifecycle = new EmulatorLifecycle({
+      client: fakeClient([]),
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    await expect(lifecycle.stop('A')).rejects.toThrow(/no emulator instance named "A"/);
+  });
+});
+
+describe('EmulatorLifecycle.create', () => {
+  const images = [{
+    deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)', downloaded: true, softwareVersion: '6.1.0.126',
+  }];
+
+  function createClient(existing: EmulatorInstance[] = []) {
+    const created: unknown[] = [];
+    const after: EmulatorInstance[] = [];
+    return {
+      created,
+      client: {
+        listDetailed: async () => [...existing, ...after],
+        imageList: async () => images,
+        startInstance: async () => {},
+        stopInstance: async () => {},
+        createInstance: async (req: unknown) => {
+          created.push(req);
+          after.push(instance((req as { name: string }).name, false));
+        },
+      },
+    };
+  }
+
+  it('creates an instance and returns it as list() reports it', async () => {
+    const { client, created } = createClient();
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    const result = await lifecycle.create({
+      name: 'SpecProbe', deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)',
+    });
+    expect(created).toHaveLength(1);
+    expect(result).toEqual({ name: 'SpecProbe', running: false, instancePath: '/instances/SpecProbe' });
+  });
+
+  it.each(['../x', 'a/b', 'a\b', '', '.hidden'])('rejects the name %j before spawning', async (name) => {
+    const { client, created } = createClient();
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    await expect(lifecycle.create({ name, deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)' }))
+      .rejects.toThrow(/invalid emulator name/);
+    expect(created).toHaveLength(0);
+  });
+
+  it('rejects a name that already exists before spawning', async () => {
+    const { client, created } = createClient([instance('SpecProbe', false)]);
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    await expect(lifecycle.create({
+      name: 'SpecProbe', deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)',
+    })).rejects.toThrow(/already exists/);
+    expect(created).toHaveLength(0);
+  });
+
+  it('names the exact -install command when the image is missing', async () => {
+    const lifecycle = new EmulatorLifecycle({
+      client: { ...fakeClient([]), imageList: async () => [] },
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    const error = await lifecycle
+      .create({ name: 'X', deviceType: 'tablet', osVersion: 'HarmonyOS 6.1.1(24)' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EmulatorImageMissingError);
+    expect((error as EmulatorImageMissingError).installCommand)
+      .toBe('-install -deviceType tablet -osVersion "HarmonyOS 6.1.1(24)"');
+  });
+
+  it.each([[1, 4], [6, 1], [4, 2048]])(
+    'rejects out-of-range memory/storage %i/%i',
+    async (memoryGb, storageGb) => {
+      const { client, created } = createClient();
+      const lifecycle = new EmulatorLifecycle({
+        client,
+        hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+        pollMs: 0,
+      });
+      await expect(lifecycle.create({
+        name: 'X', deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)', memoryGb, storageGb,
+      })).rejects.toThrow(/out of range/);
+      expect(created).toHaveLength(0);
+    },
+  );
+
+  it('fails when the binary accepted the create but no instance appeared', async () => {
+    const lifecycle = new EmulatorLifecycle({
+      client: { ...fakeClient([]), imageList: async () => images },
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    await expect(lifecycle.create({
+      name: 'Ghost', deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)',
+    })).rejects.toThrow(/did not appear/);
   });
 });

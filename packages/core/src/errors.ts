@@ -57,6 +57,14 @@ export class EmulatorCommandError extends OhosPerfError {
   }
 }
 
+export class EmulatorImageMissingError extends OhosPerfError {
+  readonly installCommand: string;
+  constructor(message: string, installCommand: string, opts: { cause?: unknown; code?: string } = {}) {
+    super(message, opts);
+    this.installCommand = installCommand;
+  }
+}
+
 export class EmulatorNotFoundError extends OhosPerfError {
   readonly searchedPaths: string[];
   constructor(searchedPaths: string[], opts: { cause?: unknown; code?: string } = {}) {

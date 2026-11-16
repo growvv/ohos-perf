@@ -19,12 +19,14 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { OhosPerfError, EmulatorCommandError, EmulatorNotFoundError } from '../errors';
+import {
+  OhosPerfError, EmulatorCommandError, EmulatorImageMissingError, EmulatorNotFoundError,
+} from '../errors';
 import { Hdc, type Env, type HdcTarget } from '../transport/hdc';
 
 // Re-exported so the module a caller reaches for is the one that names its
 // error, matching how `transport/hdc.ts` pairs `Hdc` with `HdcNotFoundError`.
-export { EmulatorCommandError, EmulatorNotFoundError };
+export { EmulatorCommandError, EmulatorImageMissingError, EmulatorNotFoundError };
 
 /** One instance as `-list -details` reports it. */
 export interface EmulatorInstance {
@@ -405,6 +407,13 @@ export interface EmulatorStartResult {
   readonly waitedMs: number;
 }
 
+/** What a successful {@link EmulatorLifecycle.stop} reports. */
+export interface EmulatorStopResult {
+  readonly name: string;
+  /** False when the instance was not running; nothing was sent to `-stop`. */
+  readonly wasRunning: boolean;
+}
+
 /** The `hdc` operations the lifecycle needs; `Hdc` satisfies it structurally. */
 export interface HdcSlice {
   listTargets(): Promise<HdcTarget[]>;
@@ -577,6 +586,100 @@ export class EmulatorLifecycle {
   }
 
   /**
+   * Stop `name` and wait until the instance reports `isRunning: false`.
+   *
+   * The real `-stop` prints `Stop emulator <name> successfully` and returns in
+   * about 140 ms, while the instance keeps reporting `isRunning: true` for
+   * several seconds. Trusting its output would report a stop that has not
+   * happened, so this re-reads state.
+   */
+  async stop(name: string, opts: { timeoutMs?: number } = {}): Promise<EmulatorStopResult> {
+    const instances = await this.client.listDetailed();
+    const found = instances.find((i) => i.name === name);
+    if (found === undefined) {
+      const names = instances.map((i) => i.name);
+      throw new OhosPerfError(
+        `no emulator instance named "${name}". Instances: ${names.length === 0 ? 'none' : names.join(', ')}`,
+        { code: 'EMULATOR_INSTANCE_NOT_FOUND' },
+      );
+    }
+    if (!found.running) return { name, wasRunning: false };
+
+    const budgetMs = opts.timeoutMs ?? this.stopTimeoutMs;
+    await this.client.stopInstance(name);
+    await this.waitUntil(
+      this.now() + budgetMs,
+      budgetMs,
+      '`-stop` reported success but the instance still reports isRunning: true',
+      name,
+      async () => ((await this.client.listDetailed()).find((i) => i.name === name)?.running === false
+        ? true
+        : undefined),
+      { code: 'EMULATOR_STOP_TIMEOUT' },
+    );
+    return { name, wasRunning: true };
+  }
+
+  /**
+   * Create an instance, validating before anything is spawned.
+   *
+   * The binary is silent about every rejection measured — a bad device type, an
+   * unknown OS version, a duplicate name and a missing image all print nothing
+   * and exit 0. So the checks here are the only thing between the caller and a
+   * create that did nothing, and the post-create re-read is the only proof that
+   * it did something.
+   */
+  async create(req: CreateEmulatorRequest): Promise<EmulatorInstance> {
+    if (!EMULATOR_NAME.test(req.name) || req.name.includes('..')) {
+      throw new OhosPerfError(
+        `invalid emulator name "${req.name}": letters, digits, '.', '_' and '-' only, ` +
+          'no ".." (the name becomes a directory under the instance root)',
+        { code: 'EMULATOR_NAME_INVALID' },
+      );
+    }
+
+    const existing = await this.client.listDetailed();
+    if (existing.some((i) => i.name === req.name)) {
+      throw new OhosPerfError(
+        `an emulator instance named "${req.name}" already exists`,
+        { code: 'EMULATOR_INSTANCE_EXISTS' },
+      );
+    }
+
+    const images = await this.client.imageList();
+    const available = images.some((image) => (
+      image.deviceType === req.deviceType && image.osVersion === req.osVersion
+    ));
+    if (!available) {
+      const installCommand = `-install -deviceType ${req.deviceType} -osVersion "${req.osVersion}"`;
+      throw new EmulatorImageMissingError(
+        `no downloaded image for device type "${req.deviceType}" and ${req.osVersion}. ` +
+          `Run \`Emulator.exe ${installCommand}\` first.`,
+        installCommand,
+        { code: 'EMULATOR_IMAGE_MISSING' },
+      );
+    }
+
+    if (req.memoryGb !== undefined && (req.memoryGb < 2 || req.memoryGb > 32)) {
+      throw new OhosPerfError('out of range: --memory must be 2-32 GB', { code: 'EMULATOR_MEMORY_RANGE' });
+    }
+    if (req.storageGb !== undefined && (req.storageGb < 2 || req.storageGb > 1023)) {
+      throw new OhosPerfError('out of range: --storage must be 2-1023 GB', { code: 'EMULATOR_STORAGE_RANGE' });
+    }
+
+    await this.client.createInstance(req);
+
+    const created = (await this.client.listDetailed()).find((i) => i.name === req.name);
+    if (created === undefined) {
+      throw new OhosPerfError(
+        `the emulator reported success but "${req.name}" did not appear in \`-list -details\``,
+        { code: 'EMULATOR_CREATE_FAILED' },
+      );
+    }
+    return created;
+  }
+
+  /**
    * Poll `attempt` until it returns a value, or the deadline passes.
    *
    * The deadline is absolute so one budget covers every phase of `start`;
@@ -588,13 +691,14 @@ export class EmulatorLifecycle {
     phase: string,
     name: string,
     attempt: () => Promise<T | undefined>,
+    opts: { code?: string } = {},
   ): Promise<T> {
     for (;;) {
       if (this.now() >= deadline) {
         throw new OhosPerfError(
           `${phase} after ${budgetMs}ms. The emulator may be half-started; ` +
             `run \`ohos-perf emulator stop ${name}\` to remove it.`,
-          { code: 'EMULATOR_START_TIMEOUT' },
+          { code: opts.code ?? 'EMULATOR_START_TIMEOUT' },
         );
       }
       const value = await attempt();
@@ -603,3 +707,6 @@ export class EmulatorLifecycle {
     }
   }
 }
+
+/** A name that becomes a directory under the instance root. */
+const EMULATOR_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
