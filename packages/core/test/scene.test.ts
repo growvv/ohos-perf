@@ -66,6 +66,7 @@ describe('createSceneLayout', () => {
       perfDb: join(dir, 'perf.db'),
       procfsFile: join(dir, 'procfs.jsonl'),
       hidumperFile: join(dir, 'hidumper.json'),
+      hilogFile: join(dir, 'hilog.log'),
       uiFile: join(dir, 'ui.json'),
       metadataFile: join(dir, 'scene.json'),
     });

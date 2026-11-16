@@ -20,6 +20,8 @@ export interface SceneLayout {
   hidumperFile: string;
   /** `ui.json` from a `uitest dumpLayout` capture. */
   uiFile: string;
+  /** `hilog.log` from a `--hilog` capture: the raw device log stream. */
+  hilogFile: string;
   metadataFile: string;
 }
 
@@ -33,6 +35,7 @@ export function createSceneLayout(root: string): SceneLayout {
     procfsFile: join(root, 'procfs.jsonl'),
     hidumperFile: join(root, 'hidumper.json'),
     uiFile: join(root, 'ui.json'),
+    hilogFile: join(root, 'hilog.log'),
     metadataFile: join(root, 'scene.json'),
   };
 }

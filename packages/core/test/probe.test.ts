@@ -60,6 +60,7 @@ const COMMAND_SEQUENCE = [
   'which hidumper',
   'which uitest',
   'which bjc_cov',
+  'which hilog',
   'hiprofiler_cmd --list',
   'hiperf list hw',
   'hiperf list',

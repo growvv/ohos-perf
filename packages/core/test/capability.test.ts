@@ -14,6 +14,7 @@ const FULL_DEVICE = {
     hiprofiler_cmd: true,
     uitest: true,
     bjc_cov: false,
+    hilog: true,
   },
   hiperfHwEvents: ['hw-cpu-cycles'],
   hiperfSwEvents: ['sw-cpu-clock'],
@@ -30,6 +31,7 @@ const EMULATOR = {
     hiprofiler_cmd: false,
     uitest: true,
     bjc_cov: false,
+    hilog: true,
   },
   hiperfHwEvents: [] as string[],
   hiperfSwEvents: ['sw-cpu-clock'],
@@ -94,10 +96,18 @@ describe('buildMatrix', () => {
 });
 
 describe('buildMatrix availability rules', () => {
-  it('emits exactly the 21 spec capability ids', () => {
+  it('emits exactly the 22 spec capability ids', () => {
     const ids = buildMatrix(FULL_DEVICE).all().map((s) => s.id);
-    expect(ids).toHaveLength(21);
-    expect(new Set(ids).size).toBe(21);
+    expect(ids).toHaveLength(22);
+    expect(new Set(ids).size).toBe(22);
+  });
+
+  it('serves hilog.stream from the hilog binary', () => {
+    const m = buildMatrix(FULL_DEVICE);
+    expect(m.get('hilog.stream')!.collector).toBe('hilog');
+    expect(m.get('hilog.stream')!.available).toBe(true);
+    expect(buildMatrix({ ...FULL_DEVICE, binaries: { ...FULL_DEVICE.binaries, hilog: false } })
+      .get('hilog.stream')!.available).toBe(false);
   });
 
   it('serves trace.ark from hitrace', () => {

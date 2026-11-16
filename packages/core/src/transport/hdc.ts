@@ -341,6 +341,68 @@ export class Hdc {
     return result;
   }
 
+  /**
+   * Run a long-lived shell command and collect its stdout for `durationMs`.
+   *
+   * `hilog` never exits on its own, so the host clock bounds the capture and
+   * the child is killed at the end. Killing is the normal path, not an error:
+   * the result carries whatever was printed before the kill and `code` is the
+   * exit code only when the child exited on its own (`null` when killed).
+   *
+   * A command that fails immediately (non-zero exit before the deadline) is
+   * still returned rather than thrown: the collector decides whether the
+   * output is usable, and an empty result is what it must see.
+   */
+  async shellFor(
+    target: string,
+    cmd: string,
+    durationMs: number,
+  ): Promise<{ stdout: string; stderr: string; code: number | null }> {
+    const command = await this.resolvePath();
+    const args = this.buildArgv('shell', { target, cmd });
+    return new Promise((resolve, reject) => {
+      const child = spawn(command, args, {
+        shell: false,
+        windowsHide: true,
+        env: this.buildEnv(this.env),
+      });
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      const finish = (code: number | null): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ stdout, stderr, code });
+      };
+      const timer = setTimeout(() => {
+        child.kill();
+        // The kill is asynchronous; give the pipes a moment to drain, then
+        // resolve with what arrived. Without the grace period a fast kill
+        // resolves before the last chunk is emitted.
+        setTimeout(() => finish(null), 100);
+      }, durationMs);
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8');
+      });
+      child.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(
+          new OhosPerfError(`Failed to spawn hdc (${command}): ${err.message}`, {
+            cause: err,
+            code: 'HDC_SPAWN_FAILED',
+          }),
+        );
+      });
+      child.on('close', (code) => finish(code));
+    });
+  }
+
   async recv(target: string, devicePath: string, localPath: string): Promise<void> {
     const result = await this.run(
       this.buildArgv('recv', {

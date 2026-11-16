@@ -17,6 +17,7 @@ export type CapabilityId =
   | 'render.fps_live' | 'render.hitch' | 'render.vsync'
   | 'ui.tree' | 'ui.gesture'
   | 'power.xpower' | 'net.io' | 'disk.io' | 'js.heap' | 'coverage'
+  | 'hilog.stream'
   | 'startup.app_startup';
 
 /**
@@ -168,6 +169,9 @@ const RULES: Rule[] = [
 
   // /proc is readable through the shell on every device, emulator included.
   { id: 'mem.procfs', collector: 'procfs', probeCommand: 'cat /proc/self/stat' },
+
+  // `hilog` is a device binary, not a plugin: its presence is the whole gate.
+  { id: 'hilog.stream', collector: 'hilog', binary: 'hilog' },
 
   // Plugin names as measured by `hiprofiler_cmd --list` on the Mate 60.
   // `coverage` has no known plugin, so it keeps the binary-only verdict.
