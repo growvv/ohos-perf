@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { OhosPerfError, EmulatorCommandError, EmulatorNotFoundError } from '../errors';
-import type { Env } from '../transport/hdc';
+import { Hdc, type Env, type HdcTarget } from '../transport/hdc';
 
 // Re-exported so the module a caller reaches for is the one that names its
 // error, matching how `transport/hdc.ts` pairs `Hdc` with `HdcNotFoundError`.
@@ -383,4 +383,99 @@ function stringField(row: Record<string, unknown>, key: string): string {
  */
 function optional<K extends string>(key: K, value: string | undefined): { [P in K]?: string } {
   return (value === undefined || value === '' ? {} : { [key]: value }) as { [P in K]?: string };
+}
+
+/** The client operations the lifecycle needs; `EmulatorClient` satisfies it structurally. */
+export interface EmulatorBackend {
+  listDetailed(): Promise<EmulatorInstance[]>;
+  imageList(): Promise<EmulatorImage[]>;
+  startInstance(name: string): Promise<void>;
+  stopInstance(name: string): Promise<void>;
+  createInstance(req: CreateEmulatorRequest): Promise<void>;
+}
+
+/** The `hdc` operations the lifecycle needs; `Hdc` satisfies it structurally. */
+export interface HdcSlice {
+  listTargets(): Promise<HdcTarget[]>;
+  shell(target: string, cmd: string): Promise<{ stdout: string; stderr: string; code: number }>;
+}
+
+export interface EmulatorLifecycleOptions {
+  /** Defaults to a real {@link EmulatorClient}; tests inject a plain object. */
+  client?: EmulatorBackend;
+  /** Defaults to a real `Hdc`; tests inject a plain object. */
+  hdc?: HdcSlice;
+  /** Total budget for `start`, across all three phases. */
+  startTimeoutMs?: number;
+  /** Total budget for `stop`. */
+  stopTimeoutMs?: number;
+  /** Poll interval for every wait. */
+  pollMs?: number;
+  /** Injection point for tests; production leaves it unset. */
+  now?: () => number;
+}
+
+/** A connected target reached over TCP — a real device is USB. */
+function isConnectedTcp(target: HdcTarget): boolean {
+  // `raw` is `id\t\tTRANSPORT\tSTATUS\t...`; splitting on tabs and dropping
+  // the empty runs keeps the field index independent of the padding.
+  const fields = target.raw.split('\t').filter((field) => field !== '');
+  return target.connected && fields[1] === 'TCP';
+}
+
+/**
+ * State and waiting, as distinct from spawning and parsing.
+ *
+ * `-start` and `-stop` both return before the state they report has settled,
+ * and `-list -details` is the only authority on it. Every method here re-reads
+ * that state rather than trusting a command's exit or its success line.
+ */
+export class EmulatorLifecycle {
+  private readonly client: EmulatorBackend;
+  private readonly hdc: HdcSlice;
+  private readonly startTimeoutMs: number;
+  private readonly stopTimeoutMs: number;
+  private readonly pollMs: number;
+  private readonly now: () => number;
+
+  constructor(opts: EmulatorLifecycleOptions = {}) {
+    // Lazy by construction: nothing spawns until a method runs, so the default
+    // is safe for a caller who injects only `hdc`.
+    this.client = opts.client ?? new EmulatorClient();
+    this.hdc = opts.hdc ?? new Hdc();
+    this.startTimeoutMs = opts.startTimeoutMs ?? 180_000;
+    this.stopTimeoutMs = opts.stopTimeoutMs ?? 30_000;
+    this.pollMs = opts.pollMs ?? 1_000;
+    this.now = opts.now ?? Date.now;
+  }
+
+  /**
+   * Instances with a `target` attached when it can be attributed.
+   *
+   * The port is not knowable from config — `hw.hdc.port` is `notset` by
+   * default, and the same instance has been observed on different ports in
+   * different sessions. So a target is reported only when there is exactly one
+   * running instance and exactly one connected TCP target; guessing would
+   * produce a plausible-looking wrong answer, which is worse than a reason.
+   */
+  async list(): Promise<EmulatorInstance[]> {
+    const instances = await this.client.listDetailed();
+    const running = instances.filter((i) => i.running);
+    // Nothing running: the answer needs no hdc, and asking would make `list`
+    // fail on a machine that has the emulator but no hdc on PATH.
+    if (running.length === 0) return instances;
+
+    const tcp = (await this.hdc.listTargets()).filter(isConnectedTcp);
+    const attributed: EmulatorInstance = running.length > 1
+      ? { ...running[0], targetReason: `${running.length} emulators are running, so a target cannot be attributed` }
+      : tcp.length === 0
+        ? { ...running[0], targetReason: 'no connected TCP target was found' }
+        : tcp.length > 1
+          ? { ...running[0], targetReason: `${tcp.length} connected TCP targets were found, so a target cannot be attributed` }
+          : { ...running[0], target: tcp[0].id };
+
+    return instances.map((instance) => (
+      instance.name === attributed.name ? attributed : instance
+    ));
+  }
 }
