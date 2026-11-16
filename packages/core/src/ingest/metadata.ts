@@ -34,6 +34,12 @@ export interface SceneMetadata {
      * is a measurement, not a missing capture.
      */
     uitest?: { nodes: number };
+    /**
+     * Present only when a hilog capture ran. `lines` may be 0 only if the
+     * collector succeeded on an empty stream, which it treats as a failure;
+     * the field records the count the collector reported.
+     */
+    hilog?: { lines: number };
   };
 }
 
@@ -63,7 +69,7 @@ function isApp(value: unknown): value is SceneMetadata['app'] {
  */
 function isCountRecord(
   value: unknown,
-  key: 'samples' | 'frames' | 'nodes',
+  key: 'samples' | 'frames' | 'nodes' | 'lines',
 ): value is Record<typeof key, number> {
   return isRecord(value) && Number.isSafeInteger(value[key]) && (value[key] as number) >= 0;
 }
@@ -76,7 +82,8 @@ function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture'
     isStringArray(value.collectors) &&
     (value.hiperf === undefined || isCountRecord(value.hiperf, 'samples')) &&
     (value.hidumper === undefined || isCountRecord(value.hidumper, 'frames')) &&
-    (value.uitest === undefined || isCountRecord(value.uitest, 'nodes'))
+    (value.uitest === undefined || isCountRecord(value.uitest, 'nodes')) &&
+    (value.hilog === undefined || isCountRecord(value.hilog, 'lines'))
   );
 }
 
@@ -149,6 +156,9 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
       ...(parsed.capture.uitest === undefined
         ? {}
         : { uitest: { nodes: parsed.capture.uitest.nodes } }),
+      ...(parsed.capture.hilog === undefined
+        ? {}
+        : { hilog: { lines: parsed.capture.hilog.lines } }),
     };
   }
   if (isFiniteNumber(parsed.startedAtNs) && parsed.startedAtNs > 0) {

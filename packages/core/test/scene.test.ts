@@ -147,6 +147,7 @@ describe('ingestScene', () => {
       traceDb: join(root, 'trace.db'),
       procfsFile: join(root, 'procfs.jsonl'),
       hidumperFile: join(root, 'hidumper.json'),
+      hilogFile: join(root, 'hilog.log'),
       uiFile: join(root, 'ui.json'),
       metadataFile: join(root, 'scene.json'),
     };
@@ -214,6 +215,7 @@ describe('ingestScene', () => {
       traceDb: dbPath,
       procfsFile: join(root, 'procfs.jsonl'),
       hidumperFile: join(root, 'hidumper.json'),
+      hilogFile: join(root, 'hilog.log'),
       uiFile: join(root, 'ui.json'),
       metadataFile: join(root, 'scene.json'),
     };

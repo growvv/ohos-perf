@@ -17,7 +17,10 @@ const probe = {
   },
   abi: 'x86_64',
   isEmulator: true,
-  binaries: { hitrace: true, hiperf: true, hidumper: true, uitest: true, hiprofiler_cmd: false },
+  binaries: {
+    hitrace: true, hiperf: true, hidumper: true, uitest: true,
+    hiprofiler_cmd: false, hilog: true,
+  },
   hiperfHwEvents: [], hiperfSwEvents: ['sw-cpu-clock'],
   probes: {},
 };
@@ -1000,6 +1003,7 @@ function extraCollectors(opts: {
   failHiperf?: boolean;
   failHidumper?: boolean;
   failUitest?: boolean;
+  failHilog?: boolean;
 } = {}) {
   const started: string[] = [];
   const hdc = {
@@ -1065,6 +1069,14 @@ function extraCollectors(opts: {
       return [{ depth: 0, type: 'Root' }];
     },
   };
+  const hilog = {
+    collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+      started.push('hilog');
+      if (opts.failHilog === true) throw new Error('hilog exploded');
+      writeFileSync(layout.hilogFile, '11-17 05:12:33.412  4999  5010 I A00000/com.demo: hi\n');
+      return { lines: 1 };
+    },
+  };
   return {
     started,
     // The pieces a test needs when it substitutes one collector and keeps the
@@ -1075,6 +1087,7 @@ function extraCollectors(opts: {
     device: () => new Device('t1', probe as any, {
       hdc: hdc as any, streamer: streamer as any, collector: hitrace as any,
       hiperf: hiperf as any, hidumper: hidumper as any, uitest: uitest as any,
+      hilog: hilog as any,
     }),
   };
 }
@@ -1097,6 +1110,72 @@ describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
       expect(meta.app).toEqual({ packageName: '', processNames: [] });
       expect(meta.pids).toEqual([]);
       expect(meta.capture.collectors).toEqual(['hitrace', 'hidumper', 'uitest']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('captures the hilog stream with no app and records its line count', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-hilog-'));
+    try {
+      const h = extraCollectors();
+      const scene = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, hilog: true,
+      }).then((s) => s.ingest());
+      scene.close();
+
+      expect(h.started.sort()).toEqual(['hilog', 'hitrace']);
+      expect(existsSync(join(root, 'hilog.log'))).toBe(true);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hitrace', 'hilog']);
+      expect(meta.capture.hilog).toEqual({ lines: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('removes a stale hilog.log when a re-capture did not ask for hilog', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-hilog-stale-'));
+    try {
+      writeFileSync(join(root, 'hilog.log'), 'stale from an earlier run\n');
+      const h = extraCollectors();
+      const scene = await h.device().collect({ durationMs: 1000, sceneRoot: root })
+        .then((s) => s.ingest());
+      scene.close();
+      expect(existsSync(join(root, 'hilog.log'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('restores the previous hilog.log when the capture fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-hilog-restore-'));
+    try {
+      // The previous scene's log must survive a failed re-capture byte for byte,
+      // exactly as the other artifacts do.
+      writeFileSync(join(root, 'hilog.log'), 'previous scene log\n');
+      const h = extraCollectors({ failHilog: true });
+      const session = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, hilog: true,
+      });
+      await expect(session.ingest()).rejects.toThrow(/hilog exploded/);
+      expect(readFileSync(join(root, 'hilog.log'), 'utf8')).toBe('previous scene log\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects hilog on a device whose probe found no hilog binary', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-nohilog-'));
+    try {
+      const noHilog = {
+        ...probe,
+        binaries: { ...probe.binaries, hilog: false },
+      };
+      const device = new Device('t1', noHilog as any, {} as any);
+      await expect(
+        device.collect({ durationMs: 1000, sceneRoot: root, hilog: true }),
+      ).rejects.toMatchObject({ code: 'MISSING_CAPABILITY' });
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

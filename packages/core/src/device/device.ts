@@ -22,6 +22,7 @@ import {
   xpowerPlugin,
 } from '../collectors/hiprofiler/templates';
 import { HidumperCollector, type HidumperCapture } from '../collectors/hidumper';
+import { HilogCollector } from '../collectors/hilog';
 import { HiperfCollector, hiperfEventsFor, type HiperfCapture } from '../collectors/hiperf';
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import { UitestCollector } from '../collectors/uitest';
@@ -95,6 +96,13 @@ export interface CollectOptions extends TraceCollectOptions {
   hidumper?: boolean;
   /** Also dump the on-screen UI tree. */
   uitest?: boolean;
+  /**
+   * Also stream the device's `hilog` for `durationMs`.
+   *
+   * `hilog` is device-wide and needs no app, so this works on an app-less
+   * capture. The raw log lands in `hilog.log`; parsing happens offline.
+   */
+  hilog?: boolean;
 }
 
 export interface CollectSession {
@@ -112,6 +120,7 @@ export interface DeviceDeps {
   hiperf?: HiperfCollector;
   hidumper?: HidumperCollector;
   uitest?: UitestCollector;
+  hilog?: HilogCollector;
   gesture?: GestureDriver;
 }
 
@@ -186,7 +195,9 @@ export class Device {
    */
   async collect(opts: CollectOptions): Promise<CollectSession> {
     const caps = await this.capabilities();
-    const require = (id: 'trace.frames' | 'perf.samples' | 'render.fps_live' | 'ui.tree'): void => {
+    const require = (
+      id: 'trace.frames' | 'perf.samples' | 'render.fps_live' | 'ui.tree' | 'hilog.stream',
+    ): void => {
       if (caps.has(id)) return;
       const reason = caps.get(id)?.reason;
       throw new OhosPerfError(
@@ -202,6 +213,7 @@ export class Device {
     if (opts.hiperf !== undefined) require('perf.samples');
     if (opts.hidumper === true) require('render.fps_live');
     if (opts.uitest === true) require('ui.tree');
+    if (opts.hilog === true) require('hilog.stream');
 
     return {
       /**
@@ -296,6 +308,7 @@ export class Device {
         const wantsHiperf = opts.hiperf !== undefined;
         const wantsHidumper = opts.hidumper === true;
         const wantsUitest = opts.uitest === true;
+        const wantsHilog = opts.hilog === true;
         // Only hiperf needs a pid. hidumper and uitest read the whole screen,
         // so they work with no app at all.
         const hiperfApp = wantsHiperf ? requireApp('hiperf', ' to profile') : undefined;
@@ -341,6 +354,7 @@ export class Device {
         }
         if (wantsHidumper) remember(layout.hidumperFile);
         if (wantsUitest) remember(layout.uiFile);
+        if (wantsHilog) remember(layout.hilogFile);
 
         // Host wall-clock at capture start, recorded for humans only.
         const startedAtMs = Date.now();
@@ -423,6 +437,7 @@ export class Device {
         let hiperfCapture: HiperfCapture | undefined;
         let hidumperCapture: HidumperCapture | undefined;
         let uiNodes: UiNode[] | undefined;
+        let hilogLines: number | undefined;
         try {
           // Every requested collector starts in the same tick with the same
           // duration, and `Promise.all` rejects with the first failure: a
@@ -467,6 +482,10 @@ export class Device {
             const uitest = this.deps.uitest ?? new UitestCollector();
             runs.push(uitest.collect(hdc, this.id, {}, layout));
           }
+          if (wantsHilog) {
+            const hilog = this.deps.hilog ?? new HilogCollector();
+            runs.push(hilog.collect(hdc, this.id, { durationMs: opts.durationMs }, layout));
+          }
 
           // `allSettled`, not `all`: a rejection must not return while the
           // sibling collectors are still running, because they would write
@@ -493,7 +512,8 @@ export class Device {
           if (wantsProcfs) procfsSamples = results[index++] as ProcfsSample[];
           if (wantsHiperf) hiperfCapture = results[index++] as HiperfCapture;
           if (wantsHidumper) hidumperCapture = results[index++] as HidumperCapture;
-          if (wantsUitest) uiNodes = results[index] as UiNode[];
+          if (wantsUitest) uiNodes = results[index++] as UiNode[];
+          if (wantsHilog) hilogLines = (results[index] as { lines: number }).lines;
         } catch (err) {
           // Every collector has settled, so nothing can overwrite the restored
           // bytes afterwards. The old scene must stay coherent, so put every
@@ -560,6 +580,7 @@ export class Device {
         }
         if (!wantsHidumper) removeIfPresent(layout.hidumperFile);
         if (!wantsUitest) removeIfPresent(layout.uiFile);
+        if (!wantsHilog) removeIfPresent(layout.hilogFile);
 
         writeSceneMetadata(layout, {
           version: 1,
@@ -588,6 +609,7 @@ export class Device {
               ...(wantsHiperf ? ['hiperf'] : []),
               ...(wantsHidumper ? ['hidumper'] : []),
               ...(wantsUitest ? ['uitest'] : []),
+              ...(wantsHilog ? ['hilog'] : []),
             ],
             // A zero-count capture is recorded explicitly: "the collector ran
             // and saw nothing" is a different fact from "it did not run", and
@@ -599,6 +621,7 @@ export class Device {
               ? {}
               : { hidumper: { frames: frameDelta(hidumperCapture).frames } }),
             ...(uiNodes === undefined ? {} : { uitest: { nodes: uiNodes.length } }),
+            ...(hilogLines === undefined ? {} : { hilog: { lines: hilogLines } }),
           },
         });
 
