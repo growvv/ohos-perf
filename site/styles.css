@@ -254,6 +254,13 @@ html[data-lang="zh"] .lang .lang-zh { display: none; }
 .card .icon svg { width: 19px; height: 19px; }
 .card h3 { margin: 0 0 9px; font-size: 16.5px; letter-spacing: -0.01em; }
 .card p { margin: 0; color: var(--fg-dim); font-size: 14px; line-height: 1.68; }
+.status {
+  display: inline-block; margin-bottom: 11px; padding: 2px 8px; border-radius: 999px;
+  font: 600 10.5px/1.6 var(--mono); letter-spacing: 0.04em; text-transform: uppercase;
+}
+.status.shipped { color: var(--green); background: rgba(52, 211, 153, 0.08); border: 1px solid rgba(52, 211, 153, 0.22); }
+.status.next { color: #67e8f9; background: rgba(34, 211, 238, 0.08); border: 1px solid rgba(34, 211, 238, 0.22); }
+.status.exploring { color: var(--amber); background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.22); }
 
 /* ---------- capability table ---------- */
 

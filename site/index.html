@@ -39,6 +39,7 @@
       <a href="#capabilities" data-en="Capabilities" data-zh="能力矩阵">Capabilities</a>
       <a href="#architecture" data-en="Architecture" data-zh="架构">Architecture</a>
       <a href="#demo" data-en="Demo" data-zh="演示">Demo</a>
+      <a href="#roadmap" data-en="Roadmap" data-zh="路线图">Roadmap</a>
       <a href="#quickstart" data-en="Quickstart" data-zh="快速开始">Quickstart</a>
     </nav>
     <div class="nav-cta">
@@ -408,39 +409,71 @@ ohos-perf compare ./before ./after --json
   </div>
 </section>
 
+<section class="section" id="roadmap">
+  <div class="wrap">
+    <p class="eyebrow reveal" data-en="Roadmap" data-zh="路线图">Roadmap</p>
+    <h2 class="reveal" data-en="Shipped, next, and deliberately honest." data-zh="已交付、接下来、以及刻意保持诚实的部分。">Shipped, next, and deliberately honest.</h2>
+    <p class="section-lead reveal" data-en="Every phase below ends the same way: a capability is reported available only when the package can actually drive it, and a missing one carries a reason." data-zh="下面每个阶段都以同一条规则收尾：只有本包真的能驱动的能力才报告为可用，缺失的能力一定带原因。">Every phase below ends the same way: a capability is reported available only when the package can actually drive it, and a missing one carries a reason.</p>
+
+    <div class="grid features">
+      <article class="card reveal">
+        <span class="status shipped" data-en="Shipped · v0.1.0" data-zh="已发布 · v0.1.0">Shipped · v0.1.0</span>
+        <h3 data-en="The measurable core" data-zh="可度量的内核">The measurable core</h3>
+        <p data-en="P0–P5: capability probing, six collectors, trace ingest, typed queries, eight analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 847 tests, 19 of 20 capabilities driven on a Mate 60." data-zh="P0–P5：能力探测、六个采集器、trace 入库、类型化查询、八个带溯源与保真度的分析器、确定性 JSON、基线对比与 agent skill。847 个测试；在 Mate 60 上驱动 20 项能力中的 19 项。">P0–P5: capability probing, six collectors, trace ingest, typed queries, eight analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 847 tests, 19 of 20 capabilities driven on a Mate 60.</p>
+      </article>
+      <article class="card reveal">
+        <span class="status next" data-en="Next · P6" data-zh="下一步 · P6">Next · P6</span>
+        <h3 data-en="The rest of the analysis surface" data-zh="剩余的分析面">The rest of the analysis surface</h3>
+        <p data-en="The HapRay analyzers not yet ported: GC event counting, a flamegraph from perf samples, VSync anomaly detection with empty-frame reverse tracing, and the UI component-tree diff. All read data the existing collectors already produce, so each can be pinned against a HapRay golden offline." data-zh="尚未移植的 HapRay 分析器：GC 事件计数、基于 perf 采样的火焰图、带空帧反向追溯的 VSync 异常检测，以及 UI 组件树 diff。它们读取的数据现有采集器已经产出，因此每一个都能离线对拍 HapRay golden。">The HapRay analyzers not yet ported: GC event counting, a flamegraph from perf samples, VSync anomaly detection with empty-frame reverse tracing, and the UI component-tree diff. All read data the existing collectors already produce, so each can be pinned against a HapRay golden offline.</p>
+      </article>
+      <article class="card reveal">
+        <span class="status next" data-en="Next · P7" data-zh="下一步 · P7">Next · P7</span>
+        <h3 data-en="Emulator lifecycle" data-zh="模拟器生命周期">Emulator lifecycle</h3>
+        <p data-en="`ohos-perf emulator {list,start,stop,create}` so CI and an agent can boot their own target instead of relying on an attached device. The design already reserves the command group and the device module." data-zh="`ohos-perf emulator {list,start,stop,create}`，让 CI 与 agent 自己启动目标设备，而不依赖已连接的真机。设计文档已经为这组命令与设备模块预留了位置。">`ohos-perf emulator {list,start,stop,create}` so CI and an agent can boot their own target instead of relying on an attached device. The design already reserves the command group and the device module.</p>
+      </article>
+      <article class="card reveal">
+        <span class="status exploring" data-en="Exploring" data-zh="探索中">Exploring</span>
+        <h3 data-en="ArkTS-side capabilities" data-zh="ArkTS 侧能力">ArkTS-side capabilities</h3>
+        <p data-en="`ui.gesture` needs the AAMS test framework, `coverage` needs bjc_cov, and `js.heap` needs an ArkTS profiler mode. Each stays reported unavailable with its reason until a device spike proves this package can drive it — an honest no is worth more than a metric nobody can reproduce." data-zh="`ui.gesture` 需要 AAMS 测试框架，`coverage` 需要 bjc_cov，`js.heap` 需要 ArkTS profiler 模式。在设备 spike 证明本包确实能驱动之前，它们都带着原因报告为不可用——诚实的“不可用”比一个无法复现的指标更有价值。">`ui.gesture` needs the AAMS test framework, `coverage` needs bjc_cov, and `js.heap` needs an ArkTS profiler mode. Each stays reported unavailable with its reason until a device spike proves this package can drive it — an honest no is worth more than a metric nobody can reproduce.</p>
+      </article>
+      <article class="card reveal">
+        <span class="status exploring" data-en="Considering" data-zh="考虑中">Considering</span>
+        <h3 data-en="Beyond a port" data-zh="超出移植">Beyond a port</h3>
+        <p data-en="HapRay also ships component-reusability metrics, symbol statistics and an LLM root-cause path. They are not in the design's port map yet, so they are not promised here; they become candidates once the ported surface is complete." data-zh="HapRay 还提供组件复用率、符号统计与 LLM 根因分析。它们尚未进入设计的移植映射表，因此这里不作承诺；等已移植的分析面完整后再评估。">HapRay also ships component-reusability metrics, symbol statistics and an LLM root-cause path. They are not in the design's port map yet, so they are not promised here; they become candidates once the ported surface is complete.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
 <section class="section alt" id="quickstart">
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Quickstart" data-zh="快速开始">Quickstart</p>
-    <h2 class="reveal" data-en="Clone, build, analyze." data-zh="克隆、构建、分析。">Clone, build, analyze.</h2>
-    <p class="section-lead reveal" data-en="The packages are not on npm yet — install from source. Node ^22.13.0 || >=23.4.0, and an hdc + trace_streamer from a DevEco Studio installation." data-zh="包尚未发布到 npm——请从源码安装。需要 Node ^22.13.0 || >=23.4.0，以及 DevEco Studio 附带的 hdc 与 trace_streamer。">The packages are not on npm yet — install from source. Node <code>^22.13.0 || &gt;=23.4.0</code>, and an <code>hdc</code> + <code>trace_streamer</code> from a DevEco Studio installation.</p>
+    <h2 class="reveal" data-en="Install, capture, analyze." data-zh="安装、采集、分析。">Install, capture, analyze.</h2>
+    <p class="section-lead reveal" data-en="Published on npm as @ohos-perf/cli and @ohos-perf/core. Node ^22.13.0 || >=23.4.0, and an hdc + trace_streamer from a DevEco Studio installation." data-zh="已发布到 npm：@ohos-perf/cli 与 @ohos-perf/core。需要 Node ^22.13.0 || >=23.4.0，以及 DevEco Studio 附带的 hdc 与 trace_streamer。">Published on npm as <code>@ohos-perf/cli</code> and <code>@ohos-perf/core</code>. Node <code>^22.13.0 || &gt;=23.4.0</code>, and an <code>hdc</code> + <code>trace_streamer</code> from a DevEco Studio installation.</p>
 
     <div class="quick-grid">
       <div class="steps reveal">
-        <div class="step"><span class="num">1</span><div><h4 data-en="Clone and install" data-zh="克隆并安装">Clone and install</h4><p data-en="One workspace, two packages: core and CLI." data-zh="一个 workspace，两个包：core 与 CLI。">One workspace, two packages: core and CLI.</p></div></div>
-        <div class="step"><span class="num">2</span><div><h4 data-en="Build both packages" data-zh="构建两个包">Build both packages</h4><p data-en="`npm test` also builds them first, so a clean checkout is never red." data-zh="`npm test` 会先构建再测试，干净检出不会红。"><code>npm test</code> also builds them first, so a clean checkout is never red.</p></div></div>
-        <div class="step"><span class="num">3</span><div><h4 data-en="Run against a device" data-zh="对真机运行">Run against a device</h4><p data-en="`doctor` tells you what the attached device can do before you capture anything. Add `--procfs` for memory sampling and `--cold-start` for a launch capture." data-zh="`doctor` 会在采集前告诉你这台设备能做什么。加 `--procfs` 采样内存，加 `--cold-start` 采集冷启动。"><code>doctor</code> tells you what the attached device can do before you capture anything. Add <code>--procfs</code> for memory sampling and <code>--cold-start</code> for a launch capture.</p></div></div>
+        <div class="step"><span class="num">1</span><div><h4 data-en="Install the CLI" data-zh="安装 CLI">Install the CLI</h4><p data-en="Globally, or run it once with npx. The library is `@ohos-perf/core`." data-zh="全局安装，或用 npx 运行一次。库是 `@ohos-perf/core`。">Globally, or run it once with <code>npx</code>. The library is <code>@ohos-perf/core</code>.</p></div></div>
+        <div class="step"><span class="num">2</span><div><h4 data-en="Check the device" data-zh="检查设备">Check the device</h4><p data-en="`doctor` verifies hdc, trace_streamer and the attached target before anything is captured." data-zh="`doctor` 在采集前验证 hdc、trace_streamer 与已连接目标。"><code>doctor</code> verifies hdc, trace_streamer and the attached target before anything is captured.</p></div></div>
+        <div class="step"><span class="num">3</span><div><h4 data-en="Capture a scene" data-zh="采集场景">Capture a scene</h4><p data-en="Add `--procfs` for memory sampling, `--cold-start` for a launch capture, or `--hiprofiler --plugins memory` for exact per-process RSS without an app." data-zh="加 `--procfs` 采样内存，加 `--cold-start` 采集冷启动，或用 `--hiprofiler --plugins memory` 在无应用时采集精确的逐进程 RSS。">Add <code>--procfs</code> for memory sampling, <code>--cold-start</code> for a launch capture, or <code>--hiprofiler --plugins memory</code> for exact per-process RSS without an app.</p></div></div>
         <div class="step"><span class="num">4</span><div><h4 data-en="Analyze offline" data-zh="离线分析">Analyze offline</h4><p data-en="No device? Point the analyzer at an existing trace.db and get the same metrics." data-zh="没有设备？把分析器指向已有的 trace.db，得到同样的指标。">No device? Point the analyzer at an existing <code>trace.db</code> and get the same metrics.</p></div></div>
       </div>
       <div class="codewrap reveal">
         <button class="copy" type="button" data-copy="quick-code" data-en="Copy" data-zh="复制">Copy</button>
-        <pre class="code"><code id="quick-code"><span class="p">$</span> git clone https://github.com/growvv/ohos-perf.git
-<span class="p">$</span> <span class="k">cd</span> ohos-perf
-<span class="p">$</span> npm install
-<span class="p">$</span> npm run build
-<span class="p">$</span> npm run build -w @ohos-perf/cli
+        <pre class="code"><code id="quick-code"><span class="p">$</span> npm install -g @ohos-perf/cli
 
 <span class="cm"># Probe the attached device (real or emulator).</span>
-<span class="p">$</span> node packages/cli/dist/index.js doctor
+<span class="p">$</span> ohos-perf doctor
 
 <span class="cm"># Capture 10s of the app, with memory sampling and a cold start.</span>
-<span class="p">$</span> node packages/cli/dist/index.js collect --app com.example.app \
+<span class="p">$</span> ohos-perf collect --app com.example.app \
     --duration 10 --out ./scene --procfs --cold-start EntryAbility
 
 <span class="cm"># Run all analyzers over the scene, offline.</span>
-<span class="p">$</span> node packages/cli/dist/index.js analyze ./scene --json
+<span class="p">$</span> ohos-perf analyze ./scene --json
 
-<span class="cm"># Run the suite: 815 pass + 32 skip on a clean checkout; 847 with a device.</span>
-<span class="p">$</span> npm test</code></pre>
+<span class="cm"># The library: the same pipeline as typed calls.</span>
+<span class="p">$</span> npm install @ohos-perf/core</code></pre>
       </div>
     </div>
   </div>

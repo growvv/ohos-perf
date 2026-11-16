@@ -122,39 +122,37 @@ reports that reason instead of claiming the data is usable.
 
 ## Quickstart
 
-The packages are not published to npm yet — install from source.
+Install the CLI from npm:
 
 ```bash
-git clone https://github.com/growvv/ohos-perf.git
-cd ohos-perf
-npm install
-npm run build
-npm run build -w @ohos-perf/cli
+npm install -g @ohos-perf/cli
 
-node packages/cli/dist/index.js doctor          # what can this device do?
-node packages/cli/dist/index.js caps --json     # machine-readable matrix
+ohos-perf doctor          # what can this device do?
+ohos-perf caps --json     # machine-readable matrix
 ```
+
+Or run it once without installing: `npx @ohos-perf/cli doctor`.
 
 Capture a scene (add `--procfs` for memory samples, `--cold-start` to launch an
 ability first, or `--hiprofiler --plugins …` to record through hiprofiler):
 
 ```bash
-node packages/cli/dist/index.js collect \
+ohos-perf collect \
   --app com.example.app --duration 10s --out ./scene --procfs \
   --cold-start EntryAbility --json
 
 # hiprofiler plugins: ftrace (default), gpu, xpower, nativehook, memory
-node packages/cli/dist/index.js collect \
+ohos-perf collect \
   --app com.example.app --duration 10s --out ./hipro-scene \
   --hiprofiler --plugins gpu,xpower,nativehook --json
 
 # everything at once: perf samples, render counters and the UI tree
-node packages/cli/dist/index.js collect \
+ohos-perf collect \
   --app com.example.app --duration 10s --out ./full-scene \
   --procfs --hiperf --hidumper --uitest --json
 
 # device-wide memory sampling needs no app
-node packages/cli/dist/index.js collect \
+ohos-perf collect \
   --duration 10s --out ./mem-scene --hiprofiler --plugins memory --json
 ```
 
@@ -171,29 +169,35 @@ Compare two captures — each argument is a scene directory or a saved
 `analyze --json` file:
 
 ```bash
-node packages/cli/dist/index.js compare ./before ./after --json
+ohos-perf compare ./before ./after --json
 ```
 
 Analyze it offline — no device or toolchain needed:
 
 ```bash
-node packages/cli/dist/index.js analyze ./scene --app com.example.app --json
+ohos-perf analyze ./scene --app com.example.app --json
 ```
 
 Follow an evidence item's `drillDown` handle — list the query names and their
 argument schemas first, then pass the handle's `tool` and `args` verbatim:
 
 ```bash
-node packages/cli/dist/index.js tools --json
-node packages/cli/dist/index.js query ./scene frames.get \
+ohos-perf tools --json
+ohos-perf query ./scene frames.get \
   --args '{"id":42}' --json
 ```
 
-`npm test` builds both packages first, so a clean checkout is never red:
+## Development
 
 ```bash
+git clone https://github.com/growvv/ohos-perf.git
+cd ohos-perf
+npm install
+
 npm test        # 847 tests; 815 pass + 32 skip on a clean checkout (no device, spike/out/ absent)
 ```
+
+`npm test` builds both packages first, so a clean checkout is never red.
 
 ## Library
 

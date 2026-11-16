@@ -1,6 +1,16 @@
 {
   "name": "@ohos-perf/core",
   "version": "0.1.0",
+  "description": "HarmonyOS performance analysis: capability probing, six collectors, trace ingest, typed queries and analyzers with provenance and fidelity",
+  "keywords": [
+    "harmonyos",
+    "openharmony",
+    "ohos",
+    "performance",
+    "profiling",
+    "trace",
+    "hapray"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,8 +22,19 @@
   },
   "files": ["dist"],
   "engines": { "node": "^22.13.0 || >=23.4.0" },
+  "license": "MIT",
+  "author": "growvv",
+  "homepage": "https://growvv.github.io/ohos-perf/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/growvv/ohos-perf.git",
+    "directory": "packages/core"
+  },
+  "bugs": { "url": "https://github.com/growvv/ohos-perf/issues" },
+  "publishConfig": { "access": "public" },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
-    "typecheck": "tsc --noEmit -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "prepublishOnly": "npm run build"
   }
 }
