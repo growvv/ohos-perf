@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.7.0 — 2026-11-17
+
+P12 (HapRay parity W4): the device log, captured and evaluated.
+
+### Features
+
+- **`collect --hilog`** streams the device log for the capture window into
+  `hilog.log`, plus `hilog.jsonl` — one typed row per line. The capture is
+  device-wide, so no `--app` is required. An empty stream is a failed capture
+  (`HILOG_NO_OUTPUT`), never a quiet app: hdc exits 0 even when the device tool
+  fails, so content is the only honest success signal. `hilog.stream` joins the
+  capability matrix, gated on the `hilog` binary.
+- **`HilogAnalyzer`** (`hilog` section) evaluates the log against a typed rule
+  set. Metrics: `hilog.lines.count`, `hilog.parsed.count`,
+  `hilog.unparsed.count`, `hilog.rule.<name>.count` per rule, and
+  `hilog.rules.matched.count` / `.unmatched.count`. One `hilog_match` evidence
+  item per matching rule, carrying the count, the first and last line, up to
+  five sample messages and drill-downs.
+- **Rule set without `eval`.** `HilogRule` is `{ name, regex, groups,
+  conditions, scope }`; conditions are either per-group comparisons or an
+  expression over `$1`, `$2`, … parsed into an AST and evaluated. A malformed
+  regex or expression is a typed error naming the rule. HapRay's four
+  `CreatePixelMap` rules ship as `DEFAULT_HILOG_RULES`.
+- **Three named queries:** `hilog.matches` (optionally one rule),
+  `hilog.rules` (the effective rule set with counts), and `hilog.around` (lines
+  in an inclusive nanosecond window, for correlating with a frame). Each returns
+  `[]` when the scene has no log.
+- **Public surface:** `parseHilogLine`, `parseHilogText`, `compileRules`,
+  `matchRules`, `DEFAULT_HILOG_RULES`, `HilogAnalyzer`, `HilogCollector`,
+  `readHilogText`, and the `HilogLine` / `HilogRule` / `HilogMatch` /
+  `CompiledRule` / `HilogParseOptions` types.
+
+### Semantics worth naming
+
+- A log line that does not parse is a `raw` row (`parsed: false`), counted in
+  `hilog.lines.count` and `hilog.unparsed.count` — never dropped.
+- A scene with no `hilog.log` yields one `hilog.degraded` proxy naming the
+  capture flag. A log with no rule matches is a real zero, not a degradation.
+- The year is not in the log. It comes from `scene.json`'s capture time, and a
+  month/day after the capture is read as the previous year — the one reading
+  that cannot invent a future log. A scene with no descriptor keeps every line
+  raw rather than guessing an instant.
+- Not ported, deliberately: `hilogtool` decryption (this package captures
+  plaintext over `hdc shell hilog`), on-device persistent log rotation, and
+  log-based crash classification.
+
 ## 0.6.2 — 2026-11-17
 
 ### Fixes

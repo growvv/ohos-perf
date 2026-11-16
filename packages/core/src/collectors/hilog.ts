@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import type { CapabilityId } from '../device/capability';
 import { OhosPerfError } from '../errors';
+import { parseHilogText } from '../hilog/parse';
 import type { SceneLayout } from '../ingest/scene';
 import type { Hdc } from '../transport/hdc';
 import type { Collector } from './types';
@@ -34,6 +35,12 @@ function removeStale(path: string): void {
   if (existsSync(path)) unlinkSync(path);
 }
 
+/** Remove both artifacts of a previous capture, so neither can outlive it. */
+function removeStaleArtifacts(layout: SceneLayout): void {
+  removeStale(layout.hilogFile);
+  removeStale(layout.hilogJsonlFile);
+}
+
 /**
  * Captures the device's hilog stream into the scene.
  *
@@ -52,7 +59,7 @@ export class HilogCollector implements Collector {
     layout: SceneLayout,
   ): Promise<{ lines: number }> {
     assertDuration(opts.durationMs);
-    removeStale(layout.hilogFile);
+    removeStaleArtifacts(layout);
 
     const result = await hdc.shellFor(target, HILOG_COMMAND, opts.durationMs);
     const text = result.stdout;
@@ -68,6 +75,16 @@ export class HilogCollector implements Collector {
 
     mkdirSync(layout.root, { recursive: true });
     writeFileSync(layout.hilogFile, text);
+    // The rows beside the raw text: a consumer that wants typed rows without a
+    // parser reads this, while `hilog.log` stays the capture's authority. The
+    // year is unknown at capture time, so every row is raw (`parsed: false`)
+    // with its own text — a timestamp invented here would be a fabricated fact.
+    // The CLI re-parses `hilog.log` once `scene.json` supplies the year.
+    const rows = parseHilogText(text, { captureNs: 0 });
+    writeFileSync(
+      layout.hilogJsonlFile,
+      rows.map((row) => `${JSON.stringify(row)}\n`).join(''),
+    );
     const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '').length;
     return { lines };
   }

@@ -5,8 +5,8 @@ const LINE =
   '11-17 05:12:33.412  4999  5010 I A00000/com.demo/Image: ' +
   'CreatePixelMap success, memType : 3, cost 120 us';
 
-/** 2026-11-17T05:13:00Z, the capture instant used by the fixtures. */
-const CAPTURE = Date.UTC(2026, 10, 17, 5, 13);
+/** 2026-11-17T05:13:00Z in nanoseconds, the capture instant used by the fixtures. */
+const CAPTURE = Date.UTC(2026, 10, 17, 5, 13) * 1e6;
 
 describe('parseHilogLine', () => {
   it('parses the standard hilog line', () => {
@@ -21,25 +21,29 @@ describe('parseHilogLine', () => {
       parsed: true,
     });
     expect(row.message).toBe('CreatePixelMap success, memType : 3, cost 120 us');
-    expect(new Date(row.ts).toISOString()).toBe('2026-11-17T05:12:33.412Z');
+    // `ts` is nanoseconds since the epoch, the same clock base as trace `ts`
+    // and `hilog.around`'s window. A millisecond value would silently place
+    // every log line 1970-relative to a frame window and match nothing.
+    expect(row.ts).toBe(Date.UTC(2026, 10, 17, 5, 12, 33, 412) * 1e6);
+    expect(new Date(row.ts / 1e6).toISOString()).toBe('2026-11-17T05:12:33.412Z');
   });
 
   it('reads a December line as the previous year when the capture is in January', () => {
     const row = parseHilogLine(
       '12-31 23:59:59.999  1  1 I A/C: x',
       2027,
-      Date.UTC(2027, 0, 1, 0, 1),
+      Date.UTC(2027, 0, 1, 0, 1) * 1e6,
     );
-    expect(new Date(row.ts).toISOString()).toBe('2026-12-31T23:59:59.999Z');
+    expect(new Date(row.ts / 1e6).toISOString()).toBe('2026-12-31T23:59:59.999Z');
   });
 
   it('keeps a same-day line in the capture year', () => {
     const row = parseHilogLine(
       '01-01 00:00:01.000  1  1 I A/C: x',
       2027,
-      Date.UTC(2027, 0, 1, 0, 5),
+      Date.UTC(2027, 0, 1, 0, 5) * 1e6,
     );
-    expect(new Date(row.ts).toISOString()).toBe('2027-01-01T00:00:01.000Z');
+    expect(new Date(row.ts / 1e6).toISOString()).toBe('2027-01-01T00:00:01.000Z');
   });
 
   it('keeps an unparsable line as a raw row', () => {

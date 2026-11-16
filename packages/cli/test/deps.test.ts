@@ -1004,6 +1004,46 @@ describe('realDeps().collect', () => {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  it('reports the hilog line count written to scene.json', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-collect-hilog-'));
+    try {
+      const seen: unknown[] = [];
+      const deps = realDeps('0.0.0', {
+        collectDevice: async () => ({
+          id: 't1',
+          kind: 'emulator',
+          collect: async (opts: unknown) => {
+            seen.push(opts);
+            return {
+              ingest: async () => {
+                writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+                  version: 1,
+                  app: { packageName: 'com.demo', processNames: ['com.demo'] },
+                  pids: [], deviceId: 't1',
+                  capture: {
+                    startedAtMs: 1, durationMs: 2,
+                    collectors: ['hitrace', 'hilog'], hilog: { lines: 42 },
+                  },
+                }));
+                return { close: () => {} } as unknown as Scene;
+              },
+            };
+          },
+        }),
+      });
+      const result = await deps.collect({ durationMs: 10_000, out: parent, hilog: true });
+      expect(seen).toEqual([{ durationMs: 10_000, sceneRoot: parent, hilog: true }]);
+      expect(result).toEqual({
+        sceneDir: parent,
+        device: { id: 't1', kind: 'emulator' },
+        collectors: ['hitrace', 'hilog'],
+        hilog: { lines: 42 },
+      });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });
 
 describe('realDeps().capsReport', () => {

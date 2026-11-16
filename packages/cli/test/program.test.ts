@@ -338,6 +338,25 @@ describe('command wiring', () => {
     expect(emitted[0].exitCode).toBe(0);
   });
 
+  it('collect forwards an app-less hilog request', async () => {
+    // hilog is device-wide like hidumper and uitest: no --app is required.
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1', '--hilog'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return {
+            sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' },
+            collectors: ['hitrace', 'hilog'],
+          };
+        },
+      },
+    );
+    expect(seen).toEqual([{ durationMs: 10_000, out: 'scene1', hilog: true }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
   it('collect rejects --hiperf without --app before any device work', async () => {
     // `--app` is optional now, so the action owns this gate: a request that
     // cannot be served must fail before deps.collect connects to a device.

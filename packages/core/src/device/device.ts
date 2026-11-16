@@ -354,7 +354,10 @@ export class Device {
         }
         if (wantsHidumper) remember(layout.hidumperFile);
         if (wantsUitest) remember(layout.uiFile);
-        if (wantsHilog) remember(layout.hilogFile);
+        if (wantsHilog) {
+          remember(layout.hilogFile);
+          remember(layout.hilogJsonlFile);
+        }
 
         // Host wall-clock at capture start, recorded for humans only.
         const startedAtMs = Date.now();
@@ -580,7 +583,10 @@ export class Device {
         }
         if (!wantsHidumper) removeIfPresent(layout.hidumperFile);
         if (!wantsUitest) removeIfPresent(layout.uiFile);
-        if (!wantsHilog) removeIfPresent(layout.hilogFile);
+        if (!wantsHilog) {
+          removeIfPresent(layout.hilogFile);
+          removeIfPresent(layout.hilogJsonlFile);
+        }
 
         writeSceneMetadata(layout, {
           version: 1,

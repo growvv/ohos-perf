@@ -67,6 +67,7 @@ describe('createSceneLayout', () => {
       procfsFile: join(dir, 'procfs.jsonl'),
       hidumperFile: join(dir, 'hidumper.json'),
       hilogFile: join(dir, 'hilog.log'),
+      hilogJsonlFile: join(dir, 'hilog.jsonl'),
       uiFile: join(dir, 'ui.json'),
       metadataFile: join(dir, 'scene.json'),
     });
@@ -148,6 +149,7 @@ describe('ingestScene', () => {
       procfsFile: join(root, 'procfs.jsonl'),
       hidumperFile: join(root, 'hidumper.json'),
       hilogFile: join(root, 'hilog.log'),
+      hilogJsonlFile: join(root, 'hilog.jsonl'),
       uiFile: join(root, 'ui.json'),
       metadataFile: join(root, 'scene.json'),
     };
@@ -216,6 +218,7 @@ describe('ingestScene', () => {
       procfsFile: join(root, 'procfs.jsonl'),
       hidumperFile: join(root, 'hidumper.json'),
       hilogFile: join(root, 'hilog.log'),
+      hilogJsonlFile: join(root, 'hilog.jsonl'),
       uiFile: join(root, 'ui.json'),
       metadataFile: join(root, 'scene.json'),
     };

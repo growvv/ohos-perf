@@ -57,6 +57,10 @@ the interface; every command speaks stable JSON with `--json`.
      needs a **debuggable** app; a non-debuggable one is refused by the device.
    - `--hidumper` also samples the RenderService fps and hitch counters.
    - `--uitest` also dumps the on-screen UI tree (device-wide, not app-filtered).
+   - `--hilog` also streams the device log for the capture window into
+     `hilog.log` and `hilog.jsonl` (device-wide, not app-filtered). Analyze
+     reads it for the rule counts below; a re-capture without the flag removes
+     the previous log rather than letting `analyze` report it.
    - A capture that produced nothing is not an error: `hiperf` on an idle app
      yields `samples: 0` with exit 0. The JSON says `hiperf: { samples: 0 }`
      and the human summary prints `hiperf 0`; report that, never a silent zero.
@@ -167,6 +171,44 @@ ohos-perf query <dir> mem.native.unreleased --args '{"point":"peak"}' --json
 ohos-perf query <dir> mem.native.callchain --args '{"callchainId":10}' --json
 ohos-perf query <dir> mem.native.timeline --args '{"bucketMs":1000}' --json
 ohos-perf query <dir> mem.native.categories --args '{}' --json
+```
+
+## Hilog
+
+`hilog.*` answers "what did the app print during this capture, and how often
+did a known pattern appear" — HapRay's per-pattern counts, from the log.
+Capture it with `collect --hilog` (device-wide, no `--app`); without a
+`hilog.log` the analyzer reports one `hilog.degraded` proxy naming that flag.
+
+- The rule set is typed: `{ name, regex, groups, conditions, scope }`.
+  `groups` is 1-based, `0` is the whole match; `conditions` is either one
+  comparison per group (`'!=4'`) or one expression over `$1`, `$2`, … with
+  `+ - * / %`, comparisons and `,`/`&&`. Rules match the **message** unless
+  `scope: 'line'`.
+- The default set is HapRay's four `CreatePixelMap` rules (`no_dmp`,
+  `big_image_with_target_size`, `big_image_without_target_size`,
+  `image_same_size`). One line can match several, and upstream counts it in
+  each — so does this port.
+- `hilog.lines.count` = `hilog.parsed.count` + `hilog.unparsed.count` on every
+  input. An unparsable line is a raw row with its text; it is counted, never
+  dropped, so a count is never silently short.
+- `hilog.rule.<name>.count` is `exact` including a zero: the rule was
+  evaluated and nothing matched. Only a scene with no log degrades.
+- Each `hilog_match` evidence item is one rule that fired, with `count`,
+  `firstLine`, `lastLine` and up to five `samples`. **A match is a pattern hit,
+  not a diagnosis** — report the count and the pattern, never a root cause.
+- The log carries no year. The analyzer takes it from `scene.json`; a
+  month/day after the capture is read as the previous year. A hand-built scene
+  with no descriptor keeps every line raw, so `hilog.around` returns nothing
+  and rule counts still work on the message text.
+
+Drill down with these three queries; each returns `[]` when the scene has no
+log:
+
+```bash
+ohos-perf query <dir> hilog.matches --args '{"rule":"no_dmp"}' --json
+ohos-perf query <dir> hilog.rules --args '{}' --json
+ohos-perf query <dir> hilog.around --args '{"startNs":0,"endNs":1000000000}' --json
 ```
 
 ## Drilling down

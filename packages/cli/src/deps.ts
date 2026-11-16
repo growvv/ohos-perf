@@ -791,6 +791,7 @@ export function realDeps(
         ...(req.hiperf === undefined ? {} : { hiperf: req.hiperf }),
         ...(req.hidumper === true ? { hidumper: true } : {}),
         ...(req.uitest === true ? { uitest: true } : {}),
+        ...(req.hilog === true ? { hilog: true } : {}),
       });
       const scene = await session.ingest();
       try {
@@ -813,6 +814,9 @@ export function realDeps(
           ...(meta?.capture?.uitest === undefined
             ? {}
             : { ui: { nodes: meta.capture.uitest.nodes } }),
+          ...(meta?.capture?.hilog === undefined
+            ? {}
+            : { hilog: { lines: meta.capture.hilog.lines } }),
         };
       } finally {
         scene.close();

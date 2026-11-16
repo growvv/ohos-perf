@@ -22,6 +22,8 @@ export interface SceneLayout {
   uiFile: string;
   /** `hilog.log` from a `--hilog` capture: the raw device log stream. */
   hilogFile: string;
+  /** `hilog.jsonl` from the same capture: one typed row per log line. */
+  hilogJsonlFile: string;
   metadataFile: string;
 }
 
@@ -36,6 +38,7 @@ export function createSceneLayout(root: string): SceneLayout {
     hidumperFile: join(root, 'hidumper.json'),
     uiFile: join(root, 'ui.json'),
     hilogFile: join(root, 'hilog.log'),
+    hilogJsonlFile: join(root, 'hilog.jsonl'),
     metadataFile: join(root, 'scene.json'),
   };
 }

@@ -91,6 +91,11 @@ export interface CollectRequest {
   /** Also dump the on-screen UI tree. */
   uitest?: boolean;
   /**
+   * Also stream the device log. Device-wide like `hidumper`, so no `--app` is
+   * required; the raw log lands in `hilog.log` and is parsed at analysis time.
+   */
+  hilog?: boolean;
+  /**
    * Explicit hdc target id. Without it the first connected target is used,
    * which is wrong on a host with both a phone and an emulator attached —
    * `emulator list --json` prints the id to pass here.
@@ -110,6 +115,8 @@ export interface CollectOutput {
   hidumper?: { frames: number };
   /** Present only when a uitest capture ran; `nodes: 0` is a blank screen. */
   ui?: { nodes: number };
+  /** Present only when a hilog capture ran; `lines` is what the collector read. */
+  hilog?: { lines: number };
 }
 
 /** One gesture to inject, on the target that should receive it. */

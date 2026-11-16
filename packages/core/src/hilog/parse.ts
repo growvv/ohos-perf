@@ -46,6 +46,9 @@ const LINE_PATTERN =
 
 const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
 
+/** Nanoseconds in one millisecond; `ts` is ns, `Date.UTC` is ms. */
+const NS_PER_MS = 1e6;
+
 function rawLine(index: number, message: string): HilogLine {
   return {
     index,
@@ -63,8 +66,9 @@ function rawLine(index: number, message: string): HilogLine {
 /**
  * Parse one line.
  *
- * `year` is the capture year and `captureNs` the capture instant; a line later
- * than the capture by more than a few days is moved to `year - 1`, which is
+ * `year` is the capture year and `captureNs` the capture instant in
+ * nanoseconds — the same clock base as trace `ts` and every query window. A
+ * line later than the capture by more than half a year is moved to `year - 1`,
  * the only reading that cannot produce a future log from a year-less format.
  */
 export function parseHilogLine(line: string, year: number, captureNs: number): HilogLine {
@@ -82,8 +86,8 @@ export function parseHilogLine(line: string, year: number, captureNs: number): H
 
   // A date that does not exist in the capture year (e.g. 02-29 in a common
   // year) is still a raw row: fabricating a timestamp would misplace it.
-  const inYear = Date.UTC(year, monthIndex, dayOfMonth, h, m, s, ms);
-  const check = new Date(inYear);
+  const inYearMs = Date.UTC(year, monthIndex, dayOfMonth, h, m, s, ms);
+  const check = new Date(inYearMs);
   if (
     check.getUTCMonth() !== monthIndex ||
     check.getUTCDate() !== dayOfMonth ||
@@ -94,12 +98,16 @@ export function parseHilogLine(line: string, year: number, captureNs: number): H
     return rawLine(0, line);
   }
 
-  // More than half a year ahead of the capture can only be the previous year.
-  const ts = inYear - captureNs > MS_PER_YEAR / 2 ? Date.UTC(year - 1, monthIndex, dayOfMonth, h, m, s, ms) : inYear;
+  // Compare in milliseconds: the capture instant arrives in nanoseconds, and
+  // comparing it to a millisecond value directly makes the rule unreachable.
+  const captureMs = captureNs / NS_PER_MS;
+  const tsMs = inYearMs - captureMs > MS_PER_YEAR / 2
+    ? Date.UTC(year - 1, monthIndex, dayOfMonth, h, m, s, ms)
+    : inYearMs;
 
   return {
     index: 0,
-    ts,
+    ts: tsMs * NS_PER_MS,
     level,
     pid: Number(pid),
     tid: Number(tid),

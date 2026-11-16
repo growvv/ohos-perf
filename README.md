@@ -7,7 +7,7 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
 
 A TypeScript toolkit for HarmonyOS performance analysis. It turns an attached device
-into structured, evidence-backed data: capability probing, six collectors,
+into structured, evidence-backed data: capability probing, seven collectors,
 `trace_streamer` ingest, typed queries over the resulting SQLite
 databases, metrics with provenance, an evidence graph, baseline comparison, and
 a CLI designed to be called by agents.
@@ -35,14 +35,14 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P11 are complete**: 1150 tests (1141 unit, 9 in the device
+**P1 through P12 are complete**: 1245 tests (1236 unit, 9 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1125 passed, 25
+attached device are absent — `npm run test:unit` reports **1211 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-eight device-gated skips, so the combined clean checkout is **1126 passed, 33
-skipped**. With both fixtures present and a device attached all 1150 pass. The
+eight device-gated skips, so the combined clean checkout is **1212 passed, 33
+skipped**. With both fixtures present and a device attached all 1245 pass. The
 fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
 `query-sched-state` and the CLI `index` end-to-end tests. The nine tests in
@@ -63,11 +63,11 @@ Implemented today:
   plugins ported from HapRay, plus a memory plugin that records per-process
   `process_measure`; the `.htrace` converts through the same `trace_streamer`
   path), hiperf (`perf.data` for a debuggable app, converted into a second
-  `perf.db`), hidumper (RenderService fps and hitch counters) and uitest (the
-  on-screen UI tree); every requested collector runs concurrently in one
-  `collect`. `--app` is required only by the modes that resolve a pid —
-  `--hidumper`, `--uitest` and `--hiprofiler --plugins memory` capture
-  device-wide without it
+  `perf.db`), hidumper (RenderService fps and hitch counters), uitest (the
+  on-screen UI tree) and hilog (the raw device log stream); every requested
+  collector runs concurrently in one `collect`. `--app` is required only by the
+  modes that resolve a pid — `--hidumper`, `--uitest`, `--hilog` and
+  `--hiprofiler --plugins memory` capture device-wide without it
 - UI gesture injection: `GestureDriver` drives `uitest uiInput` over the plain
   shell — click, swipe (with an optional velocity), key events, text into a
   field and text into the focused field. Success is the device tool's
@@ -143,8 +143,8 @@ startup and the flamegraph have no HapRay equivalent that runs on these traces;
 their tests pin the parser, aggregation and marker fallback instead, and no
 parity is claimed for them.
 
-Measured on the two recorded traces, `analyze` reports 74 metrics and 94
-evidence items on `emu_big` (20.8 MB) and 73 metrics and 180 evidence items on
+Measured on the two recorded traces, `analyze` reports 75 metrics and 95
+evidence items on `emu_big` (20.8 MB) and 74 metrics and 181 evidence items on
 `real_device` (13.1 MB). Four of the older analyzers report real numbers there:
 `vsync.signals.count` 60 with `vsync.periods.count` 7 and `vsync.anomaly.rate`
 101.67 on `emu_big` (0 / 0 / 0 on `real_device`), `empty_frame.count` 6 with a
@@ -190,7 +190,7 @@ The HapRay parity series (one release per major item, so far):
 | P9 | W1 report layer | typed report model, offline HTML, JSON/summary/CSV, dependency-free XLSX, `ohos-perf report` | shipped in `0.4.0` |
 | P10 | W2 frame load | per-frame sampled-event attribution, top-N loaded frames, stutter levels with expected/actual excess, 1 s FPS windows, empty-frame load share and severity, four attribution queries | shipped in `0.5.0` |
 | P11 | W3 native memory | `native_hook` alloc/free pairing, peak and unreleased by callchain, category evidence, timeline | shipped in `0.6.0` |
-| P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | planned |
+| P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | shipped in `0.7.0` |
 | P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | planned |
 | P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | planned |
 | P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | planned |
@@ -238,10 +238,10 @@ ohos-perf collect \
   --app com.example.app --duration 10s --out ./hipro-scene \
   --hiprofiler --plugins gpu,xpower,nativehook --json
 
-# everything at once: perf samples, render counters and the UI tree
+# everything at once: perf samples, render counters, the UI tree and the log
 ohos-perf collect \
   --app com.example.app --duration 10s --out ./full-scene \
-  --procfs --hiperf --hidumper --uitest --json
+  --procfs --hiperf --hidumper --uitest --hilog --json
 
 # device-wide memory sampling needs no app
 ohos-perf collect \
@@ -384,7 +384,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 1109 tests; 1076 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1245 tests; 1212 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
 npm run typecheck -w @ohos-perf/core   # src + tests, the same check CI runs
 npm run typecheck -w @ohos-perf/cli
 ```
@@ -449,10 +449,10 @@ crash: a crash is not the documented answer to missing input.
 ```
 L7  API / CLI / Skill      programmatic API · ohos-perf CLI · agent skill (skill/ohos-perf/)
 L6  Report                 Metric · Evidence · provenance · fidelity
-L5  Analyze                frames · fault tree · binder · threads · memory · memory measure · startup · render · gc · vsync · empty frame · rs skip · flamegraph · components
+L5  Analyze                frames · frame load · fault tree · binder · threads · memory · memory measure · native memory · hilog · startup · render · gc · vsync · empty frame · rs skip · flamegraph · components
 L4  Query                  typed accessors over 88 trace tables
 L3  Ingest                 trace_streamer wrapper · scene layout · scene.json · db handles
-L2  Collectors             hitrace · procfs · hiprofiler · hiperf · hidumper · uitest
+L2  Collectors             hitrace · procfs · hiprofiler · hiperf · hidumper · uitest · hilog
 L1  Device                 device model · capability probe · matrix · emulator lifecycle
 L0  Transport              hdc client
 ```

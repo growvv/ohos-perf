@@ -46,6 +46,23 @@ describe('HilogCollector', () => {
     expect(out.lines).toBe(2);
   });
 
+  it('also writes one typed JSON row per line to hilog.jsonl', async () => {
+    // The spec's exit criterion names hilog.jsonl beside hilog.log: a consumer
+    // that wants rows without a parser reads it, while the raw log stays the
+    // capture's authority. The year is unknown at capture time, so every row is
+    // a raw row with its text — never a timestamp invented on the host.
+    const { hdc } = fakeHdc({ stdout: LOG, stderr: '', code: null });
+    const layout = createSceneLayout(dir);
+    await new HilogCollector().collect(hdc, 'emu', { durationMs: 250 }, layout);
+
+    const rows = readFileSync(layout.hilogJsonlFile, 'utf8').trimEnd().split('\n').map(
+      (line) => JSON.parse(line) as { index: number; message: string; parsed: boolean },
+    );
+    expect(rows.map((row) => row.index)).toEqual([0, 1]);
+    expect(rows.every((row) => row.parsed === false)).toBe(true);
+    expect(rows[1].message).toBe('11-17 05:12:34.000  4999  5010 E A00000/com.demo: boom');
+  });
+
   it('throws HILOG_NO_OUTPUT when the device printed nothing', async () => {
     const { hdc } = fakeHdc({ stdout: '   \n', stderr: '', code: 0 });
     await expect(

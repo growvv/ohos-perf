@@ -1138,11 +1138,15 @@ describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
     const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-hilog-stale-'));
     try {
       writeFileSync(join(root, 'hilog.log'), 'stale from an earlier run\n');
+      writeFileSync(join(root, 'hilog.jsonl'), '{"index":0}\n');
       const h = extraCollectors();
       const scene = await h.device().collect({ durationMs: 1000, sceneRoot: root })
         .then((s) => s.ingest());
       scene.close();
       expect(existsSync(join(root, 'hilog.log'))).toBe(false);
+      // The rows describe the same capture: leaving them behind would describe
+      // a log this scene does not have.
+      expect(existsSync(join(root, 'hilog.jsonl'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -1154,12 +1158,14 @@ describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
       // The previous scene's log must survive a failed re-capture byte for byte,
       // exactly as the other artifacts do.
       writeFileSync(join(root, 'hilog.log'), 'previous scene log\n');
+      writeFileSync(join(root, 'hilog.jsonl'), '{"index":0}\n');
       const h = extraCollectors({ failHilog: true });
       const session = await h.device().collect({
         durationMs: 1000, sceneRoot: root, hilog: true,
       });
       await expect(session.ingest()).rejects.toThrow(/hilog exploded/);
       expect(readFileSync(join(root, 'hilog.log'), 'utf8')).toBe('previous scene log\n');
+      expect(readFileSync(join(root, 'hilog.jsonl'), 'utf8')).toBe('{"index":0}\n');
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
