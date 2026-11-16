@@ -60,7 +60,7 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P8 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, 1043 tests" data-zh="P1–P8 已完成 — 十四个分析器、六个采集器、下钻查询、基线对比、模拟器生命周期、手势注入、1043 个测试">P1–P8 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, 1043 tests</span>
+        <span data-en="P1–P9 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, 1079 tests" data-zh="P1–P9 已完成 — 十四个分析器、六个采集器、下钻查询、基线对比、模拟器生命周期、手势注入、报告产物、1079 个测试">P1–P9 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, 1079 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
@@ -125,7 +125,7 @@
     <div class="stats reveal">
       <div class="stat"><b>21</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
       <div class="stat"><b>14</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>1043</b><span data-en="tests pass with a device and spike fixtures; 1010 + 33 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 1010 通过 + 33 跳过">tests pass with a device and spike fixtures; 1010 + 33 skipped on a clean checkout</span></div>
+      <div class="stat"><b>1079</b><span data-en="tests pass with a device and spike fixtures; 1046 + 33 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 1046 通过 + 33 跳过">tests pass with a device and spike fixtures; 1046 + 33 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -490,9 +490,14 @@ ohos-perf emulator stop ProbePhone
         <p data-en="`coverage` has no `bjc_cov` on the Mate 60 and no collector here to consume it; `js.heap` needs a debug-signed or profilerable app the Mate 60 did not offer, and no analyzer consumes `js_heap_*`. HapRay's UI animation diff also stays out: it needs per-step `pages.json`, element trees and screenshots no collector here produces. Each is a measured no with a reason, not a zero." data-zh="`coverage` 在 Mate 60 上没有 `bjc_cov`，本包也没有采集器消费它；`js.heap` 需要 debug 签名或可被 profile 的应用（Mate 60 上实测不满足），且没有分析器消费 `js_heap_*`。HapRay 的 UI 动画 diff 同样不在范围内：它需要每步的 `pages.json`、元素树与截图，而本包的采集器都不产出这些。每一项都是以实测为据、带原因的“不可用”，而不是 0。">`coverage` has no <code>bjc_cov</code> on the Mate 60 and no collector here to consume it; <code>js.heap</code> needs a debug-signed or profilerable app the Mate 60 did not offer, and no analyzer consumes <code>js_heap_*</code>. HapRay's UI animation diff also stays out: it needs per-step <code>pages.json</code>, element trees and screenshots no collector here produces. Each is a measured no with a reason, not a zero.</p>
       </article>
       <article class="card reveal">
+        <span class="status shipped" data-en="Shipped · v0.4.0" data-zh="已发布 · v0.4.0">Shipped · v0.4.0</span>
+        <h3 data-en="Report artifacts" data-zh="报告产物">Report artifacts</h3>
+        <p data-en="P9: `ohos-perf report <scene> --out <dir>` renders one analysis pass as a typed, versioned model and six artifacts — a self-contained HTML page with no scripts and no network, report.json, summary.json, metrics.csv, evidence.csv and a dependency-free XLSX workbook. Identical inputs and the same package version produce byte-identical files; every metric keeps its provenance and fidelity; a capability-skipped analyzer is a labelled `degraded` section with the device's own reason, never a hidden zero. `--baseline` adds the typed comparison to every artifact." data-zh="P9：`ohos-perf report <scene> --out <dir>` 把一次分析渲染成类型化、带版本的模型和六种产物——无脚本、无网络的单文件 HTML，report.json、summary.json、metrics.csv、evidence.csv，以及零依赖的 XLSX 工作簿。相同输入与相同包版本产生字节一致的产物；每个指标保留 provenance 与保真度；因能力缺失被跳过的分析器是带设备原因的 `degraded` 区块，而不是被隐藏的 0。`--baseline` 把类型化对比加入所有产物。">P9: <code>ohos-perf report &lt;scene&gt; --out &lt;dir&gt;</code> renders one analysis pass as a typed, versioned model and six artifacts — a self-contained HTML page with no scripts and no network, report.json, summary.json, metrics.csv, evidence.csv and a dependency-free XLSX workbook. Identical inputs and the same package version produce byte-identical files; every metric keeps its provenance and fidelity; a capability-skipped analyzer is a labelled <code>degraded</code> section with the device's own reason, never a hidden zero. <code>--baseline</code> adds the typed comparison to every artifact.</p>
+      </article>
+      <article class="card reveal">
         <span class="status exploring" data-en="Planned · HapRay parity" data-zh="计划中 · HapRay 对齐">Planned · HapRay parity</span>
-        <h3 data-en="Eight workstreams, one release each" data-zh="八个工作流，每个一版">Eight workstreams, one release each</h3>
-        <p data-en="A source-level inventory of HapRay rev 9386e4e found 35 user-facing capabilities: 6 ported, 9 partial, 20 missing. The plan closes the gap one major item per release — P9 report artifacts (typed model, offline HTML, JSON/CSV/XLSX); P10 frame load, stutter levels and 1 s FPS; P11 native memory; P12 hilog; P13 the scenario runner; P14 UI capture and diff; P15 static HAP inspection; P16 symbols and flamegraph artifacts. Deliberately out, with reasons: the Hypium/xdevice runner, the LLM GUI agent, the TensorFlow opt-detector, radare2 symbol recovery and bjc coverage." data-zh="对 HapRay 修订 9386e4e 的源码级盘点发现 35 项面向用户的能力：6 项已移植、9 项部分移植、20 项缺失。计划每发布一个大项关闭一部分差距——P9 报告产物（类型化模型、离线 HTML、JSON/CSV/XLSX）；P10 帧负载、卡顿等级与 1 秒 FPS；P11 native 内存；P12 hilog；P13 场景运行器；P14 UI 采集与 diff；P15 静态 HAP 检查；P16 符号与火焰图产物。刻意排除并给出原因：Hypium/xdevice 运行器、LLM GUI agent、TensorFlow 优化检测器、radare2 符号恢复与 bjc coverage。">A source-level inventory of HapRay rev 9386e4e found 35 user-facing capabilities: 6 ported, 9 partial, 20 missing. The plan closes the gap one major item per release — P9 report artifacts (typed model, offline HTML, JSON/CSV/XLSX); P10 frame load, stutter levels and 1 s FPS; P11 native memory; P12 hilog; P13 the scenario runner; P14 UI capture and diff; P15 static HAP inspection; P16 symbols and flamegraph artifacts. Deliberately out, with reasons: the Hypium/xdevice runner, the LLM GUI agent, the TensorFlow opt-detector, radare2 symbol recovery and bjc coverage.</p>
+        <h3 data-en="One release per workstream" data-zh="每个工作流一版">One release per workstream</h3>
+        <p data-en="A source-level inventory of HapRay rev 9386e4e found 35 user-facing capabilities: 6 ported, 9 partial, 20 missing. P9 shipped the report layer; the remaining workstreams close the gap one major item per release — P10 frame load, stutter levels and 1 s FPS; P11 native memory; P12 hilog; P13 the scenario runner; P14 UI capture and diff; P15 static HAP inspection; P16 symbols and flamegraph artifacts. Deliberately out, with reasons: the Hypium/xdevice runner, the LLM GUI agent, the TensorFlow opt-detector, radare2 symbol recovery and bjc coverage." data-zh="对 HapRay 修订 9386e4e 的源码级盘点发现 35 项面向用户的能力：6 项已移植、9 项部分移植、20 项缺失。P9 已交付报告层；剩余工作流每个大项发布一版——P10 帧负载、卡顿等级与 1 秒 FPS；P11 native 内存；P12 hilog；P13 场景运行器；P14 UI 采集与 diff；P15 静态 HAP 检查；P16 符号与火焰图产物。刻意排除并给出原因：Hypium/xdevice 运行器、LLM GUI agent、TensorFlow 优化检测器、radare2 符号恢复与 bjc coverage。">A source-level inventory of HapRay rev 9386e4e found 35 user-facing capabilities: 6 ported, 9 partial, 20 missing. P9 shipped the report layer; the remaining workstreams close the gap one major item per release — P10 frame load, stutter levels and 1 s FPS; P11 native memory; P12 hilog; P13 the scenario runner; P14 UI capture and diff; P15 static HAP inspection; P16 symbols and flamegraph artifacts. Deliberately out, with reasons: the Hypium/xdevice runner, the LLM GUI agent, the TensorFlow opt-detector, radare2 symbol recovery and bjc coverage.</p>
       </article>
     </div>
   </div>
@@ -524,6 +529,9 @@ ohos-perf emulator stop ProbePhone
 
 <span class="cm"># Run all analyzers over the scene, offline.</span>
 <span class="p">$</span> ohos-perf analyze ./scene --json
+
+<span class="cm"># Or render an offline report bundle (HTML, JSON, CSV, XLSX).</span>
+<span class="p">$</span> ohos-perf report ./scene --out ./report --baseline ./before
 
 <span class="cm"># The library: the same pipeline as typed calls.</span>
 <span class="p">$</span> npm install @ohos-perf/core</code></pre>

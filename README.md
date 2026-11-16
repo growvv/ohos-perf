@@ -35,14 +35,14 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P8 are complete**: 1043 tests (1034 unit, 9 in the device
+**P1 through P9 are complete**: 1079 tests (1070 unit, 9 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1009 passed, 25
+attached device are absent — `npm run test:unit` reports **1045 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-eight device-gated skips, so the combined clean checkout is **1010 passed, 33
-skipped**. With both fixtures present and a device attached all 1043 pass. The
+eight device-gated skips, so the combined clean checkout is **1046 passed, 33
+skipped**. With both fixtures present and a device attached all 1079 pass. The
 fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
 `query-sched-state` and the CLI `index` end-to-end tests. The nine tests in
@@ -76,6 +76,11 @@ Implemented today:
   before anything reaches the device
 - baseline comparison: `ohos-perf compare <baseline> <current>` classifies each
   metric as improved, regressed, unchanged, added, removed or incomparable
+- report artifacts: `ohos-perf report <scene> --out <dir>` renders one typed
+  model as a self-contained offline HTML page, `report.json`, `summary.json`,
+  `metrics.csv`, `evidence.csv` and a dependency-free `report.xlsx`; identical
+  inputs and package version produce byte-identical files, and skipped
+  analyzers appear as `degraded` sections with their reason
 - `trace_streamer` wrapper and scene layout, with `scene.json` metadata
   (device-uptime start marker, pids, collector list)
 - typed queries over the 88-table trace database: frames, processes, threads,
@@ -169,7 +174,7 @@ The HapRay parity series (one release per major item, so far):
 
 | Phase | Workstream | Scope | Status |
 | --- | --- | --- | --- |
-| P9 | W1 report layer | typed report model, offline HTML, JSON/summary/CSV, dependency-free XLSX, `ohos-perf report` | planned |
+| P9 | W1 report layer | typed report model, offline HTML, JSON/summary/CSV, dependency-free XLSX, `ohos-perf report` | shipped in `0.4.0` |
 | P10 | W2 frame load | per-frame instruction attribution, top-N loaded frames, stutter levels with expected/actual excess, 1 s FPS windows, empty-frame load | planned |
 | P11 | W3 native memory | `native_hook` alloc/free pairing, peak and unreleased by callchain, category evidence, timeline | planned |
 | P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | planned |
@@ -356,7 +361,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 1043 tests; 1010 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1079 tests; 1046 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
 npm run typecheck -w @ohos-perf/core   # src + tests, the same check CI runs
 npm run typecheck -w @ohos-perf/cli
 ```
