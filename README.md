@@ -162,8 +162,8 @@ app, which the release apps on the Mate 60 are not.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | P0–P6 | capability probing, six collectors, trace ingest, typed queries, fourteen analyzers, deterministic JSON, baseline comparison, agent skill | shipped in `0.2.0` |
-| P7 | `ohos-perf emulator {list,start,stop,create}` lifecycle commands | in `master`, unreleased |
-| P8 | `ui.gesture` driven through `uitest uiInput`, plus an honest `coverage` verdict from a measured `bjc_cov` probe | in `master`, unreleased |
+| P7 | `ohos-perf emulator {list,start,stop,create}` lifecycle commands | shipped in `0.3.0` |
+| P8 | `ui.gesture` driven through `uitest uiInput`, plus an honest `coverage` verdict from a measured `bjc_cov` probe | shipped in `0.3.0` |
 
 The rendered roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).
@@ -325,6 +325,8 @@ cd ohos-perf
 npm install
 
 npm test        # 1043 tests; 1010 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
+npm run typecheck -w @ohos-perf/core   # src + tests, the same check CI runs
+npm run typecheck -w @ohos-perf/cli
 ```
 
 `npm test` builds both packages first, so a clean checkout is never red.
