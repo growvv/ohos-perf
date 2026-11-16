@@ -105,10 +105,11 @@ afterAll(() => {
 });
 
 describe('queryDefinitions', () => {
-  it('lists the eight registered names in sorted order', () => {
+  it('lists the twelve registered names in sorted order', () => {
     expect(queryDefinitions().map((d) => d.name)).toEqual([
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
-      'frames.all', 'frames.get', 'threads.pattern', 'ui.get',
+      'frame.load.files', 'frame.load.symbols', 'frame.load.threads',
+      'frames.all', 'frames.fpsSeries', 'frames.get', 'threads.pattern', 'ui.get',
     ]);
   });
 

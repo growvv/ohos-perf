@@ -1164,7 +1164,8 @@ describe('realDeps().query', () => {
   it('exposes the same sorted tool list as the registry', () => {
     expect(realDeps('0.0.0').tools().map((t) => t.name)).toEqual([
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
-      'frames.all', 'frames.get', 'threads.pattern', 'ui.get',
+      'frame.load.files', 'frame.load.symbols', 'frame.load.threads',
+      'frames.all', 'frames.fpsSeries', 'frames.get', 'threads.pattern', 'ui.get',
     ]);
   });
 });

@@ -15,6 +15,12 @@ export interface FrameLoadThread {
   samples: number;
 }
 
+/** Sampled-event weight attributed to one file path. */
+export interface PerfFileAttribution {
+  filePath: string;
+  samples: number;
+}
+
 interface SamplePoint {
   ts: number;
   count: number;

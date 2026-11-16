@@ -1,4 +1,8 @@
 import { computeBinderAnalysis } from '../analyze/binder';
+import { computeFpsWindows } from '../analyze/fps';
+import {
+  FrameLoadIndex, type FrameLoadThread, type PerfFileAttribution,
+} from '../analyze/frame-load';
 import {
   computeThreadAnalysis, type RedundantThreadPattern,
 } from '../analyze/threads-score';
@@ -13,6 +17,7 @@ import type { DrillDownHandle } from '../report/evidence';
 import type { AppIdentity } from '../types';
 import { CallstackQuery } from './callstack';
 import { FrameQuery } from './frames';
+import { PerfQuery } from './perf';
 
 /**
  * Named drill-down queries: the tools an agent calls after reading
@@ -215,6 +220,34 @@ function rangeArg(
   return { startNs, endNs };
 }
 
+/** Like {@link rangeArg}, but the range is mandatory. */
+function requiredRange(
+  query: string,
+  args: Record<string, unknown>,
+): { startNs: number; endNs: number } {
+  const range = rangeArg(query, args);
+  if (range === undefined) throw badArgs(query, 'missing number argument "startNs"');
+  return range;
+}
+
+/**
+ * App-thread ids that carry perf samples, sorted.
+ *
+ * `perf_thread` is optional, so an absent table or an app with no perf
+ * threads yields `[]` and every caller returns no rows rather than throwing.
+ */
+function perfThreadIds(ctx: QueryContext): number[] {
+  const perf = new PerfQuery(ctx.db);
+  if (ctx.app.pids.length === 0) return [];
+  const ids = perf.threads([...ctx.app.pids]).map((thread) => thread.threadId);
+  return [...new Set(ids)].sort((a, b) => a - b);
+}
+
+/** Weight share of `samples` over `total`, in percent. */
+function shareOf(samples: number, total: number): number {
+  return total > 0 ? (samples / total) * 100 : 0;
+}
+
 /**
  * True when one redundant-thread pattern answers the requested name.
  *
@@ -349,6 +382,108 @@ const DEFINITIONS: NamedQueryDefinition[] = [
     },
   },
   {
+    name: 'frame.load.files',
+    description:
+      'Sampled-event weight (perf_sample.event_count, not row counts) of the app ' +
+      'threads in a time range, attributed to the leaf symbol\'s file and ' +
+      'sorted by weight. Shares are of the window\'s summed app-thread weight.',
+    args: [
+      { name: 'startNs', type: 'number', required: true, description: 'range start (ns)' },
+      { name: 'endNs', type: 'number', required: true, description: 'range end (ns)' },
+    ],
+    returns: 'PerfFileAttribution[]',
+    parseArgs(args) {
+      rejectUnknownArgs('frame.load.files', args, ['startNs', 'endNs']);
+      requiredRange('frame.load.files', args);
+    },
+    run(ctx, args) {
+      const range = requiredRange('frame.load.files', args);
+      const threadIds = perfThreadIds(ctx);
+      if (threadIds.length === 0) return [];
+      const perf = new PerfQuery(ctx.db);
+      const total = perf.eventCount(threadIds, range);
+      const byFile = new Map<string, number>();
+      for (const row of perf.leafAttribution(threadIds, range)) {
+        byFile.set(row.filePath, (byFile.get(row.filePath) ?? 0) + row.samples);
+      }
+      return [...byFile.entries()]
+        .map(([filePath, samples]): PerfFileAttribution & { share: number } => ({
+          filePath,
+          samples,
+          share: shareOf(samples, total),
+        }))
+        .sort(
+          (a, b) =>
+            b.samples - a.samples ||
+            (a.filePath < b.filePath ? -1 : a.filePath > b.filePath ? 1 : 0),
+        );
+    },
+  },
+  {
+    name: 'frame.load.symbols',
+    description:
+      'Sampled-event weight (perf_sample.event_count, not row counts) of the app ' +
+      'threads in a time range, attributed to the leaf symbol of each callchain. ' +
+      'Shares are of the window\'s summed app-thread weight, so unattributed ' +
+      'samples stay visible as rows not summing to 100%.',
+    args: [
+      { name: 'startNs', type: 'number', required: true, description: 'range start (ns)' },
+      { name: 'endNs', type: 'number', required: true, description: 'range end (ns)' },
+    ],
+    returns: 'PerfLeafAttribution[]',
+    parseArgs(args) {
+      rejectUnknownArgs('frame.load.symbols', args, ['startNs', 'endNs']);
+      requiredRange('frame.load.symbols', args);
+    },
+    run(ctx, args) {
+      const range = requiredRange('frame.load.symbols', args);
+      const threadIds = perfThreadIds(ctx);
+      if (threadIds.length === 0) return [];
+      const perf = new PerfQuery(ctx.db);
+      const total = perf.eventCount(threadIds, range);
+      return perf
+        .leafAttribution(threadIds, range)
+        .map((row) => ({ ...row, share: shareOf(row.samples, total) }));
+    },
+  },
+  {
+    name: 'frame.load.threads',
+    description:
+      'Sampled-event weight (perf_sample.event_count, not row counts) of the app ' +
+      'threads in a time range, split by thread and sorted by weight. Shares ' +
+      'are of the summed weight of the returned rows.',
+    args: [
+      { name: 'startNs', type: 'number', required: true, description: 'range start (ns)' },
+      { name: 'endNs', type: 'number', required: true, description: 'range end (ns)' },
+    ],
+    returns: 'FrameLoadThread[]',
+    parseArgs(args) {
+      rejectUnknownArgs('frame.load.threads', args, ['startNs', 'endNs']);
+      requiredRange('frame.load.threads', args);
+    },
+    run(ctx, args) {
+      const range = requiredRange('frame.load.threads', args);
+      if (ctx.app.pids.length === 0) return [];
+      const index = FrameLoadIndex.build({
+        perf: new PerfQuery(ctx.db),
+        pids: ctx.app.pids,
+        range,
+      });
+      if (index === undefined) return [];
+      const rows = index.threadLoads({
+        ts: range.startNs,
+        dur: range.endNs - range.startNs,
+      });
+      const total = rows.reduce((sum, row) => sum + row.samples, 0);
+      return rows.map(
+        (row): FrameLoadThread & { share: number } => ({
+          ...row,
+          share: shareOf(row.samples, total),
+        }),
+      );
+    },
+  },
+  {
     name: 'frames.all',
     description: 'Every complete frame inside a time window, ordered by ts.',
     args: [
@@ -361,6 +496,27 @@ const DEFINITIONS: NamedQueryDefinition[] = [
     },
     run(ctx, args) {
       return new FrameQuery(ctx.db).all(windowArg('frames.all', args, 'window'));
+    },
+  },
+  {
+    name: 'frames.fpsSeries',
+    description:
+      'Frames per second in fixed 1-second tumbling windows starting at the first ' +
+      'rendered frame in the range. A frame exactly on a boundary belongs to the ' +
+      'next window; gaps longer than one second appear as explicit zero windows. ' +
+      'The final window under-reports a capture that ends mid-second.',
+    args: [
+      { name: 'startNs', type: 'number', required: true, description: 'range start (ns)' },
+      { name: 'endNs', type: 'number', required: true, description: 'range end (ns)' },
+    ],
+    returns: 'FpsWindow[]',
+    parseArgs(args) {
+      rejectUnknownArgs('frames.fpsSeries', args, ['startNs', 'endNs']);
+      requiredRange('frames.fpsSeries', args);
+    },
+    run(ctx, args) {
+      const range = requiredRange('frames.fpsSeries', args);
+      return computeFpsWindows(new FrameQuery(ctx.db).all(range));
     },
   },
   {
