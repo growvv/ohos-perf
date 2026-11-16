@@ -77,7 +77,7 @@ was written.
 - Consumes: the existing `Rule` shape (`id`, `collector`, `plugin?`, `binary?`, `unavailableReason?`).
 - Produces: `js.heap` reports `available: false` with a reason naming the missing driver, on every device — including one whose `hiprofiler_cmd --list` contains `memory-plugin`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `packages/core/test/capability.test.ts`, using the existing `inputs(...)` helper with a plugin list that includes `memory-plugin`:
 
@@ -94,21 +94,21 @@ it('reports js.heap unavailable even when the daemon lists memory-plugin', async
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `npx vitest run packages/core/test/capability.test.ts -t "js.heap unavailable"`
 Expected: FAIL — `available` is `true` because `memory-plugin` is in the list.
 
-- [ ] **Step 3: Drop the plugin claim and state the reason**
+- [x] **Step 3: Drop the plugin claim and state the reason**
 
 In `capability.ts`, replace `hiprofiler('js.heap', 'memory-plugin')` with a rule that has no `plugin` and an explicit `unavailableReason` — the package drives no heap analyzer, so the plugin's presence says nothing. Keep the id in the type and the matrix; a dropped row would read as "not probed".
 
-- [ ] **Step 4: Run it and the whole capability suite**
+- [x] **Step 4: Run it and the whole capability suite**
 
 Run: `npx vitest run packages/core/test/capability.test.ts`
 Expected: PASS, including the existing plugin-list assertions for the other four.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/device/capability.ts packages/core/test/capability.test.ts
@@ -130,7 +130,7 @@ git commit -m "fix(core): report js.heap unavailable until an analyzer consumes 
   - `export function memoryPlugin(opts: { statisticsIntervalMs?: number }): HiprofilerPlugin` — `pluginName: 'memory-plugin'`, `configData` carrying `statistics_interval`, `report_process_tree: true`, `report_sysmem: true`.
   - `HIPROFILER_PLUGIN_NAMES` gains `'memory'`, so `collect({ hiprofiler: { plugins: ['memory'] } })` is accepted.
 
-- [ ] **Step 1: Write the failing template test**
+- [x] **Step 1: Write the failing template test**
 
 ```ts
 it('configures memory-plugin so it emits per-process rows', () => {
@@ -144,21 +144,21 @@ it('configures memory-plugin so it emits per-process rows', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `npx vitest run packages/core/test/collector-hiprofiler-templates.test.ts -t "memory-plugin"`
 Expected: FAIL — `memoryPlugin` is not exported.
 
-- [ ] **Step 3: Implement `memoryPlugin` and register the name**
+- [x] **Step 3: Implement `memoryPlugin` and register the name**
 
 Follow `xpowerPlugin` for shape. Validate `statisticsIntervalMs` is a positive safe integer, throwing `HIPROFILER_BAD_SAMPLE_INTERVAL` (the existing code) so a bad value fails before the device is touched. In `device.ts`, add `'memory'` to `HIPROFILER_PLUGIN_NAMES` and to the plugin dispatch loop.
 
-- [ ] **Step 4: Run the template and device tests**
+- [x] **Step 4: Run the template and device tests**
 
 Run: `npx vitest run packages/core/test/collector-hiprofiler-templates.test.ts packages/core/test/device.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/collectors/hiprofiler/templates.ts packages/core/src/device/device.ts packages/core/test/collector-hiprofiler-templates.test.ts packages/core/test/device.test.ts
@@ -181,7 +181,7 @@ git commit -m "feat(core): add the memory hiprofiler plugin"
   - `export class MemMeasureQuery { hasTable(): boolean; all(range?: TimeRange): ProcessMeasure[]; forPids(pids: number[], range?: TimeRange): ProcessMeasure[]; filters(): Array<{ id: number; name: string; ipid: number }> }`
   - Rows are ordered by `ts, filter_id`; `tsNs`/`durNs` are the stored microseconds multiplied by 1000, so every consumer works in one clock base.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('converts microsecond timestamps to nanoseconds', () => {
@@ -203,22 +203,22 @@ it('returns [] when the scene has no process_measure table', () => {
 });
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `npx vitest run packages/core/test/query-mem-measure.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the query**
+- [x] **Step 3: Implement the query**
 
 One `SELECT` joining `process_measure` to `process_measure_filter` on `filter_id = filter.id`, with `hasTable` guarding the whole thing. Map in one row→interface function; multiply µs by 1000 in exactly one place, with a comment naming the unit.
 
-- [ ] **Step 4: Export and run**
+- [x] **Step 4: Export and run**
 
 Add the class and interface to `index.ts` and to `VALUE_EXPORTS` if the type test requires it.
 Run: `npx vitest run packages/core/test/query-mem-measure.test.ts packages/core/test/types.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/query/mem-measure.ts packages/core/src/index.ts packages/core/test/query-mem-measure.test.ts
@@ -239,7 +239,7 @@ git commit -m "feat(core): read process_measure with a microsecond boundary"
 - Consumes: the existing capability gate.
 - Produces: `CollectOptions.app?: string`. `hidumper` and `uitest` work with no app; `hiperf`, `procfs`, `coldStart` and `hiprofiler`'s `nativehook` still require one and fail with `COLLECT_APP_REQUIRED` before the first device call.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('captures hidumper and uitest with no app at all', async () => {
@@ -259,21 +259,21 @@ it('rejects hiperf with no app before any device call', async () => {
 });
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `npx vitest run packages/core/test/device.test.ts -t "no app"`
 Expected: FAIL — `app` is required by the type, and the existing validation rejects the first case.
 
-- [ ] **Step 3: Make `app` optional and move the requirement to the collectors that need it**
+- [x] **Step 3: Make `app` optional and move the requirement to the collectors that need it**
 
 In `device.ts`, change `app?: string` on `CollectOptions` (it inherits from `TraceCollectOptions`, so check that too) and guard the `BARE_NAME`/`pidof` paths on `app !== undefined`. Keep the `COLLECT_APP_REQUIRED` check for `hiperf`, `procfs`, `coldStart` and `nativehook`. In `program.ts`, change `requiredOption('--app')` to `option('--app')` and let the action's error path report a missing app for the modes that need one.
 
-- [ ] **Step 4: Run both suites**
+- [x] **Step 4: Run both suites**
 
 Run: `npx vitest run packages/core/test/device.test.ts packages/cli/test/program.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/device/device.ts packages/cli/src/program.ts packages/cli/src/commands.ts packages/core/test/device.test.ts packages/cli/test/program.test.ts
@@ -298,7 +298,7 @@ git commit -m "feat: allow an app-less capture for the device-wide collectors"
   - `mem.rss.avg` (same shape)
   - `mem.measure.degraded` (`fidelity: 'proxy'`, `degraded.reason`) when no `process_measure` rows exist for the app.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('derives peak and average rss from process_measure rows', async () => {
@@ -320,22 +320,22 @@ it('never attributes a device-wide row to the app when no pid is known', async (
 });
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `npx vitest run packages/core/test/analyze-mem-measure.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the analyzer**
+- [x] **Step 3: Implement the analyzer**
 
 Filter to the app's pids, then to `name === 'mem.rss'`; peak is `max`, average is the integer mean (`Math.round`). Sort metrics by `id` and evidence by the D5 order, as every other analyzer does. The degraded path is the documented answer to "the capture produced nothing", never a zero.
 
-- [ ] **Step 4: Wire it in and run the whole suite**
+- [x] **Step 4: Wire it in and run the whole suite**
 
 Add `new MemoryMeasureAnalyzer()` to `defaultAnalyzers()`, add `memMeasure` to `AnalyzeContext`, and populate it in `deps.ts` from `new MemMeasureQuery(db)` (the memory tables live in the **trace** database, since `memory-plugin` writes an `.htrace` that converts to `trace.db`).
 Run: `npm test`
 Expected: PASS with a new total.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/analyze packages/cli/src/deps.ts packages/core/test/analyze-mem-measure.test.ts
@@ -353,16 +353,16 @@ git commit -m "feat: analyze process_measure into exact rss metrics"
 - Consumes: everything above.
 - Produces: a skipped-unless-a-device-is-attached test that captures 3 s with `hiprofiler: { plugins: ['memory'] }`, converts, and asserts `process_measure` is non-empty with at least one `mem.rss` filter row.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 Follow `collect-hiprofiler.device.test.ts`: reuse its `attachedHdc()` skip guard, capture with `plugins: ['memory']`, then query the converted `trace.db` for `SELECT COUNT(*) FROM process_measure` and for a `mem.rss` filter join.
 
-- [ ] **Step 2: Run it on the attached device**
+- [x] **Step 2: Run it on the attached device**
 
 Run: `npm run test:device`
 Expected: PASS. Paste the row counts into the task report — they are the evidence that the template's three fields are the difference between `stat`-only and `process_measure`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add packages/core/test/collect-memory.device.test.ts
@@ -383,25 +383,25 @@ git commit -m "test: accept memory collection on a real device"
 - Consumes: the finished surface.
 - Produces: documented behaviour for `--plugins memory`, app-less capture, and the honest `js.heap` verdict; test counts updated to the measured suite total.
 
-- [ ] **Step 1: Update the docs and the help text**
+- [x] **Step 1: Update the docs and the help text**
 
 `README.md` drops `js.heap` from "Not implemented yet" only if Task 1 changed it to "unavailable with a reason" — it stays listed, but as an honest capability rather than a gap. Add `memory` to the plugin list, and note that `hidumper`/`uitest` need no app.
 
-- [ ] **Step 2: Update the test counts**
+- [x] **Step 2: Update the test counts**
 
 Run `npm test`, take the totals from the output, and replace every stale count in README and site. The clean-checkout split must be re-measured, not guessed: move `spike/out` aside, run `npm run test:unit` and `npm run test:device`, record both, restore.
 
-- [ ] **Step 3: Run the doc-reading tests**
+- [x] **Step 3: Run the doc-reading tests**
 
 Run: `npx vitest run packages/cli/test/skill.test.ts packages/cli/test/program.test.ts`
 Expected: PASS.
 
-- [ ] **Step 4: Run the package typecheck scripts — not a hand-written tsc**
+- [x] **Step 4: Run the package typecheck scripts — not a hand-written tsc**
 
 Run: `npm run typecheck -w @ohos-perf/core && npm run typecheck -w @ohos-perf/cli`
 Expected: both exit 0. These use `tsconfig.test.json` and therefore cover the test files; a hand-run `tsc -p tsconfig.json` does not, and that mistake shipped a red CI once.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md site/index.html skill/ohos-perf/SKILL.md packages/cli/src/program.ts
