@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.5.0 — 2026-11-17
+
+### Added
+
+- **Frame load** (`frame-load` analyzer, `FrameLoadIndex`). A frame's load is
+  the summed `perf_sample.event_count` of every app-process thread inside the
+  frame's own **inclusive** `[ts, ts + dur]` window — sample weight, never
+  instructions, CPU time or power. One batched sample read answers every
+  frame, so a 10k-frame trace does not run 10k table scans. Metrics:
+  `frame.load.frames.count`, `.total`, `.avg`, `.min`, `.max`,
+  `.top10.share` and `.span.weight`; the top-10 loaded frames become
+  `frame_load` evidence with rank, share, duration, offset, vsync, flag and
+  the heaviest thread, each drilling down to `frames.get`,
+  `frame.load.threads`, `frame.load.symbols` and `callstack.range`.
+  Overlapping app frames (ui and render in one vsync period) each count a
+  sample, so per-frame totals can exceed `span.weight`, the unique weight read
+  for the span; both numbers are reported so the difference is visible.
+- **Stutter grading** in the frame analyzer. Each stuttered frame
+  (`type = 0`, `flag = 1`) is paired with the first expected frame
+  (`type = 1`) of its vsync group ordered by `(ts, id)`, and the excess
+  (`actual.dur - expected.dur`) is graded level 1 (< 2 frames), level 2
+  (< 6) or level 3, using integer nanosecond math against a 16.67 ms budget.
+  Metrics: `frame.stutter.count`, `.unpaired.count`, `.level1/2/3.count`,
+  plus `.ui/.render/.sceneboard.count` and `.rate`; a stuttered frame with no
+  expected frame in its group has no level and is counted as unpaired, so the
+  levels plus unpaired always sum to the stutter count.
+- **1-second FPS windows** (`computeFpsWindows`). Fixed tumbling windows
+  anchored at the first rendered frame, every window exactly 1 s, a frame on a
+  boundary belongs to the next window, and idle gaps appear as explicit zero
+  windows. Metrics: `frame.fps.window.count`, `.min`, `.max`, `.mean`. The
+  whole-span `frame.fps` stays `approximate` and keeps its own id.
+- **Empty-frame load** in the empty-frame analyzer:
+  `empty_frame.load.total`, `.share` (empty load over the summed load of all
+  app actual frames) and `.severity` (`normal` < 3%, `moderate` < 10%,
+  `severe` ≥ 10%). Each confirmed empty frame's evidence gains `load`,
+  `loadShare` and `loadRank`, plus a `frame.load.symbols` drill-down.
+- **Leaf attribution**: `PerfQuery.leafAttribution(threadIds, range)`
+  attributes each sample's full weight to the deepest frame of its callchain,
+  sorted by weight then symbol then file path.
+- **Named queries**: `frames.fpsSeries`, `frame.load.threads`,
+  `frame.load.symbols` and `frame.load.files`, all returning `[]` when the
+  perf tables are absent. Shares are of the window's summed app-thread
+  weight, so unattributed samples remain visible as rows not summing to 100%.
+
+### Honesty and divergences from upstream
+
+- No ±1 ms window expansion. Upstream widens every frame window by a
+  millisecond, which inflates load for overlapping frames and is why its empty
+  share can exceed 100%. With exact windows the empty numerator is a subset of
+  the denominator, so `empty_frame.load.severity` stops at `severe`; upstream's
+  unreachable `extreme` label is deliberately not ported.
+- `high_load_frames` (`frame_load > 80`) is not ported: it compares an
+  instruction count against a percentage. `frame.load.top10.share` answers the
+  same question with a defined unit.
+- No perf samples, no app perf threads, or samples that exist but fall inside
+  no frame window all yield one `frame.load.degraded` /
+  `empty_frame.load.degraded` proxy naming the cause — the last case names the
+  likely time-base mismatch. No load metric is ever a fabricated zero.
+
 ## 0.4.0 — 2026-11-17
 
 ### Added

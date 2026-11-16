@@ -35,14 +35,14 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P9 are complete**: 1079 tests (1070 unit, 9 in the device
+**P1 through P10 are complete**: 1109 tests (1100 unit, 9 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1045 passed, 25
+attached device are absent — `npm run test:unit` reports **1075 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-eight device-gated skips, so the combined clean checkout is **1046 passed, 33
-skipped**. With both fixtures present and a device attached all 1079 pass. The
+eight device-gated skips, so the combined clean checkout is **1076 passed, 33
+skipped**. With both fixtures present and a device attached all 1109 pass. The
 fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
 `query-sched-state` and the CLI `index` end-to-end tests. The nine tests in
@@ -88,14 +88,16 @@ Implemented today:
 - named drill-down queries (`ohos-perf tools`, `ohos-perf query`) that resolve
   every `Evidence.drillDown` handle, and the agent skill adapter in
   `skill/ohos-perf/SKILL.md`
-- analyzers: frames, fault tree (`fault.*`), binder (`binder.*`), threads
+- analyzers: frames (with stutter levels and 1 s FPS windows), frame load
+  (`frame.load.*`), fault tree (`fault.*`), binder (`binder.*`), threads
   (`thread.*`), memory (`mem.*`), memory measure (`mem.measure.*`, exact RSS
   from hiprofiler's `process_measure`), startup (`startup.*`), render
   (`render.*`), GC pressure (`gc.*`), VSync anomalies (`vsync.*`), empty
-  frames with HapRay's false-positive filters (`empty_frame.*`), RenderService
-  skips reverse-traced through NativeWindow (`rs_skip.*`), folded flamegraph
-  stacks (`flamegraph.*`) and ArkUI component reuse (`components.*`), driven
-  by an offline capability matrix derived from table presence
+  frames with HapRay's false-positive filters and exact load share
+  (`empty_frame.*`), RenderService skips reverse-traced through NativeWindow
+  (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`) and ArkUI component
+  reuse (`components.*`), driven by an offline capability matrix derived from
+  table presence
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
@@ -109,6 +111,8 @@ Metric ids emitted by the analyzers:
 
 | Prefix | Analyzer | Examples |
 | --- | --- | --- |
+| `frame.*` | frames | `frame.jank.rate`, `frame.fps`, `frame.stutter.level2.count`, `frame.fps.window.max` |
+| `frame.load.*` | frame load | `frame.load.total`, `frame.load.top10.share`, `frame.load.span.weight` |
 | `fault.*` | fault tree | `fault.arkui.HandleOnAreaChangeEvent`, `fault.RS.DisplayNodeSkipTimes` |
 | `binder.*` | binder | `binder.transactions.count`, `binder.latency.avg` |
 | `thread.*` | threads | `thread.patterns.count`, `thread.redundant.count` |
@@ -118,7 +122,7 @@ Metric ids emitted by the analyzers:
 | `render.*` | render | `render.fps.live` (proxy), `render.hitch.count` |
 | `gc.*` | GC pressure | `gc.partial.count`, `gc.rate`, `gc.perf.share` |
 | `vsync.*` | VSync anomalies | `vsync.anomaly.rate`, `vsync.mismatch.count` |
-| `empty_frame.*` | empty frames | `empty_frame.count`, `empty_frame.rate` |
+| `empty_frame.*` | empty frames | `empty_frame.count`, `empty_frame.rate`, `empty_frame.load.severity` |
 | `rs_skip.*` | RenderService skips | `rs_skip.frames.count`, `rs_skip.trace.accuracy` |
 | `flamegraph.*` | folded stacks | `flamegraph.app.share`, `flamegraph.stacks.count` |
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
@@ -136,18 +140,24 @@ startup and the flamegraph have no HapRay equivalent that runs on these traces;
 their tests pin the parser, aggregation and marker fallback instead, and no
 parity is claimed for them.
 
-Measured on the two recorded traces, `analyze` reports 56 metrics and 92
-evidence items on `emu_big` (20.8 MB) and 55 metrics and 178 evidence items on
-`real_device` (13.1 MB). Four of the new analyzers report real numbers there:
+Measured on the two recorded traces, `analyze` reports 73 metrics and 93
+evidence items on `emu_big` (20.8 MB) and 72 metrics and 179 evidence items on
+`real_device` (13.1 MB). Four of the older analyzers report real numbers there:
 `vsync.signals.count` 60 with `vsync.periods.count` 7 and `vsync.anomaly.rate`
 101.67 on `emu_big` (0 / 0 / 0 on `real_device`), `empty_frame.count` 6 with a
 10% rate on `emu_big` (160 and 100% on `real_device`), `rs_skip.frames.count` 4
 with `rs_skip.trace.accuracy` 100 on `real_device`, and `gc.partial.count` 2
-with `gc.rate` 0.75 on `real_device`. The flamegraph degrades on both traces
+with `gc.rate` 0.75 on `real_device`. The frame family now reports stutter and
+FPS windows: `frame.stutter.count` 60 on `emu_big` (46 render, 14 ui, all
+unpaired because the trace has no `type = 1` expect frames),
+`frame.fps.window.count` 29 with min 0, max 32 and mean 5.55. The flamegraph
+degrades on both traces
 because `perf_sample` is empty — a hitrace capture has no CPU samples — and
 component reuse reports 0 builds, a measured zero: neither capture recorded
 ArkUI build events. The flamegraph's proxy names its missing input; the reuse
-count is real and zero.
+count is real and zero. `frame-load` and the empty-frame load metrics degrade
+the same way on these traces, with a reason naming `--hiperf`, rather than
+reporting zeros.
 
 Not implemented yet: `coverage`, plus HapRay's UI animation diff. Coverage was
 measured, not assumed: `bjc_cov` is absent from the Mate 60 (`which` finds
@@ -175,7 +185,7 @@ The HapRay parity series (one release per major item, so far):
 | Phase | Workstream | Scope | Status |
 | --- | --- | --- | --- |
 | P9 | W1 report layer | typed report model, offline HTML, JSON/summary/CSV, dependency-free XLSX, `ohos-perf report` | shipped in `0.4.0` |
-| P10 | W2 frame load | per-frame instruction attribution, top-N loaded frames, stutter levels with expected/actual excess, 1 s FPS windows, empty-frame load | planned |
+| P10 | W2 frame load | per-frame sampled-event attribution, top-N loaded frames, stutter levels with expected/actual excess, 1 s FPS windows, empty-frame load share and severity, four attribution queries | shipped in `0.5.0` |
 | P11 | W3 native memory | `native_hook` alloc/free pairing, peak and unreleased by callchain, category evidence, timeline | planned |
 | P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | planned |
 | P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | planned |
@@ -299,6 +309,16 @@ ohos-perf query ./scene frames.get \
   --args '{"id":42}' --json
 ```
 
+The frame-load handles take a nanosecond range, so a top-frame evidence item's
+drill-downs are one command each:
+
+```bash
+ohos-perf query ./scene frames.fpsSeries \
+  --args '{"startNs":0,"endNs":5000000000}' --json
+ohos-perf query ./scene frame.load.symbols \
+  --args '{"startNs":1000000000,"endNs":1100000000}' --json
+```
+
 ## Emulators
 
 `ohos-perf emulator` drives the `Emulator.exe` that DevEco Studio installs, so a
@@ -361,7 +381,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 1079 tests; 1046 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1109 tests; 1076 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
 npm run typecheck -w @ohos-perf/core   # src + tests, the same check CI runs
 npm run typecheck -w @ohos-perf/cli
 ```

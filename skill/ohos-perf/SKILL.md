@@ -77,8 +77,49 @@ the interface; every command speaks stable JSON with `--json`.
      capture has no `perf_sample` rows and reports `flamegraph.degraded` with
      that reason. Component reuse needs `H:CustomNode:Build*` events, which a
      capture without the `ace`/`ark` categories will not have.
+   - Frame load (`frame.load.*`) and empty-frame load
+     (`empty_frame.load.*`) need `--hiperf` on a debuggable app too, and degrade
+     with a reason without it. Stutter levels (`frame.stutter.*`) and the 1 s
+     FPS windows (`frame.fps.window.*`) are measured from the trace alone.
 6. Read `evidence[].drillDown`. Each handle names a `tool`, its `args`, and a
    one-line `returns` shape with an optional `estRows`.
+
+## Frame load and stutter
+
+`frame.load.*` answers "where did the time go in this frame": the summed
+`perf_sample.event_count` of every app thread inside the frame's own inclusive
+`[ts, ts + dur]`. `event_count` is **sample weight** — never instructions, CPU
+time or power, and never a row count.
+
+- `frame.load.total` is the sum of per-frame loads, so overlapping ui and
+  render frames each count the same sample. `frame.load.span.weight` is the
+  unique weight for the span; when it is smaller, that is overlap, not an
+  error. `frame.load.top10.share` is how concentrated the load is.
+- A `frame_load` evidence item is a top-10 loaded frame: `rank`, `load`,
+  `share`, `durMs`, `offsetMs`, `vsync`, `flag`, `topThread` and
+  `topThreadLoad`. Drill down with `frame.load.threads` (per-thread split) or
+  `frame.load.symbols` (leaf symbol and file).
+- `frame.stutter.*` pairs each late frame (`flag = 1`) with the first expected
+  frame of its vsync group and grades the excess: level 1 under 2 frames,
+  level 2 under 6, level 3 above. A late frame with no expected frame is
+  counted by `frame.stutter.unpaired.count` and has no level, so
+  `level1 + level2 + level3 + unpaired = frame.stutter.count`. The
+  `.ui/.render/.sceneboard.count` and `.rate` split the same frames by the
+  process that owns them.
+- `frame.fps.window.count/min/max/mean` are fixed 1-second tumbling windows
+  anchored at the first rendered frame; a frame on a boundary belongs to the
+  next window and an idle gap appears as an explicit zero window. They are
+  `exact` under that rule. The whole-span `frame.fps` stays `approximate`, so
+  do not compare the two as if they measured the same thing.
+- `empty_frame.load.share` is the empty frames' load over the load of all app
+  actual frames; `empty_frame.load.severity` is `normal` under 3%, `moderate`
+  under 10%, `severe` at or above 10%. There is no `extreme` rung: the
+  numerator is a subset of the denominator, so a share above 100% cannot
+  occur. Empty-frame evidence carries `load`, `loadShare` and `loadRank`.
+- Every load metric is `exact` when samples exist and the index built, and a
+  `degraded` proxy with a reason otherwise. A proxy naming a possible
+  time-base mismatch means samples exist but none landed inside any frame
+  window — report that as a capture problem, never as a workload-free app.
 
 ## Drilling down
 
@@ -109,6 +150,20 @@ Not every query reads the trace database. `ui.get` reads the scene's captured
 UI tree (`ui.json`) and returns nodes by `bundleName` and `maxDepth`; a scene
 captured without `--uitest` has no rows, and that is not a failure. Use it to
 name what was on screen when a frame was slow.
+
+The frame-load handles take a nanosecond range and return `[]` — not an
+error — when the capture has no perf tables:
+
+```bash
+ohos-perf query <dir> frames.fpsSeries --args '{"startNs":0,"endNs":5000000000}'
+ohos-perf query <dir> frame.load.threads --args '{"startNs":1000000000,"endNs":1100000000}'
+ohos-perf query <dir> frame.load.symbols --args '{"startNs":1000000000,"endNs":1100000000}'
+ohos-perf query <dir> frame.load.files --args '{"startNs":1000000000,"endNs":1100000000}'
+```
+
+`frame.load.threads`, `.symbols` and `.files` carry `share` as a percentage of
+the window's summed app-thread weight, so rows that do not sum to 100% mean
+some samples were not attributable — not that the numbers are wrong.
 
 ## Comparing against a baseline
 
