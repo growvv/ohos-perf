@@ -22,7 +22,7 @@ describe('Device.gesture', () => {
     const device = new Device('t1', probe as never, {
       hdc: hdc as never,
       gesture: {
-        perform: async (_hdc, target, gesture) => {
+        perform: async (_hdc: unknown, target: string, gesture: Gesture) => {
           seen.push({ target, gesture });
           return { gesture, output: 'No Error' };
         },
