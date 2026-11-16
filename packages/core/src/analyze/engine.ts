@@ -11,6 +11,7 @@ import { MemoryAnalyzer } from './memory';
 import { MemoryMeasureAnalyzer } from './mem-measure';
 import { StartupAnalyzer } from './startup';
 import { RenderAnalyzer } from './render';
+import { RsSkipAnalyzer } from './rs-skip';
 import { ThreadAnalyzer } from './threads-score';
 import { VsyncAnalyzer } from './vsync';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
@@ -188,5 +189,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new GcAnalyzer(),
     new VsyncAnalyzer(),
     new EmptyFrameAnalyzer(),
+    new RsSkipAnalyzer(),
   ];
 }

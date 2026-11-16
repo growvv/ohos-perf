@@ -74,6 +74,12 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
   'empty_frame.count': 'lower',
   'empty_frame.filtered.count': 'lower',
   'empty_frame.rate': 'lower',
+
+  'rs_skip.events.count': 'lower',
+  'rs_skip.frames.count': 'lower',
+  // A higher trace accuracy means more of the skipped frames were explained.
+  'rs_skip.trace.accuracy': 'higher',
+  'rs_skip.traced.count': 'higher',
 };
 
 export type DeltaStatus =

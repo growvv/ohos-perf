@@ -198,6 +198,8 @@ describe('METRIC_DIRECTIONS', () => {
     expect(METRIC_DIRECTIONS['render.hitch.count']).toBe('lower');
     expect(METRIC_DIRECTIONS['empty_frame.count']).toBe('lower');
     expect(METRIC_DIRECTIONS['empty_frame.rate']).toBe('lower');
+    expect(METRIC_DIRECTIONS['rs_skip.frames.count']).toBe('lower');
+    expect(METRIC_DIRECTIONS['rs_skip.trace.accuracy']).toBe('higher');
   });
 
   it('leaves a count with no better direction incomparable', () => {

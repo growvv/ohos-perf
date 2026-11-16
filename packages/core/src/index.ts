@@ -177,6 +177,8 @@ export type {
 } from './analyze/vsync';
 export { EmptyFrameAnalyzer, filterEmptyFrames } from './analyze/empty-frame';
 export type { EmptyFrameFilter } from './analyze/empty-frame';
+export { RsSkipAnalyzer, computeRsSkip } from './analyze/rs-skip';
+export type { RsSkipFrame, RsSkipResult } from './analyze/rs-skip';
 export type {
   BelowThresholdPattern,
   CallchainSample,

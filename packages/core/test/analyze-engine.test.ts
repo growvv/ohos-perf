@@ -20,6 +20,7 @@ import { MemoryAnalyzer } from '../src/analyze/memory';
 import { MemoryMeasureAnalyzer } from '../src/analyze/mem-measure';
 import { StartupAnalyzer } from '../src/analyze/startup';
 import { RenderAnalyzer } from '../src/analyze/render';
+import { RsSkipAnalyzer } from '../src/analyze/rs-skip';
 import { ThreadAnalyzer } from '../src/analyze/threads-score';
 import { VsyncAnalyzer } from '../src/analyze/vsync';
 import { defaultAnalyzers, runAnalyzers } from '../src/analyze/engine';
@@ -336,6 +337,7 @@ describe('defaultAnalyzers', () => {
       'gc',
       'vsync',
       'empty-frame',
+      'rs-skip',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FaultTreeAnalyzer);
@@ -348,6 +350,7 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[8]).toBeInstanceOf(GcAnalyzer);
     expect(analyzers[9]).toBeInstanceOf(VsyncAnalyzer);
     expect(analyzers[10]).toBeInstanceOf(EmptyFrameAnalyzer);
+    expect(analyzers[11]).toBeInstanceOf(RsSkipAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });
