@@ -66,7 +66,8 @@ the interface; every command speaks stable JSON with `--json`.
      in bytes. They cover only the analyzed app (`--app`); an app-less
      analysis reports `mem.measure.degraded` with the reason rather than
      attributing device-wide rows to an app.
-   - The same command also reports, from the trace alone: GC pressure
+   - The same command also reports, from the trace alone: native memory
+     (`mem.native.*`, from `--plugins nativehook`; see the section below), GC pressure
      (`gc.*`, counts per phase plus `gc.rate`), VSync cadence anomalies
      (`vsync.*`, mismatches and high/low-frequency periods scoped to the
      app's own vsync groups), empty frames (`empty_frame.*`, with HapRay's
@@ -120,6 +121,53 @@ time or power, and never a row count.
   `degraded` proxy with a reason otherwise. A proxy naming a possible
   time-base mismatch means samples exist but none landed inside any frame
   window — report that as a capture problem, never as a workload-free app.
+
+## Native memory
+
+`mem.native.*` answers "what did the app allocate and never release inside this
+capture", from hiprofiler's `nativehook` plugin. It needs `--hiprofiler
+--plugins nativehook` on a **debuggable** app; without those tables the
+analyzer reports one `mem.native.degraded` proxy naming that requirement.
+
+- Alloc and free events are paired **per address, LIFO**: a runtime can reuse
+  an address before the previous block is released, so a free consumes the
+  newest block first and continues into older ones. A partial free leaves a
+  remainder active.
+- `mem.native.total.peak` is the highest running total with its instant
+  (`mem.native.peak.offset`, ms from the first app event; ties keep the
+  earliest). `mem.native.total.trough` is the lowest — a trough far below zero
+  means the capture started mid-lifetime, so every absolute figure is a lower
+  bound. `mem.native.total.end` is the total after the last event.
+- `mem.native.unreleased.peak` and `.end` are the bytes still live at those two
+  instants. **"Unreleased" is not "leaked"**: memory still held when the trace
+  stopped may be freed a millisecond later.
+- `mem.native.free.unpaired.count` counts frees of an address with no tracked
+  allocation; those still move the total, so the total is not fully explained
+  by paired events. `mem.native.alloc.unaddressed.count` counts allocations
+  whose address was NULL and can never be freed.
+  `mem.native.unreleased.unattributed.bytes` is live memory with no callchain.
+- Each `native_memory` evidence item is a row at the `peak` or `end` point with
+  `size`, `count`, `relativeMs`, `category`, `subCategory`, `file`, `symbol`
+  and `thread`. Severity is `warn` at or above 5% of that point's live total.
+- Categories come from HapRay's component table: APP, ArkUI, OS_Runtime, RN,
+  Flutter, WEB, KMP, SYS_SDK, plus `Thread` (no file, classified by thread
+  name) and `UNKNOWN`. The symbol refines an ArkTS `.abc` frame to its package
+  and a KMP frame to its Kotlin package.
+- A capture with only `native_hook_statistic` reports
+  `mem.native.statistic.fallback` and `mem.native.unreleased.end` as proxies
+  with a reason, and emits no peak, timeline or per-thread split — those rows
+  cannot support them. Never read the proxy as a peak.
+
+Drill down with these four queries; each returns `[]` — not an error — when the
+capture has no native tables:
+
+```bash
+ohos-perf query <dir> mem.native.unreleased --args '{}' --json
+ohos-perf query <dir> mem.native.unreleased --args '{"point":"peak"}' --json
+ohos-perf query <dir> mem.native.callchain --args '{"callchainId":10}' --json
+ohos-perf query <dir> mem.native.timeline --args '{"bucketMs":1000}' --json
+ohos-perf query <dir> mem.native.categories --args '{}' --json
+```
 
 ## Drilling down
 

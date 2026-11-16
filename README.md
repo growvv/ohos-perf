@@ -35,14 +35,14 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P10 are complete**: 1109 tests (1100 unit, 9 in the device
+**P1 through P11 are complete**: 1150 tests (1141 unit, 9 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1075 passed, 25
+attached device are absent — `npm run test:unit` reports **1125 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-eight device-gated skips, so the combined clean checkout is **1076 passed, 33
-skipped**. With both fixtures present and a device attached all 1109 pass. The
+eight device-gated skips, so the combined clean checkout is **1126 passed, 33
+skipped**. With both fixtures present and a device attached all 1150 pass. The
 fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
 `query-sched-state` and the CLI `index` end-to-end tests. The nine tests in
@@ -91,7 +91,9 @@ Implemented today:
 - analyzers: frames (with stutter levels and 1 s FPS windows), frame load
   (`frame.load.*`), fault tree (`fault.*`), binder (`binder.*`), threads
   (`thread.*`), memory (`mem.*`), memory measure (`mem.measure.*`, exact RSS
-  from hiprofiler's `process_measure`), startup (`startup.*`), render
+  from hiprofiler's `process_measure`), native memory (`mem.native.*`,
+  per-address alloc/free pairing with peak, trough and unreleased rows from
+  hiprofiler's `native_hook`), startup (`startup.*`), render
   (`render.*`), GC pressure (`gc.*`), VSync anomalies (`vsync.*`), empty
   frames with HapRay's false-positive filters and exact load share
   (`empty_frame.*`), RenderService skips reverse-traced through NativeWindow
@@ -118,6 +120,7 @@ Metric ids emitted by the analyzers:
 | `thread.*` | threads | `thread.patterns.count`, `thread.redundant.count` |
 | `mem.*` | memory | `mem.rss.*`, `mem.pss.*` |
 | `mem.measure.*` | memory measure | `mem.measure.rss.peak`, `mem.measure.rss.avg` |
+| `mem.native.*` | native memory | `mem.native.total.peak`, `mem.native.unreleased.end`, `mem.native.callchains.count` |
 | `startup.*` | startup | `startup.count`, `startup.duration` |
 | `render.*` | render | `render.fps.live` (proxy), `render.hitch.count` |
 | `gc.*` | GC pressure | `gc.partial.count`, `gc.rate`, `gc.perf.share` |
@@ -140,8 +143,8 @@ startup and the flamegraph have no HapRay equivalent that runs on these traces;
 their tests pin the parser, aggregation and marker fallback instead, and no
 parity is claimed for them.
 
-Measured on the two recorded traces, `analyze` reports 73 metrics and 93
-evidence items on `emu_big` (20.8 MB) and 72 metrics and 179 evidence items on
+Measured on the two recorded traces, `analyze` reports 74 metrics and 94
+evidence items on `emu_big` (20.8 MB) and 73 metrics and 180 evidence items on
 `real_device` (13.1 MB). Four of the older analyzers report real numbers there:
 `vsync.signals.count` 60 with `vsync.periods.count` 7 and `vsync.anomaly.rate`
 101.67 on `emu_big` (0 / 0 / 0 on `real_device`), `empty_frame.count` 6 with a
@@ -155,9 +158,9 @@ degrades on both traces
 because `perf_sample` is empty — a hitrace capture has no CPU samples — and
 component reuse reports 0 builds, a measured zero: neither capture recorded
 ArkUI build events. The flamegraph's proxy names its missing input; the reuse
-count is real and zero. `frame-load` and the empty-frame load metrics degrade
-the same way on these traces, with a reason naming `--hiperf`, rather than
-reporting zeros.
+count is real and zero. `frame-load`, the empty-frame load metrics and
+`native-memory` degrade the same way on these traces, with a reason naming
+`--hiperf` or `--plugins nativehook`, rather than reporting zeros.
 
 Not implemented yet: `coverage`, plus HapRay's UI animation diff. Coverage was
 measured, not assumed: `bjc_cov` is absent from the Mate 60 (`which` finds
@@ -186,7 +189,7 @@ The HapRay parity series (one release per major item, so far):
 | --- | --- | --- | --- |
 | P9 | W1 report layer | typed report model, offline HTML, JSON/summary/CSV, dependency-free XLSX, `ohos-perf report` | shipped in `0.4.0` |
 | P10 | W2 frame load | per-frame sampled-event attribution, top-N loaded frames, stutter levels with expected/actual excess, 1 s FPS windows, empty-frame load share and severity, four attribution queries | shipped in `0.5.0` |
-| P11 | W3 native memory | `native_hook` alloc/free pairing, peak and unreleased by callchain, category evidence, timeline | planned |
+| P11 | W3 native memory | `native_hook` alloc/free pairing, peak and unreleased by callchain, category evidence, timeline | shipped in `0.6.0` |
 | P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | planned |
 | P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | planned |
 | P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | planned |
@@ -194,8 +197,8 @@ The HapRay parity series (one release per major item, so far):
 | P16 | W8 symbols | symbol statistics, `--so-dir` device symbolization, offline flamegraph artifact, unresolved-symbol evidence | planned |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
-(rev `9386e4e`): 35 user-facing capabilities, of which 6 are already ported, 9
-partial and 20 missing. Items deliberately not ported (Hypium/xdevice test
+(rev `9386e4e`): 35 user-facing capabilities, of which 9 are already ported, 9
+partial and 17 missing. Items deliberately not ported (Hypium/xdevice test
 runner, LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery, bjc
 coverage) keep their measured reasons instead of a claim. The rendered
 roadmap, with the same content in Chinese, is on the

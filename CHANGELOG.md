@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.6.0 — 2026-11-17
+
+### Added
+
+- **Native memory** (`native-memory` analyzer, `mem.native.*`) from
+  hiprofiler's `nativehook` plugin. `NativeHookQuery` gives typed, batched
+  access to `native_hook`, `native_hook_frame` and `native_hook_statistic`,
+  returning `[]`/`false` rather than throwing when a table is absent.
+  - Events are alloc for `AllocEvent`/`MmapEvent`/`0` and free for
+    `FreeEvent`/`MunmapEvent`/`1`; `heap_size` is read as a magnitude and the
+    direction comes from the event type. Anything else is counted but moves
+    nothing.
+  - Frees are paired **per address, LIFO** with partial-free remainders,
+    because a runtime can reuse an address before releasing the previous
+    block. The running total carries its peak (earliest event on a tie),
+    trough and end. A trough far below zero means the capture started
+    mid-lifetime and every absolute figure is a lower bound.
+  - Metrics: `mem.native.events.count`, `.alloc.count/.bytes`,
+    `.free.count/.bytes`, `.total.peak/.trough/.end`,
+    `.unreleased.peak/.end`, `.unreleased.unattributed.bytes`,
+    `.alloc.unaddressed.count`, `.free.unpaired.count`,
+    `.callchains.count` and `.peak.offset`.
+  - Live allocations at the peak and at the end are aggregated per callchain,
+    process and thread (`aggregateUnreleased`), with the file and symbol
+    resolved from the leaf frame through `data_dict`, and become
+    `native_memory` evidence: top 10 at each point, `warn` at or above 5% of
+    that point's live total, drilling down to `mem.native.callchain`,
+    `mem.native.unreleased` and `frames.all`.
+  - `buildNativeTimeline` buckets alloc/free bytes and the running total at a
+    fixed width anchored at the first event, omitting empty buckets and
+    flagging the peak bucket.
+- **Component classification** (`classifyNativePath`, `native-kinds.ts`).
+  HapRay's `kind.json` table — 7 kinds, 22 components, 125 path rules and 25
+  thread rules — ported as a checked-in constant, with exact-path, regex,
+  app-bundle, basename, `SYS_SDK` and thread fallbacks. A symbol refines an
+  ArkTS `.abc` frame to its package and a KMP frame to its Kotlin package.
+- **Named queries**: `mem.native.unreleased` (`point: peak | end`),
+  `mem.native.callchain`, `mem.native.timeline` (`bucketMs`) and
+  `mem.native.categories`, all returning `[]` when the native tables are
+  absent.
+
+### Honesty and divergences from upstream
+
+- "Unreleased" means still allocated when the capture stopped — it is not a
+  leak claim. No leak labels are emitted.
+- A capture with only `native_hook_statistic` reports
+  `mem.native.statistic.fallback` and `mem.native.unreleased.end` as proxies
+  with a reason, and emits no peak, timeline or per-thread split: those rows
+  carry no per-allocation timestamp, thread or address.
+- Upstream loads one rule list into both an exact dict and a regex list, so a
+  rule containing a metacharacter matches both ways and exact precedence is
+  accidental. Here each rule is exactly one of the two, decided once by
+  upstream's own metacharacter test.
+- `all_heap_size` and `current_size_dur` are read but never interpreted:
+  their semantics are undocumented upstream and the report does not use them.
+- No `native_hook` rows and no statistics yield one `mem.native.degraded`
+  proxy naming `hiprofiler --plugins nativehook` and the debuggable-app
+  requirement — never a zero. Both recorded traces have empty `native_hook`
+  tables, so `native-memory` degrades there: `emu_big` reports 74 metrics and
+  94 evidence items, `real_device` 73 and 180.
+
 ## 0.5.0 — 2026-11-17
 
 ### Added
