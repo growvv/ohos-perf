@@ -212,7 +212,10 @@ describe('EmulatorClient instance/image root discovery', () => {
     try {
       const client = new StubEmulator(
         { stdout: '[]' },
-        { emulatorPath: BIN, env: { LOCALAPPDATA: root, PATH: '' } },
+        // The redirect lives in a Windows-shaped tree, so pin the platform:
+        // without this the test passes only on a Windows host and CI's Linux
+        // runners skip `.emu_config` discovery entirely.
+        { emulatorPath: BIN, platform: 'win32', env: { LOCALAPPDATA: root, PATH: '' } },
       );
       await client.listDetailed();
       expect(client.calls[0].args).toEqual([
@@ -235,7 +238,10 @@ describe('EmulatorClient instance/image root discovery', () => {
     try {
       const client = new StubEmulator(
         { stdout: '[]' },
-        { emulatorPath: BIN, env: { LOCALAPPDATA: root, PATH: '' } },
+        // The redirect lives in a Windows-shaped tree, so pin the platform:
+        // without this the test passes only on a Windows host and CI's Linux
+        // runners skip `.emu_config` discovery entirely.
+        { emulatorPath: BIN, platform: 'win32', env: { LOCALAPPDATA: root, PATH: '' } },
       );
       await client.listDetailed();
       expect(client.calls[0].args).toContain('E:/new/deployed');
@@ -252,7 +258,10 @@ describe('EmulatorClient instance/image root discovery', () => {
     try {
       const client = new StubEmulator(
         { stdout: '[]' },
-        { emulatorPath: BIN, env: { LOCALAPPDATA: root, PATH: '' } },
+        // The redirect lives in a Windows-shaped tree, so pin the platform:
+        // without this the test passes only on a Windows host and CI's Linux
+        // runners skip `.emu_config` discovery entirely.
+        { emulatorPath: BIN, platform: 'win32', env: { LOCALAPPDATA: root, PATH: '' } },
       );
       await client.listDetailed();
       expect(client.calls[0].args).toContain('E:/fallback/deployed');
@@ -266,7 +275,10 @@ describe('EmulatorClient instance/image root discovery', () => {
     try {
       const client = new StubEmulator(
         { stdout: '[]' },
-        { emulatorPath: BIN, env: { LOCALAPPDATA: root, PATH: '' } },
+        // The redirect lives in a Windows-shaped tree, so pin the platform:
+        // without this the test passes only on a Windows host and CI's Linux
+        // runners skip `.emu_config` discovery entirely.
+        { emulatorPath: BIN, platform: 'win32', env: { LOCALAPPDATA: root, PATH: '' } },
       );
       await client.listDetailed();
       expect(client.calls[0].args).toEqual([
