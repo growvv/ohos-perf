@@ -23,7 +23,7 @@
 import type { CapabilityId } from '../device/capability';
 import { OhosPerfError } from '../errors';
 import type { SceneLayout } from '../ingest/scene';
-import type { Hdc } from '../transport/hdc';
+import type { Hdc, HdcResult } from '../transport/hdc';
 import type { Collector } from './types';
 import { parseSize } from './hitrace';
 
@@ -163,6 +163,58 @@ function assertEvents(events: readonly string[]): void {
   }
 }
 
+/** The software event hiperf can sample on a device with no PMU. */
+export const DEFAULT_SOFTWARE_EVENT = 'sw-task-clock';
+
+/**
+ * Resolve the `-e` list for a recording.
+ *
+ * `perf.pmu` is false wherever the hardware has no PMU (the emulator), while
+ * `perf.samples` is true on any device whose `hiperf` binary exists. Without a
+ * PMU, hiperf's own default event is a hardware one that samples nothing, and
+ * an empty recording is indistinguishable from an idle app — exactly the
+ * failure the capability model forbids. So a PMU-less device gets an explicit
+ * software event, and a caller who asked for a hardware event there is
+ * rejected with the software events the probe actually found, rather than
+ * being allowed to record nothing and be told the app was quiet.
+ *
+ * `probed` is the full event list the probe read from `hiperf list`; a name
+ * outside it is rejected on any device, because hiperf cannot sample an event
+ * it does not offer.
+ */
+export function hiperfEventsFor(
+  requested: readonly string[] | undefined,
+  hasPmu: boolean,
+  probed: readonly string[],
+): string[] | undefined {
+  if (requested !== undefined) {
+    assertEvents(requested);
+    for (const event of requested) {
+      if (probed.length > 0 && !probed.includes(event)) {
+        throw new OhosPerfError(
+          `event ${JSON.stringify(event)} is not offered by this device's hiperf;` +
+            ` the probe found: ${probed.join(', ') || '(none)'}`,
+          { code: 'HIPERF_BAD_EVENT' },
+        );
+      }
+      if (!hasPmu && event.startsWith('hw-')) {
+        throw new OhosPerfError(
+          `event ${JSON.stringify(event)} needs a hardware PMU, which this device` +
+            ` does not report; use a software event instead:` +
+            ` ${probed.filter((name) => name.startsWith('sw-')).join(', ') || '(none probed)'}`,
+          { code: 'HIPERF_BAD_EVENT' },
+        );
+      }
+    }
+    return [...requested];
+  }
+  // No request: let hiperf use its default when it has a PMU, and force a
+  // software event when it does not. `undefined` means "emit no -e".
+  if (hasPmu) return undefined;
+  const software = probed.find((name) => name.startsWith('sw-')) ?? DEFAULT_SOFTWARE_EVENT;
+  return [software];
+}
+
 /** How many device-output lines an error message may quote. */
 const DETAIL_MAX_LINES = 5;
 
@@ -214,7 +266,28 @@ export class HiperfCollector implements Collector {
     const devicePath = DEVICE_PERF_PATH;
     await hdc.shell(target, `rm -f ${devicePath}`);
 
-    const record = await hdc.shell(target, hiperfRecordCommand(opts, devicePath));
+    // `Hdc.shell` throws `HDC_SHELL_FAILED` on a nonzero device exit, so the
+    // debuggability message never reaches the checks below as output. Inspect
+    // the transport error too: a release app must surface as
+    // `HIPERF_NOT_DEBUGGABLE` (build a debug app), not as a generic transport
+    // failure (look at the cable).
+    let record: HdcResult;
+    try {
+      record = await hdc.shell(target, hiperfRecordCommand(opts, devicePath));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes(NOT_DEBUGGABLE)) {
+        throw new OhosPerfError(
+          `hiperf cannot profile ${opts.app}: the app is not debuggable` +
+            ` (device said: ${detail(message)}); install a debug build to sample it`,
+          { code: 'HIPERF_NOT_DEBUGGABLE', cause: err },
+        );
+      }
+      throw new OhosPerfError(
+        `hiperf record failed for ${opts.app}: ${message}`,
+        { code: 'HIPERF_RECORD_FAILED', cause: err },
+      );
+    }
     const output = combined(record);
     if (output.includes(NOT_DEBUGGABLE)) {
       throw new OhosPerfError(

@@ -532,6 +532,41 @@ describe('scene metadata', () => {
     expect(read !== undefined && 'startedAtNs' in read).toBe(false);
   });
 
+  it('round-trips the render and ui capture counts', () => {
+    const l = layout('meta-capture-counts');
+    const meta = metadata({
+      capture: {
+        startedAtMs: 1, durationMs: 10_000,
+        collectors: ['hitrace', 'hidumper', 'uitest'],
+        hiperf: { samples: 0 },
+        hidumper: { frames: 0 },
+        uitest: { nodes: 0 },
+      },
+    });
+    writeSceneMetadata(l, meta);
+    // A zero is a capture that produced nothing, not a missing capture: it
+    // must survive the round trip so the CLI can print it.
+    expect(readSceneMetadata(l)).toEqual(meta);
+  });
+
+  it('drops a descriptor whose capture counts are malformed', () => {
+    const base = metadata({
+      capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace'] },
+    });
+    const docs: unknown[] = [
+      { ...base, capture: { ...base.capture, hidumper: { frames: -1 } } },
+      { ...base, capture: { ...base.capture, hidumper: { frames: 'x' } } },
+      { ...base, capture: { ...base.capture, uitest: { nodes: 1.5 } } },
+      { ...base, capture: { ...base.capture, uitest: {} } },
+    ];
+    docs.forEach((doc, index) => {
+      const l = layout(`meta-capture-bad-${index}`);
+      writeSceneMetadata(l, metadata());
+      writeFileSync(l.metadataFile, JSON.stringify(doc));
+      expect(readSceneMetadata(l), JSON.stringify(doc)).toBeUndefined();
+    });
+  });
+
   it('round-trips an empty device id', () => {
     // Only the type is required, so a write must never produce a file that the
     // reader refuses.

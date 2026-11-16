@@ -85,6 +85,16 @@ describe('RenderAnalyzer', () => {
     });
   });
 
+  it('attributes hitches to the device, not to the app', async () => {
+    // hidumper counts the whole screen: the window may belong to any process.
+    // Labelling the evidence with the app would send an agent looking for the
+    // app's frames when the hitches came from sceneboard or another window.
+    const r = await new RenderAnalyzer().run(ctxWith(capture));
+    const e = r.evidence.find((x) => x.kind === 'fps_baseline');
+    expect(e?.subject.process).not.toBe('com.demo');
+    expect(e?.signals.app).toBe('com.demo');
+  });
+
   it('emits no hitch evidence for a window whose counters did not grow', async () => {
     const quiet: HidumperCapture = {
       ...capture,

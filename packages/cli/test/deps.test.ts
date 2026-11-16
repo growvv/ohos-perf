@@ -393,10 +393,10 @@ describe('realDeps().analyze', () => {
         query: <T = Record<string, unknown>>(): T[] =>
           names.map((name) => ({ name })) as unknown as T[],
       });
-      const matrix = offlineCapabilities(fakeDb(['sched_slice', 'frame_slice']), []);
+      const matrix = offlineCapabilities(fakeDb(['sched_slice', 'frame_slice']), {});
       expect(matrix.has('trace.sched')).toBe(false);
       expect(matrix.get('trace.sched')).toBeUndefined();
-      const both = offlineCapabilities(fakeDb(['sched_slice', 'instant']), []);
+      const both = offlineCapabilities(fakeDb(['sched_slice', 'instant']), {});
       expect(both.has('trace.sched')).toBe(true);
 
       // I2: trace.binder is gated on the full unguarded table set. One missing
@@ -405,16 +405,81 @@ describe('realDeps().analyze', () => {
       const binderTables = [
         'callstack', 'args', 'data_dict', 'process', 'thread', 'trace_range',
       ];
-      const fullBinder = offlineCapabilities(fakeDb(binderTables), []);
+      const fullBinder = offlineCapabilities(fakeDb(binderTables), {});
       expect(fullBinder.has('trace.binder')).toBe(true);
       const minusArgs = offlineCapabilities(
         fakeDb(binderTables.filter((name) => name !== 'args')),
-        [],
+        {},
       );
       expect(minusArgs.has('trace.binder')).toBe(false);
       // startup.app_startup is dead: no capability row is emitted for it.
-      expect(offlineCapabilities(fakeDb(['app_startup']), []).has('startup.app_startup'))
+      expect(offlineCapabilities(fakeDb(['app_startup']), {}).has('startup.app_startup'))
         .toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('feeds a hidumper.json capture into the render analyzer', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-hidumper-wire-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      const capture = {
+        version: 1,
+        intervalMs: 10_000,
+        samples: [
+          { ts: 1, fpsCounts: [{ refreshRate: 60, count: 1000 }],
+            hitches: [{ windowId: 'w1', over16_67: 3, over33: 1, over66: 0 }] },
+          { ts: 2, fpsCounts: [{ refreshRate: 60, count: 1600 }],
+            hitches: [{ windowId: 'w1', over16_67: 9, over33: 2, over66: 1 }] },
+        ],
+      };
+      writeFileSync(join(parent, 'hidumper.json'), JSON.stringify(capture));
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 10_000, collectors: ['hitrace', 'hidumper'] },
+      }));
+
+      const result = await realDeps('0.0.0').analyze(parent);
+      const metric = (id: string): number | string | undefined =>
+        result.metrics.find((m) => m.id === id)?.value;
+      // 600 frames over 10 s; 6 hitches over the window.
+      expect(metric('render.fps.live')).toBe(60);
+      expect(metric('render.hitch.count')).toBe(6);
+      expect(result.metrics.some((m) => m.id === 'render.degraded')).toBe(false);
+      const evidence = result.evidence.find((e) => e.kind === 'fps_baseline');
+      expect(evidence?.signals).toMatchObject({ window: 'w1', over16_67: 6 });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('ignores a stale hidumper.json that scene.json does not list', async () => {
+    // Re-collecting into the same directory without --hidumper leaves the old
+    // file behind. Trusting it would report the previous capture's hitches as
+    // this capture's, which is the same class of bug the procfs gate prevents.
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-hidumper-stale-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'hidumper.json'), JSON.stringify({
+        version: 1, intervalMs: 1000,
+        samples: [
+          { ts: 1, fpsCounts: [{ refreshRate: 60, count: 1 }], hitches: [] },
+          { ts: 2, fpsCounts: [{ refreshRate: 60, count: 2 }], hitches: [] },
+        ],
+      }));
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 10_000, collectors: ['hitrace'] },
+      }));
+
+      const result = await realDeps('0.0.0').analyze(parent);
+      expect(result.metrics.some((m) => m.id === 'render.fps.live')).toBe(false);
+      expect(result.metrics.some((m) => m.id === 'render.degraded')).toBe(true);
     } finally {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -439,14 +504,14 @@ describe('realDeps().analyze', () => {
         (sql.includes('sqlite_master') ? [{ name: 'perf_sample' }] : []) as unknown as T[],
     };
 
-    expect(offlineCapabilities(tableDb(['frame_slice']), [], perfWithRows)
+    expect(offlineCapabilities(tableDb(['frame_slice']), {}, perfWithRows)
       .has('perf.samples')).toBe(true);
     // The table exists but holds no samples: an empty capture is not a
     // capability, so the analyzer degrades instead of reporting a quiet app.
-    expect(offlineCapabilities(tableDb(['frame_slice']), [], perfEmpty)
+    expect(offlineCapabilities(tableDb(['frame_slice']), {}, perfEmpty)
       .has('perf.samples')).toBe(false);
     // No perf database at all.
-    expect(offlineCapabilities(tableDb(['frame_slice']), [])
+    expect(offlineCapabilities(tableDb(['frame_slice']), {})
       .has('perf.samples')).toBe(false);
   });
 
@@ -768,6 +833,8 @@ describe('realDeps().collect', () => {
                   startedAtMs: 1, durationMs: 2,
                   collectors: ['hitrace', 'hiperf', 'hidumper', 'uitest'],
                   hiperf: { samples: 150 },
+                  hidumper: { frames: 0 },
+                  uitest: { nodes: 2 },
                 },
               }));
               writeFileSync(join(parent, 'ui.json'), JSON.stringify({
@@ -788,6 +855,9 @@ describe('realDeps().collect', () => {
         device: { id: 't1', kind: 'emulator' },
         collectors: ['hitrace', 'hiperf', 'hidumper', 'uitest'],
         hiperf: { samples: 150 },
+        // A zero-frame render capture is reported, not dropped: the descriptor
+        // recorded the collector ran and saw nothing.
+        hidumper: { frames: 0 },
         ui: { nodes: 2 },
       });
     } finally {
@@ -899,6 +969,35 @@ describe('realDeps().query', () => {
         sceneDir: parent, name: 'ui.get', args: { bundleName: 'com.demo' },
       });
       expect(mine.rows).toEqual([expect.objectContaining({ type: 'Image', depth: 1 })]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('ignores a ui.json that scene.json does not list', async () => {
+    // A re-capture without --uitest leaves the previous tree behind. The
+    // descriptor is the authority, so the stale tree must not answer ui.get.
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-query-uistale-'));
+    try {
+      createFullTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'ui.json'), JSON.stringify({
+        attributes: { type: 'Root' },
+        children: [{ attributes: { type: 'Stale' }, children: [] }],
+      }));
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace'] },
+      }));
+      const r = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'ui.get', args: {},
+      });
+      expect(r).toMatchObject({ rows: [], total: 0, truncated: false });
+      const caps = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'caps.get', args: { ids: ['ui.tree'] },
+      });
+      expect(caps.rows[0]).toMatchObject({ id: 'ui.tree', available: false });
     } finally {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

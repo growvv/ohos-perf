@@ -8,7 +8,9 @@
  * and turn it into a queryable scene.
  */
 
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync,
+} from 'node:fs';
 import { HitraceCollector } from '../collectors/hitrace';
 import { HiprofilerCollector } from '../collectors/hiprofiler';
 import { MIN_BUFFER_PAGES, type HiprofilerPlugin } from '../collectors/hiprofiler/config';
@@ -19,11 +21,12 @@ import {
   xpowerPlugin,
 } from '../collectors/hiprofiler/templates';
 import { HidumperCollector, type HidumperCapture } from '../collectors/hidumper';
-import { HiperfCollector, type HiperfCapture } from '../collectors/hiperf';
+import { HiperfCollector, hiperfEventsFor, type HiperfCapture } from '../collectors/hiperf';
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import { UitestCollector } from '../collectors/uitest';
 import type { UiNode } from '../query/ui';
 import type { TraceCollectOptions } from '../collectors/types';
+import { frameDelta } from '../analyze/render';
 import { buildMatrix, type CapabilityMatrix } from './capability';
 import { DeviceNotFoundError, OhosPerfError } from '../errors';
 import { writeSceneMetadata } from '../ingest/metadata';
@@ -276,6 +279,19 @@ export class Device {
           );
         }
 
+        // Resolve the sample event before any device call. Without a PMU,
+        // hiperf's own default is a hardware event that samples nothing and
+        // exits 0 — an empty recording that looks exactly like an idle app.
+        // The probe's event lists decide: a PMU-less device gets a software
+        // event, and an explicit hardware event there is rejected.
+        const hiperfEvents = wantsHiperf
+          ? hiperfEventsFor(
+              opts.hiperf?.events,
+              caps.has('perf.pmu'),
+              [...this.snapshot.hiperfHwEvents, ...this.snapshot.hiperfSwEvents],
+            )
+          : undefined;
+
         mkdirSync(layout.root, { recursive: true });
 
         // Every optional collector overwrites its artifact during the capture.
@@ -391,7 +407,7 @@ export class Device {
               ...(opts.hiperf?.frequency === undefined
                 ? {}
                 : { frequency: opts.hiperf.frequency }),
-              ...(opts.hiperf?.events === undefined ? {} : { events: opts.hiperf.events }),
+              ...(hiperfEvents === undefined ? {} : { events: hiperfEvents }),
               ...(opts.hiperf?.callStacks === undefined
                 ? {}
                 : { callStacks: opts.hiperf.callStacks }),
@@ -411,18 +427,37 @@ export class Device {
             runs.push(uitest.collect(hdc, this.id, {}, layout));
           }
 
+          // `allSettled`, not `all`: a rejection must not return while the
+          // sibling collectors are still running, because they would write
+          // this attempt's artifacts *after* the restore and leave the
+          // previous scene holding a mixture of old and new files.
+          //
+          // The rethrown error is still the *chronologically* first failure,
+          // as `Promise.all` reported it: each run records its rejection at
+          // the moment it happens, so which message a caller sees does not
+          // depend on array order.
+          let firstFailure: { error: unknown } | undefined;
+          const guarded = runs.map((run) => run.catch((error: unknown) => {
+            firstFailure ??= { error };
+            throw error;
+          }));
+          const settled = await Promise.allSettled(guarded);
+          if (firstFailure !== undefined) throw firstFailure.error;
+
           // Index-aligned results: the trace is [0] and contributes nothing.
-          const results = await Promise.all(runs);
+          const results = settled.map(
+            (outcome) => (outcome as PromiseFulfilledResult<unknown>).value,
+          );
           let index = 1;
           if (wantsProcfs) procfsSamples = results[index++] as ProcfsSample[];
           if (wantsHiperf) hiperfCapture = results[index++] as HiperfCapture;
           if (wantsHidumper) hidumperCapture = results[index++] as HidumperCapture;
           if (wantsUitest) uiNodes = results[index] as UiNode[];
         } catch (err) {
-          // A collector failure rejects the group while the others may already
-          // have written this attempt's artifacts. The old scene must stay
-          // coherent, so put every remembered file back (or remove the new
-          // one). Never mask the capture error.
+          // Every collector has settled, so nothing can overwrite the restored
+          // bytes afterwards. The old scene must stay coherent, so put every
+          // remembered file back (or remove the new one). Never mask the
+          // capture error.
           restoreArtifacts(previous);
           throw err;
         }
@@ -442,6 +477,14 @@ export class Device {
         // scene.json keeps describing the old trace.db, so the scene directory
         // stays coherent instead of pairing new metadata with an old database.
         const streamer = this.deps.streamer ?? new Streamer();
+        // The trace conversion commits its database before the perf conversion
+        // runs, so a perf failure would otherwise leave a new trace.db beside
+        // the old scene.json — new trace data under the old app identity,
+        // pids and collector list. Move the previous databases aside by
+        // rename (never into memory: a trace database can be hundreds of
+        // megabytes) and put them back if either conversion fails.
+        const previousTraceDb = setAside(layout.traceDb, previousSuffix);
+        const previousTraceSidecar = setAside(`${layout.traceDb}.ohos.ts`, previousSuffix);
         try {
           await streamer.convert(layout.traceFile, layout.traceDb);
           // The perf capture converts the same way and must succeed before the
@@ -454,8 +497,13 @@ export class Device {
           // previous scene had none, so the directory holds exactly the old
           // scene's artifacts. Never mask the conversion error.
           restoreArtifacts(previous);
+          restoreAside(previousTraceDb);
+          restoreAside(previousTraceSidecar);
           throw err;
         }
+        // Both conversions succeeded: the new databases are the scene now.
+        discardAside(previousTraceDb);
+        discardAside(previousTraceSidecar);
 
         // A re-capture into the same sceneRoot that did not run a collector must
         // not leave the previous capture's artifact behind: analyze would
@@ -494,11 +542,16 @@ export class Device {
               ...(wantsHidumper ? ['hidumper'] : []),
               ...(wantsUitest ? ['uitest'] : []),
             ],
-            // A zero-sample capture is recorded explicitly: "hiperf ran and
-            // the app was idle" is a different fact from "hiperf did not run".
+            // A zero-count capture is recorded explicitly: "the collector ran
+            // and saw nothing" is a different fact from "it did not run", and
+            // the CLI prints the number so neither can read as the other.
             ...(hiperfCapture === undefined
               ? {}
               : { hiperf: { samples: hiperfCapture.samples } }),
+            ...(hidumperCapture === undefined
+              ? {}
+              : { hidumper: { frames: frameDelta(hidumperCapture).frames } }),
+            ...(uiNodes === undefined ? {} : { uitest: { nodes: uiNodes.length } }),
           },
         });
 
@@ -529,6 +582,41 @@ function removeIfPresent(path: string): void {
   } catch (err) {
     if ((err as { code?: string }).code !== 'ENOENT') throw err;
   }
+}
+
+/** Suffix for a previous database parked beside the one being replaced. */
+const previousSuffix = '.previous-ohosperf';
+
+/**
+ * Move an existing database aside so a conversion that replaces it can be
+ * undone by a rename, without reading a potentially huge file into memory.
+ * Returns the parked path, or `undefined` when there was nothing to move.
+ */
+function setAside(path: string, suffix: string): string | undefined {
+  if (!existsSync(path)) return undefined;
+  const parked = `${path}${suffix}`;
+  // A leftover from a crashed earlier attempt must not block the rename.
+  rmSync(parked, { force: true });
+  renameSync(path, parked);
+  return parked;
+}
+
+/** Put a parked database back in place, replacing whatever this attempt wrote. */
+function restoreAside(parked: string | undefined): void {
+  if (parked === undefined) return;
+  try {
+    const original = parked.slice(0, -previousSuffix.length);
+    rmSync(original, { force: true });
+    renameSync(parked, original);
+  } catch {
+    // Deliberately swallowed: never replace the real failure.
+  }
+}
+
+/** Delete a parked database after the conversion that replaced it succeeded. */
+function discardAside(parked: string | undefined): void {
+  if (parked === undefined) return;
+  rmSync(parked, { force: true });
 }
 
 /**

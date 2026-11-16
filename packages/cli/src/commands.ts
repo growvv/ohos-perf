@@ -81,7 +81,9 @@ export interface CollectOutput {
   collectors: string[];
   /** Present only when a hiperf capture ran; `samples: 0` is a valid idle app. */
   hiperf?: { samples: number };
-  /** Present only when a uitest capture ran. */
+  /** Present only when a hidumper capture ran; `frames: 0` is a blank screen. */
+  hidumper?: { frames: number };
+  /** Present only when a uitest capture ran; `nodes: 0` is a blank screen. */
   ui?: { nodes: number };
 }
 
@@ -275,6 +277,7 @@ export async function runCollect(
     }
     const samples = [
       ...(result.hiperf === undefined ? [] : [`hiperf ${result.hiperf.samples}`]),
+      ...(result.hidumper === undefined ? [] : [`hidumper ${result.hidumper.frames}`]),
       ...(result.ui === undefined ? [] : [`ui ${result.ui.nodes}`]),
     ];
     if (samples.length > 0) stdout += `samples  ${samples.join(', ')}\n`;

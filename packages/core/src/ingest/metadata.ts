@@ -24,6 +24,16 @@ export interface SceneMetadata {
      * yields no samples, which is a real capture, not a missing one.
      */
     hiperf?: { samples: number };
+    /**
+     * Present only when a hidumper capture ran. `frames` may be 0: a screen
+     * that presented nothing is a measurement, not a missing capture.
+     */
+    hidumper?: { frames: number };
+    /**
+     * Present only when a uitest capture ran. `nodes` may be 0: a blank screen
+     * is a measurement, not a missing capture.
+     */
+    uitest?: { nodes: number };
   };
 }
 
@@ -47,8 +57,15 @@ function isApp(value: unknown): value is SceneMetadata['app'] {
   );
 }
 
-function isHiperfCapture(value: unknown): value is { samples: number } {
-  return isRecord(value) && isFiniteNumber(value.samples) && value.samples >= 0;
+/**
+ * A count is a non-negative integer. Fractional or negative counts describe
+ * nothing a collector can produce, so the descriptor is untrustworthy.
+ */
+function isCountRecord(
+  value: unknown,
+  key: 'samples' | 'frames' | 'nodes',
+): value is Record<typeof key, number> {
+  return isRecord(value) && Number.isSafeInteger(value[key]) && (value[key] as number) >= 0;
 }
 
 function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture']> {
@@ -57,7 +74,9 @@ function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture'
     isFiniteNumber(value.startedAtMs) &&
     isFiniteNumber(value.durationMs) &&
     isStringArray(value.collectors) &&
-    (value.hiperf === undefined || isHiperfCapture(value.hiperf))
+    (value.hiperf === undefined || isCountRecord(value.hiperf, 'samples')) &&
+    (value.hidumper === undefined || isCountRecord(value.hidumper, 'frames')) &&
+    (value.uitest === undefined || isCountRecord(value.uitest, 'nodes'))
   );
 }
 
@@ -124,6 +143,12 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
       ...(parsed.capture.hiperf === undefined
         ? {}
         : { hiperf: { samples: parsed.capture.hiperf.samples } }),
+      ...(parsed.capture.hidumper === undefined
+        ? {}
+        : { hidumper: { frames: parsed.capture.hidumper.frames } }),
+      ...(parsed.capture.uitest === undefined
+        ? {}
+        : { uitest: { nodes: parsed.capture.uitest.nodes } }),
     };
   }
   if (isFiniteNumber(parsed.startedAtNs) && parsed.startedAtNs > 0) {

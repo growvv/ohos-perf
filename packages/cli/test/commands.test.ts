@@ -316,6 +316,7 @@ describe('runCollect', () => {
           device: { id: 't1', kind: 'emulator' },
           collectors: ['hitrace', 'hiperf', 'hidumper', 'uitest'],
           hiperf: { samples: 150 },
+          hidumper: { frames: 601 },
           ui: { nodes: 76 },
         }),
       }),
@@ -325,8 +326,26 @@ describe('runCollect', () => {
     expect(r.stdout).toBe(
       'scene  /abs/scene1\n' +
       'collectors  hitrace, hiperf, hidumper, uitest\n' +
-      'samples  hiperf 150, ui 76\n',
+      'samples  hiperf 150, hidumper 601, ui 76\n',
     );
+  });
+
+  it('prints a zero-frame hidumper capture explicitly', async () => {
+    // Review Focus 1: a screen that presented nothing is a measurement. A
+    // missing line would read as "hidumper did not run".
+    const r = await runCollect(
+      deps({
+        collect: async () => ({
+          sceneDir: '/abs/scene1',
+          device: { id: 't1', kind: 'emulator' },
+          collectors: ['hitrace', 'hidumper'],
+          hidumper: { frames: 0 },
+        }),
+      }),
+      req,
+      {},
+    );
+    expect(r.stdout).toContain('samples  hidumper 0\n');
   });
 
   it('prints a zero-sample hiperf capture explicitly rather than dropping the line', async () => {

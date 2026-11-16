@@ -1069,7 +1069,62 @@ describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
       const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
       expect(meta.capture.collectors).toEqual(['hitrace', 'hiperf', 'hidumper', 'uitest']);
       expect(meta.capture.hiperf).toEqual({ samples: 150 });
+      // The fake capture moves one 60 Hz bucket from 1 to 2: one frame. The
+      // count is recorded so a zero-frame capture is visible, never inferred.
+      expect(meta.capture.hidumper).toEqual({ frames: 1 });
       expect(existsSync(join(root, 'perf.db'))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('passes a software event to hiperf on a device with no PMU', async () => {
+    // The probe's `hiperfHwEvents` is empty (an emulator): hiperf's own default
+    // event is a hardware one that would sample nothing and exit 0, which is
+    // indistinguishable from an idle app. The orchestration must choose a
+    // software event from the probe's list instead.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-pmu-'));
+    try {
+      const h = extraCollectors();
+      const seen: unknown[] = [];
+      const device = new Device('t1', probe as any, {
+        hdc: h.hdcLike as any,
+        streamer: h.streamerLike as any,
+        collector: h.hitraceLike as any,
+        hiperf: { collect: async (
+          _h2: unknown, _t: string, opts: unknown, layout: SceneLayout,
+        ) => {
+          seen.push(opts);
+          writeFileSync(layout.perfFile!, 'perf');
+          return { samples: 3, nonSamples: 0, lost: 0, bytes: 4 };
+        } } as any,
+      });
+      const scene = await device.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root, hiperf: {},
+      }).then((s) => s.ingest());
+      scene.close();
+      expect(seen).toEqual([{
+        durationMs: 1000,
+        app: 'com.demo',
+        // probe.hiperfSwEvents is ['sw-cpu-clock']
+        events: ['sw-cpu-clock'],
+      }]);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects a hardware event on a device with no PMU before capturing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-hwevent-'));
+    try {
+      const h = extraCollectors();
+      const session = await h.device().collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+        hiperf: { events: ['hw-cpu-cycles'] },
+      });
+      await expect(session.ingest()).rejects.toMatchObject({ code: 'HIPERF_BAD_EVENT' });
+      // Validation happens before any collector starts.
+      expect(h.started).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -1160,6 +1215,116 @@ describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
       }
       // No new metadata: the directory still describes the old scene.
       expect(existsSync(join(root, 'scene.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('restores the previous artifacts even when siblings are still running', async () => {
+    // `Promise.all` rejects on the first failure while the other collectors are
+    // still in flight. Restoring at that moment races them: a slow sibling
+    // writes this attempt's artifact *after* the restore, so a failed capture
+    // leaves a mixture of old and new files. The fix waits for every collector
+    // to settle before restoring.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-race-'));
+    try {
+      writeFileSync(join(root, 'hidumper.json'), 'OLD-HIDUMPER');
+      writeFileSync(join(root, 'ui.json'), 'OLD-UI');
+      writeFileSync(join(root, 'perf.data'), 'OLD-PERF');
+
+      const h = extraCollectors();
+      const device = new Device('t1', probe as any, {
+        hdc: h.hdcLike as any,
+        streamer: h.streamerLike as any,
+        collector: h.hitraceLike as any,
+        hiperf: {
+          collect: async () => { throw new Error('hiperf exploded'); },
+        } as any,
+        hidumper: {
+          collect: async (_h2: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+            // Slow enough that the hiperf rejection is observed first.
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            writeFileSync(layout.hidumperFile, 'NEW-HIDUMPER');
+            return { version: 1, intervalMs: 1000, samples: [] };
+          },
+        } as any,
+        uitest: {
+          collect: async (_h2: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            writeFileSync(layout.uiFile, 'NEW-UI');
+            return [];
+          },
+        } as any,
+      });
+
+      const session = await device.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+        hiperf: {}, hidumper: true, uitest: true,
+      });
+      await expect(session.ingest()).rejects.toThrow(/hiperf exploded/);
+      // Wait past the siblings' own delay: if the restore raced them, their
+      // writes land now and overwrite the restored bytes.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(readFileSync(join(root, 'hidumper.json'), 'utf8')).toBe('OLD-HIDUMPER');
+      expect(readFileSync(join(root, 'ui.json'), 'utf8')).toBe('OLD-UI');
+      expect(readFileSync(join(root, 'perf.data'), 'utf8')).toBe('OLD-PERF');
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('restores the previous trace.db when only the perf conversion fails', async () => {
+    // The trace conversion commits the fresh database before the perf
+    // conversion runs. If perf fails, restoring only the collector artifacts
+    // would leave a new trace.db beside the old scene.json — new trace data
+    // under the old app identity, pids and collector list. The old database
+    // must come back too.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-perffail-'));
+    try {
+      const oldDb = join(root, 'trace.db');
+      const db = new DatabaseSync(oldDb);
+      db.exec('CREATE TABLE old_marker(id INT)');
+      db.close();
+      const oldBytes = readFileSync(oldDb);
+      writeFileSync(join(root, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'old.app', processNames: ['old.app'] },
+        pids: [], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 1111, collectors: ['hitrace'] },
+      }));
+
+      const h = extraCollectors();
+      const device = new Device('t1', probe as any, {
+        hdc: h.hdcLike as any,
+        collector: h.hitraceLike as any,
+        streamer: {
+          convert: async (input: string, output: string) => {
+            if (input.endsWith('perf.data')) throw new Error('perf conversion failed');
+            // A real conversion writes a brand-new database.
+            rmSync(output, { force: true });
+            const fresh = new DatabaseSync(output);
+            fresh.exec('CREATE TABLE frame_slice(id INT)');
+            fresh.close();
+          },
+        } as any,
+        hiperf: {
+          collect: async (_h2: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+            writeFileSync(layout.perfFile!, 'perf');
+            return { samples: 5, nonSamples: 0, lost: 0, bytes: 4 };
+          },
+        } as any,
+      });
+
+      const session = await device.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root, hiperf: {},
+      });
+      await expect(session.ingest()).rejects.toThrow(/perf conversion failed/);
+
+      expect(readFileSync(oldDb).equals(oldBytes)).toBe(true);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.durationMs).toBe(1111);
+      expect(meta.capture.collectors).toEqual(['hitrace']);
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

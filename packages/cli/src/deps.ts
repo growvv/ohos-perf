@@ -23,6 +23,7 @@ import {
   ingestScene,
   lookupQuery,
   queryDefinitions,
+  readHidumperCapture,
   readProcfsSamples,
   compareResults,
   readSceneMetadata,
@@ -37,6 +38,7 @@ import {
   type CapabilityId,
   type CapabilityState,
   type NamedQueryInfo,
+  type HidumperCapture,
   type ProcfsSample,
   type UiNode,
   type Scene,
@@ -102,7 +104,7 @@ const OFFLINE_PROBE = (): CapabilityState['probe'] =>
 /** An available state in the offline matrix, with the exact probe shape. */
 function offlineState(
   id: CapabilityId,
-  collector: 'hitrace' | 'procfs' | 'hiperf',
+  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest',
 ): CapabilityState {
   return {
     id,
@@ -123,9 +125,26 @@ function offlineState(
  * table behind it is present. `procfs.jsonl` is a scene artifact, not a table
  * (see {@link offlineCapabilities}).
  */
+/**
+ * The scene artifacts an offline analysis can read, already parsed and already
+ * gated on `scene.json`'s `capture.collectors`.
+ *
+ * They are not database tables, so the matrix cannot discover them from
+ * `sqlite_master`; the caller passes what it read, and a capability is claimed
+ * only when the artifact actually yielded data.
+ */
+export interface SceneArtifacts {
+  /** Valid `/proc` samples; empty when the capture did not sample memory. */
+  procfsSamples?: readonly unknown[];
+  /** A parsed `hidumper.json` (exactly two snapshots); absent when unreadable. */
+  hidumper?: HidumperCapture;
+  /** Flattened UI nodes; absent when the scene carried no trusted `ui.json`. */
+  uiTree?: readonly unknown[];
+}
+
 const TABLE_RULES: ReadonlyArray<{
   id: CapabilityId;
-  collector: 'hitrace' | 'procfs' | 'hiperf';
+  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest';
   tables: readonly string[];
   /**
    * The rule's tables must live in the perf database, and the first must hold
@@ -138,30 +157,51 @@ const TABLE_RULES: ReadonlyArray<{
   { id: 'trace.sched', collector: 'hitrace', tables: ['sched_slice', 'instant'] },
   { id: 'trace.binder', collector: 'hitrace', tables: ['callstack', 'args', 'data_dict', 'process', 'thread', 'trace_range'] },
   { id: 'trace.thread_state', collector: 'hitrace', tables: ['thread_state', 'thread', 'process'] },
+  // Scene artifacts, not tables: `procfs.jsonl`, `hidumper.json` and `ui.json`
+  // are satisfied by the parsed artifact the caller passes in.
   { id: 'mem.procfs', collector: 'procfs', tables: ['procfs.jsonl'] },
+  { id: 'render.fps_live', collector: 'hidumper', tables: ['hidumper.json'] },
+  { id: 'ui.tree', collector: 'uitest', tables: ['ui.json'] },
   { id: 'perf.samples', collector: 'hiperf', tables: ['perf_sample'], perf: true },
 ];
+
+/** Whether one rule's table name is satisfied by the scene's artifacts. */
+function artifactPresent(name: string, artifacts: SceneArtifacts): boolean {
+  switch (name) {
+    case 'procfs.jsonl':
+      return (artifacts.procfsSamples?.length ?? 0) > 0;
+    case 'hidumper.json':
+      return artifacts.hidumper !== undefined;
+    case 'ui.json':
+      return (artifacts.uiTree?.length ?? 0) > 0;
+    default:
+      return false;
+  }
+}
+
+/** Table names in the rules that are scene artifacts rather than DB tables. */
+const ARTIFACT_NAMES = new Set(['procfs.jsonl', 'hidumper.json', 'ui.json']);
 
 /**
  * Build the offline capability matrix from what the scene actually contains.
  *
  * A CLI `analyze` has no device to probe, but the engine still needs to decide
- * which analyzers may run. Deriving availability from the trace database (and
- * `procfs.jsonl`) means a scene that carries the tables gets the analyzers,
+ * which analyzers may run. Deriving availability from the trace database and
+ * the scene's artifacts means a scene that carries them gets the analyzers,
  * while one that does not leaves the capability **absent** from the matrix:
  * `satisfies()` reports it as `capability not probed` and the engine emits a
  * degraded proxy instead of a fabricated zero.
  *
- * `procfs.jsonl` is special: it is a scene artifact, not a database table, and
- * is available only when the file yields at least one valid sample. The caller
- * passes the samples it already read — after applying the scene.json gate
- * (absent file → trust it; present but unreadable or not listing `procfs` →
- * empty) — so the file is parsed once and `mem.procfs` cannot be claimed for a
- * capture that did not sample memory.
+ * `procfs.jsonl`, `hidumper.json` and `ui.json` are artifacts, not database
+ * tables, and are available only when the caller's parsed copy yields data.
+ * The caller applies the scene.json gate first (absent file → trust it;
+ * present but unreadable or not listing the collector → empty), so the file is
+ * parsed once and a capability cannot be claimed for a capture that did not
+ * produce it.
  */
 export function offlineCapabilities(
   db: CapabilityMatrixDb,
-  procfsSamples: readonly unknown[],
+  artifacts: SceneArtifacts,
   perfDb?: CapabilityMatrixDb,
 ): CapabilityMatrix {
   const tablesOf = (target: CapabilityMatrixDb): Set<string> => new Set(
@@ -176,7 +216,7 @@ export function offlineCapabilities(
   for (const rule of TABLE_RULES) {
     const source = rule.perf === true ? perfTables : tables;
     const present = rule.tables.every((name) =>
-      name === 'procfs.jsonl' ? procfsSamples.length > 0 : source.has(name),
+      ARTIFACT_NAMES.has(name) ? artifactPresent(name, artifacts) : source.has(name),
     );
     if (!present) continue;
     // A table that exists but holds no rows is an empty capture, not a
@@ -205,6 +245,8 @@ interface OpenedScene {
   caps: CapabilityMatrix;
   /** The scene's flattened UI tree, when it carried a `ui.json`. */
   uiTree?: readonly UiNode[];
+  /** The scene's render counters, when it carried a trusted `hidumper.json`. */
+  hidumper?: HidumperCapture;
 }
 
 /** True when `path` exists and is a directory (a scene, not an `analyze --json` file). */
@@ -247,6 +289,7 @@ async function analyzeScene(
       binder: new BinderQuery(db),
       startup: new StartupQuery(db),
       ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
+      ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
       ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
       app: opened.app,
       // The whole database: a CLI run has no capture window to honour.
@@ -352,15 +395,21 @@ export function realDeps(
       // read (malformed JSON, wrong version, missing required fields) is an
       // untrustworthy descriptor: treat it as "no procfs" rather than
       // fabricating exact mem.* from a possibly stale capture.
-      const procfsDeclared = !hasMetadataFile ||
+      //
+      // The same rule governs every scene artifact: `hidumper.json` and
+      // `ui.json` are just as stale-able as `procfs.jsonl`.
+      const declared = (collector: string): boolean => !hasMetadataFile ||
         (metadata !== undefined &&
-          (metadata.capture?.collectors.includes('procfs') ?? false));
-      const samples = procfsDeclared
+          (metadata.capture?.collectors.includes(collector) ?? false));
+      const samples = declared('procfs')
         ? readProcfsSamples(layout.procfsFile)
         : [];
+      const hidumper = declared('hidumper')
+        ? readHidumperCapture(layout.hidumperFile)
+        : undefined;
       // A UI dump is a scene artifact, not a table: the query layer receives
       // the flattened rows, and a scene without one simply has no tree.
-      const uiTree = readUiTree(layout.uiFile);
+      const uiTree = declared('uitest') ? readUiTree(layout.uiFile) : undefined;
       // `collect` writes scene.json precisely so a later `analyze` does not
       // need to be told the app again; a scene whose descriptor names the app
       // must not be analyzed as `unknown`. An explicit --app always wins.
@@ -392,8 +441,17 @@ export function realDeps(
         ...(metadata !== undefined ? { metadata } : {}),
         samples,
         app: appIdentity,
-        caps: offlineCapabilities(db, samples, scene.perfDb),
+        caps: offlineCapabilities(
+          db,
+          {
+            procfsSamples: samples,
+            ...(hidumper === undefined ? {} : { hidumper }),
+            ...(uiTree === undefined ? {} : { uiTree }),
+          },
+          scene.perfDb,
+        ),
         ...(uiTree === undefined ? {} : { uiTree }),
+        ...(hidumper === undefined ? {} : { hidumper }),
       };
     } catch (err) {
       scene.close();
@@ -496,10 +554,11 @@ export function realDeps(
       const scene = await session.ingest();
       try {
         // scene.json is the authority on what ran: the collectors list and the
-        // capture summary come from the same descriptor a later analyze reads.
+        // capture counts come from the same descriptor a later analyze reads.
+        // A count of 0 is a capture that saw nothing, and it is reported as
+        // such — never dropped, never inferred from a missing file.
         const layout = createSceneLayout(sceneDir);
         const meta = readSceneMetadata(layout);
-        const nodes = readUiTree(layout.uiFile)?.length;
         return {
           sceneDir,
           device: { id: device.id, kind: device.kind },
@@ -507,7 +566,12 @@ export function realDeps(
           ...(meta?.capture?.hiperf === undefined
             ? {}
             : { hiperf: { samples: meta.capture.hiperf.samples } }),
-          ...(nodes === undefined ? {} : { ui: { nodes } }),
+          ...(meta?.capture?.hidumper === undefined
+            ? {}
+            : { hidumper: { frames: meta.capture.hidumper.frames } }),
+          ...(meta?.capture?.uitest === undefined
+            ? {}
+            : { ui: { nodes: meta.capture.uitest.nodes } }),
         };
       } finally {
         scene.close();

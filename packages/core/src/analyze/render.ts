@@ -9,6 +9,13 @@ function byMetricId(a: Metric, b: Metric): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/**
+ * The evidence subject for render counters. `hidumper` reads RenderService's
+ * device-wide counters, so no process can be attributed a frame; naming the
+ * service is the honest subject.
+ */
+const RENDER_SERVICE = 'RenderService';
+
 /** The evidence contract's order: kind, then window start, then id. */
 function byEvidenceOrder(a: Evidence, b: Evidence): number {
   if (a.kind < b.kind) return -1;
@@ -35,7 +42,7 @@ function delta(start: number, end: number): number {
  * only in the second snapshot is a mode the display switched into, and its
  * frames belong to this window.
  */
-function frameDelta(capture: HidumperCapture): { frames: number; buckets: number } {
+export function frameDelta(capture: HidumperCapture): { frames: number; buckets: number } {
   const [start, end] = capture.samples;
   const rates = new Set<number>();
   for (const bucket of [...start.fpsCounts, ...end.fpsCounts]) rates.add(bucket.refreshRate);
@@ -142,15 +149,21 @@ export class RenderAnalyzer implements Analyzer {
         evidence({
           kind: 'fps_baseline',
           severity: 'warn',
-          subject: { process },
+          // RenderService counts the whole screen, so the window may belong to
+          // any process — sceneboard, another app, a system panel. Labelling
+          // the evidence with the analyzed app would claim an attribution the
+          // capture cannot make; the app goes in `signals` as context only.
+          subject: { process: RENDER_SERVICE },
           window: ctx.window,
           signals: {
             window: window.windowId,
+            app: process,
             over16_67: window.over16_67,
             over33: window.over33,
             over66: window.over66,
           },
-          explain: 'window rendered frames over the 16.67 ms budget',
+          explain: 'window rendered frames over the 16.67 ms budget' +
+            ' (device-wide RenderService counter; the window may not belong to the app)',
           drillDown: [
             {
               label: 'Hitch counters',

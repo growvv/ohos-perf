@@ -2,8 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HiperfCollector, hiperfRecordCommand, parseHiperfSummary } from '../src/collectors/hiperf';
+import {
+  HiperfCollector, hiperfEventsFor, hiperfRecordCommand, parseHiperfSummary,
+} from '../src/collectors/hiperf';
 import { createSceneLayout } from '../src/ingest/scene';
+import { OhosPerfError } from '../src/errors';
 import type { Hdc } from '../src/transport/hdc';
 
 const DEVICE_PATH = '/data/local/tmp/ohosperf_perf.data';
@@ -156,5 +159,99 @@ describe('HiperfCollector', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('reports a release app as HIPERF_NOT_DEBUGGABLE when the transport throws', async () => {
+    // The real Hdc.shell throws HDC_SHELL_FAILED on a nonzero device exit, so
+    // the debuggability check cannot rely on a returned exit code: it must
+    // inspect the transport error, or the actionable code is unreachable on a
+    // real device and the caller is told "transport problem" instead of
+    // "build a debug app".
+    const root = tmp();
+    const calls: string[] = [];
+    const hdc = {
+      async shell(_target: string, cmd: string) {
+        calls.push(cmd);
+        if (cmd.startsWith('hiperf record ')) {
+          throw new OhosPerfError(
+            'hdc shell failed: exit code 1' +
+              ' (hiperf: --app option only support debug application)',
+            { code: 'HDC_SHELL_FAILED' },
+          );
+        }
+        return { stdout: '', stderr: '', code: 0 };
+      },
+    } as unknown as Hdc;
+    try {
+      await expect(new HiperfCollector().collect(
+        hdc, 'dev', { durationMs: 3000, app: 'com.system.app' }, createSceneLayout(root),
+      )).rejects.toMatchObject({ code: 'HIPERF_NOT_DEBUGGABLE' });
+      // Nothing was transferred: the failure happened at the record step.
+      expect(existsSync(join(root, 'perf.data'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a generic transport failure as the transport error', async () => {
+    const root = tmp();
+    const hdc = {
+      async shell(_target: string, cmd: string) {
+        if (cmd.startsWith('hiperf record ')) {
+          throw new OhosPerfError('hdc shell failed: exit code 2 (hiperf: out of memory)',
+            { code: 'HDC_SHELL_FAILED' });
+        }
+        return { stdout: '', stderr: '', code: 0 };
+      },
+    } as unknown as Hdc;
+    try {
+      // A failure that is not about debuggability must not be relabelled: the
+      // caller's fix is different, and the message names what the device said.
+      const err = await new HiperfCollector().collect(
+        hdc, 'dev', { durationMs: 3000, app: 'com.demo' }, createSceneLayout(root),
+      ).catch((e: unknown) => e);
+      expect((err as OhosPerfError).code).toBe('HIPERF_RECORD_FAILED');
+      expect((err as OhosPerfError).message).toContain('out of memory');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('hiperfEventsFor', () => {
+  it('defaults to a software event when the device has no PMU', () => {
+    expect(hiperfEventsFor(undefined, false, ['sw-task-clock', 'sw-cpu-clock']))
+      .toEqual(['sw-task-clock']);
+  });
+
+  it('omits events on a device with a PMU, leaving hiperf its own default', () => {
+    expect(hiperfEventsFor(undefined, true, ['sw-task-clock'])).toBeUndefined();
+  });
+
+  it('keeps an explicitly requested event that the device offers', () => {
+    expect(hiperfEventsFor(['sw-cpu-clock'], false, ['sw-task-clock', 'sw-cpu-clock']))
+      .toEqual(['sw-cpu-clock']);
+  });
+
+  it('rejects a hardware event on a PMU-less device, naming the software events', () => {
+    const err = (() => {
+      try {
+        hiperfEventsFor(['hw-cpu-cycles'], false, ['sw-task-clock', 'sw-cpu-clock']);
+      } catch (caught) {
+        return caught as OhosPerfError;
+      }
+      throw new Error('expected hiperfEventsFor to reject');
+    })();
+    expect(err.code).toBe('HIPERF_BAD_EVENT');
+    expect(err.message).toContain('hw-cpu-cycles');
+    expect(err.message).toContain('sw-task-clock');
+    expect(err.message).toContain('sw-cpu-clock');
+  });
+
+  it('rejects a hardware event the probe did not report even with a PMU', () => {
+    // The probe's list is the authority: an event name hiperf cannot sample
+    // would record nothing and report an idle app.
+    expect(() => hiperfEventsFor(['hw-bogus'], true, ['sw-task-clock']))
+      .toThrow(/hw-bogus/);
   });
 });
