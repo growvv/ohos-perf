@@ -244,12 +244,20 @@ ohos-perf emulator create SpecProbe \
 ```
 
 `list` is the handoff to capture: `--json` prints each instance's `target`, and
-that id goes straight to `collect --target`:
+that id goes straight to `collect --target` (or `caps`/`doctor --target`), which
+otherwise picks the first connected device — wrong when a phone and an emulator
+are both attached:
 
 ```bash
-TARGET=$(ohos-perf emulator list --json | python -c 'import json,sys; print(json.load(sys.stdin)["instances"][0]["target"])')
+TARGET=$(ohos-perf emulator list --json \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).instances[0].target))')
 ohos-perf collect --target "$TARGET" --app com.example.app --duration 10s --out ./scene
 ```
+
+`target` is absent when the instance is not running, or when more than one
+instance (or more than one connected TCP target) makes attribution ambiguous;
+in that case `targetReason` says which. Start the instance first, or pass the id
+from `hdc list targets` yourself.
 
 `start` blocks until `bootevent.boot.completed` reads `true` on the guest, so a
 capture never races the boot. It takes `--timeout <seconds>` (default 180) and
