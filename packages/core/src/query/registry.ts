@@ -3,6 +3,7 @@ import {
   computeThreadAnalysis, type RedundantThreadPattern,
 } from '../analyze/threads-score';
 import { analyzeThreadWakeup } from '../analyze/threads-wakeup';
+import type { UiNode } from './ui';
 import type { QueryHandle } from '../db/driver';
 import type {
   CapabilityId, CapabilityMatrix, CapabilityState,
@@ -34,6 +35,12 @@ export interface QueryContext {
   readonly db: QueryHandle;
   readonly app: AppIdentity;
   readonly caps: CapabilityMatrix;
+  /**
+   * The scene's flattened UI tree, when the capture included a `uitest`
+   * dump. Absent means the scene has no `ui.json`; `ui.get` then returns no
+   * rows rather than failing.
+   */
+  readonly uiTree?: readonly UiNode[];
 }
 
 /** One argument a query accepts, for `ohos-perf tools` and validation. */
@@ -133,6 +140,19 @@ function nameArg(
   const value = args[name];
   if (typeof value !== 'string') {
     throw badArgs(query, `missing string argument "${name}"`);
+  }
+  return value;
+}
+
+function optionalNumberArg(
+  query: string,
+  args: Record<string, unknown>,
+  name: string,
+): number | undefined {
+  const value = args[name];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw badArgs(query, `argument "${name}" must be a finite number`);
   }
   return value;
 }
@@ -376,6 +396,45 @@ const DEFINITIONS: NamedQueryDefinition[] = [
       const results = analyzeThreadWakeup(ctx.db, { appPids: ctx.app.pids });
       const patterns = computeThreadAnalysis(results).redundantThreadsSummary.redundant_threads;
       return patterns.filter((pattern) => patternMatchesName(pattern, name));
+    },
+  },
+  {
+    name: 'ui.get',
+    description:
+      'The flattened UI tree in document order, optionally filtered by bundle name and depth.',
+    args: [
+      {
+        name: 'bundleName',
+        type: 'string',
+        required: false,
+        description: 'keep nodes whose bundleName is exactly this',
+      },
+      {
+        name: 'maxDepth',
+        type: 'number',
+        required: false,
+        description: 'keep nodes at depth <= maxDepth (root is 0)',
+      },
+    ],
+    returns: 'UiNode[]',
+    parseArgs(args) {
+      rejectUnknownArgs('ui.get', args, ['bundleName', 'maxDepth']);
+      optionalStringArg('ui.get', args, 'bundleName');
+      const maxDepth = optionalNumberArg('ui.get', args, 'maxDepth');
+      if (maxDepth !== undefined && maxDepth < 0) {
+        throw badArgs('ui.get', 'argument "maxDepth" must not be negative');
+      }
+    },
+    run(ctx, args) {
+      const bundleName = optionalStringArg('ui.get', args, 'bundleName');
+      const maxDepth = optionalNumberArg('ui.get', args, 'maxDepth');
+      // Rows are already in document order, so filtering preserves it; no
+      // sort is applied and none is needed for D5.
+      return (ctx.uiTree ?? []).filter(
+        (node) =>
+          (bundleName === undefined || node.bundleName === bundleName) &&
+          (maxDepth === undefined || node.depth <= maxDepth),
+      );
     },
   },
 ];

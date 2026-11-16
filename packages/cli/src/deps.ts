@@ -23,6 +23,7 @@ import {
   queryDefinitions,
   readProcfsSamples,
   readSceneMetadata,
+  readUiTree,
   resolveAppIdentity,
   resolveQueryLimit,
   runAnalyzers,
@@ -33,6 +34,7 @@ import {
   type CapabilityState,
   type NamedQueryInfo,
   type ProcfsSample,
+  type UiNode,
   type Scene,
   type SceneLayout,
   type SceneMetadata,
@@ -197,6 +199,8 @@ interface OpenedScene {
   samples: ProcfsSample[];
   app: AppIdentity;
   caps: CapabilityMatrix;
+  /** The scene's flattened UI tree, when it carried a `ui.json`. */
+  uiTree?: readonly UiNode[];
 }
 
 /**
@@ -263,6 +267,9 @@ export function realDeps(
       const samples = procfsDeclared
         ? readProcfsSamples(layout.procfsFile)
         : [];
+      // A UI dump is a scene artifact, not a table: the query layer receives
+      // the flattened rows, and a scene without one simply has no tree.
+      const uiTree = readUiTree(layout.uiFile);
       // `collect` writes scene.json precisely so a later `analyze` does not
       // need to be told the app again; a scene whose descriptor names the app
       // must not be analyzed as `unknown`. An explicit --app always wins.
@@ -295,6 +302,7 @@ export function realDeps(
         samples,
         app: appIdentity,
         caps: offlineCapabilities(db, samples, scene.perfDb),
+        ...(uiTree === undefined ? {} : { uiTree }),
       };
     } catch (err) {
       scene.close();
@@ -371,7 +379,12 @@ export function realDeps(
       const opened = await openOfflineScene(req.sceneDir, req.app);
       try {
         return runNamedQuery(
-          { db: opened.scene.traceDb, app: opened.app, caps: opened.caps },
+          {
+            db: opened.scene.traceDb,
+            app: opened.app,
+            caps: opened.caps,
+            ...(opened.uiTree === undefined ? {} : { uiTree: opened.uiTree }),
+          },
           req.name,
           args,
           { limit },

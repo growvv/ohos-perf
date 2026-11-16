@@ -105,10 +105,10 @@ afterAll(() => {
 });
 
 describe('queryDefinitions', () => {
-  it('lists the seven registered names in sorted order', () => {
+  it('lists the eight registered names in sorted order', () => {
     expect(queryDefinitions().map((d) => d.name)).toEqual([
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
-      'frames.all', 'frames.get', 'threads.pattern',
+      'frames.all', 'frames.get', 'threads.pattern', 'ui.get',
     ]);
   });
 
@@ -233,6 +233,38 @@ describe('runNamedQuery', () => {
   it('returns no binder statistics without app pids', () => {
     const r = runNamedQuery({ ...ctx, app: { ...ctx.app, pids: [] } }, 'binder.processStats', {});
     expect(r.rows).toEqual([]);
+  });
+
+  it('returns the flattened UI tree filtered by bundle', () => {
+    const ctxWithTree: QueryContext = { ...ctx, uiTree: [
+      { depth: 1, type: 'WindowScene', bundleName: 'com.ohos.sceneboard', abilityName: '',
+        text: '', id: '', bounds: '', clickable: false, enabled: true, scrollable: false,
+        children: 1 },
+      { depth: 2, type: 'Image', bundleName: 'com.demo', abilityName: 'EntryAbility',
+        text: '', id: '', bounds: '', clickable: true, enabled: true, scrollable: false,
+        children: 0 },
+    ] };
+    expect(runNamedQuery(ctxWithTree, 'ui.get', {}).total).toBe(2);
+    expect(runNamedQuery(ctxWithTree, 'ui.get', { bundleName: 'com.demo' }).rows)
+      .toEqual([expect.objectContaining({ type: 'Image' })]);
+    expect(runNamedQuery(ctx, 'ui.get', {}).total).toBe(0);
+  });
+
+  it('filters the UI tree by depth and rejects a negative one', () => {
+    const tree: QueryContext = { ...ctx, uiTree: [
+      { depth: 0, type: 'root', bundleName: '', abilityName: '', text: '', id: '',
+        bounds: '', clickable: false, enabled: false, scrollable: false, children: 1 },
+      { depth: 1, type: 'child', bundleName: '', abilityName: '', text: '', id: '',
+        bounds: '', clickable: false, enabled: false, scrollable: false, children: 0 },
+    ] };
+    expect(runNamedQuery(tree, 'ui.get', { maxDepth: 0 }).rows)
+      .toEqual([expect.objectContaining({ type: 'root' })]);
+    try {
+      runNamedQuery(tree, 'ui.get', { maxDepth: -1 });
+      expect.unreachable();
+    } catch (err) {
+      expect((err as OhosPerfError).code).toBe('QUERY_BAD_ARGS');
+    }
   });
 
   it('returns no thread patterns without app pids', () => {

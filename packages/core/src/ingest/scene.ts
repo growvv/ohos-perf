@@ -18,6 +18,8 @@ export interface SceneLayout {
   procfsFile: string;
   /** `hidumper.json` from a RenderService counter capture. */
   hidumperFile: string;
+  /** `ui.json` from a `uitest dumpLayout` capture. */
+  uiFile: string;
   metadataFile: string;
 }
 
@@ -30,6 +32,7 @@ export function createSceneLayout(root: string): SceneLayout {
     perfDb: join(root, 'perf.db'),
     procfsFile: join(root, 'procfs.jsonl'),
     hidumperFile: join(root, 'hidumper.json'),
+    uiFile: join(root, 'ui.json'),
     metadataFile: join(root, 'scene.json'),
   };
 }

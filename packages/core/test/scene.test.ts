@@ -66,6 +66,7 @@ describe('createSceneLayout', () => {
       perfDb: join(dir, 'perf.db'),
       procfsFile: join(dir, 'procfs.jsonl'),
       hidumperFile: join(dir, 'hidumper.json'),
+      uiFile: join(dir, 'ui.json'),
       metadataFile: join(dir, 'scene.json'),
     });
   });
@@ -145,6 +146,7 @@ describe('ingestScene', () => {
       traceDb: join(root, 'trace.db'),
       procfsFile: join(root, 'procfs.jsonl'),
       hidumperFile: join(root, 'hidumper.json'),
+      uiFile: join(root, 'ui.json'),
       metadataFile: join(root, 'scene.json'),
     };
     const { streamer, calls } = fakeStreamer();
@@ -211,6 +213,7 @@ describe('ingestScene', () => {
       traceDb: dbPath,
       procfsFile: join(root, 'procfs.jsonl'),
       hidumperFile: join(root, 'hidumper.json'),
+      uiFile: join(root, 'ui.json'),
       metadataFile: join(root, 'scene.json'),
     };
     const { streamer, calls } = fakeStreamer();

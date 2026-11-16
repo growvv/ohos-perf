@@ -54,6 +54,7 @@ function fakeLayout() {
     traceDb: join(root, 'trace.db'),
     procfsFile: join(root, 'procfs.jsonl'),
     hidumperFile: join(root, 'hidumper.json'),
+    uiFile: join(root, 'ui.json'),
     metadataFile: join(root, 'scene.json'),
   };
 }

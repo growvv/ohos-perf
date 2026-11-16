@@ -820,6 +820,50 @@ describe('realDeps().query', () => {
     }
   });
 
+  it('answers ui.get from the scene\'s ui.json', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-query-ui-'));
+    try {
+      createFullTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'ui.json'), JSON.stringify({
+        attributes: { type: '', bundleName: '', bounds: '[0,0][1216,2688]' },
+        children: [
+          {
+            attributes: {
+              type: 'Image', bundleName: 'com.demo', abilityName: 'EntryAbility',
+              bounds: '[10,200][300,500]', text: '', id: '',
+              clickable: 'true', enabled: 'true', scrollable: 'false',
+            },
+            children: [],
+          },
+        ],
+      }));
+
+      const all = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'ui.get', args: {},
+      });
+      expect(all.total).toBe(2);
+      const mine = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'ui.get', args: { bundleName: 'com.demo' },
+      });
+      expect(mine.rows).toEqual([expect.objectContaining({ type: 'Image', depth: 1 })]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('returns no ui.get rows for a scene without ui.json', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-query-noui-'));
+    try {
+      createFullTraceDb(join(parent, 'trace.db'));
+      const r = await realDeps('0.0.0').query({
+        sceneDir: parent, name: 'ui.get', args: {},
+      });
+      expect(r).toMatchObject({ rows: [], total: 0, truncated: false });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('rejects an unknown query name before opening the scene', async () => {
     await expect(realDeps('0.0.0').query({
       sceneDir: join(tmpdir(), 'ohosperf-does-not-exist'),
@@ -906,7 +950,7 @@ describe('realDeps().query', () => {
   it('exposes the same sorted tool list as the registry', () => {
     expect(realDeps('0.0.0').tools().map((t) => t.name)).toEqual([
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
-      'frames.all', 'frames.get', 'threads.pattern',
+      'frames.all', 'frames.get', 'threads.pattern', 'ui.get',
     ]);
   });
 });

@@ -91,6 +91,9 @@ export type {
   HidumperSnapshot,
   HidumperCapture,
 } from './collectors/hidumper';
+export { UitestCollector, DEVICE_UI_PATH } from './collectors/uitest';
+export { flattenUiTree, readUiTree } from './query/ui';
+export type { UiNode } from './query/ui';
 export type { Collector, TraceCollectOptions } from './collectors/types';
 
 // Ingestion
