@@ -49,6 +49,17 @@ export class StreamerNotFoundError extends OhosPerfError {
   }
 }
 
+export class EmulatorNotFoundError extends OhosPerfError {
+  readonly searchedPaths: string[];
+  constructor(searchedPaths: string[], opts: { cause?: unknown; code?: string } = {}) {
+    super(
+      `HarmonyOS emulator executable not found. Searched paths: ${searchedPaths.join(', ')}`,
+      opts,
+    );
+    this.searchedPaths = searchedPaths;
+  }
+}
+
 export class IngestError extends OhosPerfError {
   readonly stderr: string;
   constructor(
