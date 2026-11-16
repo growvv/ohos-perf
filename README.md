@@ -204,10 +204,15 @@ The HapRay parity series (one release per major item, so far):
 | P16 | W8 symbols | symbol statistics, `--so-dir` device symbolization, offline flamegraph artifact, unresolved-symbol evidence | planned |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
-(rev `9386e4e`): 35 user-facing capabilities, of which 9 are already ported, 9
-partial and 17 missing. Items deliberately not ported (Hypium/xdevice test
-runner, LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery, bjc
-coverage) keep their measured reasons instead of a claim. The rendered
+(rev `9386e4e`): 35 user-facing capabilities, of which 13 are now ported, 8
+partial and 14 missing — re-counted at `0.8.0`, up from 6 / 9 / 20 at `0.3.0`
+when the inventory was taken. Seven rows moved to ported: run-only preparation
+(2), frame stutter and FPS windows (8), frame load (9), native memory (19),
+hilog (30), the XLSX report suite (34) and report comparison (35). Items
+deliberately not ported (Hypium/xdevice test execution, the LLM GUI agent,
+TensorFlow opt-detector, radare2 symbol recovery, bjc coverage) keep their
+measured reasons instead of a claim; the scenario runner replaces the first of
+them rather than porting it. The rendered
 roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).
 
