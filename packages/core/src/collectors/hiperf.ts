@@ -4,8 +4,10 @@
  * `hiperf record` is the on-device sampling profiler DevEco Studio and HapRay
  * drive. Measured on the Mate 60 (HarmonyOS 7.0.0.111):
  *
- * - `--app <pkg>` works only for a **debuggable** app; a release app answers
- *   `--app option only support debug application` and exits nonzero.
+ * - `--app <pkg>` works only for a **debuggable or profileable** app; anything
+ *   else answers `--app option only support debug or profileable application`
+ *   and exits **0**, so the exit code proves nothing and the text is the only
+ *   evidence.
  * - `-a` (system-wide) needs root, which the shipping devices do not grant.
  * - An app that is not burning CPU yields **zero samples** and still exits 0.
  *   That is a valid capture of an idle app, never a failure — and never a
@@ -65,7 +67,17 @@ export interface HiperfCapture {
 
 const SAMPLES_MARKER = /\[ Sample records: (\d+), Non sample records: (\d+) \]/;
 const LOST_MARKER = /\[ Sample lost: (\d+), Non sample lost: (\d+) \]/;
-const NOT_DEBUGGABLE = 'only support debug application';
+/**
+ * The device's refusal text.
+ *
+ * Measured on HarmonyOS 7.0.0.111: `--app option only support debug or
+ * profileable application`, printed with exit 0. Older builds omit
+ * "or profileable"; matching the literal without it found nothing on the
+ * measured device, so a release app was reported as a recording failure with
+ * no diagnosis. Both wordings are accepted, and the match stays anchored to
+ * the full sentence so an unrelated line cannot trigger it.
+ */
+const NOT_DEBUGGABLE = /only support debug(?: or profileable)? application/;
 
 /**
  * Parse hiperf's summary lines.
@@ -276,7 +288,7 @@ export class HiperfCollector implements Collector {
       record = await hdc.shell(target, hiperfRecordCommand(opts, devicePath));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes(NOT_DEBUGGABLE)) {
+      if (NOT_DEBUGGABLE.test(message)) {
         throw new OhosPerfError(
           `hiperf cannot profile ${opts.app}: the app is not debuggable` +
             ` (device said: ${detail(message)}); install a debug build to sample it`,
@@ -289,7 +301,7 @@ export class HiperfCollector implements Collector {
       );
     }
     const output = combined(record);
-    if (output.includes(NOT_DEBUGGABLE)) {
+    if (NOT_DEBUGGABLE.test(output)) {
       throw new OhosPerfError(
         `hiperf cannot profile ${opts.app}: the app is not debuggable` +
           ` (device said: ${detail(output)}); install a debug build to sample it`,

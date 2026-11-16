@@ -126,6 +126,24 @@ describe('HiperfCollector', () => {
     }
   });
 
+  it('recognises the wording a real device prints, with exit 0', async () => {
+    // Measured on HarmonyOS 7.0.0.111: `--app option only support debug or
+    // profileable application`, exit 0. Matching the older wording exactly
+    // meant a release app surfaced as HIPERF_RECORD_FAILED ("no sample
+    // summary"), which tells the caller to check the cable instead of the
+    // build. This fake is the device's output, verbatim.
+    const root = tmp();
+    const { hdc } = fakeHdc([{ match: /^hiperf record /,
+      stdout: '--app option only support debug or profileable application\n', code: 0 }]);
+    try {
+      await expect(new HiperfCollector().collect(
+        hdc, 'dev', { durationMs: 3000, app: 'com.huawei.hmos.settings' }, createSceneLayout(root),
+      )).rejects.toMatchObject({ code: 'HIPERF_NOT_DEBUGGABLE' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('fails when the file is empty', async () => {
     const root = tmp();
     const { hdc, setBytes } = fakeHdc([{ match: /^hiperf record /, stdout: RECORDED }]);
