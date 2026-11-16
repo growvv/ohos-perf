@@ -167,3 +167,69 @@ describe('EmulatorClient failure classification', () => {
     await expect(client.listDetailed()).rejects.toThrow(EmulatorCommandError);
   });
 });
+
+describe('EmulatorClient mutating commands', () => {
+  const withPaths = (): StubEmulator => new StubEmulator(
+    { stdout: '' },
+    {
+      emulatorPath: BIN,
+      instancePath: 'C:/Users/me/DevEco Studio/instances',
+      imageRoot: 'C:/Users/me/DevEco Studio/sdk',
+    },
+  );
+
+  it('builds -start argv with the instance root as one element', async () => {
+    const client = withPaths();
+    await client.startInstance('ProbePhone');
+    expect(client.calls[0]).toEqual({
+      command: BIN,
+      args: [
+        '-start', 'ProbePhone',
+        '-instancePath', 'C:/Users/me/DevEco Studio/instances',
+        '-imageRoot', 'C:/Users/me/DevEco Studio/sdk',
+      ],
+    });
+  });
+
+  it('builds -stop argv without -imageRoot', async () => {
+    const client = withPaths();
+    await client.stopInstance('ProbePhone');
+    expect(client.calls[0].args).toEqual([
+      '-stop', 'ProbePhone', '-instancePath', 'C:/Users/me/DevEco Studio/instances',
+    ]);
+  });
+
+  it('builds -create argv from every supplied field', async () => {
+    const client = withPaths();
+    await client.createInstance({
+      name: 'SpecProbe', deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)',
+      screenProfile: 'Mate 60', memoryGb: 6, storageGb: 8,
+    });
+    expect(client.calls[0].args).toEqual([
+      '-create', 'SpecProbe',
+      '-deviceType', 'phone',
+      '-osVersion', 'HarmonyOS 6.1.1(24)',
+      '-screenProfile', 'Mate 60',
+      '-memory', '6',
+      '-storage', '8',
+      '-instancePath', 'C:/Users/me/DevEco Studio/instances',
+      '-imageRoot', 'C:/Users/me/DevEco Studio/sdk',
+    ]);
+  });
+
+  it('omits optional -create flags that were not supplied', async () => {
+    const client = new StubEmulator({ stdout: '' }, { emulatorPath: BIN });
+    await client.createInstance({ name: 'A', deviceType: 'phone', osVersion: 'V' });
+    expect(client.calls[0].args).toEqual([
+      '-create', 'A', '-deviceType', 'phone', '-osVersion', 'V',
+    ]);
+  });
+
+  it('treats a silent exit-0 no-op as success at this layer', async () => {
+    // The binary prints nothing and exits 0 when it rejects a create; the
+    // lifecycle layer is what verifies the instance exists afterwards.
+    const client = new StubEmulator({ stdout: '' });
+    await expect(client.createInstance({ name: 'A', deviceType: 'phone', osVersion: 'V' }))
+      .resolves.toBeUndefined();
+  });
+});

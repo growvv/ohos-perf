@@ -56,6 +56,16 @@ export interface EmulatorImage {
   readonly releaseType?: string;
 }
 
+/** What `create` needs; validated by the lifecycle layer before it is spawned. */
+export interface CreateEmulatorRequest {
+  readonly name: string;
+  readonly deviceType: string;
+  readonly osVersion: string;
+  readonly screenProfile?: string;
+  readonly memoryGb?: number;
+  readonly storageGb?: number;
+}
+
 /** A line that means the command failed, despite the exit code saying 0. */
 const FAILURE_LINE = /^(?:Emulator: |Unable to )/;
 
@@ -218,6 +228,42 @@ export class EmulatorClient {
       });
   }
 
+  /**
+   * `-start <name>`.
+   *
+   * Fire-and-forget by design: the real binary returns in well under a second
+   * and the instance keeps running after it exits, so the caller must poll
+   * {@link listDetailed} for the state change.
+   */
+  async startInstance(name: string): Promise<void> {
+    await this.run(['-start', name, ...this.instancePathArgs(), ...this.imageRootArgs()]);
+  }
+
+  /** `-stop <name>`; also fire-and-forget, see {@link startInstance}. */
+  async stopInstance(name: string): Promise<void> {
+    await this.run(['-stop', name, ...this.instancePathArgs()]);
+  }
+
+  /**
+   * `-create`, with no validation.
+   *
+   * The binary silently ignores a bad device type, an unknown OS version or a
+   * name that already exists — it prints nothing and exits 0. Deciding those
+   * is {@link EmulatorLifecycle.create}'s job, before this runs.
+   */
+  async createInstance(req: CreateEmulatorRequest): Promise<void> {
+    await this.run([
+      '-create', req.name,
+      '-deviceType', req.deviceType,
+      '-osVersion', req.osVersion,
+      ...(req.screenProfile === undefined ? [] : ['-screenProfile', req.screenProfile]),
+      ...(req.memoryGb === undefined ? [] : ['-memory', String(req.memoryGb)]),
+      ...(req.storageGb === undefined ? [] : ['-storage', String(req.storageGb)]),
+      ...this.instancePathArgs(),
+      ...this.imageRootArgs(),
+    ]);
+  }
+
   /** Spawn without a shell so install paths with spaces stay one argv element. */
   protected spawnProcess(
     command: string,
@@ -256,6 +302,11 @@ export class EmulatorClient {
   /** `-instancePath` when the caller configured one; no flag otherwise. */
   private instancePathArgs(): string[] {
     return this.opts.instancePath === undefined ? [] : ['-instancePath', this.opts.instancePath];
+  }
+
+  /** `-imageRoot` when the caller configured one; no flag otherwise. */
+  private imageRootArgs(): string[] {
+    return this.opts.imageRoot === undefined ? [] : ['-imageRoot', this.opts.imageRoot];
   }
 
   /** Resolve the binary, spawn, and classify the output. */
