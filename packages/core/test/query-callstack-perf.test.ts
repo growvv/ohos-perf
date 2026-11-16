@@ -387,6 +387,60 @@ describe('PerfQuery', () => {
   it('returns nothing for an empty thread list', () => {
     expect(new PerfQuery(perfDb).foldedStacks([], { startNs: 0, endNs: 2000 }, 10)).toEqual([]);
   });
+
+  it('attributes each sample weight to the leaf symbol and file', () => {
+    const rows = new PerfQuery(perfDb).leafAttribution([100], { startNs: 0, endNs: 2000 });
+    // Chain 10 weighs 12 and its depth-3 frame is `raw3` with no resolved file.
+    // Chain 13 also belongs to thread 100 but its only symbol resolves to '',
+    // so it contributes nothing rather than an unattributable row.
+    expect(rows).toEqual([{ symbol: 'raw3', filePath: '', samples: 12 }]);
+  });
+
+  it('resolves the leaf through perf_files exact and file-only matches', () => {
+    const rows = new PerfQuery(perfDb).leafAttribution([101], { startNs: 0, endNs: 2000 });
+    // Chain 11's only frame is file 101 / serial 2 => Other() /lib/libbar2.so.
+    expect(rows).toEqual([{ symbol: 'Other()', filePath: '/lib/libbar2.so', samples: 3 }]);
+  });
+
+  it('orders leaf rows by samples desc, then symbol, then filePath', () => {
+    const tie = withDb('leaf-tie.db', (d) => {
+      d.exec(PERF_SAMPLE_DDL);
+      d.exec(PERF_CALLCHAIN_DDL);
+      d.exec(PERF_FILES_DDL);
+      d.exec(`INSERT INTO perf_sample VALUES
+        (0, 20, 100, 900, 1, 1, 100, 0, 'S'),
+        (1, 21, 200, 900, 1, 1, 200, 0, 'S'),
+        (2, 22, 300, 900, 2, 1, 300, 0, 'S')`);
+      d.exec(`INSERT INTO perf_callchain VALUES
+        (0, 20, 0, 0, 0, 0, NULL, NULL, 'zeta', 0, 0),
+        (1, 21, 0, 0, 0, 0, NULL, NULL, 'alpha', 0, 0),
+        (2, 22, 0, 0, 0, 0, NULL, NULL, 'beta', 0, 0)`);
+    });
+    try {
+      const rows = new PerfQuery(tie).leafAttribution([900], { startNs: 0, endNs: 1000 });
+      expect(rows.map((r) => [r.symbol, r.samples])).toEqual([
+        ['beta', 2], ['alpha', 1], ['zeta', 1],
+      ]);
+    } finally {
+      tie.close();
+    }
+  });
+
+  it('skips chains with no frames or no resolved symbol and empty thread lists', () => {
+    const empty = withDb('leaf-empty.db', (d) => {
+      d.exec(PERF_SAMPLE_DDL);
+      d.exec(PERF_CALLCHAIN_DDL);
+      d.exec(PERF_FILES_DDL);
+      d.exec("INSERT INTO perf_sample VALUES (0, 30, 100, 901, 4, 1, 100, 0, 'S')");
+      d.exec("INSERT INTO perf_callchain VALUES (0, 30, 0, 0, 0, 0, NULL, NULL, NULL, 0, 0)");
+    });
+    try {
+      expect(new PerfQuery(empty).leafAttribution([901], { startNs: 0, endNs: 1000 })).toEqual([]);
+      expect(new PerfQuery(perfDb).leafAttribution([], { startNs: 0, endNs: 2000 })).toEqual([]);
+    } finally {
+      empty.close();
+    }
+  });
 });
 
 describe('real trace smoke', () => {

@@ -47,6 +47,20 @@ export interface PerfCallchain {
 }
 
 /**
+ * Sample weight attributed to one leaf symbol.
+ *
+ * `event_count` is attributed to the deepest frame of the sample's callchain
+ * (the "self" cost), so rows answer "which function was executing when the
+ * sample was taken". A chain whose deepest frame has an empty symbol is not
+ * attributable and contributes no row.
+ */
+export interface PerfLeafAttribution {
+  symbol: string;
+  filePath: string;
+  samples: number;
+}
+
+/**
  * One folded stack, in the format `flamegraph.pl` and every flamegraph viewer
  * understands: `a;b;c` with `samples` samples ending at `c`.
  */
@@ -327,24 +341,11 @@ ORDER BY thread_id, callchain_id`,
     if (threadIds.length === 0 || !this.hasTable('perf_sample')) return [];
     const uniqueThreadIds = [...new Set(threadIds)];
 
-    const samples = this.db.query<{ callchain_id: number | null; weight: number | null }>(
-      `SELECT callchain_id, SUM(event_count) AS weight
-FROM perf_sample
-WHERE thread_id IN (${placeholders(uniqueThreadIds.length)})
-  AND timestamp_trace >= ? AND timestamp_trace <= ?
-  AND callchain_id IS NOT NULL
-GROUP BY callchain_id
-ORDER BY callchain_id`,
-      [...uniqueThreadIds, range.startNs, range.endNs],
-    );
-    const chainIds = samples.map((row) => num(row.callchain_id));
+    const weights = this.chainWeights(uniqueThreadIds, range);
+    const chainIds = [...weights.keys()].sort((a, b) => a - b);
     if (chainIds.length === 0) return [];
 
     const functionsByChain = this.chainFunctions(chainIds);
-    const weights = new Map<number, number>();
-    for (const row of samples) {
-      weights.set(num(row.callchain_id), num(row.weight));
-    }
 
     const folded = new Map<string, number>();
     for (const callchainId of chainIds) {
@@ -362,6 +363,78 @@ ORDER BY callchain_id`,
       }))
       .sort((a, b) => (a.samples !== b.samples ? b.samples - a.samples : a.stack < b.stack ? -1 : a.stack > b.stack ? 1 : 0))
       .slice(0, top === undefined ? undefined : Math.max(0, top));
+  }
+
+  /**
+   * Attributes each sample's weight to the deepest frame of its callchain.
+   *
+   * This is the "self cost" table a hotspot list needs, as opposed to
+   * {@link foldedStacks}, which preserves the whole stack. Rows are sorted by
+   * `samples` descending, then symbol, then filePath, so equal weights never
+   * fall back to row order (D5). A chain with no frames or with an empty leaf
+   * symbol contributes nothing; an empty `threadIds` or a missing
+   * `perf_sample`/`perf_callchain`/`perf_files` returns `[]`.
+   */
+  leafAttribution(
+    threadIds: readonly number[],
+    range: TimeRange,
+  ): PerfLeafAttribution[] {
+    if (threadIds.length === 0 || !this.hasTable('perf_sample')) return [];
+    const uniqueThreadIds = [...new Set(threadIds)];
+
+    const weights = this.chainWeights(uniqueThreadIds, range);
+    const chainIds = [...weights.keys()].sort((a, b) => a - b);
+    if (chainIds.length === 0) return [];
+
+    const functionsByChain = this.chainFunctions(chainIds);
+    const folded = new Map<string, PerfLeafAttribution>();
+    for (const callchainId of chainIds) {
+      const functions = functionsByChain.get(callchainId);
+      const leaf = functions?.[functions.length - 1];
+      if (leaf === undefined || leaf.symbol === '') continue;
+      const key = `${leaf.filePath}\u0000${leaf.symbol}`;
+      const existing = folded.get(key);
+      const weight = weights.get(callchainId) ?? 0;
+      if (existing === undefined) {
+        folded.set(key, { symbol: leaf.symbol, filePath: leaf.filePath, samples: weight });
+      } else {
+        existing.samples += weight;
+      }
+    }
+
+    return [...folded.values()].sort(
+      (a, b) =>
+        b.samples - a.samples ||
+        (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0) ||
+        (a.filePath < b.filePath ? -1 : a.filePath > b.filePath ? 1 : 0),
+    );
+  }
+
+  /**
+   * Summed `event_count` per `callchain_id` for the threads and range.
+   *
+   * Shared by {@link foldedStacks} and {@link leafAttribution} so both weight
+   * samples identically. `callchain_id IS NULL` rows are omitted; the map is
+   * ordered by the caller.
+   */
+  private chainWeights(
+    threadIds: readonly number[],
+    range: TimeRange,
+  ): Map<number, number> {
+    const weights = new Map<number, number>();
+    if (threadIds.length === 0) return weights;
+    const rows = this.db.query<{ callchain_id: number | null; weight: number | null }>(
+      `SELECT callchain_id, SUM(event_count) AS weight
+FROM perf_sample
+WHERE thread_id IN (${placeholders(threadIds.length)})
+  AND timestamp_trace >= ? AND timestamp_trace <= ?
+  AND callchain_id IS NOT NULL
+GROUP BY callchain_id
+ORDER BY callchain_id`,
+      [...threadIds, range.startNs, range.endNs],
+    );
+    for (const row of rows) weights.set(num(row.callchain_id), num(row.weight));
+    return weights;
   }
 
   /**
