@@ -29,6 +29,7 @@ import type { UiNode } from '../query/ui';
 import type { TraceCollectOptions } from '../collectors/types';
 import { frameDelta } from '../analyze/render';
 import { buildMatrix, type CapabilityMatrix } from './capability';
+import { GestureDriver, type Gesture, type GestureResult } from './gesture';
 import { DeviceNotFoundError, OhosPerfError } from '../errors';
 import { writeSceneMetadata } from '../ingest/metadata';
 import {
@@ -111,6 +112,7 @@ export interface DeviceDeps {
   hiperf?: HiperfCollector;
   hidumper?: HidumperCollector;
   uitest?: UitestCollector;
+  gesture?: GestureDriver;
 }
 
 /** Bare device/application/ability names, safe to interpolate into a shell command. */
@@ -156,6 +158,26 @@ export class Device {
   /** Run a command on this device through the transport, targeting `this.id`. */
   shell(cmd: string): Promise<{ stdout: string; stderr: string; code: number }> {
     return this.requireHdc().shell(this.id, cmd);
+  }
+
+  /**
+   * Inject a UI gesture through `uitest uiInput`.
+   *
+   * The capability gate is the same contract `collect` uses: an unavailable
+   * `ui.gesture` throws before any device call, and the message carries the
+   * matrix's reason (`uitest not present on device`).
+   */
+  async gesture(request: Gesture): Promise<GestureResult> {
+    const caps = await this.capabilities();
+    if (!caps.has('ui.gesture')) {
+      const reason = caps.get('ui.gesture')?.reason;
+      throw new OhosPerfError(
+        `gesture requires ui.gesture capability` + (reason ? ` (${reason})` : ''),
+        { code: 'MISSING_CAPABILITY' },
+      );
+    }
+    const hdc = this.requireHdc();
+    return (this.deps.gesture ?? new GestureDriver()).perform(hdc, this.id, request);
   }
 
   /**
