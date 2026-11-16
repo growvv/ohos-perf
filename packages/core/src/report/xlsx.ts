@@ -26,26 +26,21 @@ function crc32(bytes: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function u16(value: number): number[] {
-  return [value & 0xff, (value >>> 8) & 0xff];
-}
-
-function u32(value: number): number[] {
-  return [
-    value & 0xff,
-    (value >>> 8) & 0xff,
-    (value >>> 16) & 0xff,
-    (value >>> 24) & 0xff,
-  ];
-}
-
 interface ZipEntry {
   name: Uint8Array;
   data: Uint8Array;
   crc: number;
 }
 
-/** Store every part in a single ZIP; the caller supplies the fixed order. */
+/**
+ * Store every part in a single ZIP; the caller supplies the fixed order.
+ *
+ * Each part is written into a preallocated buffer with a cursor. A sheet can
+ * be hundreds of kilobytes, and spreading that many bytes into `push()` (or
+ * `Uint8Array.from([...]))` exceeds V8's argument limit — a janky capture has
+ * one evidence row per stuttered frame, so this is the normal case, not an
+ * edge case.
+ */
 function storedZip(files: Array<[string, string]>): Uint8Array {
   const encoder = new TextEncoder();
   const entries: ZipEntry[] = files.map(([name, content]) => {
@@ -53,66 +48,73 @@ function storedZip(files: Array<[string, string]>): Uint8Array {
     return { name: encoder.encode(name), data, crc: crc32(data) };
   });
 
-  const local: number[] = [];
-  const central: number[] = [];
-  let offset = 0;
+  const parts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let localOffset = 0;
 
   for (const entry of entries) {
-    const localStart = offset;
-    const header = [
-      ...u32(0x04034b50), // local file header
-      ...u16(20), // version needed
-      ...u16(0x0800), // UTF-8 names
-      ...u16(0), // stored
-      ...u16(0), // DOS time: 00:00
-      ...u16(0x0021), // DOS date: 1980-01-01
-      ...u32(entry.crc),
-      ...u32(entry.data.length),
-      ...u32(entry.data.length),
-      ...u16(entry.name.length),
-      ...u16(0), // extra length
-      ...entry.name,
-    ];
-    local.push(...header, ...entry.data);
+    const local = new Uint8Array(30 + entry.name.length + entry.data.length);
+    const localView = new DataView(local.buffer);
+    localView.setUint32(0, 0x04034b50, true); // local file header
+    localView.setUint16(4, 20, true); // version needed
+    localView.setUint16(6, 0x0800, true); // UTF-8 names
+    localView.setUint16(8, 0, true); // stored
+    localView.setUint16(10, 0, true); // DOS time: 00:00
+    localView.setUint16(12, 0x0021, true); // DOS date: 1980-01-01
+    localView.setUint32(14, entry.crc, true);
+    localView.setUint32(18, entry.data.length, true);
+    localView.setUint32(22, entry.data.length, true);
+    localView.setUint16(26, entry.name.length, true);
+    localView.setUint16(28, 0, true); // extra length
+    local.set(entry.name, 30);
+    local.set(entry.data, 30 + entry.name.length);
+    parts.push(local);
 
-    central.push(
-      ...u32(0x02014b50), // central directory header
-      ...u16(20), // version made by
-      ...u16(20), // version needed
-      ...u16(0x0800),
-      ...u16(0),
-      ...u16(0),
-      ...u16(0x0021),
-      ...u32(entry.crc),
-      ...u32(entry.data.length),
-      ...u32(entry.data.length),
-      ...u16(entry.name.length),
-      ...u16(0), // extra
-      ...u16(0), // comment
-      ...u16(0), // disk
-      ...u16(0), // internal attrs
-      ...u32(0), // external attrs
-      ...u32(localStart),
-      ...entry.name,
-    );
+    const central = new Uint8Array(46 + entry.name.length);
+    const centralView = new DataView(central.buffer);
+    centralView.setUint32(0, 0x02014b50, true); // central directory header
+    centralView.setUint16(4, 20, true); // version made by
+    centralView.setUint16(6, 20, true); // version needed
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, 0, true);
+    centralView.setUint16(14, 0x0021, true);
+    centralView.setUint32(16, entry.crc, true);
+    centralView.setUint32(20, entry.data.length, true);
+    centralView.setUint32(24, entry.data.length, true);
+    centralView.setUint16(28, entry.name.length, true);
+    centralView.setUint16(30, 0, true); // extra
+    centralView.setUint16(32, 0, true); // comment
+    centralView.setUint16(34, 0, true); // disk
+    centralView.setUint16(36, 0, true); // internal attrs
+    centralView.setUint32(38, 0, true); // external attrs
+    centralView.setUint32(42, localOffset, true);
+    central.set(entry.name, 46);
+    centralParts.push(central);
 
-    offset += header.length + entry.data.length;
+    localOffset += local.length;
   }
 
-  const centralOffset = offset;
-  const centralSize = central.length;
-  const end = [
-    ...u32(0x06054b50),
-    ...u16(0), // disk
-    ...u16(0), // disk with central directory
-    ...u16(entries.length),
-    ...u16(entries.length),
-    ...u32(centralSize),
-    ...u32(centralOffset),
-    ...u16(0), // comment
-  ];
+  const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(4, 0, true); // disk
+  endView.setUint16(6, 0, true); // disk with central directory
+  endView.setUint16(8, entries.length, true);
+  endView.setUint16(10, entries.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, localOffset, true);
+  endView.setUint16(20, 0, true); // comment
 
-  return Uint8Array.from([...local, ...central, ...end]);
+  const total = localOffset + centralSize + end.length;
+  const out = new Uint8Array(total);
+  let cursor = 0;
+  for (const part of [...parts, ...centralParts, end]) {
+    out.set(part, cursor);
+    cursor += part.length;
+  }
+  return out;
 }
 
 function escapeXml(value: string): string {

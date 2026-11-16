@@ -125,18 +125,39 @@ describe('renderReportHtml', () => {
     }
   });
 
-  it('renders comparison rows with their status class, and omits the section without one', () => {
+  it('renders comparison rows with their fidelity and status class, and omits the section without one', () => {
+    const proxy = metric({
+      id: 'gc.rate',
+      value: 2,
+      unit: 'count',
+      fidelity: 'proxy',
+      provenance: { collector: 'test', device: 'emu' },
+    });
     const comparison = compareResults(
-      { metrics: [metricOf('frame.jank.rate', 40)], evidence: [] },
-      { metrics: [metricOf('frame.jank.rate', 30)], evidence: [] },
+      { metrics: [metricOf('frame.jank.rate', 40), { ...proxy, value: 3 }], evidence: [] },
+      { metrics: [metricOf('frame.jank.rate', 30), proxy], evidence: [] },
     );
     const withCompare = renderReportHtml(
-      build([{ analyzerId: 'frames', status: 'measured', result: { metrics: [metricOf('frame.jank.rate', 30)], evidence: [] } }], comparison),
+      build(
+        [
+          {
+            analyzerId: 'frames',
+            status: 'measured',
+            result: { metrics: [metricOf('frame.jank.rate', 30), proxy], evidence: [] },
+          },
+        ],
+        comparison,
+      ),
     );
     expect(withCompare).toContain('id="comparison"');
     expect(withCompare).toContain('class="chip improved"');
     expect(withCompare).toContain('40');
     expect(withCompare).toContain('30');
+
+    const start = withCompare.indexOf('<section id="comparison"');
+    const comparisonHtml = withCompare.slice(start, withCompare.indexOf('</section>', start));
+    expect(comparisonHtml).toContain('<th>Fidelity</th>');
+    expect(comparisonHtml).toContain('<td>proxy</td>');
 
     const without = renderReportHtml(
       build([{ analyzerId: 'frames', status: 'measured', result: { metrics: [metricOf('frame.jank.rate', 30)], evidence: [] } }]),

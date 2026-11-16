@@ -13,6 +13,7 @@ const output: ReportOutput = {
   sections: { total: 14, measured: 13, degraded: 1 },
   metrics: 57,
   evidence: 12,
+  bySeverity: { info: 3, warn: 8, critical: 1 },
 };
 
 /** A complete deps object; only `report` matters to these tests. */
@@ -54,7 +55,7 @@ describe('runReport', () => {
         'report  /reports/run1/report.html\n' +
         'artifacts  report.html report.json summary.json metrics.csv evidence.csv report.xlsx\n' +
         'sections  13 measured, 1 degraded\n' +
-        'totals    57 metrics, 12 evidence\n',
+        'totals    57 metrics, 12 evidence (info 3, warn 8, critical 1)\n',
       stderr: '',
       exitCode: 0,
     });

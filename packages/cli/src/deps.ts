@@ -706,6 +706,7 @@ export function realDeps(
         },
         metrics: model.totals.metrics,
         evidence: model.totals.evidence,
+        bySeverity: { ...model.totals.bySeverity },
         ...(model.comparison === undefined
           ? {}
           : { comparison: { ...model.comparison.totals } }),

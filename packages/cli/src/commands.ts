@@ -151,6 +151,7 @@ export interface ReportOutput {
   sections: { total: number; measured: number; degraded: number };
   metrics: number;
   evidence: number;
+  bySeverity: { info: number; warn: number; critical: number };
   /** Present only when `--baseline` was given. */
   comparison?: Record<DeltaStatus, number>;
 }
@@ -528,7 +529,9 @@ export async function runReport(
         `report  ${result.outDir}/report.html\n` +
         `artifacts  ${result.files.join(' ')}\n` +
         sections +
-        `totals    ${result.metrics} metrics, ${result.evidence} evidence\n` +
+        `totals    ${result.metrics} metrics, ${result.evidence} evidence ` +
+        `(info ${result.bySeverity.info}, warn ${result.bySeverity.warn}, ` +
+        `critical ${result.bySeverity.critical})\n` +
         comparison,
       stderr: '',
       exitCode: 0,

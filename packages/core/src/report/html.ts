@@ -193,6 +193,7 @@ function renderComparison(model: ReportModel): string[] {
       `<td class="num">${escapeHtml(row.unit)}</td>`,
       `<td class="num">${escapeHtml(row.delta === undefined ? '' : String(row.delta))}</td>`,
       `<td class="num">${escapeHtml(row.deltaPct === undefined ? '' : `${row.deltaPct}%`)}</td>`,
+      `<td>${escapeHtml(row.fidelity)}</td>`,
       `<td><span class="chip ${row.status}">${escapeHtml(row.status)}</span></td>`,
       '</tr>',
     ].join('\n'),
@@ -203,7 +204,7 @@ function renderComparison(model: ReportModel): string[] {
       `<span class="badge">${model.comparison.rows.length} metrics</span></div>`,
     '<table>',
     '<thead><tr><th>Metric</th><th>Baseline</th><th>Current</th><th>Unit</th>' +
-      '<th>Delta</th><th>%</th><th>Status</th></tr></thead>',
+      '<th>Delta</th><th>%</th><th>Fidelity</th><th>Status</th></tr></thead>',
     '<tbody>',
     ...rows,
     '</tbody>',
