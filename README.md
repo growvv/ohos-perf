@@ -7,8 +7,8 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
 
 A TypeScript toolkit for HarmonyOS performance analysis. It turns an attached device
-into structured, evidence-backed data: capability probing, five concurrent
-collectors, `trace_streamer` ingest, typed queries over the resulting SQLite
+into structured, evidence-backed data: capability probing, six collectors,
+`trace_streamer` ingest, typed queries over the resulting SQLite
 databases, metrics with provenance, an evidence graph, baseline comparison, and
 a CLI designed to be called by agents.
 
@@ -35,20 +35,22 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P5 are complete**: 842 tests (834 unit, 8 real-device), two
-workspace typechecks and two builds, all green on the declared minimum Node
-(`22.13.0`). On a clean checkout — where the gitignored `spike/out/emu_big.db`
-and `spike/out/real_device.db` fixtures and any attached device are absent —
-`npm run test:unit` reports **809 passed, 25 skipped (2 files)**, and the eight
-device tests in four files skip as well: **809 passed, 33 skipped**. With both
-fixtures present and a device attached all 842 pass. The fixture-dependent
-suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
+**P1 through P5 are complete**: 847 tests (839 unit, 8 in the device project),
+two workspace typechecks and two builds, all green on the declared minimum
+Node (`22.13.0`). On a clean checkout — where the gitignored
+`spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
+attached device are absent — `npm run test:unit` reports **814 passed, 25
+skipped (2 files)**; the device project adds one fixture-backed probe test and
+seven device-gated skips, so the combined clean checkout is **815 passed, 32
+skipped**. With both fixtures present and a device attached all 847 pass. The
+fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
-`query-sched-state` and the CLI `index` end-to-end tests. The eight real-device
-tests are `collect-hiprofiler.device.test.ts`, `collect-capture.device.test.ts`,
-`analyze-capture.device.test.ts` and `collect-memory.device.test.ts`; they run
-serially (`npm run test:device`) because they share one device and its fixed
-capture paths.
+`query-sched-state` and the CLI `index` end-to-end tests. The eight tests in
+the device project are `collect-hiprofiler.device.test.ts`,
+`collect-capture.device.test.ts`, `analyze-capture.device.test.ts` and
+`collect-memory.device.test.ts`. Seven of them need a device and run serially
+(`npm run test:device`) because they share one device and its fixed capture
+paths; the recorded Mate 60 hiprofiler probe runs from a committed fixture.
 
 Implemented today:
 
@@ -61,7 +63,8 @@ Implemented today:
   `process_measure`; the `.htrace` converts through the same `trace_streamer`
   path), hiperf (`perf.data` for a debuggable app, converted into a second
   `perf.db`), hidumper (RenderService fps and hitch counters) and uitest (the
-  on-screen UI tree); all five run concurrently in one `collect`. `--app` is
+  on-screen UI tree); every requested collector runs concurrently in one
+  `collect`. `--app` is
   required only by the modes that resolve a pid — `--hidumper`, `--uitest` and
   `--hiprofiler --plugins memory` capture device-wide without it
 - baseline comparison: `ohos-perf compare <baseline> <current>` classifies each
@@ -189,7 +192,7 @@ node packages/cli/dist/index.js query ./scene frames.get \
 `npm test` builds both packages first, so a clean checkout is never red:
 
 ```bash
-npm test        # 842 tests; 809 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 847 tests; 815 pass + 32 skip on a clean checkout (no device, spike/out/ absent)
 ```
 
 ## Library

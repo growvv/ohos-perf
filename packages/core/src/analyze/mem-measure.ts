@@ -114,20 +114,46 @@ export class MemoryMeasureAnalyzer implements Analyzer {
       );
     }
 
+    // The reason must name the actual missing input. A hitrace scene also
+    // carries `process_measure` (with `H:` counters), so "no rows" alone
+    // cannot tell "the memory plugin never ran" from "it ran and this app had
+    // no samples"; the filter names do. Only the absent-table case is a
+    // capture problem the user can fix with `--plugins memory`.
+    if (!query.hasTable()) {
+      return degradedResult(
+        ctx,
+        'this scene has no process_measure tables;' +
+          ' capture with `--hiprofiler --plugins memory`',
+      );
+    }
+    if (!query.filters().some((filter) => filter.name === RSS_FILTER)) {
+      return degradedResult(
+        ctx,
+        'the capture\'s process_measure_filter has no mem.rss entry;' +
+          ' the memory plugin did not report RSS',
+      );
+    }
     const rows = query
       .forIpids(ipids, ctx.window)
       .filter((row) => row.name === RSS_FILTER);
-    // The query layer normalises non-finite values to 0; a negative value in
-    // a mem.rss row is corrupt data, not a negative footprint, so it is
-    // dropped rather than allowed to skew the peak or the mean.
+    if (rows.length === 0) {
+      return degradedResult(
+        ctx,
+        'process_measure has mem.rss filters but no rows for the app\'s ipids' +
+          ' in this window; the app may not have run while memory was sampled',
+      );
+    }
+    // `num()` maps a NULL column to 0, which means "absent", not a real
+    // zero; a live process's resident set is never 0 KiB. A negative value is
+    // corrupt data, not a negative footprint. Dropping both keeps an absent
+    // value out of the mean and out of a would-be exact-zero metric.
     const values = rows
       .map((row) => row.value)
-      .filter((value) => Number.isFinite(value) && value >= 0);
+      .filter((value) => Number.isFinite(value) && value > 0);
     if (values.length === 0) {
       return degradedResult(
         ctx,
-        'no usable mem.rss process_measure rows exist for the app in this window;' +
-          ' capture with `--hiprofiler --plugins memory`',
+        'the app\'s mem.rss rows exist but none holds a usable value',
       );
     }
 

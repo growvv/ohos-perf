@@ -3,7 +3,11 @@ import { CapabilityMatrix } from '../src/device/capability';
 import { MemoryMeasureAnalyzer } from '../src/analyze/mem-measure';
 import type { AnalyzeContext, AnalyzeResult } from '../src/analyze/types';
 import type { FrameQuery } from '../src/query/frames';
-import type { MemMeasureQuery, ProcessMeasure } from '../src/query/mem-measure';
+import type {
+  MemMeasureQuery,
+  ProcessMeasure,
+  ProcessMeasureFilter,
+} from '../src/query/mem-measure';
 import type { ProcessQuery } from '../src/query/process';
 import type { Metric } from '../src/report/metric';
 
@@ -39,13 +43,19 @@ function rss(kib: number, extra: Partial<ProcessMeasure> = {}): ProcessMeasure {
  */
 function ctxWith(
   rows: ProcessMeasure[],
-  opts: { pids?: number[]; withQuery?: boolean } = {},
+  opts: {
+    pids?: number[];
+    withQuery?: boolean;
+    tables?: boolean;
+    filters?: ProcessMeasureFilter[];
+  } = {},
 ): AnalyzeContext {
+  const filters = opts.filters ?? [{ id: 1, name: 'mem.rss', ipid: APP_IPID }];
   const memMeasure = {
-    hasTable: () => true,
+    hasTable: () => opts.tables ?? true,
     all: () => [...rows],
     forIpids: (ipids: number[]) => rows.filter((row) => ipids.includes(row.ipid)),
-    filters: () => [],
+    filters: () => [...filters],
   } as unknown as MemMeasureQuery;
   const processes = {
     byPid: (pid: number) => (pid === APP_PID
@@ -93,6 +103,17 @@ describe('MemoryMeasureAnalyzer', () => {
     });
   });
 
+  it('treats zero as absent instead of reporting an exact zero footprint', async () => {
+    // `num()` maps a NULL column to 0, so a row without a value reaches the
+    // analyzer as 0. An exact `0 bytes` metric would be a fabricated number.
+    const none = await new MemoryMeasureAnalyzer().run(ctxWith([rss(0), rss(0)]));
+    expect(none.metrics.map((m) => m.id)).toEqual(['mem.measure.degraded']);
+
+    const mixed = await new MemoryMeasureAnalyzer().run(ctxWith([rss(0), rss(2_000)]));
+    expect(metricOf(mixed, 'mem.measure.rss.peak').value).toBe(2_000 * KIB);
+    expect(metricOf(mixed, 'mem.measure.rss.peak').provenance).toMatchObject({ rows: 1 });
+  });
+
   it('uses only the app process and the mem.rss filter', async () => {
     const result = await new MemoryMeasureAnalyzer().run(ctxWith([
       rss(1_000),
@@ -137,5 +158,38 @@ describe('MemoryMeasureAnalyzer', () => {
     );
 
     expect(result.metrics.map((m) => m.id)).toEqual(['mem.measure.degraded']);
+  });
+
+  it('names the memory capture only when the scene has no process_measure tables', async () => {
+    const result = await new MemoryMeasureAnalyzer().run(
+      ctxWith([], { tables: false }),
+    );
+
+    expect(result.metrics[0].degraded?.reason)
+      .toContain('--hiprofiler --plugins memory');
+  });
+
+  it('does not tell the user to recapture when the capture has no mem.rss filters', async () => {
+    // A hitrace scene can carry `H:` process_measure counters: the tables and
+    // rows exist, but the memory plugin never reported RSS. Advising the user
+    // to capture with `--plugins memory` when they may have done exactly that
+    // sends them after the wrong problem.
+    const result = await new MemoryMeasureAnalyzer().run(
+      ctxWith([], { filters: [{ id: 1, name: 'H:heap_size', ipid: APP_IPID }] }),
+    );
+
+    expect(result.metrics[0].degraded?.reason).toContain('mem.rss');
+    expect(result.metrics[0].degraded?.reason)
+      .not.toContain('--hiprofiler --plugins memory');
+  });
+
+  it('reports no rows for the app when other processes have mem.rss rows', async () => {
+    const result = await new MemoryMeasureAnalyzer().run(
+      ctxWith([rss(5_000, { ipid: OTHER_IPID })]),
+    );
+
+    expect(result.metrics[0].degraded?.reason).toContain('ipid');
+    expect(result.metrics[0].degraded?.reason)
+      .not.toContain('--hiprofiler --plugins memory');
   });
 });

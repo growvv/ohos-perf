@@ -6,7 +6,7 @@
 <title>ohos-perf — HarmonyOS performance, made measurable</title>
 <meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace, procfs, hiprofiler, hiperf, hidumper and uitest capture, trace ingest, typed queries, eight analyzers (frames, fault tree, binder, threads, memory, memory measure, startup, render), baseline comparison and a CLI. Deterministic, evidence-backed, zero native dependencies.">
 <meta property="og:title" content="ohos-perf — HarmonyOS performance, made measurable">
-<meta property="og:description" content="Capability probing, five concurrent collectors, trace ingest, typed queries over 88 tables, eight analyzers with HapRay-verified parity, baseline comparison, and a CLI in one TypeScript toolkit.">
+<meta property="og:description" content="Capability probing, six collectors, trace ingest, typed queries over 88 tables, eight analyzers with HapRay-verified parity, baseline comparison, and a CLI in one TypeScript toolkit.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://growvv.github.io/ohos-perf/">
 <meta property="og:image" content="https://growvv.github.io/ohos-perf/assets/poster.jpg">
@@ -59,7 +59,7 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P5 are complete — eight analyzers, five collectors, drill-down queries, baseline comparison, 842 tests" data-zh="P1–P5 已完成 — 八个分析器、五个采集器、下钻查询、基线对比、842 个测试">P1–P5 are complete — eight analyzers, five collectors, drill-down queries, baseline comparison, 842 tests</span>
+        <span data-en="P1–P5 are complete — eight analyzers, six collectors, drill-down queries, baseline comparison, 847 tests" data-zh="P1–P5 已完成 — 八个分析器、六个采集器、下钻查询、基线对比、847 个测试">P1–P5 are complete — eight analyzers, six collectors, drill-down queries, baseline comparison, 847 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
@@ -94,7 +94,7 @@
         </div>
         <pre class="term"><code><span class="p">$</span> <span class="c">ohos-perf analyze ./scene --json</span>
 {
-  <span class="k">"metrics"</span>: [   <span class="cm">/* 38 metrics from the analyzers this trace supports */</span>
+  <span class="k">"metrics"</span>: [   <span class="cm">/* 39 metrics from the analyzers */</span>
     { <span class="k">"id"</span>: <span class="s">"frame.jank.rate"</span>, <span class="k">"value"</span>: <span class="n">37.267080745341616</span>,
       <span class="k">"unit"</span>: <span class="s">"%"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
@@ -108,12 +108,13 @@
       <span class="k">"unit"</span>: <span class="s">"count"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
                       <span class="k">"table"</span>: <span class="s">"callstack"</span>, <span class="k">"rows"</span>: <span class="n">372</span> } },
-    <span class="cm">/* … 35 more, including binder.latency.avg, thread.*, mem.*, render.* */</span>
+    <span class="cm">/* … 36 more, including binder.latency.avg, thread.*, mem.*, */</span>
+    <span class="cm">/* mem.measure.degraded, render.* */</span>
   ],
-  <span class="k">"evidence"</span>: [ <span class="cm">/* 75 items: 60 jank, 6 fault patterns, 5 binder */</span>
-                 <span class="cm">/* hotspots, 1 startup, 1 no_data, 2 degraded */</span> ]
+  <span class="k">"evidence"</span>: [ <span class="cm">/* 76 items: 60 jank, 6 fault patterns, 5 binder */</span>
+                 <span class="cm">/* hotspots, 1 startup, 2 no_data, 2 degraded */</span> ]
 }</code></pre>
-        <p class="terminal-note reveal" data-en="Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 38 metrics, 75 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的 17.9 MB 真实 trace 的实际输出：38 个指标、75 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 38 metrics, 75 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
+        <p class="terminal-note reveal" data-en="Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 39 metrics, 76 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的 17.9 MB 真实 trace 的实际输出：39 个指标、76 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 39 metrics, 76 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
       </div>
     </div>
   </div>
@@ -122,7 +123,7 @@
     <div class="stats reveal">
       <div class="stat"><b>20</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
       <div class="stat"><b>8</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>842</b><span data-en="tests pass with a device and spike fixtures; 809 + 33 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 809 通过 + 33 跳过">tests pass with a device and spike fixtures; 809 + 33 skipped on a clean checkout</span></div>
+      <div class="stat"><b>847</b><span data-en="tests pass with a device and spike fixtures; 815 + 32 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 815 通过 + 32 跳过">tests pass with a device and spike fixtures; 815 + 32 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -180,8 +181,8 @@
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Analyzers" data-zh="分析器">Analyzers</p>
     <h2 class="reveal" data-en="Eight analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，八个分析器。每个结论都带证据。">Eight analyzers over one trace. Every finding carries its evidence.</h2>
-    <p class="section-lead reveal" data-en="`analyze` runs all eight against a scene and merges the result into one report: 38 metrics and 75 evidence items on the recorded emulator trace — the eighth, memory measure, needs a hiprofiler memory capture and is gated off there — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部八个分析器，合并成一份报告：在录制的模拟器 trace 上产出 38 个指标与 75 条证据（第八个分析器“内存测量”需要 hiprofiler memory 采集，在该 trace 上被能力矩阵关闭），跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
-      <code>analyze</code> runs all eight against a scene and merges the result into one report: 38 metrics and 75 evidence items on the recorded emulator trace — the eighth, memory measure, needs a hiprofiler memory capture and is gated off there — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
+    <p class="section-lead reveal" data-en="`analyze` runs all eight against a scene and merges the result into one report: 39 metrics and 76 evidence items on the recorded emulator trace — the eighth, memory measure, finds no `mem.rss` rows on this hitrace trace and reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部八个分析器，合并成一份报告：在录制的模拟器 trace 上产出 39 个指标与 76 条证据（第八个分析器“内存测量”在这条 hitrace trace 上找不到 `mem.rss` 行，因此给出带原因的降级代理值），跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
+      <code>analyze</code> runs all eight against a scene and merges the result into one report: 39 metrics and 76 evidence items on the recorded emulator trace — the eighth, memory measure, finds no <code>mem.rss</code> rows on this hitrace trace and reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
     </p>
 
     <div class="table-wrap reveal">
@@ -226,6 +227,12 @@
             <td class="center"><span class="no">—</span></td>
           </tr>
           <tr>
+            <td><code>mem-measure</code></td>
+            <td data-en="Exact per-process RSS peak and mean from the hiprofiler memory plugin's `process_measure`, attributed by trace ipid" data-zh="来自 hiprofiler memory 插件 `process_measure` 的精确逐进程 RSS 峰值与均值，按 trace ipid 归属">Exact per-process RSS peak and mean from the hiprofiler memory plugin's <code>process_measure</code>, attributed by trace ipid</td>
+            <td><code>mem.measure.*</code></td>
+            <td class="center"><span class="no">—</span></td>
+          </tr>
+          <tr>
             <td><code>startup</code></td>
             <td data-en="Cold-start duration from `app_startup`, with a start-marker fallback" data-zh="基于 `app_startup` 的冷启动耗时，带启动标记回退">Cold-start duration from <code>app_startup</code>, with a start-marker fallback</td>
             <td><code>startup.*</code></td>
@@ -240,7 +247,7 @@
         </tbody>
       </table>
     </div>
-    <p class="footnote reveal" data-en="Parity means field-level comparison against golden output from ArkAnalyzer-HapRay rev `9386e4e` on two recorded traces. The threads scorer also has a synthetic HapRay golden, because the recorded traces contain no redundant patterns. Frames, memory and startup have no HapRay equivalent to compare against, so none is claimed." data-zh="对拍指在两条录制 trace 上与 ArkAnalyzer-HapRay 修订 `9386e4e` 的 golden 输出做逐字段比较。线程评分另有一个 HapRay 生成的合成 golden，因为录制的 trace 中没有冗余线程模式。帧、内存与启动没有对应的 HapRay 实现，因此不声称对拍。">Parity means field-level comparison against golden output from ArkAnalyzer-HapRay rev <code>9386e4e</code> on two recorded traces. The threads scorer also has a synthetic HapRay golden, because the recorded traces contain no redundant patterns. Frames, memory and startup have no HapRay equivalent to compare against, so none is claimed.</p>
+    <p class="footnote reveal" data-en="Parity means field-level comparison against golden output from ArkAnalyzer-HapRay rev `9386e4e` on two recorded traces. The threads scorer also has a synthetic HapRay golden, because the recorded traces contain no redundant patterns. Frames, memory, memory measure and startup have no HapRay equivalent to compare against, so none is claimed." data-zh="对拍指在两条录制 trace 上与 ArkAnalyzer-HapRay 修订 `9386e4e` 的 golden 输出做逐字段比较。线程评分另有一个 HapRay 生成的合成 golden，因为录制的 trace 中没有冗余线程模式。帧、内存、内存测量与启动没有对应的 HapRay 实现，因此不声称对拍。">Parity means field-level comparison against golden output from ArkAnalyzer-HapRay rev <code>9386e4e</code> on two recorded traces. The threads scorer also has a synthetic HapRay golden, because the recorded traces contain no redundant patterns. Frames, memory, memory measure and startup have no HapRay equivalent to compare against, so none is claimed.</p>
   </div>
 </section>
 
@@ -432,7 +439,7 @@ ohos-perf compare ./before ./after --json
 <span class="cm"># Run all analyzers over the scene, offline.</span>
 <span class="p">$</span> node packages/cli/dist/index.js analyze ./scene --json
 
-<span class="cm"># Run the suite: 809 pass + 33 skip on a clean checkout; 842 with a device.</span>
+<span class="cm"># Run the suite: 815 pass + 32 skip on a clean checkout; 847 with a device.</span>
 <span class="p">$</span> npm test</code></pre>
       </div>
     </div>

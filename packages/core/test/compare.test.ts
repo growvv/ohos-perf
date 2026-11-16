@@ -46,6 +46,23 @@ describe('compareResults', () => {
     expect(c.rows[0]).toMatchObject({ status: 'regressed', delta: 50, deltaPct: 50 });
   });
 
+  it('compares the exact memory-measure metrics as lower-is-better', () => {
+    const c = compareResults(
+      result(
+        metricOf('mem.measure.rss.avg', 600 * 1024 * 1024),
+        metricOf('mem.measure.rss.peak', 600 * 1024 * 1024),
+      ),
+      result(
+        metricOf('mem.measure.rss.avg', 500 * 1024 * 1024),
+        metricOf('mem.measure.rss.peak', 700 * 1024 * 1024),
+      ),
+    );
+    expect(c.rows.map((row) => [row.id, row.status])).toEqual([
+      ['mem.measure.rss.avg', 'improved'],
+      ['mem.measure.rss.peak', 'regressed'],
+    ]);
+  });
+
   it('marks an equal value as unchanged', () => {
     const c = compareResults(
       result(metricOf('frame.count', 5)),
@@ -174,6 +191,8 @@ describe('METRIC_DIRECTIONS', () => {
     expect(METRIC_DIRECTIONS['binder.transactions.count']).toBe('lower');
     expect(METRIC_DIRECTIONS['thread.redundant.instructions.ratio']).toBe('lower');
     expect(METRIC_DIRECTIONS['mem.rss.peak']).toBe('lower');
+    expect(METRIC_DIRECTIONS['mem.measure.rss.avg']).toBe('lower');
+    expect(METRIC_DIRECTIONS['mem.measure.rss.peak']).toBe('lower');
     expect(METRIC_DIRECTIONS['startup.duration']).toBe('lower');
     expect(METRIC_DIRECTIONS['render.fps.live']).toBe('higher');
     expect(METRIC_DIRECTIONS['render.hitch.count']).toBe('lower');

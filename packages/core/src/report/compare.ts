@@ -44,6 +44,8 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
   'thread.redundant.instructions': 'lower',
   'thread.redundant.instructions.ratio': 'lower',
 
+  'mem.measure.rss.avg': 'lower',
+  'mem.measure.rss.peak': 'lower',
   'mem.pss.mean': 'lower',
   'mem.pss.peak': 'lower',
   'mem.rss.mean': 'lower',
