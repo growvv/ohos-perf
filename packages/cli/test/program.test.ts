@@ -157,6 +157,59 @@ describe('command wiring', () => {
     });
   });
 
+  it('collect forwards --target to the capture request', async () => {
+    // The emulator workflow's whole handoff is this flag: `emulator list`
+    // prints a target id, and `collect --target <id>` must use exactly it
+    // rather than the first connected device.
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', '10', '--out', 'scene1',
+        '--target', '127.0.0.1:5555'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return { sceneDir: '/scene1', device: { id: '127.0.0.1:5555', kind: 'emulator' }, collectors: [] };
+        },
+      },
+    );
+    expect(seen).toEqual([{
+      app: 'com.demo',
+      durationMs: 10_000,
+      out: 'scene1',
+      target: '127.0.0.1:5555',
+    }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('caps and doctor forward --target so the emulator can be probed by id', async () => {
+    const capsTargets: (string | undefined)[] = [];
+    const doctorTargets: (string | undefined)[] = [];
+    await parse(['caps', '--target', '127.0.0.1:5555'], {
+      capsReport: async (target) => {
+        capsTargets.push(target);
+        return { hdcOk: true, capabilities: [] };
+      },
+    });
+    // `doctor` probes through its own deps object, so the target has to reach
+    // `connectDevice` there too — otherwise `doctor --target X` reports on a
+    // different device than the one the caller named.
+    await parse(['doctor', '--target', '127.0.0.1:5555'], {
+      doctor: {
+        resolveHdc: async () => '/hdc',
+        resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
+        connectDevice: async (target) => {
+          doctorTargets.push(target);
+          return {
+            id: '127.0.0.1:5555', kind: 'emulator', abi: 'x86_64',
+            capabilities: async () => ({ all: () => [] }),
+          };
+        },
+      },
+    });
+    expect(capsTargets).toEqual(['127.0.0.1:5555']);
+    expect(doctorTargets).toEqual(['127.0.0.1:5555']);
+  });
+
   it('collect forwards --hiprofiler and --plugins as plugin names', async () => {
     const seen: unknown[] = [];
     const { emitted } = await parse(

@@ -19,7 +19,13 @@ export interface DeviceLike {
 export interface DoctorDeps {
   resolveHdc(): Promise<string>;
   resolveStreamer(): Promise<{ path: string; version: string }>;
-  connectDevice(): Promise<DeviceLike>;
+  /**
+   * `target` is the explicit hdc id from `--target`; omitted, the first
+   * connected target is probed. Optional so a fake that ignores it stays
+   * valid — a fake cannot verify the flag anyway, which is why the wiring
+   * test asserts what `realDeps` receives.
+   */
+  connectDevice(target?: string): Promise<DeviceLike>;
 }
 
 /**
@@ -81,7 +87,10 @@ function message(err: unknown): string {
  * the injected object is structural, so nothing guarantees its `all()` is
  * ordered (D5).
  */
-export async function doctorReport(deps: DoctorDeps): Promise<DoctorReport> {
+export async function doctorReport(
+  deps: DoctorDeps,
+  target?: string,
+): Promise<DoctorReport> {
   const hdc: DoctorReport['hdc'] = { ok: false };
   try {
     hdc.path = await deps.resolveHdc();
@@ -107,7 +116,7 @@ export async function doctorReport(deps: DoctorDeps): Promise<DoctorReport> {
   let capabilities: CapabilityState[] = [];
   let probeError: string | undefined;
   try {
-    const connected = await deps.connectDevice();
+    const connected = await deps.connectDevice(target);
     const matrix = await connected.capabilities();
     device = { id: connected.id, kind: connected.kind, abi: connected.abi };
     capabilities = [...matrix.all()].sort(byId);

@@ -86,6 +86,12 @@ export interface CollectRequest {
   hidumper?: boolean;
   /** Also dump the on-screen UI tree. */
   uitest?: boolean;
+  /**
+   * Explicit hdc target id. Without it the first connected target is used,
+   * which is wrong on a host with both a phone and an emulator attached —
+   * `emulator list --json` prints the id to pass here.
+   */
+  target?: string;
 }
 
 /** What a successful `collect` returns to the renderer. */
@@ -147,8 +153,13 @@ export interface EmulatorDeps {
 /** Everything the commands touch, injected so the module performs no IO itself. */
 export interface CliDeps {
   doctor: DoctorDeps;
-  /** Resolve the capability matrix (used by `caps`). */
-  capsReport(): Promise<CapsReport>;
+  /**
+   * Resolve the capability matrix (used by `caps`).
+   *
+   * `target` is the explicit hdc id; omitted, the first connected target is
+   * probed. It is optional so an existing injected fake stays valid.
+   */
+  capsReport(target?: string): Promise<CapsReport>;
   /** Analyze a scene directory. Throws on any failure; the caller maps it to exit 1. */
   analyze(sceneDir: string, app?: string): Promise<AnalyzeOutput>;
   /** Capture a scene. Throws on any failure; the caller maps it to exit 1. */
@@ -205,8 +216,11 @@ function json(value: unknown): string {
  * Exit 1 **only** when hdc is unavailable. A missing device or degraded
  * capabilities are environmental states, not a broken install.
  */
-export async function runDoctor(deps: CliDeps, opts: { json?: boolean }): Promise<CliResult> {
-  const report = await doctorReport(deps.doctor);
+export async function runDoctor(
+  deps: CliDeps,
+  opts: { json?: boolean; target?: string },
+): Promise<CliResult> {
+  const report = await doctorReport(deps.doctor, opts.target);
   const exitCode = report.hdc.ok ? 0 : 1;
 
   if (opts.json) return { stdout: json(report), stderr: '', exitCode };
@@ -247,8 +261,11 @@ export async function runDoctor(deps: CliDeps, opts: { json?: boolean }): Promis
  * A missing hdc is the only failure, and it writes to stderr with an empty
  * stdout so a `--json` consumer never receives half an array.
  */
-export async function runCaps(deps: CliDeps, opts: { json?: boolean }): Promise<CliResult> {
-  const report = await deps.capsReport();
+export async function runCaps(
+  deps: CliDeps,
+  opts: { json?: boolean; target?: string },
+): Promise<CliResult> {
+  const report = await deps.capsReport(opts.target);
   if (!report.hdcOk) {
     return { stdout: '', stderr: `hdc unavailable: ${report.hdcError}\n`, exitCode: 1 };
   }

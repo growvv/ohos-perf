@@ -85,8 +85,8 @@ export function packageVersion(path: string = manifestPath): string {
 export interface RealDepsOverrides {
   /** hdc locator, used by both `doctor` and the `caps` gate. */
   hdc?: { resolvePath(): Promise<string> };
-  /** Device probe, shared by `doctor` and `caps`. */
-  connectDevice?: () => Promise<{
+  /** Device probe, shared by `doctor` and `caps`; receives the explicit target. */
+  connectDevice?: (target?: string) => Promise<{
     id: string;
     kind: string;
     abi: string;
@@ -95,7 +95,7 @@ export interface RealDepsOverrides {
   /** Scene ingestion; replaced in tests to observe the layout without a converter. */
   ingest?: (streamer: Streamer, layout: SceneLayout) => Promise<Scene>;
   /** Device used by `collect`; replaced in tests to avoid a real capture. */
-  collectDevice?: () => Promise<{
+  collectDevice?: (target?: string) => Promise<{
     id: string;
     kind: string;
     collect(opts: unknown): Promise<{ ingest(): Promise<Scene> }>;
@@ -378,10 +378,15 @@ export function realDeps(
   const resolveHdc = (): Promise<string> => (overrides.hdc ?? new Hdc()).resolvePath();
   // No cast: `Device` structurally satisfies `DeviceLike`, so a future
   // signature change in core shows up here instead of being hidden.
-  const connectDevice: DoctorDeps['connectDevice'] =
-    overrides.connectDevice ?? (() => connect());
+  // A named target is passed straight to `connect()`, which is the one place
+  // that decides what "connected" means. Without one, `connect()` picks the
+  // first connected target — right for a single-device host, wrong when a
+  // phone and an emulator are both attached, which is why `--target` exists.
+  const connectDevice: DoctorDeps['connectDevice'] = overrides.connectDevice ??
+    ((target) => connect(target === undefined ? {} : { target }));
   const ingest = overrides.ingest ?? ingestScene;
-  const collectDevice = overrides.collectDevice ?? (() => connect());
+  const collectDevice = overrides.collectDevice ??
+    ((target) => connect(target === undefined ? {} : { target }));
 
   const doctor: DoctorDeps = {
     resolveHdc,
@@ -513,14 +518,14 @@ export function realDeps(
     version,
     emulator,
 
-    async capsReport() {
+    async capsReport(target) {
       try {
         await resolveHdc();
       } catch (err) {
         return { hdcOk: false, hdcError: safeMessage(err), capabilities: [] };
       }
       try {
-        const device = await connectDevice();
+        const device = await connectDevice(target);
         const matrix = await device.capabilities();
         return { hdcOk: true, capabilities: matrix.all() };
       } catch (err) {
@@ -582,7 +587,7 @@ export function realDeps(
 
     async collect(req) {
       const sceneDir = resolve(req.out);
-      const device = await collectDevice();
+      const device = await collectDevice(req.target);
       const session = await device.collect({
         app: req.app,
         durationMs: req.durationMs,
