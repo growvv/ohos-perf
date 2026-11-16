@@ -420,6 +420,76 @@ describe('realDeps().analyze', () => {
     }
   });
 
+  it('claims perf.samples only when perf_sample has rows', () => {
+    const tableDb = (names: string[]): CapabilityMatrixDb => ({
+      query: <T = Record<string, unknown>>(): T[] =>
+        names.map((name) => ({ name })) as unknown as T[],
+    });
+    // `SELECT 1 FROM perf_sample LIMIT 1` returns one row for a non-empty
+    // table and none for an empty one.
+    const perfWithRows: CapabilityMatrixDb = {
+      query: <T = Record<string, unknown>>(sql: string): T[] => {
+        if (sql.includes('sqlite_master')) return [{ name: 'perf_sample' }] as unknown as T[];
+        if (sql.includes('perf_sample')) return [{ 1: 1 }] as unknown as T[];
+        return [];
+      },
+    };
+    const perfEmpty: CapabilityMatrixDb = {
+      query: <T = Record<string, unknown>>(sql: string): T[] =>
+        (sql.includes('sqlite_master') ? [{ name: 'perf_sample' }] : []) as unknown as T[],
+    };
+
+    expect(offlineCapabilities(tableDb(['frame_slice']), [], perfWithRows)
+      .has('perf.samples')).toBe(true);
+    // The table exists but holds no samples: an empty capture is not a
+    // capability, so the analyzer degrades instead of reporting a quiet app.
+    expect(offlineCapabilities(tableDb(['frame_slice']), [], perfEmpty)
+      .has('perf.samples')).toBe(false);
+    // No perf database at all.
+    expect(offlineCapabilities(tableDb(['frame_slice']), [])
+      .has('perf.samples')).toBe(false);
+  });
+
+  it('reads perf samples from the perf database, not the trace database', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-perfdb-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      // A decoy `perf_sample` in the trace database: a hiperf capture lives in
+      // the scene's own perf.db, so the trace copy must never grant the
+      // capability. Seed a row here so "the table exists and has rows" is not
+      // the reason it is ignored.
+      const raw = new DatabaseSync(join(parent, 'trace.db'));
+      raw.exec('CREATE TABLE perf_sample(id INT, thread_id INT)');
+      raw.exec('INSERT INTO perf_sample VALUES (0, 42)');
+      raw.close();
+
+      const perfState = async (): Promise<Record<string, unknown> | undefined> => {
+        const result = await realDeps('0.0.0').query({
+          sceneDir: parent,
+          name: 'caps.get',
+          args: { ids: ['perf.samples'] },
+        });
+        return result.rows[0] as Record<string, unknown> | undefined;
+      };
+
+      // Only the decoy exists: no capability.
+      expect(await perfState()).toMatchObject({ id: 'perf.samples', available: false });
+
+      const perf = new DatabaseSync(join(parent, 'perf.db'));
+      perf.exec('CREATE TABLE perf_sample(id INT, callchain_id INT, timeStamp INT,' +
+        ' thread_id INT, event_count INT, event_type_id INT, timestamp_trace INT,' +
+        ' cpu_id INT, thread_state TEXT)');
+      // Single-quoted: SQLite reads a double-quoted token as an identifier.
+      perf.exec("INSERT INTO perf_sample VALUES (0, 0, 1, 42, 1, 0, 1, 0, '-')");
+      perf.close();
+
+      // The scene's perf.db now holds a sample, so the capability appears.
+      expect(await perfState()).toMatchObject({ id: 'perf.samples', available: true });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   // Fix round 2, item 1: a scene.json that exists but cannot be read is a
   // corrupt descriptor, not "no metadata". Only a genuinely absent file means
   // a legacy hand-built scene whose procfs.jsonl we may trust.

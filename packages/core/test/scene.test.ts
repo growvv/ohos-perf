@@ -154,6 +154,50 @@ describe('ingestScene', () => {
     scene.close();
   });
 
+  it('converts perf.data into perf.db and opens both handles', async () => {
+    const dir = makeDir();
+    const l = createSceneLayout(dir);
+    writeFileSync(l.traceFile, 'fake');
+    writeFileSync(l.perfFile!, 'perf');
+    const converted: string[] = [];
+    const streamer = {
+      async convert(_input: string, output: string): Promise<void> {
+        converted.push(output);
+        const db = new DatabaseSync(output);
+        if (output === l.perfDb) {
+          db.exec('CREATE TABLE perf_sample(id INT)');
+          db.exec('INSERT INTO perf_sample VALUES (0)');
+        } else {
+          db.exec(FRAME_SLICE_DDL);
+        }
+        db.close();
+      },
+    } as unknown as Streamer;
+
+    const scene = await ingestScene(streamer, l);
+    try {
+      expect(converted).toEqual([l.traceDb, l.perfDb]);
+      expect(scene.perfDb).toBeDefined();
+      expect(scene.perfDb!.query('SELECT COUNT(*) AS n FROM perf_sample')).toEqual([{ n: 1 }]);
+    } finally {
+      scene.close();
+    }
+  });
+
+  it('leaves perfDb undefined when the scene has no perf.data', async () => {
+    const dir = makeDir();
+    const l = createSceneLayout(dir);
+    writeFileSync(l.traceFile, 'fake');
+    const { streamer } = fakeStreamer();
+
+    const scene = await ingestScene(streamer, l);
+    try {
+      expect(scene.perfDb).toBeUndefined();
+    } finally {
+      scene.close();
+    }
+  });
+
   it('does not create the scene directory on the read-only path', async () => {
     const parent = makeDir();
     const root = join(parent, 'never-created');

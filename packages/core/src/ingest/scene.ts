@@ -32,25 +32,32 @@ export function createSceneLayout(root: string): SceneLayout {
 }
 
 /**
- * A queryable scene: the root directory plus an open handle on its trace
- * database. The handle is owned by the scene and closed by `close()`.
+ * A queryable scene: the root directory plus open handles on its databases.
+ *
+ * `traceDb` is always present; `perfDb` exists only when the scene carried a
+ * `perf.data` (a hiperf capture), which converts into the same schema family
+ * and holds `perf_sample` / `perf_callchain` / `perf_thread` / `perf_files`.
+ * Both handles are owned by the scene and closed by `close()`.
  */
 export class Scene {
   readonly dir: string;
   readonly traceDb: QueryHandle;
+  readonly perfDb?: QueryHandle;
 
-  constructor(layout: SceneLayout, db: QueryHandle) {
+  constructor(layout: SceneLayout, db: QueryHandle, perfDb?: QueryHandle) {
     this.dir = layout.root;
     this.traceDb = db;
+    this.perfDb = perfDb;
   }
 
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): T[] {
     return this.traceDb.query<T>(sql, params);
   }
 
-  /** Idempotent; the underlying handle is idempotent too. */
+  /** Idempotent; the underlying handles are idempotent too. */
   close(): void {
     this.traceDb.close();
+    this.perfDb?.close();
   }
 }
 
@@ -77,5 +84,29 @@ export async function ingestScene(streamer: Streamer, layout: SceneLayout): Prom
     await streamer.convert(layout.traceFile, layout.traceDb);
   }
 
-  return new Scene(layout, openDb(layout.traceDb));
+  // A scene may carry a perf capture beside the trace. It converts the same
+  // way and opens as a second handle; a scene without perf.data simply has
+  // none, and the perf capability stays absent from the offline matrix.
+  const perfDb = await openPerfDb(streamer, layout);
+  return new Scene(layout, openDb(layout.traceDb), perfDb);
+}
+
+/**
+ * Convert and open `perf.data` when the scene carries one.
+ *
+ * Mirrors the trace path: an existing `perf.db` is opened as is, conversion
+ * only runs when `perf.data` exists, and a scene with neither yields
+ * `undefined`. The caller owns the returned handle.
+ */
+async function openPerfDb(
+  streamer: Streamer,
+  layout: SceneLayout,
+): Promise<QueryHandle | undefined> {
+  if (layout.perfDb === undefined) return undefined;
+  if (!existsSync(layout.perfDb)) {
+    if (layout.perfFile === undefined || !existsSync(layout.perfFile)) return undefined;
+    mkdirSync(layout.root, { recursive: true });
+    await streamer.convert(layout.perfFile, layout.perfDb);
+  }
+  return openDb(layout.perfDb);
 }

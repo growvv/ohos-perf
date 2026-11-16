@@ -94,7 +94,10 @@ const OFFLINE_PROBE = (): CapabilityState['probe'] =>
   ({ command: '', stdout: '', stderr: '', code: 0 });
 
 /** An available state in the offline matrix, with the exact probe shape. */
-function offlineState(id: CapabilityId, collector: 'hitrace' | 'procfs'): CapabilityState {
+function offlineState(
+  id: CapabilityId,
+  collector: 'hitrace' | 'procfs' | 'hiperf',
+): CapabilityState {
   return {
     id,
     available: true,
@@ -116,14 +119,21 @@ function offlineState(id: CapabilityId, collector: 'hitrace' | 'procfs'): Capabi
  */
 const TABLE_RULES: ReadonlyArray<{
   id: CapabilityId;
-  collector: 'hitrace' | 'procfs';
+  collector: 'hitrace' | 'procfs' | 'hiperf';
   tables: readonly string[];
+  /**
+   * The rule's tables must live in the perf database, and the first must hold
+   * at least one row: an empty `perf_sample` means no samples were ever
+   * recorded, which is not a capability.
+   */
+  perf?: true;
 }> = [
   { id: 'trace.frames', collector: 'hitrace', tables: ['frame_slice', 'process'] },
   { id: 'trace.sched', collector: 'hitrace', tables: ['sched_slice', 'instant'] },
   { id: 'trace.binder', collector: 'hitrace', tables: ['callstack', 'args', 'data_dict', 'process', 'thread', 'trace_range'] },
   { id: 'trace.thread_state', collector: 'hitrace', tables: ['thread_state', 'thread', 'process'] },
   { id: 'mem.procfs', collector: 'procfs', tables: ['procfs.jsonl'] },
+  { id: 'perf.samples', collector: 'hiperf', tables: ['perf_sample'], perf: true },
 ];
 
 /**
@@ -146,19 +156,30 @@ const TABLE_RULES: ReadonlyArray<{
 export function offlineCapabilities(
   db: CapabilityMatrixDb,
   procfsSamples: readonly unknown[],
+  perfDb?: CapabilityMatrixDb,
 ): CapabilityMatrix {
-  const tables = new Set(
-    db.query<{ name: string }>(
+  const tablesOf = (target: CapabilityMatrixDb): Set<string> => new Set(
+    target.query<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table'",
     ).map((row) => row.name),
   );
+  const tables = tablesOf(db);
+  const perfTables = perfDb === undefined ? new Set<string>() : tablesOf(perfDb);
 
   const states: CapabilityState[] = [];
   for (const rule of TABLE_RULES) {
+    const source = rule.perf === true ? perfTables : tables;
     const present = rule.tables.every((name) =>
-      name === 'procfs.jsonl' ? procfsSamples.length > 0 : tables.has(name),
+      name === 'procfs.jsonl' ? procfsSamples.length > 0 : source.has(name),
     );
-    if (present) states.push(offlineState(rule.id, rule.collector));
+    if (!present) continue;
+    // A table that exists but holds no rows is an empty capture, not a
+    // capability: `perf_sample` is only real when at least one sample landed.
+    if (rule.perf === true && perfDb !== undefined) {
+      const first = rule.tables[0];
+      if (perfDb.query(`SELECT 1 FROM ${first} LIMIT 1`).length === 0) continue;
+    }
+    states.push(offlineState(rule.id, rule.collector));
   }
   return new CapabilityMatrix(states);
 }
@@ -273,7 +294,7 @@ export function realDeps(
         ...(metadata !== undefined ? { metadata } : {}),
         samples,
         app: appIdentity,
-        caps: offlineCapabilities(db, samples),
+        caps: offlineCapabilities(db, samples, scene.perfDb),
       };
     } catch (err) {
       scene.close();
@@ -316,7 +337,10 @@ export function realDeps(
           instant: new InstantQuery(db),
           threadStates: new ThreadStateQuery(db),
           callstacks: new CallstackQuery(db),
-          perf: new PerfQuery(db),
+          // A hiperf capture lives in its own converted database; the trace
+          // database has no perf_* tables, so reading them from `db` would
+          // silently report no samples.
+          perf: new PerfQuery(opened.scene.perfDb ?? db),
           binder: new BinderQuery(db),
           startup: new StartupQuery(db),
           ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
