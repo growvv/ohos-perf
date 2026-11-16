@@ -112,6 +112,18 @@ unavailable even on a device whose hiprofiler can run the memory plugin:
 nothing in this package consumes the `js_heap_*` tables, and the matrix
 reports that reason instead of claiming the data is usable.
 
+## Roadmap
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| P0–P5 | capability probing, six collectors, trace ingest, typed queries, eight analyzers, deterministic JSON, baseline comparison, agent skill | shipped in `0.1.0` |
+| P6 | the remaining HapRay analysis surface: GC event counting, flamegraph from `perf_sample`, VSync anomaly detection with empty-frame reverse tracing, UI component-tree diff | next |
+| P7 | `ohos-perf emulator {list,start,stop,create}` lifecycle commands | next |
+| exploring | `ui.gesture` (AAMS), `coverage` (bjc_cov), `js.heap` (ArkTS profiler) — each stays reported unavailable until a device spike proves this package can drive it | device spike first |
+
+The rendered roadmap, with the same content in Chinese, is on the
+[project site](https://growvv.github.io/ohos-perf/#roadmap).
+
 ## Requirements
 
 - Node **`^22.13.0 || >=23.4.0`**. `node:sqlite` is unavailable unflagged on
