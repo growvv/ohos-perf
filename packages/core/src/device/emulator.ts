@@ -394,6 +394,17 @@ export interface EmulatorBackend {
   createInstance(req: CreateEmulatorRequest): Promise<void>;
 }
 
+/** What a successful {@link EmulatorLifecycle.start} reports. */
+export interface EmulatorStartResult {
+  readonly name: string;
+  /** The hdc target id, ready for `collect --target`. */
+  readonly target: string;
+  /** True when the instance was already running before this call. */
+  readonly alreadyRunning: boolean;
+  /** Wall-clock milliseconds this call spent waiting for boot. */
+  readonly waitedMs: number;
+}
+
 /** The `hdc` operations the lifecycle needs; `Hdc` satisfies it structurally. */
 export interface HdcSlice {
   listTargets(): Promise<HdcTarget[]>;
@@ -413,6 +424,11 @@ export interface EmulatorLifecycleOptions {
   pollMs?: number;
   /** Injection point for tests; production leaves it unset. */
   now?: () => number;
+}
+
+/** Poll without a timer keeping the process alive. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
 /** A connected target reached over TCP — a real device is USB. */
@@ -477,5 +493,113 @@ export class EmulatorLifecycle {
     return instances.map((instance) => (
       instance.name === attributed.name ? attributed : instance
     ));
+  }
+
+  /**
+   * Start `name` and wait until its guest has finished booting.
+   *
+   * Three phases, one deadline: the instance reports `isRunning`, a new
+   * connected TCP target appears, and `bootevent.boot.completed` turns true.
+   * Each phase has its own timeout message because "it timed out" leaves the
+   * caller unable to tell a slow boot from a broken start.
+   *
+   * A timeout never stops the emulator: a half-booted instance is the evidence
+   * of what went wrong, and the message says how to remove it.
+   */
+  async start(name: string, opts: { timeoutMs?: number } = {}): Promise<EmulatorStartResult> {
+    const startedAt = this.now();
+    const budgetMs = opts.timeoutMs ?? this.startTimeoutMs;
+    const deadline = startedAt + budgetMs;
+
+    const instances = await this.client.listDetailed();
+    const found = instances.find((i) => i.name === name);
+    if (found === undefined) {
+      const names = instances.map((i) => i.name);
+      throw new OhosPerfError(
+        `no emulator instance named "${name}". Instances: ${names.length === 0 ? 'none' : names.join(', ')}`,
+        { code: 'EMULATOR_INSTANCE_NOT_FOUND' },
+      );
+    }
+
+    const before = new Set((await this.hdc.listTargets()).map((t) => t.id));
+
+    let target: string;
+    let alreadyRunning: boolean;
+    if (found.running) {
+      // Never spawn a second emulator for an instance that is already up: an
+      // agent's retry must be safe. Its target is the one already connected.
+      const tcp = (await this.hdc.listTargets()).filter(isConnectedTcp);
+      if (tcp.length !== 1) {
+        throw new OhosPerfError(
+          tcp.length === 0
+            ? `"${name}" is running but no connected TCP target was found, so its target cannot be attributed`
+            : `"${name}" is running and ${tcp.length} connected TCP targets were found, so its target cannot be attributed`,
+          { code: 'EMULATOR_TARGET_AMBIGUOUS' },
+        );
+      }
+      target = tcp[0].id;
+      alreadyRunning = true;
+    } else {
+      await this.client.startInstance(name);
+      alreadyRunning = false;
+      await this.waitUntil(deadline, budgetMs, 'the instance did not report isRunning', name, async () => (
+        (await this.client.listDetailed()).find((i) => i.name === name)?.running === true
+          ? true
+          : undefined
+      ));
+      target = await this.waitUntil(deadline, budgetMs, 'no new TCP target appeared', name, async () => {
+        const fresh = (await this.hdc.listTargets()).filter(isConnectedTcp).filter((t) => !before.has(t.id));
+        if (fresh.length > 1) {
+          throw new OhosPerfError(
+            `two new TCP targets appeared after starting "${name}": ${fresh.map((t) => t.id).join(', ')}`,
+            { code: 'EMULATOR_TARGET_AMBIGUOUS' },
+          );
+        }
+        return fresh[0]?.id;
+      });
+    }
+
+    await this.waitUntil(
+      deadline, budgetMs, 'the target was up but bootevent.boot.completed never became true', name,
+      async () => {
+      try {
+        const result = await this.hdc.shell(target, 'param get bootevent.boot.completed');
+        // A failed shell during boot is "not ready yet", not an error: the
+        // device answers [Fail] until the guest's hdc daemon is up.
+        return result.stdout.trim() === 'true' ? true : undefined;
+      } catch {
+        return undefined;
+      }
+      },
+    );
+
+    return { name, target, alreadyRunning, waitedMs: this.now() - startedAt };
+  }
+
+  /**
+   * Poll `attempt` until it returns a value, or the deadline passes.
+   *
+   * The deadline is absolute so one budget covers every phase of `start`;
+   * a per-phase budget would multiply the caller's timeout by three.
+   */
+  private async waitUntil<T>(
+    deadline: number,
+    budgetMs: number,
+    phase: string,
+    name: string,
+    attempt: () => Promise<T | undefined>,
+  ): Promise<T> {
+    for (;;) {
+      if (this.now() >= deadline) {
+        throw new OhosPerfError(
+          `${phase} after ${budgetMs}ms. The emulator may be half-started; ` +
+            `run \`ohos-perf emulator stop ${name}\` to remove it.`,
+          { code: 'EMULATOR_START_TIMEOUT' },
+        );
+      }
+      const value = await attempt();
+      if (value !== undefined) return value;
+      await sleep(this.pollMs);
+    }
   }
 }

@@ -81,3 +81,152 @@ describe('EmulatorLifecycle.list target attribution', () => {
     expect(a.targetReason).toContain('2 connected TCP targets');
   });
 });
+
+describe('EmulatorLifecycle.start', () => {
+  /** A client whose isRunning flips after the first listDetailed call. */
+  function startingClient(before: EmulatorInstance[], after: EmulatorInstance[]) {
+    let calls = 0;
+    const started: string[] = [];
+    return {
+      started,
+      client: {
+        listDetailed: async () => (calls++ === 0 ? before : after),
+        imageList: async () => [],
+        startInstance: async (name: string) => { started.push(name); },
+        stopInstance: async () => {},
+        createInstance: async () => {},
+      },
+    };
+  }
+
+  /** A real emulator's target appears only after it was started. */
+  function targetsAfterStart(started: string[], ids: string[]): () => Promise<HdcTarget[]> {
+    return async () => (started.length === 0 ? [] : ids.map((id) => target(id, 'TCP', true)));
+  }
+
+  it('waits through instance, target and boot, then reports the target', async () => {
+    const { client, started } = startingClient([instance('A', false)], [instance('A', true)]);
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: {
+        listTargets: targetsAfterStart(started, ['127.0.0.1:5555']),
+        shell: async () => ({ stdout: 'true\r\n', stderr: '', code: 0 }),
+      },
+      pollMs: 0,
+    });
+    const result = await lifecycle.start('A');
+    expect(started).toEqual(['A']);
+    expect(result).toEqual({
+      name: 'A', target: '127.0.0.1:5555', alreadyRunning: false, waitedMs: expect.any(Number),
+    });
+  });
+
+  it('is idempotent: a second start never spawns another emulator', async () => {
+    const { client, started } = startingClient([instance('A', true)], [instance('A', true)]);
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: {
+        listTargets: async () => [target('127.0.0.1:5555', 'TCP', true)],
+        shell: async () => ({ stdout: 'true', stderr: '', code: 0 }),
+      },
+      pollMs: 0,
+    });
+    const result = await lifecycle.start('A');
+    expect(started).toEqual([]);
+    expect(result.alreadyRunning).toBe(true);
+    expect(result.target).toBe('127.0.0.1:5555');
+  });
+
+  it('names the instance phase when isRunning never flips', async () => {
+    const { client } = startingClient([instance('A', false)], [instance('A', false)]);
+    let clock = 0;
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+      startTimeoutMs: 100,
+      now: () => (clock += 10),
+    });
+    await expect(lifecycle.start('A')).rejects.toThrow(/did not report isRunning after 100ms/);
+  });
+
+  it('names the target phase when no new TCP target appears', async () => {
+    const { client } = startingClient([instance('A', false)], [instance('A', true)]);
+    let clock = 0;
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+      startTimeoutMs: 100,
+      now: () => (clock += 10),
+    });
+    await expect(lifecycle.start('A')).rejects.toThrow(/no new TCP target appeared after 100ms/);
+  });
+
+  it('names the boot phase when bootevent.boot.completed stays false', async () => {
+    const { client, started } = startingClient([instance('A', false)], [instance('A', true)]);
+    let clock = 0;
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: {
+        listTargets: targetsAfterStart(started, ['127.0.0.1:5555']),
+        shell: async () => ({ stdout: 'false', stderr: '', code: 0 }),
+      },
+      pollMs: 0,
+      startTimeoutMs: 100,
+      now: () => (clock += 10),
+    });
+    await expect(lifecycle.start('A')).rejects.toThrow(/bootevent\.boot\.completed never became true/);
+  });
+
+  it('every timeout tells the caller how to clean up', async () => {
+    const { client } = startingClient([instance('A', false)], [instance('A', false)]);
+    let clock = 0;
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+      startTimeoutMs: 100,
+      now: () => (clock += 10),
+    });
+    await expect(lifecycle.start('A')).rejects.toThrow(/ohos-perf emulator stop A/);
+  });
+
+  it('rejects two new TCP targets instead of picking one', async () => {
+    const { client, started } = startingClient([instance('A', false)], [instance('A', true)]);
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: {
+        listTargets: targetsAfterStart(started, ['127.0.0.1:5555', '127.0.0.1:5557']),
+        shell: async () => ({ stdout: 'true', stderr: '', code: 0 }),
+      },
+      pollMs: 0,
+    });
+    await expect(lifecycle.start('A')).rejects.toThrow(/127\.0\.0\.1:5555.*127\.0\.0\.1:5557/);
+  });
+
+  it('reports the wall-clock wait', async () => {
+    const { client, started } = startingClient([instance('A', false)], [instance('A', true)]);
+    let calls = 0;
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: {
+        listTargets: targetsAfterStart(started, ['127.0.0.1:5555']),
+        shell: async () => ({ stdout: 'true', stderr: '', code: 0 }),
+      },
+      pollMs: 0,
+      now: () => (calls++ === 0 ? 1_000 : 61_000),
+    });
+    const result = await lifecycle.start('A');
+    expect(result.waitedMs).toBe(60_000);
+  });
+
+  it('fails when the named instance does not exist', async () => {
+    const lifecycle = new EmulatorLifecycle({
+      client: fakeClient([instance('B', false)]),
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+    });
+    await expect(lifecycle.start('A')).rejects.toThrow(/no emulator instance named "A".*B/);
+  });
+});
