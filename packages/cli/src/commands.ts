@@ -1,5 +1,6 @@
 import type {
-  BaselineComparison, CapabilityState, DeltaStatus, HiprofilerPluginName,
+  BaselineComparison, CapabilityState, CreateEmulatorRequest, DeltaStatus,
+  EmulatorInstance, EmulatorStartResult, EmulatorStopResult, HiprofilerPluginName,
   NamedQueryInfo, NamedQueryResult,
 } from '@ohos-perf/core';
 import { doctorReport, safeMessage, type DoctorDeps } from './doctor';
@@ -119,6 +120,30 @@ export interface CompareRequest {
   current: string;
 }
 
+/**
+ * Where the emulator commands look for the binary and its state.
+ *
+ * Every field is optional so the core applies its own discovery order
+ * (explicit path, then `OHOS_PERF_EMULATOR`, then `.emu_config`, then the
+ * built-in common paths). Passing an empty object is the common case.
+ */
+export interface EmulatorTargetOptions {
+  emulatorPath?: string;
+  instancePath?: string;
+  imageRoot?: string;
+}
+
+/** The emulator operations the CLI drives, injected so tests never spawn a binary. */
+export interface EmulatorDeps {
+  list(opts: EmulatorTargetOptions): Promise<EmulatorInstance[]>;
+  start(
+    name: string,
+    opts: EmulatorTargetOptions & { timeoutMs?: number },
+  ): Promise<EmulatorStartResult>;
+  stop(name: string, opts: EmulatorTargetOptions): Promise<EmulatorStopResult>;
+  create(req: CreateEmulatorRequest & EmulatorTargetOptions): Promise<EmulatorInstance>;
+}
+
 /** Everything the commands touch, injected so the module performs no IO itself. */
 export interface CliDeps {
   doctor: DoctorDeps;
@@ -134,6 +159,8 @@ export interface CliDeps {
   tools(): NamedQueryInfo[];
   /** Compare two analyses. Throws on any failure; the caller maps it to exit 1. */
   compare(req: CompareRequest): Promise<BaselineComparison>;
+  /** HarmonyOS emulator lifecycle. Throws on any failure; the caller maps it to exit 1. */
+  emulator: EmulatorDeps;
   /** Package version, for `--version` and the help banner. */
   version: string;
 }
@@ -389,6 +416,137 @@ export function runTools(deps: CliDeps, opts: { json?: boolean }): CliResult {
       return `${tool.name}(${args})  -> ${tool.returns}\n  ${tool.description}\n`;
     });
     return { stdout: lines.join(''), stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Narrow an options bag to just the target fields.
+ *
+ * The runners also carry `json` and `timeoutMs`; spreading the whole bag into
+ * `deps.emulator.*` would hand core an object it does not expect, and a fake
+ * asserting on what it received would see them. Building the object field by
+ * field keeps the seam to exactly {@link EmulatorTargetOptions}.
+ */
+function targetsOf(opts: EmulatorTargetOptions): EmulatorTargetOptions {
+  return {
+    ...(opts.instancePath === undefined ? {} : { instancePath: opts.instancePath }),
+    ...(opts.imageRoot === undefined ? {} : { imageRoot: opts.imageRoot }),
+    ...(opts.emulatorPath === undefined ? {} : { emulatorPath: opts.emulatorPath }),
+  };
+}
+
+/**
+ * List emulator instances.
+ *
+ * The table pads every column to the widest value it holds, the same way
+ * `formatCapabilities` does, so a reader can scan down a column. A missing
+ * target is an em dash rather than a blank: "not running" and "running but
+ * not attributable" both leave the cell empty, and a blank cell reads as a
+ * formatting bug. `--json` emits the core instances verbatim under an
+ * `instances` key so a consumer never has to strip a header row.
+ */
+export async function runEmulatorList(
+  deps: CliDeps,
+  opts: EmulatorTargetOptions & { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const instances = await deps.emulator.list(targetsOf(opts));
+    if (opts.json) return { stdout: json({ instances }), stderr: '', exitCode: 0 };
+    if (instances.length === 0) return { stdout: 'no emulator instances\n', stderr: '', exitCode: 0 };
+
+    const rows = instances.map((instance) => [
+      instance.name,
+      instance.running ? 'yes' : 'no',
+      instance.target ?? '—',
+      instance.apiVersion ?? '—',
+      instance.osVersion ?? '—',
+    ]);
+    const header = ['NAME', 'RUNNING', 'TARGET', 'API', 'IMAGE'];
+    // Widths include the header: a header wider than every value must not be
+    // padded away, or the columns stop lining up.
+    const widths = header.map((cell, column) =>
+      Math.max(cell.length, ...rows.map((row) => row[column].length)));
+    const line = (cells: string[]): string =>
+      cells.map((cell, column) => cell.padEnd(widths[column])).join('  ').trimEnd();
+    const body = [header, ...rows].map((cells) => line(cells) + '\n').join('');
+    return { stdout: body, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Start an emulator instance and wait for it to boot.
+ *
+ * `alreadyRunning` is reported as such, without a boot time: the wait did not
+ * happen, and printing `booted in 0s` would claim a measurement that was never
+ * taken.
+ */
+export async function runEmulatorStart(
+  deps: CliDeps,
+  name: string,
+  opts: EmulatorTargetOptions & { timeoutMs?: number; json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.emulator.start(name, {
+      ...targetsOf(opts),
+      ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
+    });
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    const line = result.alreadyRunning
+      ? `${result.name} was already running on ${result.target}\n`
+      : `${result.name} started on ${result.target}` +
+        ` (booted in ${Math.round(result.waitedMs / 1000)}s)\n`;
+    return { stdout: line, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Stop an emulator instance.
+ *
+ * A no-op stop is a success: the postcondition the caller asked for holds.
+ * The wording still distinguishes it from a stop that actually ran, so a
+ * script's log does not suggest a state change that never happened.
+ */
+export async function runEmulatorStop(
+  deps: CliDeps,
+  name: string,
+  opts: EmulatorTargetOptions & { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.emulator.stop(name, targetsOf(opts));
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    const line = result.wasRunning
+      ? `${result.name} stopped\n`
+      : `${result.name} was not running\n`;
+    return { stdout: line, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Create an emulator instance.
+ *
+ * The human line names the device type and OS version because the instance
+ * name alone does not say what was created, and prints the instance path
+ * because that is the directory a later `--instance-path` needs.
+ */
+export async function runEmulatorCreate(
+  deps: CliDeps,
+  req: CreateEmulatorRequest & EmulatorTargetOptions,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const instance = await deps.emulator.create(req);
+    if (opts.json) return { stdout: json(instance), stderr: '', exitCode: 0 };
+    const line = `Created ${instance.name} (${req.deviceType}, ${req.osVersion})` +
+      ` at ${instance.instancePath}\n`;
+    return { stdout: line, stderr: '', exitCode: 0 };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }

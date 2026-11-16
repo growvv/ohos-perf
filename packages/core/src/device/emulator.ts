@@ -17,7 +17,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import {
   OhosPerfError, EmulatorCommandError, EmulatorImageMissingError, EmulatorNotFoundError,
@@ -116,6 +116,79 @@ function defaultCommonPaths(env: Env, platform: string): string[] {
 }
 
 /**
+ * Parse a `.emu_config` file into its `key:value` pairs.
+ *
+ * The real file is one `key:value` per line with no spaces around the colon
+ * (`imagePath:E:/…`, `emuPath:E:/…`, plus agreement flags). A path may itself
+ * contain a colon (a Windows drive), so only the FIRST colon separates key
+ * from value. Blank lines and lines without a colon are ignored rather than
+ * aborting: a config that gained a comment must not break discovery.
+ */
+function parseEmuConfig(text: string): Record<string, string> {
+  const entries: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const at = line.indexOf(':');
+    if (at <= 0) continue;
+    const key = line.slice(0, at).trim();
+    const value = line.slice(at + 1).trim();
+    if (key !== '' && value !== '') entries[key] = value;
+  }
+  return entries;
+}
+
+/** The roots a `.emu_config` names, either of which may be absent. */
+interface EmuConfigRoots {
+  instancePath?: string;
+  imageRoot?: string;
+}
+
+/**
+ * Find the instance and image roots DevEco recorded.
+ *
+ * The candidates are `%LOCALAPPDATA%\Huawei\Emulator*\.emu_config`, sorted by
+ * directory name DESCENDING so `Emulator6.1` beats `Emulator`: name order is
+ * deterministic across machines, and mtime is not. The first file that yields
+ * either key wins for the key it yields. An unreadable or unparseable file is
+ * skipped — a broken config must not make `list` unusable.
+ *
+ * Off Windows there is no `%LOCALAPPDATA%` and no `.emu_config`, so this
+ * returns nothing and the caller falls through to the default root.
+ */
+function readEmuConfigRoots(env: Env, platform: string): EmuConfigRoots {
+  if (platform !== 'win32') return {};
+  const base = env.LOCALAPPDATA;
+  if (!base) return {};
+
+  const huawei = join(base, 'Huawei');
+  let dirs: string[];
+  try {
+    dirs = readdirSync(huawei, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('Emulator'))
+      .map((entry) => entry.name)
+      .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  } catch {
+    return {};
+  }
+
+  const roots: EmuConfigRoots = {};
+  for (const dir of dirs) {
+    let text: string;
+    try {
+      text = readFileSync(join(huawei, dir, '.emu_config'), 'utf8');
+    } catch {
+      continue;
+    }
+    const entries = parseEmuConfig(text);
+    // Per key, not per file: a config that names only `imagePath` still
+    // contributes that key, and a later file may supply the other.
+    if (roots.instancePath === undefined && entries.emuPath) roots.instancePath = entries.emuPath;
+    if (roots.imageRoot === undefined && entries.imagePath) roots.imageRoot = entries.imagePath;
+    if (roots.instancePath !== undefined && roots.imageRoot !== undefined) break;
+  }
+  return roots;
+}
+
+/**
  * The `Emulator.exe` process surface.
  *
  * Every method here runs the binary and interprets its output; none of them
@@ -128,11 +201,52 @@ export class EmulatorClient {
   private readonly platform: string;
   private resolvedPath?: string;
   private parsedVersion?: string;
+  private configRoots?: EmuConfigRoots;
 
   constructor(opts: EmulatorClientOptions = {}) {
     this.opts = opts;
     this.env = opts.env ?? process.env;
     this.platform = opts.platform ?? process.platform;
+  }
+
+  /**
+   * The instance root, in the spec's discovery order: explicit option, then
+   * `OHOS_PERF_EMULATOR_INSTANCE`, then `.emu_config`'s `emuPath`, then
+   * `%LOCALAPPDATA%\Huawei\Emulator\deployed`.
+   *
+   * `undefined` only when none of those exist — off Windows there is no
+   * `%LOCALAPPDATA%` default, and inventing one would pass the binary a
+   * relative path. The resolved root is always passed explicitly rather than
+   * left to the binary's own discovery, so the argv records where the answer
+   * came from.
+   */
+  private resolvedInstanceRoot(): string | undefined {
+    if (this.opts.instancePath !== undefined) return this.opts.instancePath;
+    if (this.env.OHOS_PERF_EMULATOR_INSTANCE) return this.env.OHOS_PERF_EMULATOR_INSTANCE;
+    const fromConfig = this.emuConfig().instancePath;
+    if (fromConfig !== undefined) return fromConfig;
+    if (this.platform === 'win32' && this.env.LOCALAPPDATA) {
+      return join(this.env.LOCALAPPDATA, 'Huawei', 'Emulator', 'deployed');
+    }
+    return undefined;
+  }
+
+  /** The image root, discovered the same way via `imagePath` and `%LOCALAPPDATA%\Huawei\Sdk`. */
+  private resolvedImageRoot(): string | undefined {
+    if (this.opts.imageRoot !== undefined) return this.opts.imageRoot;
+    if (this.env.OHOS_PERF_EMULATOR_ROOT) return this.env.OHOS_PERF_EMULATOR_ROOT;
+    const fromConfig = this.emuConfig().imageRoot;
+    if (fromConfig !== undefined) return fromConfig;
+    if (this.platform === 'win32' && this.env.LOCALAPPDATA) {
+      return join(this.env.LOCALAPPDATA, 'Huawei', 'Sdk');
+    }
+    return undefined;
+  }
+
+  /** Read `.emu_config` at most once per client. */
+  private emuConfig(): EmuConfigRoots {
+    this.configRoots ??= readEmuConfigRoots(this.env, this.platform);
+    return this.configRoots;
   }
 
   /**
@@ -192,9 +306,10 @@ export class EmulatorClient {
   async listDetailed(): Promise<EmulatorInstance[]> {
     // `-list` spells the flag `-path`, unlike every mutating command, which
     // uses `-instancePath`. Measured on 6.1.1.200.
+    const instanceRoot = this.resolvedInstanceRoot();
     const args = [
       '-list', '-details',
-      ...(this.opts.instancePath === undefined ? [] : ['-path', this.opts.instancePath]),
+      ...(instanceRoot === undefined ? [] : ['-path', instanceRoot]),
     ];
     const result = await this.run(args);
     if (result.stdout.trim() === '[Empty]') return [];
@@ -218,9 +333,10 @@ export class EmulatorClient {
 
   /** `-imageList -downloaded true`, parsed and sorted by type then version. */
   async imageList(): Promise<EmulatorImage[]> {
+    const imageRoot = this.resolvedImageRoot();
     const args = [
       '-imageList', '-downloaded', 'true',
-      ...(this.opts.imageRoot === undefined ? [] : ['-imageRoot', this.opts.imageRoot]),
+      ...(imageRoot === undefined ? [] : ['-imageRoot', imageRoot]),
     ];
     const rows = this.parseJson<Record<string, unknown>>(args, await this.run(args));
     return rows
@@ -308,14 +424,16 @@ export class EmulatorClient {
     });
   }
 
-  /** `-instancePath` when the caller configured one; no flag otherwise. */
+  /** `-instancePath` when a root was resolved; no flag otherwise. */
   private instancePathArgs(): string[] {
-    return this.opts.instancePath === undefined ? [] : ['-instancePath', this.opts.instancePath];
+    const root = this.resolvedInstanceRoot();
+    return root === undefined ? [] : ['-instancePath', root];
   }
 
-  /** `-imageRoot` when the caller configured one; no flag otherwise. */
+  /** `-imageRoot` when a root was resolved; no flag otherwise. */
   private imageRootArgs(): string[] {
-    return this.opts.imageRoot === undefined ? [] : ['-imageRoot', this.opts.imageRoot];
+    const root = this.resolvedImageRoot();
+    return root === undefined ? [] : ['-imageRoot', root];
   }
 
   /** Resolve the binary, spawn, and classify the output. */

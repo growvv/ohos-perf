@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+  mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EmulatorClient, EmulatorCommandError, EmulatorNotFoundError } from '../src/device/emulator';
 
@@ -18,7 +21,10 @@ class StubEmulator extends EmulatorClient {
   readonly calls: { command: string; args: string[] }[] = [];
   constructor(
     private readonly result: { stdout?: string; stderr?: string; code?: number },
-    opts: ConstructorParameters<typeof EmulatorClient>[0] = { emulatorPath: BIN },
+    // A hermetic environment by default: the host's real `LOCALAPPDATA` holds
+    // a `.emu_config` that redirects the roots, and a test that inherited it
+    // would assert against this machine's install rather than its own fixture.
+    opts: ConstructorParameters<typeof EmulatorClient>[0] = { emulatorPath: BIN, env: { PATH: '' } },
   ) {
     super(opts);
   }
@@ -138,6 +144,158 @@ describe('EmulatorClient.imageList', () => {
   });
 });
 
+describe('EmulatorClient instance/image root discovery', () => {
+  /** A throwaway `%LOCALAPPDATA%`-shaped tree holding the given configs. */
+  function withLocalAppData(
+    configs: Record<string, string>,
+  ): { root: string; cleanup: () => void } {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-emu-config-'));
+    const huawei = join(root, 'Huawei');
+    for (const [dir, contents] of Object.entries(configs)) {
+      mkdirSync(join(huawei, dir), { recursive: true });
+      writeFileSync(join(huawei, dir, '.emu_config'), contents);
+    }
+    return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  }
+
+  const config = (emuPath: string, imagePath: string): string =>
+    `imagePath:${imagePath}\nemuPath:${emuPath}\nHarmonyOS_Software_Service_Agreement:agree\n`;
+
+  it('reads the redirected roots out of .emu_config', async () => {
+    const { root, cleanup } = withLocalAppData({
+      Emulator6_1: config('E:/runtime/deployed', 'E:/runtime/Sdk'),
+    });
+    try {
+      const client = new StubEmulator(
+        { stdout: '[]' },
+        { emulatorPath: BIN, env: { LOCALAPPDATA: root, PATH: '' } },
+      );
+      await client.listDetailed();
+      expect(client.calls[0].args).toEqual([
+        '-list', '-details', '-path', 'E:/runtime/deployed',
+      ]);
+      await client.imageList();
+      expect(client.calls[1].args).toEqual([
+        '-imageList', '-downloaded', 'true', '-imageRoot', 'E:/runtime/Sdk',
+      ]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('prefers the newest config directory by name, not by mtime', async () => {
+    const { root, cleanup } = withLocalAppData({
+      Emulator: config('E:/old/deployed', 'E:/old/Sdk'),
+      Emulator6_1: config('E:/new/deployed', 'E:/new/Sdk'),
+    });
+    try {
+      const client = new StubEmulator(
+        { stdout: '[]' },
+        { emulatorPath: BIN, env: { LOCALAPPDATA: root, PATH: '' } },
+      );
+      await client.listDetailed();
+      expect(client.calls[0].args).toContain('E:/new/deployed');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('skips an unparseable config instead of failing discovery', async () => {
+    const { root, cleanup } = withLocalAppData({
+      Emulator6_1: 'not a config at all\n',
+      Emulator: config('E:/fallback/deployed', 'E:/fallback/Sdk'),
+    });
+    try {
+      const client = new StubEmulator(
+        { stdout: '[]' },
+        { emulatorPath: BIN, env: { LOCALAPPDATA: root, PATH: '' } },
+      );
+      await client.listDetailed();
+      expect(client.calls[0].args).toContain('E:/fallback/deployed');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('falls back to the default root when no config exists', async () => {
+    const { root, cleanup } = withLocalAppData({});
+    try {
+      const client = new StubEmulator(
+        { stdout: '[]' },
+        { emulatorPath: BIN, env: { LOCALAPPDATA: root, PATH: '' } },
+      );
+      await client.listDetailed();
+      expect(client.calls[0].args).toEqual([
+        '-list', '-details', '-path', join(root, 'Huawei', 'Emulator', 'deployed'),
+      ]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('lets the environment override the config', async () => {
+    const { root, cleanup } = withLocalAppData({
+      Emulator6_1: config('E:/from/config', 'E:/from/config-sdk'),
+    });
+    try {
+      const client = new StubEmulator(
+        { stdout: '[]' },
+        {
+          emulatorPath: BIN,
+          env: {
+            LOCALAPPDATA: root,
+            PATH: '',
+            OHOS_PERF_EMULATOR_INSTANCE: 'E:/from/env',
+            OHOS_PERF_EMULATOR_ROOT: 'E:/from/env-sdk',
+          },
+        },
+      );
+      await client.listDetailed();
+      expect(client.calls[0].args).toContain('E:/from/env');
+      await client.imageList();
+      expect(client.calls[1].args).toContain('E:/from/env-sdk');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('lets an explicit option override the environment', async () => {
+    const client = new StubEmulator(
+      { stdout: '[]' },
+      {
+        emulatorPath: BIN,
+        instancePath: 'E:/explicit',
+        imageRoot: 'E:/explicit-sdk',
+        env: {
+          PATH: '',
+          OHOS_PERF_EMULATOR_INSTANCE: 'E:/from/env',
+          OHOS_PERF_EMULATOR_ROOT: 'E:/from/env-sdk',
+        },
+      },
+    );
+    await client.listDetailed();
+    expect(client.calls[0].args).toContain('E:/explicit');
+    await client.imageList();
+    expect(client.calls[1].args).toContain('E:/explicit-sdk');
+  });
+
+  it('does not consult .emu_config off Windows', async () => {
+    const { root, cleanup } = withLocalAppData({
+      Emulator6_1: config('E:/nope/deployed', 'E:/nope/Sdk'),
+    });
+    try {
+      const client = new StubEmulator(
+        { stdout: '[]' },
+        { emulatorPath: BIN, platform: 'darwin', env: { LOCALAPPDATA: root, PATH: '' } },
+      );
+      await client.listDetailed();
+      expect(client.calls[0].args).toEqual(['-list', '-details']);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('EmulatorClient failure classification', () => {
   it('throws on "Unable to …" even though the exit code is 0', async () => {
     const client = new StubEmulator({ stdout: fixture('start-failure.txt'), code: 0 });
@@ -218,7 +376,8 @@ describe('EmulatorClient mutating commands', () => {
   });
 
   it('omits optional -create flags that were not supplied', async () => {
-    const client = new StubEmulator({ stdout: '' }, { emulatorPath: BIN });
+    // No `LOCALAPPDATA` in the env, so no root is discovered and no flag is passed.
+    const client = new StubEmulator({ stdout: '' }, { emulatorPath: BIN, env: { PATH: '' } });
     await client.createInstance({ name: 'A', deviceType: 'phone', osVersion: 'V' });
     expect(client.calls[0].args).toEqual([
       '-create', 'A', '-deviceType', 'phone', '-osVersion', 'V',

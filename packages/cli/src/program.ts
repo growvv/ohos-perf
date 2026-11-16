@@ -6,11 +6,16 @@ import {
   runCollect,
   runCompare,
   runDoctor,
+  runEmulatorCreate,
+  runEmulatorList,
+  runEmulatorStart,
+  runEmulatorStop,
   runQuery,
   runTools,
   safeMessage,
   type CliDeps,
   type CliResult,
+  type EmulatorTargetOptions,
 } from './commands';
 import { parseDurationSeconds, parsePluginList } from './collect';
 import { parseLimit, parseQueryArgs } from './query';
@@ -39,9 +44,30 @@ export interface ProgramOptions {
   exitOverride?: boolean;
 }
 
+/**
+ * The emulator location flags as commander parses them.
+ *
+ * `--emulator` is the flag name (short, and it matches the parent command);
+ * `emulatorPath` is the core's field name. Translating between the two
+ * happens in {@link targetOptionsOf} so no action has to remember it.
+ */
+interface EmulatorFlags {
+  instancePath?: string;
+  imageRoot?: string;
+  emulator?: string;
+}
+
+/** Map parsed emulator flags onto the core's target options, omitting unset ones. */
+function targetOptionsOf(opts: EmulatorFlags): EmulatorTargetOptions {
+  return {
+    ...(opts.instancePath === undefined ? {} : { instancePath: opts.instancePath }),
+    ...(opts.imageRoot === undefined ? {} : { imageRoot: opts.imageRoot }),
+    ...(opts.emulator === undefined ? {} : { emulatorPath: opts.emulator }),
+  };
+}
+
 export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions = {}): Command {
   const program = new Command();
-
   // Route commander's own output (help, version, usage errors) through the
   // injected streams so the whole surface is observable in tests. The help
   // widths are left at commander's defaults (the real TTY width), so the
@@ -232,6 +258,143 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .action((opts: { json?: boolean }) => {
       io.emit(runTools(deps, opts));
     });
+
+  /**
+   * Add the emulator location options to one subcommand.
+   *
+   * They are declared on every subcommand rather than once on the parent:
+   * commander resolves `--instance-path` against the command that consumes
+   * the action's options object, and a parent-level option would require
+   * every action to look up its parent to see it.
+   */
+  const withEmulatorTargets = (cmd: Command): Command =>
+    cmd
+      .option('--instance-path <dir>', 'emulator instance root (overrides discovery)')
+      .option('--image-root <dir>', 'emulator image root (overrides discovery)')
+      .option('--emulator <path>', 'path to the HarmonyOS Emulator executable');
+
+  const emulator = program
+    .command('emulator')
+    .description('manage HarmonyOS emulator instances');
+
+  withEmulatorTargets(
+    emulator
+      .command('list')
+      .description('list emulator instances and the target each one owns')
+      .option('--json', 'print the instances as JSON'),
+  ).action(async (opts: EmulatorFlags & { json?: boolean }) => {
+    io.emit(await runEmulatorList(deps, {
+      ...targetOptionsOf(opts),
+      ...(opts.json === undefined ? {} : { json: opts.json }),
+    }));
+  });
+
+  withEmulatorTargets(
+    emulator
+      .command('start')
+      .description('start an emulator instance and wait until it has booted')
+      .argument('<name>', 'emulator instance name')
+      .option('--timeout <seconds>', 'how long to wait for the boot, in seconds')
+      .option('--json', 'print the result as JSON'),
+  ).action(async (name: string, opts: EmulatorFlags & { timeout?: string; json?: boolean }) => {
+    const { timeout, json } = opts;
+    let timeoutMs: number | undefined;
+    if (timeout !== undefined) {
+      // `parseDurationSeconds` accepts a bare number or an `s` suffix and
+      // rejects anything that is not a positive whole number of milliseconds,
+      // which is exactly the budget a poll loop needs — `0` and negatives are
+      // rejected there, before any deps call. Its message names `--duration`,
+      // so the rejection is re-worded for this flag.
+      try {
+        timeoutMs = parseDurationSeconds(timeout);
+      } catch {
+        io.emit({
+          stdout: '',
+          stderr: `invalid --timeout ${JSON.stringify(timeout)}: --timeout must be greater` +
+            ' than 0 (a positive number of seconds, e.g. 30)\n',
+          exitCode: 1,
+        });
+        return;
+      }
+    }
+    io.emit(await runEmulatorStart(deps, name, {
+      ...targetOptionsOf(opts),
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(json === undefined ? {} : { json }),
+    }));
+  });
+
+  withEmulatorTargets(
+    emulator
+      .command('stop')
+      .description('stop an emulator instance')
+      .argument('<name>', 'emulator instance name')
+      .option('--json', 'print the result as JSON'),
+  ).action(async (name: string, opts: EmulatorFlags & { json?: boolean }) => {
+    io.emit(await runEmulatorStop(deps, name, {
+      ...targetOptionsOf(opts),
+      ...(opts.json === undefined ? {} : { json: opts.json }),
+    }));
+  });
+
+  withEmulatorTargets(
+    emulator
+      .command('create')
+      .description('create an emulator instance from an already-downloaded image')
+      .argument('<name>', 'instance name; it becomes a directory under the instance root')
+      .option('--device-type <type>', 'image device type, e.g. phone or foldable')
+      .option('--os-version <version>', 'image OS version, e.g. "HarmonyOS 6.1.1(24)"')
+      .option('--screen-profile <model>', 'screen profile name')
+      .option('--memory <GB>', 'RAM size in GB')
+      .option('--storage <GB>', 'data partition size in GB')
+      .option('--json', 'print the created instance as JSON'),
+  ).action(async (name: string, opts: {
+    deviceType?: string;
+    osVersion?: string;
+    screenProfile?: string;
+    memory?: string;
+    storage?: string;
+    json?: boolean;
+  } & EmulatorFlags) => {
+    // Declared as plain options, not `requiredOption`: commander's own
+    // "required option ... not specified" writes through `writeErr` and exits
+    // before the action, which would break the CLI-wide failure contract
+    // (one message on stderr, an emitted exit-1 result).
+    if (opts.deviceType === undefined || opts.osVersion === undefined) {
+      io.emit({
+        stdout: '',
+        stderr: '--device-type and --os-version are required\n',
+        exitCode: 1,
+      });
+      return;
+    }
+    const number = (flag: string, raw: string | undefined): number | undefined => {
+      if (raw === undefined) return undefined;
+      const value = Number.parseInt(raw, 10);
+      if (!Number.isFinite(value)) {
+        throw new Error(`invalid ${flag}: expected a whole number, got ${JSON.stringify(raw)}`);
+      }
+      return value;
+    };
+    let memoryGb: number | undefined;
+    let storageGb: number | undefined;
+    try {
+      memoryGb = number('--memory', opts.memory);
+      storageGb = number('--storage', opts.storage);
+    } catch (err) {
+      io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+      return;
+    }
+    io.emit(await runEmulatorCreate(deps, {
+      name,
+      deviceType: opts.deviceType,
+      osVersion: opts.osVersion,
+      ...(opts.screenProfile === undefined ? {} : { screenProfile: opts.screenProfile }),
+      ...(memoryGb === undefined ? {} : { memoryGb }),
+      ...(storageGb === undefined ? {} : { storageGb }),
+      ...targetOptionsOf(opts),
+    }, { json: opts.json }));
+  });
 
   return program;
 }

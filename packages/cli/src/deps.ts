@@ -6,6 +6,8 @@ import {
   BinderQuery,
   CallstackQuery,
   CapabilityMatrix,
+  EmulatorClient,
+  EmulatorLifecycle,
   FrameQuery,
   Hdc,
   InstantQuery,
@@ -46,7 +48,9 @@ import {
   type SceneLayout,
   type SceneMetadata,
 } from '@ohos-perf/core';
-import { safeMessage, type CliDeps, type DoctorDeps } from './commands';
+import {
+  safeMessage, type CliDeps, type DoctorDeps, type EmulatorDeps, type EmulatorTargetOptions,
+} from './commands';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -389,6 +393,29 @@ export function realDeps(
   };
 
   /**
+   * A client for one invocation's target options.
+   *
+   * Built per call, not once: `realDeps()` must perform no IO, and the client
+   * only touches the filesystem when it resolves the binary. Undefined fields
+   * are omitted rather than passed as `undefined`, so the core's discovery
+   * defaults apply.
+   */
+  const emulatorClient = (o: EmulatorTargetOptions): EmulatorClient =>
+    new EmulatorClient({
+      ...(o.emulatorPath === undefined ? {} : { emulatorPath: o.emulatorPath }),
+      ...(o.instancePath === undefined ? {} : { instancePath: o.instancePath }),
+      ...(o.imageRoot === undefined ? {} : { imageRoot: o.imageRoot }),
+    });
+
+  const emulator: EmulatorDeps = {
+    list: (o) => new EmulatorLifecycle({ client: emulatorClient(o) }).list(),
+    start: (name, o) => new EmulatorLifecycle({ client: emulatorClient(o) })
+      .start(name, o.timeoutMs === undefined ? {} : { timeoutMs: o.timeoutMs }),
+    stop: (name, o) => new EmulatorLifecycle({ client: emulatorClient(o) }).stop(name),
+    create: (req) => new EmulatorLifecycle({ client: emulatorClient(req) }).create(req),
+  };
+
+  /**
    * Open a scene and resolve everything both `analyze` and `query` need.
    *
    * The caller owns the returned `scene` and must close it. On a failure
@@ -484,6 +511,7 @@ export function realDeps(
   return {
     doctor,
     version,
+    emulator,
 
     async capsReport() {
       try {
