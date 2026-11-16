@@ -16,6 +16,8 @@ export interface SceneLayout {
   traceDb: string;
   perfDb?: string;
   procfsFile: string;
+  /** `hidumper.json` from a RenderService counter capture. */
+  hidumperFile: string;
   metadataFile: string;
 }
 
@@ -27,6 +29,7 @@ export function createSceneLayout(root: string): SceneLayout {
     traceDb: join(root, 'trace.db'),
     perfDb: join(root, 'perf.db'),
     procfsFile: join(root, 'procfs.jsonl'),
+    hidumperFile: join(root, 'hidumper.json'),
     metadataFile: join(root, 'scene.json'),
   };
 }

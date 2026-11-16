@@ -1,4 +1,5 @@
 import type { CapabilityId, CapabilityMatrix } from '../device/capability';
+import type { HidumperCapture } from '../collectors/hidumper';
 import type { ProcfsSample } from '../collectors/procfs';
 import type { QueryHandle } from '../db/driver';
 import type { SceneMetadata } from '../ingest/metadata';
@@ -51,6 +52,8 @@ export interface AnalyzeContext {
   binder?: BinderQuery;
   startup?: StartupQuery;
   procfs?: ProcfsSample[];
+  /** RenderService counter snapshots; present only when a hidumper capture ran. */
+  hidumper?: HidumperCapture;
   metadata?: SceneMetadata;
   app: AppIdentity;
   window: TimeRange;

@@ -16,6 +16,7 @@ import { FaultTreeAnalyzer } from '../src/analyze/fault-tree';
 import { FrameAnalyzer } from '../src/analyze/frames';
 import { MemoryAnalyzer } from '../src/analyze/memory';
 import { StartupAnalyzer } from '../src/analyze/startup';
+import { RenderAnalyzer } from '../src/analyze/render';
 import { ThreadAnalyzer } from '../src/analyze/threads-score';
 import { defaultAnalyzers, runAnalyzers } from '../src/analyze/engine';
 import { resolveAppIdentity } from '../src/analyze/context';
@@ -317,7 +318,7 @@ describe('resolveAppIdentity', () => {
 });
 
 describe('defaultAnalyzers', () => {
-  it('returns the frame, fault-tree, binder, thread, memory, and startup analyzers in append order', () => {
+  it('returns the frame, fault-tree, binder, thread, memory, startup and render analyzers in append order', () => {
     const analyzers = defaultAnalyzers();
     expect(analyzers.map((a) => a.id)).toEqual([
       'frames',
@@ -326,6 +327,7 @@ describe('defaultAnalyzers', () => {
       'threads',
       'memory',
       'startup',
+      'render',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FaultTreeAnalyzer);
@@ -333,6 +335,7 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[3]).toBeInstanceOf(ThreadAnalyzer);
     expect(analyzers[4]).toBeInstanceOf(MemoryAnalyzer);
     expect(analyzers[5]).toBeInstanceOf(StartupAnalyzer);
+    expect(analyzers[6]).toBeInstanceOf(RenderAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

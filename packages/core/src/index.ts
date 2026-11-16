@@ -77,6 +77,20 @@ export {
   writeProcfsSamples,
 } from './collectors/procfs';
 export type { ProcfsSample, ProcfsStatus, SmapsRollup } from './collectors/procfs';
+export {
+  HidumperCollector,
+  FPS_COMMAND,
+  HITCH_COMMAND,
+  parseFpsCounts,
+  parseHitches,
+  readHidumperCapture,
+} from './collectors/hidumper';
+export type {
+  FpsBucket,
+  WindowHitches,
+  HidumperSnapshot,
+  HidumperCapture,
+} from './collectors/hidumper';
 export type { Collector, TraceCollectOptions } from './collectors/types';
 
 // Ingestion
@@ -142,6 +156,7 @@ export type {
 export { ThreadAnalyzer, computeThreadAnalysis } from './analyze/threads-score';
 export { MemoryAnalyzer } from './analyze/memory';
 export { StartupAnalyzer } from './analyze/startup';
+export { RenderAnalyzer } from './analyze/render';
 export type {
   BelowThresholdPattern,
   CallchainSample,
