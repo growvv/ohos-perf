@@ -71,6 +71,16 @@ export interface CreateEmulatorRequest {
 /** A line that means the command failed, despite the exit code saying 0. */
 const FAILURE_LINE = /^(?:Emulator: |Unable to )/;
 
+/**
+ * How long `-start` may keep its pipes open before it is treated as launched.
+ *
+ * A valid `-start` never exits (the process becomes the emulator), while an
+ * invalid one prints its failure and exits in under 100 ms. A few seconds is
+ * long enough to capture that failure output and short enough that `start`
+ * does not appear hung; measured output arrives within ~200 ms.
+ */
+const START_SETTLE_MS = 3_000;
+
 export interface EmulatorClientOptions {
   /** Explicit `Emulator.exe`; checked first by {@link EmulatorClient.resolvePath}. */
   emulatorPath?: string;
@@ -360,11 +370,29 @@ export class EmulatorClient {
    * and the instance keeps running after it exits, so the caller must poll
    * {@link listDetailed} for the state change.
    */
+  /**
+   * `-start <name>`.
+   *
+   * Measured on 6.1.1.200: a **valid** `-start` does not exit. The process
+   * becomes the emulator (it holds ~1 GB and keeps running), so waiting for
+   * its pipes to close waits forever. An **invalid** one prints `Unable to
+   * start the emulator` and exits 1 in under 100 ms.
+   *
+   * So this settles: it collects output until the child exits or
+   * {@link START_SETTLE_MS} passes, whichever comes first, then drops the
+   * pipes and leaves the child running. The exit code is therefore not a
+   * verdict on success — {@link EmulatorLifecycle.start} proves that by
+   * re-reading state, which is the same rule the rest of this class follows.
+   * Detaching keeps the emulator alive when this process exits.
+   */
   async startInstance(name: string): Promise<void> {
-    await this.run(['-start', name, ...this.instancePathArgs(), ...this.imageRootArgs()]);
+    await this.run(
+      ['-start', name, ...this.instancePathArgs(), ...this.imageRootArgs()],
+      { settleMs: START_SETTLE_MS, detach: true },
+    );
   }
 
-  /** `-stop <name>`; also fire-and-forget, see {@link startInstance}. */
+  /** `-stop <name>`; fire-and-forget, see {@link startInstance}. */
   async stopInstance(name: string): Promise<void> {
     await this.run(['-stop', name, ...this.instancePathArgs()]);
   }
@@ -389,26 +417,57 @@ export class EmulatorClient {
     ]);
   }
 
-  /** Spawn without a shell so install paths with spaces stay one argv element. */
+  /**
+   * Spawn without a shell so install paths with spaces stay one argv element.
+   *
+   * `opts.settleMs` exists for `-start`, which does not exit on success. When
+   * set, the promise resolves once the child exits or the window elapses —
+   * whichever is first — after which the pipes are destroyed and the child is
+   * detached so it survives this process. Output captured so far is returned
+   * with code 0, and failure-line classification still applies, so a fast
+   * rejection is caught either way.
+   *
+   * `detach` is only set alongside `settleMs`: a child that outlives the
+   * caller must not hold the caller's console or pipes open.
+   */
   protected spawnProcess(
     command: string,
     args: string[],
+    opts: { settleMs?: number; detach?: boolean } = {},
   ): Promise<{ stdout: string; stderr: string; code: number }> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, {
         shell: false,
         windowsHide: true,
         env: this.env,
+        ...(opts.detach === true ? { detached: true, stdio: 'pipe' as const } : {}),
       });
       let stdout = '';
       let stderr = '';
+      let settled = false;
       child.stdout?.on('data', (chunk: Buffer) => {
         stdout += chunk.toString('utf8');
       });
       child.stderr?.on('data', (chunk: Buffer) => {
         stderr += chunk.toString('utf8');
       });
+
+      const finish = (code: number): void => {
+        if (settled) return;
+        settled = true;
+        if (opts.settleMs !== undefined) {
+          // The child may still be running (it IS the emulator). Dropping the
+          // pipes frees this process; `unref` lets it exit without waiting.
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          child.unref();
+        }
+        resolve({ stdout, stderr, code });
+      };
+
       child.on('error', (err) => {
+        if (settled) return;
+        settled = true;
         reject(
           new OhosPerfError(`Failed to spawn the emulator (${command}): ${err.message}`, {
             cause: err,
@@ -419,8 +478,14 @@ export class EmulatorClient {
       child.on('close', (code) => {
         // `code === null` means the child was killed by a signal, which is
         // never a success; -1 makes every `code !== 0` check treat it as one.
-        resolve({ stdout, stderr, code: code ?? -1 });
+        finish(code ?? -1);
       });
+
+      if (opts.settleMs !== undefined) {
+        // A success code on timeout: the caller re-reads state either way, and
+        // a failure line in the captured output still throws.
+        setTimeout(() => { finish(0); }, opts.settleMs).unref();
+      }
     });
   }
 
@@ -437,8 +502,14 @@ export class EmulatorClient {
   }
 
   /** Resolve the binary, spawn, and classify the output. */
-  private async run(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
-    return this.assertOk(args, await this.spawnProcess(await this.resolvePath(), args));
+  private async run(
+    args: string[],
+    spawnOpts: { settleMs?: number; detach?: boolean } = {},
+  ): Promise<{ stdout: string; stderr: string; code: number }> {
+    return this.assertOk(
+      args,
+      await this.spawnProcess(await this.resolvePath(), args, spawnOpts),
+    );
   }
 
   /**
@@ -655,7 +726,13 @@ export class EmulatorLifecycle {
       );
     }
 
-    const before = new Set((await this.hdc.listTargets()).map((t) => t.id));
+    // Only CONNECTED ids count as "already there". Measured: the emulator
+    // always returns on 127.0.0.1:5555, and after a stop that id lingers in
+    // `hdc list targets` as disconnected. Snapshotting every id would make the
+    // reconnected 5555 look pre-existing, so no target would ever be fresh.
+    const before = new Set(
+      (await this.hdc.listTargets()).filter((t) => t.connected).map((t) => t.id),
+    );
 
     let target: string;
     let alreadyRunning: boolean;

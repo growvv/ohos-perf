@@ -123,6 +123,25 @@ describe('EmulatorLifecycle.start', () => {
     });
   });
 
+  it('accepts a target that existed but was disconnected before the start', async () => {
+    // Measured: the emulator always comes back on 127.0.0.1:5555, and after a
+    // stop that id lingers in `hdc list targets` as `Offline`/disconnected.
+    // Snapshotting every id — rather than every CONNECTED id — made the
+    // reconnected 5555 look "old", so start could never succeed.
+    const { client, started } = startingClient([instance('A', false)], [instance('A', true)]);
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: {
+        listTargets: async () => (started.length === 0
+          ? [target('127.0.0.1:5555', 'TCP', false)]
+          : [target('127.0.0.1:5555', 'TCP', true)]),
+        shell: async () => ({ stdout: 'true', stderr: '', code: 0 }),
+      },
+      pollMs: 0,
+    });
+    await expect(lifecycle.start('A')).resolves.toMatchObject({ target: '127.0.0.1:5555' });
+  });
+
   it('is idempotent: a second start never spawns another emulator', async () => {
     const { client, started } = startingClient([instance('A', true)], [instance('A', true)]);
     const lifecycle = new EmulatorLifecycle({

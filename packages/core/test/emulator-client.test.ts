@@ -144,6 +144,50 @@ describe('EmulatorClient.imageList', () => {
   });
 });
 
+describe('EmulatorClient.startInstance', () => {
+  /**
+   * The spawn seam is protected, so the settle behaviour is exercised through
+   * a real child process rather than a stub: a stub that returns immediately
+   * cannot reproduce "the child never exits", which is the whole defect.
+   */
+  class ExposedEmulator extends EmulatorClient {
+    constructor() { super({ env: { PATH: '' } }); }
+    expose(command: string, args: string[], opts: { settleMs?: number }) {
+      return this.spawnProcess(command, args, opts);
+    }
+  }
+
+  it('returns after a settle window when the child never exits', async () => {
+    // Measured: a valid `-start` becomes the emulator process itself and stays
+    // alive indefinitely, so waiting for its pipes to close hangs forever.
+    const client = new ExposedEmulator();
+    const startedAt = Date.now();
+    const result = await client.expose(
+      process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { settleMs: 150 },
+    );
+    expect(Date.now() - startedAt).toBeLessThan(10_000);
+    // No failure line, so the settle counts as "launched", not "failed".
+    expect(result.code).toBe(0);
+  });
+
+  it('still reports a child that exits with a failure before the window closes', async () => {
+    const client = new ExposedEmulator();
+    const result = await client.expose(
+      process.execPath,
+      ['-e', 'process.stdout.write("Unable to start the emulator"); process.exit(1)'],
+      { settleMs: 5_000 },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain('Unable to start the emulator');
+  });
+
+  it('does not wait for a settle window when none is asked for', async () => {
+    const client = new ExposedEmulator();
+    const result = await client.expose(process.execPath, ['-e', 'process.exit(0)'], {});
+    expect(result.code).toBe(0);
+  });
+});
+
 describe('EmulatorClient instance/image root discovery', () => {
   /** A throwaway `%LOCALAPPDATA%`-shaped tree holding the given configs. */
   function withLocalAppData(
