@@ -2,6 +2,7 @@ import type { CapabilityId } from '../device/capability';
 import type { Frame } from '../query/frames';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
+import { computeFpsWindows } from './fps';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /** `frame_slice` provenance shared by every metric this analyzer emits. */
@@ -469,6 +470,49 @@ export class FrameAnalyzer implements Analyzer {
         }),
       ]),
     );
+
+    if (rendered.length > 0) {
+      const windows = computeFpsWindows(rendered);
+      const fpsValues = windows.map((window) => window.fps);
+      let sum = 0;
+      let maxFps = fpsValues[0] ?? 0;
+      let minFps = fpsValues[0] ?? 0;
+      for (const fps of fpsValues) {
+        sum += fps;
+        if (fps > maxFps) maxFps = fps;
+        if (fps < minFps) minFps = fps;
+      }
+      metrics.push(
+        metric({
+          id: 'frame.fps.window.count',
+          value: windows.length,
+          unit: 'count',
+          provenance: prov,
+          fidelity: 'exact',
+        }),
+        metric({
+          id: 'frame.fps.window.min',
+          value: minFps,
+          unit: 'fps',
+          provenance: prov,
+          fidelity: 'exact',
+        }),
+        metric({
+          id: 'frame.fps.window.max',
+          value: maxFps,
+          unit: 'fps',
+          provenance: prov,
+          fidelity: 'exact',
+        }),
+        metric({
+          id: 'frame.fps.window.mean',
+          value: sum / windows.length,
+          unit: 'fps',
+          provenance: prov,
+          fidelity: 'exact',
+        }),
+      );
+    }
 
     // Trace-relative origin for the human-readable explain text. `frames` is
     // ordered by ts, so its first entry is the earliest captured frame.

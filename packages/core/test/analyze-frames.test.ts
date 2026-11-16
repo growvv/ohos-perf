@@ -258,6 +258,34 @@ describe('FrameAnalyzer', () => {
     }
   });
 
+  it('reports 1-second fps window statistics', async () => {
+    // 11 frames 100ms apart: window 1 holds 10 (10 fps), window 2 holds the
+    // frame exactly at the boundary (1 fps).
+    const narrow = withDb('fps-windows.db', (d) => {
+      d.exec(FRAME_DDL);
+      const rows = [];
+      for (let i = 0; i <= 10; i++) {
+        rows.push(`(${i}, ${1_000_000_000 + i * 100_000_000}, ${i}, 17, 44, 94, 0,
+          '', 0, 0, 'actural', 0, 0, 0)`);
+      }
+      d.exec(`INSERT INTO frame_slice VALUES ${rows.join(',')}`);
+      d.exec(PROCESS_DDL);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const c = { ...ctx(), frames: new FrameQuery(narrow),
+        window: { startNs: 0, endNs: 10_000_000_000 } };
+      const r = await new FrameAnalyzer().run(c);
+      const get = (id: string) => r.metrics.find((m) => m.id === id)!;
+      expect(get('frame.fps.window.count').value).toBe(2);
+      expect(get('frame.fps.window.min').value).toBe(1);
+      expect(get('frame.fps.window.max').value).toBe(10);
+      expect(get('frame.fps.window.mean').value).toBe(5.5);
+    } finally {
+      narrow.close();
+    }
+  });
+
   it('emits metrics and evidence in their documented sort order', async () => {
     // All three jank frames share one ts, so (kind, startNs) ties and only the
     // id can break them. Insertion order is zzz, mmm, aaa (rowid order) while
@@ -285,7 +313,9 @@ describe('FrameAnalyzer', () => {
       expect(ids).toEqual([...ids].sort());
       expect(r.metrics.map((m) => m.id)).toEqual([
         'frame.avg.duration', 'frame.count', 'frame.empty.rate',
-        'frame.fps', 'frame.jank.rate', 'frame.rendered.count',
+        'frame.fps', 'frame.fps.window.count', 'frame.fps.window.max',
+        'frame.fps.window.mean', 'frame.fps.window.min',
+        'frame.jank.rate', 'frame.rendered.count',
         'frame.stutter.count', 'frame.stutter.level1.count',
         'frame.stutter.level2.count', 'frame.stutter.level3.count',
         'frame.stutter.render.count', 'frame.stutter.render.rate',
