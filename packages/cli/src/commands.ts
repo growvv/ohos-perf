@@ -133,6 +133,28 @@ export interface CompareRequest {
   current: string;
 }
 
+/** A `report` invocation: one scene, one output directory, an optional baseline. */
+export interface ReportRequest {
+  sceneDir: string;
+  outDir: string;
+  /** Overrides the app named in scene.json. */
+  app?: string;
+  /** A scene directory or an `analyze --json` file to compare against. */
+  baseline?: string;
+}
+
+/** What a successful `report` wrote, and what it found. */
+export interface ReportOutput {
+  outDir: string;
+  /** The artifact file names, in their fixed presentation order. */
+  files: string[];
+  sections: { total: number; measured: number; degraded: number };
+  metrics: number;
+  evidence: number;
+  /** Present only when `--baseline` was given. */
+  comparison?: Record<DeltaStatus, number>;
+}
+
 /**
  * Where the emulator commands look for the binary and its state.
  *
@@ -179,6 +201,8 @@ export interface CliDeps {
   tools(): NamedQueryInfo[];
   /** Compare two analyses. Throws on any failure; the caller maps it to exit 1. */
   compare(req: CompareRequest): Promise<BaselineComparison>;
+  /** Analyze a scene and write the report bundle. Throws on any failure. */
+  report(req: ReportRequest): Promise<ReportOutput>;
   /** HarmonyOS emulator lifecycle. Throws on any failure; the caller maps it to exit 1. */
   emulator: EmulatorDeps;
   /** Package version, for `--version` and the help banner. */
@@ -463,6 +487,52 @@ export async function runCompare(
     const totals = DELTA_ORDER.map((status) => `${status} ${comparison.totals[status]}`)
       .join(', ');
     return { stdout: rows.join('') + `totals  ${totals}\n`, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Analyze a scene and write the report bundle.
+ *
+ * Human output names the HTML entry point first, then the artifact list, the
+ * section counts and the totals. The section line distinguishes measured from
+ * degraded sections — a report that silently dropped a section would be worse
+ * than one that names it. The comparison line appears only with `--baseline`.
+ *
+ * `--json` emits the manifest (paths and counts), not the report itself: the
+ * report document is `report.json` on disk, and printing it again would
+ * double-write a potentially large document.
+ */
+export async function runReport(
+  deps: CliDeps,
+  req: ReportRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.report(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+
+    const sections =
+      result.sections.degraded === 0
+        ? `sections  ${result.sections.total} measured\n`
+        : `sections  ${result.sections.measured} measured, ${result.sections.degraded} degraded\n`;
+    const comparison =
+      result.comparison === undefined
+        ? ''
+        : `comparison  ${DELTA_ORDER.map(
+            (status) => `${status} ${result.comparison![status]}`,
+          ).join(', ')}\n`;
+    return {
+      stdout:
+        `report  ${result.outDir}/report.html\n` +
+        `artifacts  ${result.files.join(' ')}\n` +
+        sections +
+        `totals    ${result.metrics} metrics, ${result.evidence} evidence\n` +
+        comparison,
+      stderr: '',
+      exitCode: 0,
+    };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }

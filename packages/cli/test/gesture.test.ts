@@ -19,6 +19,7 @@ function deps(result?: { gesture: Gesture; output: string }): CliDeps {
     query: async () => { throw new Error('x'); },
     tools: () => [],
     compare: async () => { throw new Error('x'); },
+    report: async () => { throw new Error('report not stubbed'); },
     emulator: {
       list: async () => [],
       start: async () => { throw new Error('x'); },

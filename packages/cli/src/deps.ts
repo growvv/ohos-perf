@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -28,14 +28,23 @@ import {
   queryDefinitions,
   readHidumperCapture,
   readProcfsSamples,
+  buildReport,
   compareResults,
+  renderEvidenceCsv,
+  renderMetricsCsv,
+  renderReportHtml,
+  renderReportJson,
+  renderReportXlsx,
+  renderSummaryJson,
   readSceneMetadata,
   readUiTree,
   resolveAppIdentity,
   resolveQueryLimit,
-  runAnalyzers,
+  runAnalyzerSections,
   runNamedQuery,
+  summarizeReport,
   unknownQueryError,
+  type AnalyzerRun,
   type AppIdentity,
   type AnalyzeResult,
   type CapabilityId,
@@ -45,6 +54,7 @@ import {
   type NamedQueryInfo,
   type HidumperCapture,
   type ProcfsSample,
+  type TimeRange,
   type UiNode,
   type Scene,
   type SceneLayout,
@@ -288,54 +298,112 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
+/** The analysis context an opened offline scene yields. */
+function analyzeContext(opened: OpenedScene) {
+  const db = opened.scene.traceDb;
+  return {
+    db,
+    frames: new FrameQuery(db),
+    processes: new ProcessQuery(db),
+    threads: new ThreadQuery(db),
+    sched: new SchedQuery(db),
+    instant: new InstantQuery(db),
+    threadStates: new ThreadStateQuery(db),
+    callstacks: new CallstackQuery(db),
+    // A hiperf capture lives in its own converted database; the trace
+    // database has no perf_* tables, so reading them from `db` would
+    // silently report no samples.
+    perf: new PerfQuery(opened.scene.perfDb ?? db),
+    binder: new BinderQuery(db),
+    startup: new StartupQuery(db),
+    // memory-plugin writes an .htrace that converts into trace.db, so the
+    // tables are in `db`, not in the separate perf database.
+    memMeasure: new MemMeasureQuery(db),
+    ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
+    ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
+    ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
+    app: opened.app,
+    // The whole database: a CLI run has no capture window to honour.
+    window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER } as TimeRange,
+    caps: opened.caps,
+    deviceId: 'offline',
+  };
+}
+
 /**
- * Run every analyzer over one scene directory.
+ * The window the report describes.
  *
- * Shared by `analyze` and `compare`, so a baseline directory and a current
- * directory are measured by exactly the same code. The caller owns nothing:
- * the scene is opened and closed here.
+ * `trace_range` is the trace's own claim about its span. When the table is
+ * absent (a hand-built fixture), the report says "whole database" rather than
+ * inventing a span; the renderer recognizes `MAX_SAFE_INTEGER` for that.
  */
-async function analyzeScene(
+function sceneWindow(opened: OpenedScene): TimeRange {
+  try {
+    const rows = opened.scene.traceDb.query<{ start_ts: number | null; end_ts: number | null }>(
+      'SELECT MIN(start_ts) AS start_ts, MAX(end_ts) AS end_ts FROM trace_range',
+    );
+    const row = rows[0];
+    if (
+      row !== undefined &&
+      typeof row.start_ts === 'number' &&
+      typeof row.end_ts === 'number' &&
+      row.end_ts > row.start_ts
+    ) {
+      return { startNs: row.start_ts, endNs: row.end_ts };
+    }
+  } catch {
+    // No trace_range: fall through to the whole-database marker.
+  }
+  return { startNs: 0, endNs: Number.MAX_SAFE_INTEGER };
+}
+
+/** A section-aware analysis plus the scenario fields a report needs. */
+interface DetailedAnalysis {
+  run: AnalyzerRun;
+  app: AppIdentity;
+  device: string;
+  window: TimeRange;
+  startedAtNs?: number;
+}
+
+/**
+ * Run every analyzer over one scene directory and keep the scenario metadata.
+ *
+ * Shared by `analyze`, `compare` and `report`, so a baseline directory and a
+ * current directory are measured by exactly the same code. The caller owns
+ * nothing: the scene is opened and closed here.
+ */
+async function analyzeSceneDetailed(
   open: (sceneDir: string, app?: string) => Promise<OpenedScene>,
   sceneDir: string,
   app?: string,
-): Promise<AnalyzeResult> {
+): Promise<DetailedAnalysis> {
   const opened = await open(sceneDir, app);
   try {
-    const db = opened.scene.traceDb;
-    const context = {
-      db,
-      frames: new FrameQuery(db),
-      processes: new ProcessQuery(db),
-      threads: new ThreadQuery(db),
-      sched: new SchedQuery(db),
-      instant: new InstantQuery(db),
-      threadStates: new ThreadStateQuery(db),
-      callstacks: new CallstackQuery(db),
-      // A hiperf capture lives in its own converted database; the trace
-      // database has no perf_* tables, so reading them from `db` would
-      // silently report no samples.
-      perf: new PerfQuery(opened.scene.perfDb ?? db),
-      binder: new BinderQuery(db),
-      startup: new StartupQuery(db),
-      // memory-plugin writes an .htrace that converts into trace.db, so the
-      // tables are in `db`, not in the separate perf database.
-      memMeasure: new MemMeasureQuery(db),
-      ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
-      ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
-      ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
+    const run = await runAnalyzerSections(defaultAnalyzers(), analyzeContext(opened));
+    return {
+      run,
       app: opened.app,
-      // The whole database: a CLI run has no capture window to honour.
-      window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
-      caps: opened.caps,
-      deviceId: 'offline',
+      device: opened.metadata?.deviceId ?? 'offline',
+      window: sceneWindow(opened),
+      ...(opened.metadata?.startedAtNs === undefined
+        ? {}
+        : { startedAtNs: opened.metadata.startedAtNs }),
     };
-    return await runAnalyzers(defaultAnalyzers(), context);
   } finally {
     // Windows keeps the file handle open otherwise, so a second analysis of
     // the same scene would fail.
     opened.scene.close();
   }
+}
+
+/** The merged result alone, for `analyze` and `compare`. */
+async function analyzeScene(
+  open: (sceneDir: string, app?: string) => Promise<OpenedScene>,
+  sceneDir: string,
+  app?: string,
+): Promise<AnalyzeResult> {
+  return (await analyzeSceneDetailed(open, sceneDir, app)).run.result;
 }
 
 /**
@@ -588,6 +656,60 @@ export function realDeps(
           : readAnalysisFile(input));
       const [baseline, current] = await Promise.all([load(req.baseline), load(req.current)]);
       return compareResults(baseline, current);
+    },
+
+    async report(req) {
+      // Analyze the scene first: a scene that cannot be read or analyzed must
+      // fail before the baseline is touched, and nothing is written until the
+      // whole model exists — a half-written bundle is worse than none.
+      const detailed = await analyzeSceneDetailed(openOfflineScene, req.sceneDir, req.app);
+      let comparison;
+      if (req.baseline !== undefined) {
+        const baseline = await (await isDirectory(req.baseline)
+          ? analyzeScene(openOfflineScene, req.baseline)
+          : readAnalysisFile(req.baseline));
+        comparison = compareResults(baseline, detailed.run.result);
+      }
+
+      const model = buildReport({
+        generator: { name: '@ohos-perf/core', version },
+        app: detailed.app,
+        device: detailed.device,
+        window: detailed.window,
+        ...(detailed.startedAtNs === undefined ? {} : { startedAtNs: detailed.startedAtNs }),
+        sections: detailed.run.sections,
+        ...(comparison === undefined ? {} : { comparison }),
+      });
+
+      const artifacts: Array<[string, string | Uint8Array]> = [
+        ['report.html', renderReportHtml(model)],
+        ['report.json', renderReportJson(model)],
+        ['summary.json', renderSummaryJson(summarizeReport(model))],
+        ['metrics.csv', renderMetricsCsv(model)],
+        ['evidence.csv', renderEvidenceCsv(model)],
+        ['report.xlsx', renderReportXlsx(model)],
+      ];
+
+      const outDir = resolve(req.outDir);
+      await mkdir(outDir, { recursive: true });
+      for (const [name, content] of artifacts) {
+        await writeFile(join(outDir, name), content);
+      }
+
+      return {
+        outDir,
+        files: artifacts.map(([name]) => name),
+        sections: {
+          total: model.sections.length,
+          measured: model.totals.measured,
+          degraded: model.totals.degraded,
+        },
+        metrics: model.totals.metrics,
+        evidence: model.totals.evidence,
+        ...(model.comparison === undefined
+          ? {}
+          : { comparison: { ...model.comparison.totals } }),
+      };
     },
 
     tools() {

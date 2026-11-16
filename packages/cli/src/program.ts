@@ -12,6 +12,7 @@ import {
   runEmulatorStop,
   runGesture,
   runQuery,
+  runReport,
   runTools,
   safeMessage,
   type CliDeps,
@@ -260,6 +261,34 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .action(async (baseline: string, current: string, opts: { json?: boolean }) => {
       io.emit(await runCompare(deps, { baseline, current }, { json: opts.json }));
     });
+
+  program
+    .command('report')
+    .description('analyze a scene and write report.html, JSON, summary, CSV and XLSX')
+    .argument('<scene-dir>', 'directory containing trace.db / trace.htrace')
+    .requiredOption('--out <dir>', 'output directory for the report artifacts')
+    .option('--app <packageName>', 'app package name, for evidence wording')
+    .option('--baseline <input>', 'scene directory or `analyze --json` file to compare against')
+    .option('--json', 'print the artifact manifest as JSON')
+    .action(
+      async (
+        sceneDir: string,
+        opts: { out: string; app?: string; baseline?: string; json?: boolean },
+      ) => {
+        io.emit(
+          await runReport(
+            deps,
+            {
+              sceneDir,
+              outDir: opts.out,
+              ...(opts.app === undefined ? {} : { app: opts.app }),
+              ...(opts.baseline === undefined ? {} : { baseline: opts.baseline }),
+            },
+            { json: opts.json },
+          ),
+        );
+      },
+    );
 
   program
     .command('tools')
