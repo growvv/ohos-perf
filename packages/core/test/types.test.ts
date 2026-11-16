@@ -75,6 +75,8 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 const VALUE_EXPORTS = [
   'BinderAnalyzer', 'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device',
   'ComponentReuseAnalyzer', 'computeComponentReuse', 'round2HalfEven',
+  'EmulatorClient', 'EmulatorCommandError', 'EmulatorImageMissingError',
+  'EmulatorLifecycle', 'EmulatorNotFoundError',
   'DEFAULT_QUERY_LIMIT', 'DEVICE_PERF_PATH', 'DEVICE_UI_PATH', 'DeviceNotFoundError',
   'EmptyFrameAnalyzer',
   'FaultTreeAnalyzer',
@@ -134,6 +136,8 @@ describe.skipIf(!existsSync(distDts))('published type surface', () => {
       import type {
         ConnectOptions, DeviceDeps, ProbeRunner, ProbeSnapshot, Env,
         HdcOptions, StreamerOptions,
+        EmulatorClientOptions, EmulatorLifecycleOptions, EmulatorBackend, EmulatorInstance,
+        EmulatorImage, EmulatorStartResult, EmulatorStopResult, CreateEmulatorRequest,
       } from '@ohos-perf/core';
 
       // Fix 1: every field connect() reads must be expressible through

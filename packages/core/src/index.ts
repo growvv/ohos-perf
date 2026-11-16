@@ -18,6 +18,9 @@ export {
   DeviceNotFoundError,
   StreamerNotFoundError,
   IngestError,
+  EmulatorCommandError,
+  EmulatorImageMissingError,
+  EmulatorNotFoundError,
 } from './errors';
 
 // Base types
@@ -49,6 +52,20 @@ export type {
 } from './device/capability';
 export { runProbe } from './device/probe';
 export type { ProbeSnapshot, DeviceIdentity, ProbeRunner } from './device/probe';
+
+// Emulator lifecycle
+export { EmulatorClient, EmulatorLifecycle } from './device/emulator';
+export type {
+  CreateEmulatorRequest,
+  EmulatorBackend,
+  EmulatorClientOptions,
+  EmulatorImage,
+  EmulatorInstance,
+  EmulatorLifecycleOptions,
+  EmulatorStartResult,
+  EmulatorStopResult,
+  HdcSlice,
+} from './device/emulator';
 
 // Collection
 export { HitraceCollector, HITRACE_DEFAULT_CATEGORIES } from './collectors/hitrace';

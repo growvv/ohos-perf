@@ -85,10 +85,17 @@ export interface EmulatorClientOptions {
   instancePath?: string;
   /** `-imageRoot` for every command that accepts it. */
   imageRoot?: string;
+  /**
+   * Host platform, for the binary name and the install candidate list.
+   * Defaults to `process.platform`; injectable so a test can exercise the
+   * non-Windows branch on any host. Typed as `string` on purpose: `NodeJS`
+   * types are not part of this package's published declarations.
+   */
+  platform?: string;
 }
 
 /** The binary's file name; only the `PATH` join needs the platform difference. */
-function emulatorBinName(platform: NodeJS.Platform = process.platform): string {
+function emulatorBinName(platform: string): string {
   return platform === 'win32' ? 'Emulator.exe' : 'Emulator';
 }
 
@@ -98,7 +105,7 @@ function emulatorBinName(platform: NodeJS.Platform = process.platform): string {
  * distribution was never measured, and a guessed path fails later with a
  * confusing error instead of the honest "searched nothing here".
  */
-function defaultCommonPaths(env: Env, platform: NodeJS.Platform): string[] {
+function defaultCommonPaths(env: Env, platform: string): string[] {
   if (platform !== 'win32') return [];
   const tail = ['tools', 'emulator', 'Emulator.exe'];
   const paths: string[] = [];
@@ -118,14 +125,14 @@ function defaultCommonPaths(env: Env, platform: NodeJS.Platform): string[] {
 export class EmulatorClient {
   private readonly opts: EmulatorClientOptions;
   private readonly env: Env;
-  private readonly platform: NodeJS.Platform;
+  private readonly platform: string;
   private resolvedPath?: string;
   private parsedVersion?: string;
 
-  constructor(opts: EmulatorClientOptions = {}, platform: NodeJS.Platform = process.platform) {
+  constructor(opts: EmulatorClientOptions = {}) {
     this.opts = opts;
     this.env = opts.env ?? process.env;
-    this.platform = platform;
+    this.platform = opts.platform ?? process.platform;
   }
 
   /**
