@@ -238,3 +238,20 @@ export type {
 } from './report/compare';
 export { evidence } from './report/evidence';
 export type { Evidence, EvidenceKind, DrillDownHandle } from './report/evidence';
+export {
+  REPORT_SCHEMA_VERSION,
+  SECTION_TITLES,
+  buildReport,
+  summarizeReport,
+  renderReportJson,
+  renderSummaryJson,
+} from './report/model';
+export type {
+  ReportGenerator,
+  ReportInput,
+  ReportModel,
+  ReportScenario,
+  ReportSection,
+  ReportSummary,
+  ReportTotals,
+} from './report/model';
