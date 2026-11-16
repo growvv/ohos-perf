@@ -15,6 +15,56 @@ function provenance(ctx: AnalyzeContext, rows: number) {
 }
 
 /**
+ * HapRay's 60 Hz budget in nanoseconds.
+ *
+ * The comparison is done in integer nanoseconds rather than milliseconds so a
+ * frame whose excess is exactly 2 or 6 budget units lands on the documented
+ * side of the boundary. Converting through `16.67` makes 100.02ms compute as
+ * `5.999999999999999` units in IEEE doubles and silently drops it to level 2.
+ */
+const FRAME_BUDGET_NS = 16_670_000;
+/** Excess in budget units below this is level 1 (HapRay's `STUTTER_LEVEL_1_FRAMES`). */
+const STUTTER_LEVEL_1_FRAMES = 2;
+/** Excess in budget units below this is level 2 (HapRay's `STUTTER_LEVEL_2_FRAMES`). */
+const STUTTER_LEVEL_2_FRAMES = 6;
+
+/** How a stuttered frame compares with its vsync group's expected frame. */
+interface StutterGrade {
+  excessNs: number;
+  excessFrames: number;
+  level: 1 | 2 | 3;
+  expectedDurNs: number;
+}
+
+/**
+ * Grades `frame` against `expected`, ported from HapRay's stutter path.
+ *
+ * Negative excess is level 1. There is deliberately no `flag = 3` special
+ * case: upstream's clause is unreachable because its stutter loop returns
+ * before grading anything whose flag is not 1.
+ */
+function gradeStutter(frame: Frame, expected: Frame): StutterGrade {
+  const excessNs = frame.dur - expected.dur;
+  const excessFrames = excessNs / FRAME_BUDGET_NS;
+  const level: 1 | 2 | 3 =
+    excessFrames < STUTTER_LEVEL_1_FRAMES
+      ? 1
+      : excessFrames < STUTTER_LEVEL_2_FRAMES
+        ? 2
+        : 3;
+  return { excessNs, excessFrames, level, expectedDurNs: expected.dur };
+}
+
+/** HapRay's process buckets, with its ui fallback for unknown processes. */
+type ProcessClass = 'ui' | 'render' | 'sceneboard';
+
+function processClassOf(name: string): ProcessClass {
+  if (name === 'render_service') return 'render';
+  if (name === 'ohos.sceneboard') return 'sceneboard';
+  return 'ui';
+}
+
+/**
  * Mean `dur` of `frames`, in milliseconds; `0` for an empty set.
  *
  * Summation follows `frames` order (ts ascending), which is fixed, so the
@@ -59,7 +109,12 @@ function meanDurationMs(frames: Frame[]): number {
  * 1955.4ms into the capture. The `window` and drill-down args stay absolute —
  * they must remain in the database's own time base for ids and queries.
  */
-function jankEvidence(frame: Frame, processName: string, originNs: number): Evidence {
+function jankEvidence(
+  frame: Frame,
+  processName: string,
+  originNs: number,
+  grade?: StutterGrade,
+): Evidence {
   const durMs = frame.dur / 1e6;
   const offsetMs = (frame.ts - originNs) / 1e6;
   const startNs = frame.ts;
@@ -74,16 +129,33 @@ function jankEvidence(frame: Frame, processName: string, originNs: number): Evid
     // `ipid` rather than `frameNo`: frameNo is 0 on every real row and carries
     // no information, while ipid says which process owns the frame. `offsetMs`
     // is the human-facing time; `durMs` is the frame's own cost.
-    signals: { durMs, offsetMs, vsync: frame.vsync, ipid: frame.ipid },
+    signals: {
+      durMs,
+      offsetMs,
+      vsync: frame.vsync,
+      ipid: frame.ipid,
+      ...(grade === undefined
+        ? {}
+        : {
+            excessMs: grade.excessNs / 1e6,
+            excessFrames: grade.excessFrames,
+            stutterLevel: grade.level,
+          }),
+    },
     // Names the platform's own verdict rather than comparing against a
     // 60Hz budget: 11 of the 60 measured flag-1 frames have `dur` under 16.7ms
     // (lowest 0.35ms), so a "(budget 16.7ms)" clause would present them as
     // self-contradictory and an agent would dismiss them as false positives.
     // `flag = 1` means the platform judged the frame late — not that it missed
-    // a fixed budget this library chose.
+    // a fixed budget this library chose. When an expected frame exists, the
+    // HapRay-compatible level and excess are appended as a second clause.
     explain:
       `${processName} frame at ${offsetMs.toFixed(1)}ms flagged late by platform ` +
-      `(dur ${durMs.toFixed(1)}ms, vsync ${frame.vsync})`,
+      `(dur ${durMs.toFixed(1)}ms, vsync ${frame.vsync})` +
+      (grade === undefined
+        ? ''
+        : `; level ${grade.level} (excess ${(grade.excessNs / 1e6).toFixed(1)}ms ` +
+          `over expected ${(grade.expectedDurNs / 1e6).toFixed(1)}ms)`),
     drillDown: [
       { label: 'Frame detail', tool: 'frames.get', args: { id: frame.id }, returns: 'Frame' },
       {
@@ -317,24 +389,98 @@ export class FrameAnalyzer implements Analyzer {
       }),
     ];
 
-    let processNames: Map<number, string> | undefined;
-    if (stuttered.length > 0) {
-      // Lowest `process.id` wins for a duplicate ipid, matching byName()'s
-      // deterministic tie-break. `all()` is already ordered by id.
-      processNames = new Map<number, string>();
-      for (const process of ctx.processes.all()) {
-        if (!processNames.has(process.ipid)) {
-          processNames.set(process.ipid, process.name);
-        }
+    // Lowest `process.id` wins for a duplicate ipid, matching byName()'s
+    // deterministic tie-break. `all()` is already ordered by id.
+    const processNames = new Map<number, string>();
+    for (const process of ctx.processes.all()) {
+      if (!processNames.has(process.ipid)) {
+        processNames.set(process.ipid, process.name);
       }
     }
+    const nameOf = (frame: Frame): string => processNames.get(frame.ipid) ?? '';
+
+    // Expected frame per vsync: the first `type = 1` row ordered by (ts, id).
+    // HapRay takes the first row of its unordered group; the explicit
+    // tie-break makes the choice reproducible (D5) and is the only divergence.
+    const expectedByVsync = new Map<number, Frame>();
+    for (const frame of [...frames].sort((a, b) => a.ts - b.ts || a.id - b.id)) {
+      if (frame.type === 1 && !expectedByVsync.has(frame.vsync)) {
+        expectedByVsync.set(frame.vsync, frame);
+      }
+    }
+
+    const graded = stuttered.map((frame) => {
+      const expected = expectedByVsync.get(frame.vsync);
+      return { frame, grade: expected === undefined ? undefined : gradeStutter(frame, expected) };
+    });
+    const levelCounts: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
+    let unpaired = 0;
+    for (const item of graded) {
+      if (item.grade === undefined) unpaired += 1;
+      else levelCounts[item.grade.level] += 1;
+    }
+
+    const renderedByClass: Record<ProcessClass, number> = { ui: 0, render: 0, sceneboard: 0 };
+    for (const frame of rendered) renderedByClass[processClassOf(nameOf(frame))] += 1;
+    const stutteredByClass: Record<ProcessClass, number> = { ui: 0, render: 0, sceneboard: 0 };
+    for (const frame of stuttered) stutteredByClass[processClassOf(nameOf(frame))] += 1;
+
+    metrics.push(
+      metric({
+        id: 'frame.stutter.count',
+        value: stuttered.length,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+      }),
+      metric({
+        id: 'frame.stutter.unpaired.count',
+        value: unpaired,
+        unit: 'count',
+        provenance: prov,
+        fidelity: 'exact',
+      }),
+      ...[1, 2, 3].map((level) =>
+        metric({
+          id: `frame.stutter.level${level}.count`,
+          value: levelCounts[level as 1 | 2 | 3],
+          unit: 'count',
+          provenance: prov,
+          fidelity: 'exact',
+        }),
+      ),
+      ...(['ui', 'render', 'sceneboard'] as const).flatMap((processClass) => [
+        metric({
+          id: `frame.stutter.${processClass}.count`,
+          value: stutteredByClass[processClass],
+          unit: 'count',
+          provenance: prov,
+          fidelity: 'exact',
+        }),
+        metric({
+          id: `frame.stutter.${processClass}.rate`,
+          value:
+            renderedByClass[processClass] > 0
+              ? (stutteredByClass[processClass] / renderedByClass[processClass]) * 100
+              : 0,
+          unit: '%',
+          provenance: prov,
+          fidelity: 'exact',
+        }),
+      ]),
+    );
 
     // Trace-relative origin for the human-readable explain text. `frames` is
     // ordered by ts, so its first entry is the earliest captured frame.
     const originNs = frames[0].ts;
-    const evidenceItems: Evidence[] = stuttered.map((frame) => {
-      const name = processNames?.get(frame.ipid) ?? '';
-      return jankEvidence(frame, name === '' ? `ipid:${frame.ipid}` : name, originNs);
+    const evidenceItems: Evidence[] = graded.map(({ frame, grade }) => {
+      const name = nameOf(frame);
+      return jankEvidence(
+        frame,
+        name === '' ? `ipid:${frame.ipid}` : name,
+        originNs,
+        grade,
+      );
     });
     if (noData !== undefined) evidenceItems.push(noData);
 

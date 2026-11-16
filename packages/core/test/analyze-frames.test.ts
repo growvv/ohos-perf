@@ -196,7 +196,7 @@ describe('FrameAnalyzer', () => {
       const r = await new FrameAnalyzer().run(c);
       // The six metrics are honest zeros, and all finite.
       expect(r.metrics.find((m) => m.id === 'frame.count')!.value).toBe(0);
-      expect(r.metrics).toHaveLength(6);
+      expect(r.metrics).toHaveLength(17);
       for (const m of r.metrics) {
         expect(Number.isFinite(m.value as number)).toBe(true);
       }
@@ -286,6 +286,12 @@ describe('FrameAnalyzer', () => {
       expect(r.metrics.map((m) => m.id)).toEqual([
         'frame.avg.duration', 'frame.count', 'frame.empty.rate',
         'frame.fps', 'frame.jank.rate', 'frame.rendered.count',
+        'frame.stutter.count', 'frame.stutter.level1.count',
+        'frame.stutter.level2.count', 'frame.stutter.level3.count',
+        'frame.stutter.render.count', 'frame.stutter.render.rate',
+        'frame.stutter.sceneboard.count', 'frame.stutter.sceneboard.rate',
+        'frame.stutter.ui.count', 'frame.stutter.ui.rate',
+        'frame.stutter.unpaired.count',
       ]);
       const jank = r.evidence.filter((e) => e.kind === 'jank');
       expect(jank.map((e) => e.subject.process)).toEqual(['aaa', 'mmm', 'zzz']);
@@ -343,5 +349,100 @@ describe('FrameAnalyzer', () => {
     } finally {
       odd.close();
     }
+  });
+
+  it('grades stutter by excess over the expected frame in the vsync group', async () => {
+    const graded = withDb('stutter-grades.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 1000000000, 7, 17, 44, 94, 16670000, '', 0, 1, 'expect', 0, 0, 0),
+        (1, 1100000000, 7, 17, 44, 94, 26670000, '', 0, 0, 'actual', 1, 0, 0),
+        (2, 1200000000, 7, 17, 44, 94, 56670000, '', 0, 0, 'actual', 1, 0, 0),
+        (3, 1300000000, 7, 17, 44, 94, 126670000, '', 0, 0, 'actual', 1, 0, 0),
+        (4, 1400000000, 8, 17, 44, 94, 20000000, '', 0, 0, 'actual', 1, 0, 0),
+        (5, 1500000000, 7, 17, 44, 94, 16670000, '', 0, 0, 'actual', 0, 0, 0)`);
+      d.exec(PROCESS_DDL);
+      d.exec(`INSERT INTO process VALUES (0, 17, 4999, 'com.demo', NULL, 0, 1, 1, 0)`);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const r = await new FrameAnalyzer().run({ ...ctx(), frames: new FrameQuery(graded) });
+      const get = (id: string) => r.metrics.find((m) => m.id === id)!;
+      expect(get('frame.stutter.count').value).toBe(4);
+      expect(get('frame.stutter.level1.count').value).toBe(1);  // +10ms
+      expect(get('frame.stutter.level2.count').value).toBe(1);  // +40ms
+      expect(get('frame.stutter.level3.count').value).toBe(1);  // +110ms
+      expect(get('frame.stutter.unpaired.count').value).toBe(1); // vsync 8
+      expect(get('frame.stutter.ui.count').value).toBe(4);
+      expect(get('frame.stutter.render.count').value).toBe(0);
+      expect(get('frame.stutter.sceneboard.count').value).toBe(0);
+      // 5 rendered ui frames (4 stuttered + 1 flag 0).
+      expect(get('frame.stutter.ui.rate').value).toBeCloseTo(80, 5);
+      const levels = r.evidence.filter((e) => e.kind === 'jank')
+        .map((e) => [e.window.startNs, e.signals.stutterLevel]);
+      expect(levels).toEqual([
+        [1100000000, 1], [1200000000, 2], [1300000000, 3], [1400000000, undefined],
+      ]);
+      const first = r.evidence.find((e) => e.window.startNs === 1100000000)!;
+      expect(first.signals.excessMs).toBeCloseTo(10, 5);
+      expect(first.explain).toContain('level 1');
+    } finally { graded.close(); }
+  });
+
+  it('uses the documented level boundaries at 2 and 6 frame budget units', async () => {
+    // Expected duration is 16.67ms, so the thresholds are exactly 33.34ms and
+    // 100.02ms of excess. `excessFrames < 2` is false at exactly 2, and
+    // `excessFrames < 6` is false at exactly 6. The comparison is done in
+    // integer nanoseconds (16_670_000 per budget unit) so the exact boundary
+    // is not decided by float rounding.
+    const bounds = withDb('stutter-bounds.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 1000000000, 7, 17, 44, 94, 16670000, '', 0, 1, 'expect', 0, 0, 0),
+        (1, 1100000000, 7, 17, 44, 94, 50009999, '', 0, 0, 'actual', 1, 0, 0),
+        (2, 1200000000, 8, 17, 44, 94, 16670000, '', 0, 1, 'expect', 0, 0, 0),
+        (3, 1300000000, 8, 17, 44, 94, 50010000, '', 0, 0, 'actual', 1, 0, 0),
+        (4, 1400000000, 9, 17, 44, 94, 16670000, '', 0, 1, 'expect', 0, 0, 0),
+        (5, 1500000000, 9, 17, 44, 94, 116689999, '', 0, 0, 'actual', 1, 0, 0),
+        (6, 1600000000, 10, 17, 44, 94, 16670000, '', 0, 1, 'expect', 0, 0, 0),
+        (7, 1700000000, 10, 17, 44, 94, 116690000, '', 0, 0, 'actual', 1, 0, 0)`);
+      d.exec(PROCESS_DDL); d.exec(THREAD_DDL);
+    });
+    try {
+      const r = await new FrameAnalyzer().run({ ...ctx(), frames: new FrameQuery(bounds) });
+      const get = (id: string) => r.metrics.find((m) => m.id === id)!;
+      expect(get('frame.stutter.level1.count').value).toBe(1); // excess 33.339999ms
+      expect(get('frame.stutter.level2.count').value).toBe(2); // 33.34ms and 100.019999ms
+      expect(get('frame.stutter.level3.count').value).toBe(1); // exactly 100.02ms
+    } finally { bounds.close(); }
+  });
+
+  it('classifies stutter into ui, render and sceneboard buckets', async () => {
+    const classes = withDb('stutter-classes.db', (d) => {
+      d.exec(FRAME_DDL);
+      d.exec(`INSERT INTO frame_slice VALUES
+        (0, 1000000000, 7, 17, 44, 94, 16670000, '', 0, 1, 'expect', 0, 0, 0),
+        (1, 1100000000, 7, 17, 44, 94, 20000000, '', 0, 0, 'actual', 1, 0, 0),
+        (2, 1200000000, 8, 18, 45, 94, 16670000, '', 0, 1, 'expect', 0, 0, 0),
+        (3, 1300000000, 8, 18, 45, 94, 20000000, '', 0, 0, 'actual', 1, 0, 0),
+        (4, 1400000000, 9, 19, 46, 94, 16670000, '', 0, 1, 'expect', 0, 0, 0),
+        (5, 1500000000, 9, 19, 46, 94, 20000000, '', 0, 0, 'actual', 1, 0, 0)`);
+      d.exec(PROCESS_DDL);
+      d.exec(`INSERT INTO process VALUES
+        (0, 17, 4999, 'com.demo', NULL, 0, 1, 1, 0),
+        (1, 18, 6000, 'render_service', NULL, 0, 1, 1, 0),
+        (2, 19, 6001, 'ohos.sceneboard', NULL, 0, 1, 1, 0)`);
+      d.exec(THREAD_DDL);
+    });
+    try {
+      const r = await new FrameAnalyzer().run({
+        ...ctx(), frames: new FrameQuery(classes), processes: new ProcessQuery(classes),
+      });
+      const get = (id: string) => r.metrics.find((m) => m.id === id)!;
+      expect(get('frame.stutter.ui.count').value).toBe(1);
+      expect(get('frame.stutter.render.count').value).toBe(1);
+      expect(get('frame.stutter.sceneboard.count').value).toBe(1);
+      expect(get('frame.stutter.ui.rate').value).toBeCloseTo(100, 5);
+    } finally { classes.close(); }
   });
 });
