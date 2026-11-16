@@ -368,6 +368,23 @@ describe('EmulatorClient failure classification', () => {
     const client = new StubEmulator({ stdout: '[]', code: 1 });
     await expect(client.listDetailed()).rejects.toThrow(EmulatorCommandError);
   });
+
+  it('keeps the binary\'s own failure line when it also exits non-zero', async () => {
+    // Measured: an invalid `-start` prints `Unable to start the emulator` and
+    // exits 1. Reporting only `-start exited 1` throws away the one sentence
+    // that says what went wrong.
+    const client = new StubEmulator({ stdout: fixture('start-failure.txt'), code: 1 });
+    const error = await client.startInstance('NoSuchInstance').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EmulatorCommandError);
+    expect((error as EmulatorCommandError).message).toContain('Unable to start the emulator');
+  });
+
+  it('names the first output line when a non-zero exit carries no failure line', async () => {
+    const client = new StubEmulator({ stdout: '', stderr: 'some unexpected diagnostic', code: 2 });
+    const error = await client.listDetailed().catch((e: unknown) => e);
+    expect((error as EmulatorCommandError).message).toContain('some unexpected diagnostic');
+    expect((error as EmulatorCommandError).message).toContain('2');
+  });
 });
 
 describe('EmulatorClient mutating commands', () => {

@@ -513,8 +513,12 @@ export class EmulatorClient {
   }
 
   /**
-   * The exit code is 0 for every failure the binary produces, so success is
-   * the absence of a failure line — not a non-zero code.
+   * Classify a completed spawn.
+   *
+   * The exit code is 0 for every failure the binary reports through a failure
+   * line, so a failure line outranks the code: an invalid `-start` prints
+   * `Unable to start the emulator` **and** exits 1, and reporting only
+   * `-start exited 1` would discard the one sentence that says what happened.
    *
    * The match is structural (`Emulator: `, `Unable to `) rather than a list of
    * known sentences: the binary uses its own name as a prefix for argument
@@ -526,18 +530,21 @@ export class EmulatorClient {
     result: { stdout: string; stderr: string; code: number },
   ): { stdout: string; stderr: string; code: number } {
     const output = `${result.stdout}\n${result.stderr}`;
+    const lines = output.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+    const failure = lines.find((line) => FAILURE_LINE.test(line));
+    if (failure !== undefined) {
+      throw new EmulatorCommandError(failure, output, { code: 'EMULATOR_COMMAND_FAILED' });
+    }
     if (result.code !== 0) {
+      // No structural failure line: keep the exit code, but carry the first
+      // line of output too — an unexplained non-zero exit is still evidence,
+      // and an empty message would leave the caller with nothing to act on.
+      const detail = lines.length === 0 ? '' : `: ${lines[0]}`;
       throw new EmulatorCommandError(
-        `${args[0] ?? 'emulator'} exited ${result.code}`,
+        `${args[0] ?? 'emulator'} exited ${result.code}${detail}`,
         output,
         { code: 'EMULATOR_COMMAND_FAILED' },
       );
-    }
-    for (const line of output.split('\n')) {
-      const trimmed = line.trim();
-      if (FAILURE_LINE.test(trimmed)) {
-        throw new EmulatorCommandError(trimmed, output, { code: 'EMULATOR_COMMAND_FAILED' });
-      }
     }
     return result;
   }
@@ -636,12 +643,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
+/** The message of a thrown value, for a reason string that must not throw. */
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** A connected target reached over TCP — a real device is USB. */
 function isConnectedTcp(target: HdcTarget): boolean {
   // `raw` is `id\t\tTRANSPORT\tSTATUS\t...`; splitting on tabs and dropping
   // the empty runs keeps the field index independent of the padding.
   const fields = target.raw.split('\t').filter((field) => field !== '');
   return target.connected && fields[1] === 'TCP';
+}
+
+/** An id on the loopback interface — the only place the emulator ever listens. */
+function isLoopback(id: string): boolean {
+  return /^(?:127\.0\.0\.1|localhost|::1):/.test(id);
 }
 
 /**
@@ -686,7 +703,20 @@ export class EmulatorLifecycle {
     // fail on a machine that has the emulator but no hdc on PATH.
     if (running.length === 0) return instances;
 
-    const tcp = (await this.hdc.listTargets()).filter(isConnectedTcp);
+    // A running instance plus an unusable hdc (not on PATH, custom DevEco
+    // location, dead server) must still list what the binary reported. The
+    // target is the only thing hdc was needed for, so its absence becomes the
+    // reason instead of an error that hides every instance.
+    let tcp: HdcTarget[];
+    try {
+      tcp = (await this.hdc.listTargets()).filter(isConnectedTcp);
+    } catch (err) {
+      return instances.map((instance) => (
+        instance.name === running[0].name
+          ? { ...instance, targetReason: `hdc is unavailable: ${messageOf(err)}` }
+          : instance
+      ));
+    }
     const attributed: EmulatorInstance = running.length > 1
       ? { ...running[0], targetReason: `${running.length} emulators are running, so a target cannot be attributed` }
       : tcp.length === 0
@@ -726,12 +756,15 @@ export class EmulatorLifecycle {
       );
     }
 
-    // Only CONNECTED ids count as "already there". Measured: the emulator
-    // always returns on 127.0.0.1:5555, and after a stop that id lingers in
-    // `hdc list targets` as disconnected. Snapshotting every id would make the
-    // reconnected 5555 look pre-existing, so no target would ever be fresh.
+    // The emulator's own target is never "pre-existing": it always returns on
+    // loopback (measured: 127.0.0.1:5555), and after a stop that id lingers —
+    // sometimes still reading `Connected` — until hdc notices. Excluding
+    // loopback ids from the snapshot keeps a restart's own target fresh while
+    // still treating a real device's USB id as there before the start.
     const before = new Set(
-      (await this.hdc.listTargets()).filter((t) => t.connected).map((t) => t.id),
+      (await this.hdc.listTargets())
+        .filter((t) => t.connected && !isLoopback(t.id))
+        .map((t) => t.id),
     );
 
     let target: string;
@@ -817,7 +850,7 @@ export class EmulatorLifecycle {
       async () => ((await this.client.listDetailed()).find((i) => i.name === name)?.running === false
         ? true
         : undefined),
-      { code: 'EMULATOR_STOP_TIMEOUT' },
+      { code: 'EMULATOR_STOP_TIMEOUT', advice: ' The instance still reports it is running.' },
     );
     return { name, wasRunning: true };
   }
@@ -832,16 +865,21 @@ export class EmulatorLifecycle {
    * it did something.
    */
   async create(req: CreateEmulatorRequest): Promise<EmulatorInstance> {
-    if (!EMULATOR_NAME.test(req.name) || req.name.includes('..')) {
+    if (!EMULATOR_NAME.test(req.name) || req.name.includes('..') || RESERVED_NAME.test(req.name)) {
       throw new OhosPerfError(
         `invalid emulator name "${req.name}": letters, digits, '.', '_' and '-' only, ` +
-          'no ".." (the name becomes a directory under the instance root)',
+          'no ".." and no Windows device names (the name becomes a directory under the instance root)',
         { code: 'EMULATOR_NAME_INVALID' },
       );
     }
 
     const existing = await this.client.listDetailed();
-    if (existing.some((i) => i.name === req.name)) {
+    // Windows folds case and strips a trailing dot from a directory name, so
+    // an exact comparison would let `-create specprobe` through the fast-fail
+    // and write into `SpecProbe`'s directory. Compare the name as Windows
+    // would resolve it.
+    const folded = foldName(req.name);
+    if (existing.some((i) => foldName(i.name) === folded)) {
       throw new OhosPerfError(
         `an emulator instance named "${req.name}" already exists`,
         { code: 'EMULATOR_INSTANCE_EXISTS' },
@@ -886,6 +924,10 @@ export class EmulatorLifecycle {
    *
    * The deadline is absolute so one budget covers every phase of `start`;
    * a per-phase budget would multiply the caller's timeout by three.
+   *
+   * `advice` is the caller's, because the cleanup differs: a start that timed
+   * out left a half-booted instance, while a stop that timed out already ran
+   * the one command that removes it.
    */
   private async waitUntil<T>(
     deadline: number,
@@ -893,15 +935,15 @@ export class EmulatorLifecycle {
     phase: string,
     name: string,
     attempt: () => Promise<T | undefined>,
-    opts: { code?: string } = {},
+    opts: { code?: string; advice?: string } = {},
   ): Promise<T> {
     for (;;) {
       if (this.now() >= deadline) {
-        throw new OhosPerfError(
-          `${phase} after ${budgetMs}ms. The emulator may be half-started; ` +
-            `run \`ohos-perf emulator stop ${name}\` to remove it.`,
-          { code: opts.code ?? 'EMULATOR_START_TIMEOUT' },
-        );
+        const advice = opts.advice ??
+          ` The emulator may be half-started; run \`ohos-perf emulator stop ${name}\` to remove it.`;
+        throw new OhosPerfError(`${phase} after ${budgetMs}ms.${advice}`, {
+          code: opts.code ?? 'EMULATOR_START_TIMEOUT',
+        });
       }
       const value = await attempt();
       if (value !== undefined) return value;
@@ -912,3 +954,14 @@ export class EmulatorLifecycle {
 
 /** A name that becomes a directory under the instance root. */
 const EMULATOR_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * Windows device names that name a device rather than a file, so a directory
+ * with that stem cannot be created. `CON.txt` is equally reserved.
+ */
+const RESERVED_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i;
+
+/** The name as Windows would resolve it: case-folded, trailing dots stripped. */
+function foldName(name: string): string {
+  return name.toLowerCase().replace(/\.+$/, '');
+}

@@ -82,6 +82,23 @@ describe('EmulatorLifecycle.list target attribution', () => {
     const [a] = await lifecycle.list();
     expect(a.targetReason).toContain('2 connected TCP targets');
   });
+
+  it('still lists instances when hdc is unusable, with the reason attached', async () => {
+    // A machine can hold a running emulator and a hdc the tool cannot find
+    // (custom DevEco location, broken server). Failing the whole listing hides
+    // the instances the binary just reported; the attribution rule already has
+    // a field for "no target, and why".
+    const lifecycle = new EmulatorLifecycle({
+      client: fakeClient([instance('A', true)]),
+      hdc: {
+        listTargets: async () => { throw new Error('hdc executable not found'); },
+        shell: async () => ({ stdout: '', stderr: '', code: 0 }),
+      },
+    });
+    const [a] = await lifecycle.list();
+    expect(a.target).toBeUndefined();
+    expect(a.targetReason).toContain('hdc executable not found');
+  });
 });
 
 describe('EmulatorLifecycle.start', () => {
@@ -156,6 +173,24 @@ describe('EmulatorLifecycle.start', () => {
     expect(started).toEqual([]);
     expect(result.alreadyRunning).toBe(true);
     expect(result.target).toBe('127.0.0.1:5555');
+  });
+
+  it('does not treat a lingering loopback id as pre-existing after a stop', async () => {
+    // Measured: `-stop` returns before hdc notices, so the id can still read
+    // `Connected` at snapshot time. Filtering the snapshot to connected ids
+    // then excludes the very id the restarted emulator will reuse, and the
+    // target phase waits out the whole budget for a target that is already
+    // there. The loopback id is the emulator's own, so it is never "old".
+    const { client, started } = startingClient([instance('A', false)], [instance('A', true)]);
+    const lifecycle = new EmulatorLifecycle({
+      client,
+      hdc: {
+        listTargets: async () => [target('127.0.0.1:5555', 'TCP', true)],
+        shell: async () => ({ stdout: 'true', stderr: '', code: 0 }),
+      },
+      pollMs: 0,
+    });
+    await expect(lifecycle.start('A')).resolves.toMatchObject({ target: '127.0.0.1:5555' });
   });
 
   it('names the instance phase when isRunning never flips', async () => {
@@ -301,6 +336,28 @@ describe('EmulatorLifecycle.stop', () => {
     await expect(lifecycle.stop('A')).rejects.toThrow(/still reports isRunning: true/);
   });
 
+  it('does not tell the caller to rerun the stop command that just timed out', async () => {
+    // The start timeout's advice ("run `emulator stop <name>`") is wrong for
+    // stop: the caller just ran it, and the instance is not half-started.
+    let clock = 0;
+    const lifecycle = new EmulatorLifecycle({
+      client: {
+        listDetailed: async () => { clock += 10; return [instance('A', true)]; },
+        imageList: async () => [],
+        startInstance: async () => {},
+        stopInstance: async () => {},
+        createInstance: async () => {},
+      },
+      hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+      pollMs: 0,
+      stopTimeoutMs: 100,
+      now: () => clock,
+    });
+    const error = await lifecycle.stop('A').catch((e: unknown) => e);
+    expect((error as Error).message).not.toContain('ohos-perf emulator stop');
+    expect((error as Error).message).not.toContain('half-started');
+  });
+
   it('fails when the named instance does not exist', async () => {
     const lifecycle = new EmulatorLifecycle({
       client: fakeClient([]),
@@ -372,6 +429,44 @@ describe('EmulatorLifecycle.create', () => {
     })).rejects.toThrow(/already exists/);
     expect(created).toHaveLength(0);
   });
+
+  it.each(['specprobe', 'SPECPROBE', 'SpecProbe.'])(
+    'rejects %j as a duplicate of SpecProbe, because the name is a directory',
+    async (name) => {
+      // The name becomes a directory under the instance root, and Windows
+      // folds case and strips a trailing dot. Comparing exactly would let
+      // `-create specprobe` past the fast-fail and at best fail the
+      // post-create check — or write into the existing instance's directory.
+      const { client, created } = createClient([instance('SpecProbe', false)]);
+      const lifecycle = new EmulatorLifecycle({
+        client,
+        hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+        pollMs: 0,
+      });
+      await expect(lifecycle.create({
+        name, deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)',
+      })).rejects.toThrow(/already exists/);
+      expect(created).toHaveLength(0);
+    },
+  );
+
+  it.each(['CON', 'nul', 'COM1', 'aux', 'LPT9'])(
+    'rejects the Windows device name %j before spawning',
+    async (name) => {
+      // These name a device, not a file, on Windows; `-create` would not
+      // produce a usable instance directory.
+      const { client, created } = createClient();
+      const lifecycle = new EmulatorLifecycle({
+        client,
+        hdc: { listTargets: async () => [], shell: async () => ({ stdout: '', stderr: '', code: 0 }) },
+        pollMs: 0,
+      });
+      await expect(lifecycle.create({
+        name, deviceType: 'phone', osVersion: 'HarmonyOS 6.1.1(24)',
+      })).rejects.toThrow(/invalid emulator name/);
+      expect(created).toHaveLength(0);
+    },
+  );
 
   it('names the exact -install command when the image is missing', async () => {
     const lifecycle = new EmulatorLifecycle({

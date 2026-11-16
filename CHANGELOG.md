@@ -32,9 +32,12 @@
 
 ### Fixes
 
-- The emulator's exit code carries no information: every measured failure exits
-  0. Success is proven by re-reading state, and a `-start` that keeps running
-  (the process becomes the emulator) is no longer mistaken for a hang.
+- The emulator's exit code usually carries no information: a rejected `-create`
+  or an unknown option exits 0. Success is proven by re-reading state, a
+  failure line outranks the exit code (the one measured non-zero failure,
+  `Unable to start the emulator`, still reports its own sentence), and a
+  `-start` that keeps running (the process becomes the emulator) is no longer
+  mistaken for a hang.
 
 ## 0.2.0 — 2026-11-16
 

@@ -15,8 +15,11 @@ the interface; every command speaks stable JSON with `--json`.
    - When it reports no attached device, boot an emulator instead of giving up:
      `ohos-perf emulator list --json` names the instances, then
      `ohos-perf emulator start <name> --json` blocks until the guest has booted
-     and returns its `target`. Pass that id to every later command with
-     `--target <id>` (e.g. `ohos-perf collect --target 127.0.0.1:5555 …`).
+     and returns its `target`. Pass that id with `--target <id>` to the device
+     commands — `collect`, `caps` and `doctor` (e.g.
+     `ohos-perf collect --target 127.0.0.1:5555 …`). The scene-reading
+     commands (`analyze`, `query`, `compare`, `tools`) take no `--target` and
+     reject it.
      `ohos-perf emulator stop <name>` shuts it down again. Never fabricate a
      target: `list` reports `target` only when exactly one running instance can
      be attributed to exactly one connected TCP target.

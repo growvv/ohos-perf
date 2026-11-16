@@ -89,6 +89,30 @@ describe('emulator start', () => {
     expect(r.stderr).toMatch(/--timeout must be greater than 0/);
   });
 
+  it('keeps the parser\'s reason for a positive timeout it cannot honour', async () => {
+    // `--timeout 9999999` is > 0; the real problem is the 32-bit limit.
+    // Reporting "must be greater than 0" sends the caller the wrong way.
+    const [r] = await parse(['emulator', 'start', 'ProbePhone', '--timeout', '9999999']);
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toContain('9999999');
+    expect(r.stderr).toMatch(/32-bit/);
+    expect(r.stderr).not.toMatch(/greater than 0/);
+  });
+
+  it('rejects a fractional --memory instead of truncating it', async () => {
+    // `--memory 6.5` silently became 6 GB, and `--memory 6abc` also became 6:
+    // the instance is created with a size the caller never asked for.
+    let created = false;
+    const [r] = await parse(
+      ['emulator', 'create', 'X', '--device-type', 'phone', '--os-version', 'V', '--memory', '6.5'],
+      { emulator: { ...deps().emulator, create: async () => { created = true; throw new Error('unreachable'); } } },
+    );
+    expect(created).toBe(false);
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/--memory/);
+  });
+
   it('says "was already running" without a boot time', async () => {
     const [r] = await parse(['emulator', 'start', 'ProbePhone'], {
       emulator: {

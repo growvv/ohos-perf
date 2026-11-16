@@ -52,11 +52,11 @@ verbatim; do not re-derive them by eye.
 | Binary | `D:\Application\DevEco Studio\tools\emulator\Emulator.exe` |
 | `-version` output | `HarmonyOS Emulator :6.1.1.200` |
 | Exit code on success | `0` |
-| Exit code on **failure** | `0` — `Unable to start the emulator`, `Emulator: Unknown option 'bogus'.`, `Emulator: Missing value after '-create'.` all exit 0 |
+| Exit code on failure | usually `0` — `Emulator: Unknown option 'bogus'.` and a rejected `-create` print a failure line and exit 0. **`-start` on an unknown name is the exception: `Unable to start the emulator`, exit 1, ~96 ms.** So a failure line is the authority, and a non-zero code without one still carries the first output line. |
 | `-list` (no `-details`) | one instance name per line; `[Empty]` when there are none |
 | `-list -details` | a JSON array, one object per instance; `isRunning` is the **string** `"true"`/`"false"` |
 | `-list -details -path <dir>` | honoured; lists only instances under `<dir>` |
-| `-start <name>` | returns in well under a second and **does not** wait for boot; the instance keeps running after the process exits |
+| `-start <name>` | **a valid start never exits**: the process becomes the emulator (~1.5 GB RSS) and runs until stopped. An invalid start exits 1 in ~96 ms. Neither waits for boot, and the instance keeps running after the CLI detaches. |
 | `-start` success output | may contain unrelated warnings (`Windows Hypervisor Platform accelerator is operational`, `GLib: g_hash_table_remove_all: assertion … failed`, `[dshow …] Could not enumerate video devices`) |
 | `-start` on an unknown name | `Unable to start the emulator`, **no trailing newline** |
 | Boot completion on the guest | `hdc -t <target> shell "param get bootevent.boot.completed"` → `true` |

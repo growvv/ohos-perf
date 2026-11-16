@@ -35,14 +35,14 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P7 are complete**: 990 tests (982 unit, 8 in the device project),
+**P1 through P7 are complete**: 1008 tests (1000 unit, 8 in the device project),
 two workspace typechecks and two builds, all green on the declared minimum
 Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **957 passed, 25
+attached device are absent — `npm run test:unit` reports **975 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-seven device-gated skips, so the combined clean checkout is **958 passed, 32
-skipped**. With both fixtures present and a device attached all 990 pass. The
+seven device-gated skips, so the combined clean checkout is **976 passed, 32
+skipped**. With both fixtures present and a device attached all 1008 pass. The
 fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
 `query-sched-state` and the CLI `index` end-to-end tests. The eight tests in
@@ -254,16 +254,21 @@ TARGET=$(ohos-perf emulator list --json \
 ohos-perf collect --target "$TARGET" --app com.example.app --duration 10s --out ./scene
 ```
 
-`target` is absent when the instance is not running, or when more than one
-instance (or more than one connected TCP target) makes attribution ambiguous;
-in that case `targetReason` says which. Start the instance first, or pass the id
-from `hdc list targets` yourself.
+`target` is absent when the instance is not running, or when attribution is
+ambiguous — more than one instance running, no connected TCP target, more than
+one connected TCP target, or `hdc` unusable. `targetReason` on that instance
+says which (it is a `--json` field; the human table shows `—`). Start the
+instance first, or pass the id from `hdc list targets` yourself.
 
 `start` blocks until `bootevent.boot.completed` reads `true` on the guest, so a
 capture never races the boot. It takes `--timeout <seconds>` (default 180) and
-reports how long the boot took; starting an instance that is already up is a
+reports how long the whole call took — the 3 s window it gives `-start` to
+report an immediate failure is included, so a warm start reads a few seconds
+longer than the guest's own boot. Starting an instance that is already up is a
 safe no-op that says so. A timeout never kills the emulator — the message names
-the `stop` command that removes it.
+the `stop` command that removes it. Two `start` calls running at once are not
+supported: the binary exposes no per-instance port, so each call attributes the
+one fresh loopback target it sees, and the two can report each other's.
 
 `create` never downloads an image. It refuses when no image for that
 `--device-type`/`--os-version` pair is already downloaded, and prints the exact
@@ -287,7 +292,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 990 tests; 958 pass + 32 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1008 tests; 976 pass + 32 skip on a clean checkout (no device, spike/out/ absent)
 ```
 
 `npm test` builds both packages first, so a clean checkout is never red.

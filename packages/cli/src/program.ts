@@ -309,17 +309,24 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     let timeoutMs: number | undefined;
     if (timeout !== undefined) {
       // `parseDurationSeconds` accepts a bare number or an `s` suffix and
-      // rejects anything that is not a positive whole number of milliseconds,
-      // which is exactly the budget a poll loop needs — `0` and negatives are
-      // rejected there, before any deps call. Its message names `--duration`,
-      // so the rejection is re-worded for this flag.
+      // rejects anything that is not a positive whole number of milliseconds.
+      // Its message names `--duration`, so the flag is re-worded; the reason
+      // is kept, because `9999999` is rejected for the 32-bit limit, not for
+      // being non-positive, and the caller needs the real one.
       try {
         timeoutMs = parseDurationSeconds(timeout);
-      } catch {
+      } catch (err) {
+        // The parser's reason, minus its `--duration`-specific prefix. A
+        // non-positive value gets the flag's own wording; every other
+        // rejection (32-bit limit, sub-millisecond fraction) keeps the real
+        // reason, because "must be greater than 0" would be false for it.
+        const reason = safeMessage(err).replace(/^invalid --duration [^:]*: /, '');
+        const message = reason.startsWith('expected a positive number of seconds')
+          ? '--timeout must be greater than 0 (a positive number of seconds, e.g. 30)'
+          : reason;
         io.emit({
           stdout: '',
-          stderr: `invalid --timeout ${JSON.stringify(timeout)}: --timeout must be greater` +
-            ' than 0 (a positive number of seconds, e.g. 30)\n',
+          stderr: `invalid --timeout ${JSON.stringify(timeout)}: ${message}\n`,
           exitCode: 1,
         });
         return;
@@ -378,8 +385,11 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     }
     const number = (flag: string, raw: string | undefined): number | undefined => {
       if (raw === undefined) return undefined;
-      const value = Number.parseInt(raw, 10);
-      if (!Number.isFinite(value)) {
+      // `Number.parseInt` would turn `6.5` into 6 and `6abc` into 6: an
+      // instance created at a size the caller never asked for. A GB count is
+      // a whole number, so anything else is a usage error.
+      const value = Number(raw);
+      if (!Number.isInteger(value)) {
         throw new Error(`invalid ${flag}: expected a whole number, got ${JSON.stringify(raw)}`);
       }
       return value;

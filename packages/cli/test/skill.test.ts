@@ -62,6 +62,14 @@ describe('agent skill adapter', () => {
     }
   });
 
+  it('names only the commands that accept --target, because the rest reject it', () => {
+    // `analyze`, `query`, `compare` and `tools` read a scene, not a device:
+    // `ohos-perf analyze ./scene --target X` exits 1 with `unknown option`.
+    // An agent following "pass it to every later command" would break itself.
+    expect(skill).not.toMatch(/every later command with\s+`--target/);
+    expect(skill).toMatch(/collect`, `caps` and `doctor`/);
+  });
+
   it('is linked from the README', () => {
     expect(readme).toContain('ohos-perf query');
     expect(readme).toContain('skill/ohos-perf');

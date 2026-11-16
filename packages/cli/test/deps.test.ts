@@ -757,6 +757,26 @@ describe('realDeps().analyze', () => {
 });
 
 describe('realDeps().collect', () => {
+  it('forwards --target to the device connector', async () => {
+    // `emulator list --json` prints a target id, and `collect --target` is the
+    // handoff that consumes it. The CLI test stops at the CliDeps boundary, so
+    // this is the only place that proves the id reaches `connect()`.
+    const asked: (string | undefined)[] = [];
+    const deps = realDeps('0.0.0', {
+      collectDevice: async (target) => {
+        asked.push(target);
+        return {
+          id: target ?? 'first',
+          kind: 'emulator',
+          collect: async () => ({ ingest: async () => ({ close: () => {} } as unknown as Scene) }),
+        };
+      },
+    });
+    await deps.collect({ durationMs: 10_000, out: 'scene', target: '127.0.0.1:5555' });
+    await deps.collect({ durationMs: 10_000, out: 'scene' });
+    expect(asked).toEqual(['127.0.0.1:5555', undefined]);
+  });
+
   it('forwards the hiprofiler plugin list to device.collect', async () => {
     const seen: unknown[] = [];
     const deps = realDeps('0.0.0', {
@@ -877,6 +897,22 @@ describe('realDeps().collect', () => {
 });
 
 describe('realDeps().capsReport', () => {
+  it('forwards --target to the device connector', async () => {
+    // `caps --target X` must probe X, and no flag must keep the old
+    // first-connected-target behaviour.
+    const asked: (string | undefined)[] = [];
+    const deps = realDeps('0.0.0', {
+      connectDevice: async (target) => {
+        asked.push(target);
+        return { id: 't1', kind: 'emulator', abi: 'x86_64', capabilities: async () => ({ all: () => [] }) };
+      },
+      hdc: { resolvePath: async () => '/hdc' },
+    });
+    await deps.capsReport('127.0.0.1:5555');
+    await deps.capsReport();
+    expect(asked).toEqual(['127.0.0.1:5555', undefined]);
+  });
+
   it('reports hdc failure without probing the device', async () => {
     const deps = realDeps('0.0.0', {
       hdc: { resolvePath: async () => { throw new Error('no hdc'); } },
