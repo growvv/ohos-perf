@@ -208,7 +208,9 @@ The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 partial and 14 missing — re-counted at `0.8.0`, up from 6 / 9 / 20 at `0.3.0`
 when the inventory was taken. Seven rows moved to ported: run-only preparation
 (2), frame stutter and FPS windows (8), frame load (9), native memory (19),
-hilog (30), the XLSX report suite (34) and report comparison (35). Items
+hilog (30), the XLSX report suite (34) and report comparison (35). The JSON
+action list also lifts the step DSL (3) from missing to partial — it has no
+selectors and no loops. Items
 deliberately not ported (Hypium/xdevice test execution, the LLM GUI agent,
 TensorFlow opt-detector, radare2 symbol recovery, bjc coverage) keep their
 measured reasons instead of a claim; the scenario runner replaces the first of
