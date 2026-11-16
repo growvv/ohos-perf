@@ -256,3 +256,4 @@ export type {
   ReportTotals,
 } from './report/model';
 export { renderEvidenceCsv, renderMetricsCsv } from './report/csv';
+export { renderReportHtml } from './report/html';
