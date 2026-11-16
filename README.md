@@ -204,17 +204,17 @@ The HapRay parity series (one release per major item, so far):
 | P16 | W8 symbols | symbol statistics, `--so-dir` device symbolization, offline flamegraph artifact, unresolved-symbol evidence | planned |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
-(rev `9386e4e`): 35 user-facing capabilities, of which 13 are now ported, 8
-partial and 14 missing — re-counted at `0.8.0`, up from 6 / 9 / 20 at `0.3.0`
-when the inventory was taken. Seven rows moved to ported: run-only preparation
-(2), frame stutter and FPS windows (8), frame load (9), native memory (19),
-hilog (30), the XLSX report suite (34) and report comparison (35). The JSON
-action list also lifts the step DSL (3) from missing to partial — it has no
-selectors and no loops. Items
-deliberately not ported (Hypium/xdevice test execution, the LLM GUI agent,
-TensorFlow opt-detector, radare2 symbol recovery, bjc coverage) keep their
-measured reasons instead of a claim; the scenario runner replaces the first of
-them rather than porting it. The rendered
+(rev `9386e4e`): 35 user-facing capabilities, of which 11 are now ported, 10
+partial and 14 missing. The inventory read 6 / 9 / 20 at `0.3.0`; `0.6.0`
+reported 9 / 9 / 17 after the XLSX suite (row 34), frame load (row 9) and
+native memory (row 19) moved to ported; `0.7.0` moved hilog (row 30) to ported,
+and `0.8.0` moves run-only preparation (row 2) to ported — the runner is
+collect-only by construction — and lifts the step DSL (row 3) from missing to
+partial, because a scenario is a validated action list with no selectors and no
+loops. Items deliberately not ported (Hypium/xdevice test execution, the LLM
+GUI agent, TensorFlow opt-detector, radare2 symbol recovery, bjc coverage) keep
+their measured reasons instead of a claim; the scenario runner replaces the
+first of them rather than porting it. The rendered
 roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).
 
