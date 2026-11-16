@@ -133,6 +133,9 @@ export { compareImages, dhash, markRegions } from './image/diff';
 export type { ImageComparison, Rect } from './image/diff';
 export { diffTrees, nodeIdentity, IGNORED_ATTRIBUTES, GEOMETRY_TOLERANCE_PX } from './ui/diff';
 export type { UiTreeDiff, UiTreeDifference } from './ui/diff';
+export { compareSceneDirs, UI_DIFF_FILES } from './ui/compare';
+export type { UiDiff, UiDiffSide, UiCompareOptions } from './ui/compare';
+export { renderUiDiffHtml } from './report/ui-html';
 export type { Collector, TraceCollectOptions } from './collectors/types';
 
 // Ingestion

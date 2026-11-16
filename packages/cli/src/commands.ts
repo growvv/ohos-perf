@@ -175,6 +175,31 @@ export interface CompareRequest {
   current: string;
 }
 
+/** A `ui-compare` invocation: two scene directories and an output directory. */
+export interface UiCompareRequest {
+  a: string;
+  b: string;
+  outDir: string;
+}
+
+/** What `ui-compare` wrote and what it found. */
+export interface UiCompareOutput {
+  outDir: string;
+  /** The artifact file names, in their fixed presentation order. */
+  files: string[];
+  /** Differences per class, plus the matched count. */
+  tree: { added: number; removed: number; changed: number; unchanged: number } | null;
+  image: {
+    hamming: number;
+    similarity: number;
+    changedRatio: number;
+    tolerance: number;
+  } | null;
+  regions: number;
+  /** Artifacts neither side carried; the comparison is partial when non-empty. */
+  degraded: string[];
+}
+
 /** A `report` invocation: one scene, one output directory, an optional baseline. */
 export interface ReportRequest {
   sceneDir: string;
@@ -244,6 +269,8 @@ export interface CliDeps {
   tools(): NamedQueryInfo[];
   /** Compare two analyses. Throws on any failure; the caller maps it to exit 1. */
   compare(req: CompareRequest): Promise<BaselineComparison>;
+  /** Compare two captures by UI tree and screenshot, writing the diff bundle. */
+  uiCompare(req: UiCompareRequest): Promise<UiCompareOutput>;
   /** Analyze a scene and write the report bundle. Throws on any failure. */
   report(req: ReportRequest): Promise<ReportOutput>;
   /** HarmonyOS emulator lifecycle. Throws on any failure; the caller maps it to exit 1. */
@@ -532,6 +559,55 @@ export async function runCompare(
     const totals = DELTA_ORDER.map((status) => `${status} ${comparison.totals[status]}`)
       .join(', ');
     return { stdout: rows.join('') + `totals  ${totals}\n`, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Compare two captures by UI tree and screenshot.
+ *
+ * Exit 0 whenever the comparison was made, including identical screens: "no
+ * differences" is a successful answer, and a caller scripting `ui-compare` in a
+ * loop must not read it as a failure. Exit 1 means it could not be made (a
+ * missing artifact on one side, a size mismatch, an unreadable PNG).
+ *
+ * Human output is one line per difference class, then the two image numbers,
+ * then the artifacts written. `--json` prints the full `UiDiff`; the files are
+ * written either way, because the marked PNGs are the point of the command.
+ */
+export async function runUiCompare(
+  deps: CliDeps,
+  req: UiCompareRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.uiCompare(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+
+    const lines: string[] = [];
+    if (result.tree === null) {
+      lines.push('tree  not compared (no ui.json on either side)\n');
+    } else {
+      lines.push(
+        `tree  ${result.tree.added} added, ${result.tree.removed} removed,` +
+          ` ${result.tree.changed} changed, ${result.tree.unchanged} unchanged\n`,
+      );
+    }
+    if (result.image === null) {
+      lines.push('image  not compared (no screenshot.png on either side)\n');
+    } else {
+      lines.push(
+        `image  similarity ${result.image.similarity}` +
+          ` (hamming ${result.image.hamming}/64),` +
+          ` changed ${result.image.changedRatio}` +
+          ` at tolerance ${result.image.tolerance}\n`,
+      );
+    }
+    lines.push(`regions  ${result.regions}\n`);
+    for (const line of result.degraded) lines.push(`degraded  ${line}\n`);
+    lines.push(`wrote  ${result.files.join(', ')} in ${result.outDir}\n`);
+    return { stdout: lines.join(''), stderr: '', exitCode: 0 };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }

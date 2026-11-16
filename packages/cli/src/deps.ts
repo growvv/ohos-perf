@@ -33,6 +33,8 @@ import {
   parseHilogText,
   buildReport,
   compareResults,
+  compareSceneDirs,
+  UI_DIFF_FILES,
   renderEvidenceCsv,
   renderMetricsCsv,
   renderReportHtml,
@@ -741,6 +743,32 @@ export function realDeps(
           : readAnalysisFile(input));
       const [baseline, current] = await Promise.all([load(req.baseline), load(req.current)]);
       return compareResults(baseline, current);
+    },
+
+    async uiCompare(req) {
+      const diff = await compareSceneDirs(req.a, req.b, { outDir: req.outDir });
+      return {
+        outDir: resolve(req.outDir),
+        files: [...UI_DIFF_FILES],
+        tree: diff.tree === null
+          ? null
+          : {
+              added: diff.tree.added.length,
+              removed: diff.tree.removed.length,
+              changed: diff.tree.changed.length,
+              unchanged: diff.tree.unchanged,
+            },
+        image: diff.image === null
+          ? null
+          : {
+              hamming: diff.image.hamming,
+              similarity: diff.image.similarity,
+              changedRatio: diff.image.changedRatio,
+              tolerance: diff.image.tolerance,
+            },
+        regions: diff.regions.length,
+        degraded: [...diff.degraded],
+      };
     },
 
     async report(req) {

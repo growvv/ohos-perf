@@ -15,6 +15,7 @@ import {
   runReport,
   runScenarioCommand,
   runTools,
+  runUiCompare,
   safeMessage,
   type CliDeps,
   type CliResult,
@@ -265,6 +266,17 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--json', 'print the comparison as JSON')
     .action(async (baseline: string, current: string, opts: { json?: boolean }) => {
       io.emit(await runCompare(deps, { baseline, current }, { json: opts.json }));
+    });
+
+  program
+    .command('ui-compare')
+    .description('compare two captures by UI tree and screenshot')
+    .argument('<a>', 'scene directory for side a')
+    .argument('<b>', 'scene directory for side b')
+    .requiredOption('--out <dir>', 'output directory for ui-diff.json/html and marked PNGs')
+    .option('--json', 'print the comparison as JSON')
+    .action(async (a: string, b: string, opts: { out: string; json?: boolean }) => {
+      io.emit(await runUiCompare(deps, { a, b, outDir: opts.out }, { json: opts.json }));
     });
 
   program

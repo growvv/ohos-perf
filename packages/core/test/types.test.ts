@@ -118,6 +118,7 @@ const VALUE_EXPORTS = [
   'decodePng', 'encodePng', 'compareImages', 'dhash', 'markRegions',
   'diffTrees', 'nodeIdentity', 'IGNORED_ATTRIBUTES', 'GEOMETRY_TOLERANCE_PX', 'parseBounds',
   'UiAnalyzer',
+  'compareSceneDirs', 'UI_DIFF_FILES', 'renderUiDiffHtml',
   'resolveAppIdentity', 'resolveAppIpids', 'resolveQueryLimit',
   'ScenarioRunner', 'parseScenario', 'executeAction', 'writeRunFiles', 'COLLECTOR_NAMES',
   'runAnalyzerSections', 'runAnalyzers', 'runDrillDown', 'runNamedQuery', 'runProbe',

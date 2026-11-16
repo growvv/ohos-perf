@@ -20,6 +20,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
     compare: async () => { throw new Error('compare not stubbed'); },
+    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => { throw new Error('report not stubbed'); },
     emulator: {
       list: async () => [],

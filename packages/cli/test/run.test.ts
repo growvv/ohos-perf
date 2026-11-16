@@ -58,6 +58,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     query: async () => ({ query: 'q', rows: [], total: 0, truncated: false }),
     tools: () => [],
     compare: async () => { throw new Error('not stubbed'); },
+    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => { throw new Error('not stubbed'); },
     emulator: {
       list: async () => [],

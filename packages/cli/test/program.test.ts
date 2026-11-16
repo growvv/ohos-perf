@@ -26,6 +26,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
     compare: async () => { throw new Error('compare not stubbed'); },
+    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => { throw new Error('report not stubbed'); },
     emulator: {
       list: async () => [],
@@ -85,6 +86,7 @@ describe('--help', () => {
     const text = out.join('');
     for (const name of [
       'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'run',
+      'ui-compare',
     ]) {
       expect(text).toContain(name);
     }
@@ -109,6 +111,30 @@ describe('command wiring', () => {
       compare: async () => { throw new Error('cannot read base'); },
     });
     expect(emitted[0]).toEqual({ stdout: '', stderr: 'cannot read base\n', exitCode: 1 });
+  });
+
+  it('ui-compare forwards both directories, --out and --json', async () => {
+    const calls: Array<{ a: string; b: string; outDir: string }> = [];
+    const result = {
+      outDir: '/out', files: ['ui-diff.json'], tree: null, image: null,
+      regions: 0, degraded: [],
+    };
+    const { emitted } = await parse(['ui-compare', 'a', 'b', '--out', '/out', '--json'], {
+      uiCompare: async (req) => { calls.push(req); return result; },
+    });
+    expect(calls).toEqual([{ a: 'a', b: 'b', outDir: '/out' }]);
+    expect(JSON.parse(emitted[0].stdout)).toEqual(result);
+  });
+
+  it('ui-compare requires --out before doing any work', async () => {
+    const calls: unknown[] = [];
+    const { error } = await parse(['ui-compare', 'a', 'b'], {
+      uiCompare: async (req) => { calls.push(req); throw new Error('not reached'); },
+    });
+    // Commander refuses the missing required option before the action runs.
+    expect(error).toBeDefined();
+    expect(error?.code).toBe('commander.missingMandatoryOptionValue');
+    expect(calls).toEqual([]);
   });
 
   it('doctor forwards --json to runDoctor', async () => {

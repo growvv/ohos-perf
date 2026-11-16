@@ -18,7 +18,7 @@ const readme = readNormalized(join(root, 'README.md'));
 
 const COMMANDS = new Set([
   'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report',
-  'emulator', 'gesture', 'run',
+  'emulator', 'gesture', 'run', 'ui-compare',
 ]);
 
 describe('agent skill adapter', () => {
