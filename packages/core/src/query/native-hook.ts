@@ -17,6 +17,8 @@ export interface NativeHookEvent {
   id: number;
   callchainId: number;
   ipid: number;
+  /** `process.pid` resolved through `ipid`; the number space an app is known by. */
+  pid: number;
   itid: number;
   eventType: number | string;
   subTypeId: number;
@@ -68,6 +70,7 @@ interface NativeHookEventRow {
   id: number | null;
   callchain_id: number | null;
   ipid: number | null;
+  pid: number | null;
   itid: number | null;
   event_type: number | string | null;
   sub_type_id: number | null;
@@ -118,6 +121,7 @@ function toEvent(row: NativeHookEventRow): NativeHookEvent {
     id: num(row.id),
     callchainId: num(row.callchain_id),
     ipid: num(row.ipid),
+    pid: num(row.pid),
     itid: num(row.itid),
     eventType: row.event_type ?? 0,
     subTypeId: num(row.sub_type_id),
@@ -210,9 +214,10 @@ export class NativeHookQuery {
     }
     return this.db
       .query<NativeHookEventRow>(
-        `SELECT nh.id, nh.callchain_id, nh.ipid, nh.itid, nh.event_type,
-       nh.sub_type_id, nh.start_ts, nh.end_ts, nh.dur, nh.addr, nh.heap_size,
-       nh.all_heap_size, nh.current_size_dur, nh.last_lib_id, nh.last_symbol_id
+        `SELECT nh.id, nh.callchain_id, nh.ipid, p.pid AS pid, nh.itid,
+       nh.event_type, nh.sub_type_id, nh.start_ts, nh.end_ts, nh.dur, nh.addr,
+       nh.heap_size, nh.all_heap_size, nh.current_size_dur, nh.last_lib_id,
+       nh.last_symbol_id
 FROM native_hook nh
 JOIN process p ON nh.ipid = p.ipid
 WHERE ${conditions.join(' AND ')}

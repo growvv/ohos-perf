@@ -1,0 +1,231 @@
+// Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.
+
+import type { NativeHookEvent } from '../query/native-hook';
+
+/** What an event does to the running total. */
+export type NativeEventKind = 'alloc' | 'free' | 'other';
+
+/**
+ * Classifies `native_hook.event_type`.
+ *
+ * The column is numeric on the recorded traces but upstream compares it to
+ * strings, so both forms are accepted. Anything unrecognised is `other`: it is
+ * counted, but it must not move the total in either direction.
+ */
+export function nativeEventKind(eventType: number | string): NativeEventKind {
+  if (eventType === 0 || eventType === 'AllocEvent' || eventType === 'MmapEvent') return 'alloc';
+  if (eventType === 1 || eventType === 'FreeEvent' || eventType === 'MunmapEvent') return 'free';
+  return 'other';
+}
+
+/** One allocation still live at a given instant. */
+export interface ActiveAlloc {
+  addr: number;
+  /** Remaining bytes; a partial free leaves a smaller size. */
+  size: number;
+  pid: number;
+  tid: number;
+  /** `0` means the event carried no callchain, so the block is unattributable. */
+  callchainId: number;
+  relativeNs: number;
+}
+
+/** Everything one replay of the events establishes. */
+export interface NativeMemoryResult {
+  /** Events read, including types that are neither alloc nor free. */
+  events: number;
+  allocCount: number;
+  allocBytes: number;
+  freeCount: number;
+  freeBytes: number;
+  /** Highest running total and the timestamp of the event that produced it. */
+  peak: number;
+  peakTs: number;
+  /** Lowest running total; negative when the capture started mid-lifetime. */
+  trough: number;
+  /** Running total after the last event. */
+  endTotal: number;
+  /** Allocations whose address was NULL; they can never be freed. */
+  unaddressedAllocs: number;
+  /** Frees of an address with no tracked allocation. */
+  unpairedFrees: number;
+  /** Live bytes at the end whose event carried no callchain. */
+  unattributedBytes: number;
+  /** Live allocations at `ts`, in event order. */
+  unreleasedAt(ts: number): ActiveAlloc[];
+}
+
+/** Events ordered by `(start_ts, id)`; the tie-break makes the walk stable. */
+function ordered(events: readonly NativeHookEvent[]): NativeHookEvent[] {
+  return [...events].sort((a, b) => a.startTs - b.startTs || a.id - b.id);
+}
+
+interface Replay {
+  total: number;
+  peak: number;
+  peakTs: number;
+  trough: number;
+  unpairedFrees: number;
+  unaddressedAllocs: number;
+  allocCount: number;
+  allocBytes: number;
+  freeCount: number;
+  freeBytes: number;
+  active: Map<number, ActiveAlloc[]>;
+  /** Event timestamp the replay stopped after; the last event's for a full run. */
+  lastTs: number;
+}
+
+/**
+ * Walks the events up to and including `untilTs` (all events when omitted).
+ *
+ * Pairing is per address and LIFO: a runtime can reuse an address before the
+ * previous block is released, so a free must consume the newest block first and
+ * continue into older ones when it is larger. A partial free leaves a smaller
+ * active block behind.
+ */
+function replay(events: readonly NativeHookEvent[], untilTs?: number): Replay {
+  const state: Replay = {
+    total: 0,
+    peak: 0,
+    peakTs: events[0]?.startTs ?? 0,
+    trough: 0,
+    unpairedFrees: 0,
+    unaddressedAllocs: 0,
+    allocCount: 0,
+    allocBytes: 0,
+    freeCount: 0,
+    freeBytes: 0,
+    active: new Map(),
+    lastTs: events[0]?.startTs ?? 0,
+  };
+  const origin = events[0]?.startTs ?? 0;
+
+  for (const event of events) {
+    if (untilTs !== undefined && event.startTs > untilTs) break;
+    state.lastTs = event.startTs;
+    const kind = nativeEventKind(event.eventType);
+    if (kind === 'other') continue;
+
+    // `heap_size` is stored as a magnitude; the sign comes from the event type.
+    const size = Math.abs(event.heapSize);
+
+    if (kind === 'alloc') {
+      state.allocCount += 1;
+      state.allocBytes += size;
+      state.total += size;
+      if (event.addr === 0) {
+        state.unaddressedAllocs += 1;
+      } else {
+        const stack = state.active.get(event.addr);
+        const alloc: ActiveAlloc = {
+          addr: event.addr,
+          size,
+          pid: event.pid ?? 0,
+          tid: event.itid,
+          callchainId: event.callchainId,
+          relativeNs: event.startTs - origin,
+        };
+        if (stack === undefined) state.active.set(event.addr, [alloc]);
+        else stack.push(alloc);
+      }
+    } else {
+      state.freeCount += 1;
+      state.freeBytes += size;
+      state.total -= size;
+      const stack = state.active.get(event.addr);
+      let remaining = size;
+      if (stack !== undefined) {
+        while (remaining > 0 && stack.length > 0) {
+          const top = stack[stack.length - 1];
+          if (top.size > remaining) {
+            top.size -= remaining;
+            remaining = 0;
+          } else {
+            remaining -= top.size;
+            stack.pop();
+          }
+        }
+        if (stack.length === 0) state.active.delete(event.addr);
+      }
+      // A free with nothing to consume still moves the total — dropping it
+      // would understate a free-heavy capture — but it is counted so the
+      // reader can see the total is not fully explained by paired events.
+      if (stack === undefined || size === remaining) state.unpairedFrees += 1;
+    }
+
+    if (state.total > state.peak) {
+      state.peak = state.total;
+      state.peakTs = event.startTs;
+    }
+    if (state.total < state.trough) state.trough = state.total;
+  }
+  return state;
+}
+
+/**
+ * Pairs allocation and free events by address and derives the memory profile.
+ *
+ * The result is a pure function of the events: ordering, ties and the
+ * unreleased sets never depend on map iteration or input order, so two runs
+ * over the same capture are byte-identical.
+ *
+ * A capture that began after allocations happened starts its total at `0` and
+ * may trough negative. That is reported, not clamped: clamping would make every
+ * absolute figure after the trough look larger than it is.
+ */
+export function pairNativeMemory(
+  events: readonly NativeHookEvent[],
+): NativeMemoryResult {
+  const sorted = ordered(events);
+  const full = replay(sorted);
+  const origin = sorted[0]?.startTs ?? 0;
+
+  // Unattributed bytes are a property of the end instant: they answer "how much
+  // live memory can no callchain explain", which only means something once the
+  // whole capture has been replayed.
+  let unattributedBytes = 0;
+  for (const stack of full.active.values()) {
+    for (const alloc of stack) {
+      if (alloc.callchainId === 0) unattributedBytes += alloc.size;
+    }
+  }
+
+  return {
+    events: sorted.length,
+    allocCount: full.allocCount,
+    allocBytes: full.allocBytes,
+    freeCount: full.freeCount,
+    freeBytes: full.freeBytes,
+    peak: full.peak,
+    peakTs: full.peakTs,
+    trough: full.trough,
+    endTotal: full.total,
+    unaddressedAllocs: full.unaddressedAllocs,
+    unpairedFrees: full.unpairedFrees,
+    unattributedBytes,
+    unreleasedAt(ts: number): ActiveAlloc[] {
+      const state = replay(sorted, ts);
+      const live: ActiveAlloc[] = [];
+      for (const stack of state.active.values()) {
+        for (const alloc of stack) {
+          // A block with no callchain cannot be attributed to a row; its bytes
+          // are reported once by `unattributedBytes` instead.
+          if (alloc.callchainId !== 0 && alloc.size > 0) live.push({ ...alloc });
+        }
+      }
+      return live;
+    },
+  };
+}
+
+/** First app-event timestamp; the origin for every relative figure. */
+export function nativeOrigin(events: readonly NativeHookEvent[]): number {
+  return ordered(events)[0]?.startTs ?? 0;
+}
+
+/** Last app-event timestamp, used as the end instant. */
+export function nativeEndTs(events: readonly NativeHookEvent[]): number {
+  const sorted = ordered(events);
+  return sorted[sorted.length - 1]?.startTs ?? 0;
+}

@@ -72,7 +72,7 @@ describe('NativeHookQuery', () => {
     const rows = new NativeHookQuery(db).events([4999]);
     expect(rows.map((r) => r.id)).toEqual([0, 1]);
     expect(rows[0]).toMatchObject({
-      callchainId: 10, ipid: 17, itid: 100, eventType: 0,
+      callchainId: 10, ipid: 17, pid: 4999, itid: 100, eventType: 0,
       startTs: 300, addr: 4096, heapSize: 64, lastLibId: 1, lastSymbolId: 2,
     });
   });
