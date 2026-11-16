@@ -1,7 +1,7 @@
 import type {
   BaselineComparison, CapabilityState, CreateEmulatorRequest, DeltaStatus,
-  EmulatorInstance, EmulatorStartResult, EmulatorStopResult, HiprofilerPluginName,
-  NamedQueryInfo, NamedQueryResult,
+  EmulatorInstance, EmulatorStartResult, EmulatorStopResult, Gesture, GestureResult,
+  HiprofilerPluginName, NamedQueryInfo, NamedQueryResult,
 } from '@ohos-perf/core';
 import { doctorReport, safeMessage, type DoctorDeps } from './doctor';
 
@@ -108,6 +108,13 @@ export interface CollectOutput {
   ui?: { nodes: number };
 }
 
+/** One gesture to inject, on the target that should receive it. */
+export interface GestureRequest {
+  gesture: Gesture;
+  /** Explicit hdc target id; omitted, the first connected target is used. */
+  target?: string;
+}
+
 /** The arguments `query` forwards to the IO layer. */
 export interface QueryRequest {
   sceneDir: string;
@@ -164,6 +171,8 @@ export interface CliDeps {
   analyze(sceneDir: string, app?: string): Promise<AnalyzeOutput>;
   /** Capture a scene. Throws on any failure; the caller maps it to exit 1. */
   collect(req: CollectRequest): Promise<CollectOutput>;
+  /** Inject one UI gesture. Throws on any failure; the caller maps it to exit 1. */
+  gesture(req: GestureRequest): Promise<GestureResult>;
   /** Run one named drill-down query against a scene. */
   query(req: QueryRequest): Promise<NamedQueryResult>;
   /** The named query definitions, for `tools`. */
@@ -340,6 +349,51 @@ export async function runCollect(
     ];
     if (samples.length > 0) stdout += `samples  ${samples.join(', ')}\n`;
     return { stdout, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Human summary of one gesture.
+ *
+ * "accepted" is backed by the device tool's `No Error` marker, not by the
+ * host exit code (measured to be 0 even when the device refuses). It means the
+ * injection was accepted, not that a widget reacted.
+ */
+function gestureSummary(gesture: Gesture): string {
+  switch (gesture.action) {
+    case 'click':
+      return `click ${gesture.x} ${gesture.y}`;
+    case 'swipe': {
+      const velocity = gesture.velocity === undefined ? '' : ` (velocity ${gesture.velocity})`;
+      return `swipe ${gesture.fromX},${gesture.fromY} -> ${gesture.toX},${gesture.toY}${velocity}`;
+    }
+    case 'key':
+      return `key ${gesture.key}`;
+    case 'inputText':
+      return `input ${gesture.x} ${gesture.y} ${JSON.stringify(gesture.text)}`;
+    case 'text':
+      return `text ${JSON.stringify(gesture.text)}`;
+  }
+}
+
+/**
+ * Inject one gesture.
+ *
+ * `--json` emits the core result (`{ gesture, output }`), where `output` is
+ * the device tool's own success line. Any failure is exit 1 with an empty
+ * stdout, like every other command.
+ */
+export async function runGesture(
+  deps: CliDeps,
+  req: GestureRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.gesture(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    return { stdout: `${gestureSummary(req.gesture)} accepted\n`, stderr: '', exitCode: 0 };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }

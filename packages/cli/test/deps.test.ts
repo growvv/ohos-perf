@@ -777,6 +777,22 @@ describe('realDeps().collect', () => {
     expect(asked).toEqual(['127.0.0.1:5555', undefined]);
   });
 
+  it('forwards --target to the gesture connector', async () => {
+    // A gesture that lands on the wrong attached device is invisible in the
+    // output: the tool prints the same `No Error` either way.
+    const asked: (string | undefined)[] = [];
+    const deps = realDeps('0.0.0', {
+      gestureDevice: async (target) => {
+        asked.push(target);
+        return { id: target ?? 'first', gesture: async (g) => ({ gesture: g, output: 'No Error' }) };
+      },
+    });
+    const gesture = { action: 'key', key: 'Home' } as const;
+    await deps.gesture({ gesture, target: '127.0.0.1:5555' });
+    await deps.gesture({ gesture });
+    expect(asked).toEqual(['127.0.0.1:5555', undefined]);
+  });
+
   it('forwards the hiprofiler plugin list to device.collect', async () => {
     const seen: unknown[] = [];
     const deps = realDeps('0.0.0', {

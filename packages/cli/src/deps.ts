@@ -40,6 +40,8 @@ import {
   type AnalyzeResult,
   type CapabilityId,
   type CapabilityState,
+  type Gesture,
+  type GestureResult,
   type NamedQueryInfo,
   type HidumperCapture,
   type ProcfsSample,
@@ -99,6 +101,11 @@ export interface RealDepsOverrides {
     id: string;
     kind: string;
     collect(opts: unknown): Promise<{ ingest(): Promise<Scene> }>;
+  }>;
+  /** Device used by `gesture`; replaced in tests to avoid touching a device. */
+  gestureDevice?: (target?: string) => Promise<{
+    id: string;
+    gesture(g: Gesture): Promise<GestureResult>;
   }>;
 }
 
@@ -387,6 +394,8 @@ export function realDeps(
   const ingest = overrides.ingest ?? ingestScene;
   const collectDevice = overrides.collectDevice ??
     ((target) => connect(target === undefined ? {} : { target }));
+  const gestureDevice = overrides.gestureDevice ??
+    ((target) => connect(target === undefined ? {} : { target }));
 
   const doctor: DoctorDeps = {
     resolveHdc,
@@ -517,6 +526,11 @@ export function realDeps(
     doctor,
     version,
     emulator,
+
+    async gesture(req) {
+      const device = await gestureDevice(req.target);
+      return device.gesture(req.gesture);
+    },
 
     async capsReport(target) {
       try {
