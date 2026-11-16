@@ -22,6 +22,11 @@ ArkAnalyzer-HapRay:
 | `packages/core/src/analyze/fault-tree.ts` | `hapray/analyze/fault_tree_analyzer.py` |
 | `packages/core/src/analyze/threads-wakeup.ts` | `hapray/core/common/thread_wakeup_chain.py`, `hapray/core/common/frame/frame_wakeup_chain.py`, `hapray/core/common/frame/frame_utils.py`, `hapray/core/common/frame/frame_core_load_calculator.py` |
 | `packages/core/src/analyze/threads-score.ts` | `hapray/analyze/thread_optimization.py`, `hapray/core/common/thread_utils.py`, `hapray/analyze/thread_analyzer.py` |
+| `packages/core/src/analyze/gc.ts` | `hapray/analyze/gc_analyzer.py` |
+| `packages/core/src/analyze/vsync.ts` | `hapray/core/common/frame/frame_analyzer_vsync.py` |
+| `packages/core/src/analyze/empty-frame.ts` | `hapray/core/common/frame/frame_analyzer_empty.py`, `hapray/core/common/frame/frame_trace_accessor.py` |
+| `packages/core/src/analyze/rs-skip.ts` | `hapray/core/common/frame/frame_analyzer_rs_skip.py`, `hapray/core/common/frame/frame_rs_skip_backtrack_nw.py` |
+| `packages/core/src/analyze/components.ts` | `hapray/analyze/component_reusable_analyzer.py` |
 | `packages/core/src/query/sched.ts` | `hapray/core/common/thread_wakeup_chain.py`, `hapray/core/common/frame/frame_wakeup_chain.py` |
 | `packages/core/src/query/callstack.ts` | `hapray/analyze/ipc_binder_analyzer.py`, `hapray/core/common/thread_wakeup_chain.py` |
 | `packages/core/src/query/perf.ts` | `hapray/core/common/thread_wakeup_chain.py`, `hapray/core/common/frame/frame_core_load_calculator.py` |

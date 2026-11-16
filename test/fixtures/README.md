@@ -33,13 +33,13 @@ Provenance exception: the `which uitest<TAB>/bin/uitest` line in
 separate `uitest dumpLayout` measurement (117 KB of output on that device), so
 the device capability is real but the line is not part of the recording the
 file otherwise reproduces. It is kept deliberately - dropping it would erase a
-real capability - and it is why the emulator capability matrix reports 11
-available capabilities while the ledger's live measurement lists 9.
+real capability - and it is why the emulator capability matrix reports 12
+available capabilities while the ledger's live measurement lists 10.
 
 ## `emu_big.db` — NOT checked in
 
 `spike/out/` is listed in `.gitignore`, so `emu_big.db` does not exist on a
-fresh clone. It is a **17.9 MB SQLite database with 88 tables**, exported from a
+fresh clone. It is a **17.9 MB SQLite export with 88 tables**, exported from a
 **249 MB / 30.6 s emulator hitrace capture** (`reports/20260701141403/.../round0`;
 see `spike/PHASE_A_REPORT.md` §1.2). The export used by this repository was
 generated on 2026-11-14.

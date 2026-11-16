@@ -38,6 +38,17 @@ the interface; every command speaks stable JSON with `--json`.
      in bytes. They cover only the analyzed app (`--app`); an app-less
      analysis reports `mem.measure.degraded` with the reason rather than
      attributing device-wide rows to an app.
+   - The same command also reports, from the trace alone: GC pressure
+     (`gc.*`, counts per phase plus `gc.rate`), VSync cadence anomalies
+     (`vsync.*`, mismatches and high/low-frequency periods scoped to the
+     app's own vsync groups), empty frames (`empty_frame.*`, with HapRay's
+     false-positive filters), RenderService `DisplayNode skip` events
+     reverse-traced to the app frame they belong to (`rs_skip.*`), folded
+     CPU stacks (`flamegraph.*`) and ArkUI component reuse (`components.*`).
+   - `flamegraph.*` needs `--hiperf` on a **debuggable** app; a plain hitrace
+     capture has no `perf_sample` rows and reports `flamegraph.degraded` with
+     that reason. Component reuse needs `H:CustomNode:Build*` events, which a
+     capture without the `ace`/`ark` categories will not have.
 5. Read `evidence[].drillDown`. Each handle names a `tool`, its `args`, and a
    one-line `returns` shape with an optional `estRows`.
 

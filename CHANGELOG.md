@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+### Analyzers
+
+- Six analyzers ported from ArkAnalyzer-HapRay rev `9386e4e`, taking the
+  analyzer count from eight to fourteen:
+  - `gc` — `gc.*`: invocations per phase (full, partial, shared) over the whole
+    `callstack` span, `gc.rate`, and the app's share of perf samples from GC
+    threads. Degrades `gc.perf.share` to a proxy when `perf_sample` is empty.
+  - `vsync` — `vsync.*`: cadence mismatches and high/low-frequency periods,
+    scoped to the app's own vsync groups.
+  - `empty-frame` — `empty_frame.*`: frames that rendered nothing, with
+    HapRay's two false-positive filters.
+  - `rs-skip` — `rs_skip.*`: RenderService `DisplayNode skip` events
+    reverse-traced through NativeWindow, plus a trace-accuracy figure.
+  - `flamegraph` — `flamegraph.*`: folded stacks weighted by
+    `perf_sample.event_count`; needs `--hiperf` on a debuggable app.
+  - `components` — `components.*`: ArkUI component builds and recycle-pool
+    reuse from `H:CustomNode:Build*` events.
+- `round2HalfEven` reproduces Python's `round(x, 2)` (half-even on the exact
+  double) so component-reuse ratios match HapRay at `0.125`.
+
+### Capabilities
+
+- New `trace.ark` capability (Ark-runtime trace events: GC phases and
+  `H:CustomNode` builds). It is a hitrace row gated offline on `callstack`,
+  `thread` and `process`, taking the matrix from 20 to 21 verdicts.
+
+### Library
+
+- `CallstackQuery` gains an `ipids` scope for per-process counts and matching.
+- `PerfQuery` gains `eventCount`, `threadIdsNamed` and `foldedStacks`, so
+  folded-stack aggregation is weighted by `event_count` rather than row count.
+- `resolveAppIpids` is now exported from `@ohos-perf/core`; it maps pids to
+  trace ipids, which are different number spaces.
+
+### Fixes
+
+- `analyze` reports 56 metrics and 92 evidence items on the recorded emulator
+  trace and 55 / 178 on the recorded Mate 60 trace, still byte-identical across
+  runs.
+
 ## 0.1.0 — 2026-11-16
 
 First public release of `@ohos-perf/core` and `@ohos-perf/cli`.
@@ -42,6 +84,6 @@ First public release of `@ohos-perf/core` and `@ohos-perf/cli`.
   plain shell.
 - `coverage` has no known plugin and reports the binary-only verdict.
 - `js.heap` analysis is not implemented; the capability reports why.
-- Remaining HapRay analysis surface (GC, flamegraph, VSync anomaly, empty-frame
-  reverse tracing, UI animation) and `ohos-perf emulator` lifecycle commands
-  are planned.
+- HapRay's UI animation diff is not ported: it needs per-step `pages.json`,
+  element trees and screenshots that no collector in this package produces.
+  The `ohos-perf emulator` lifecycle commands are planned.

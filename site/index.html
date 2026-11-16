@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ohos-perf — HarmonyOS performance, made measurable</title>
-<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace, procfs, hiprofiler, hiperf, hidumper and uitest capture, trace ingest, typed queries, eight analyzers (frames, fault tree, binder, threads, memory, memory measure, startup, render), baseline comparison and a CLI. Deterministic, evidence-backed, zero native dependencies.">
+<meta name="description" content="A TypeScript toolkit for HarmonyOS performance analysis: capability probing, hitrace, procfs, hiprofiler, hiperf, hidumper and uitest capture, trace ingest, typed queries, fourteen analyzers (frames, fault tree, binder, threads, memory, memory measure, startup, render, GC pressure, VSync anomalies, empty frames, RenderService skips, flamegraph stacks, component reuse), baseline comparison and a CLI. Deterministic, evidence-backed, zero native dependencies.">
 <meta property="og:title" content="ohos-perf — HarmonyOS performance, made measurable">
-<meta property="og:description" content="Capability probing, six collectors, trace ingest, typed queries over 88 tables, eight analyzers with HapRay-verified parity, baseline comparison, and a CLI in one TypeScript toolkit.">
+<meta property="og:description" content="Capability probing, six collectors, trace ingest, typed queries over 88 tables, fourteen analyzers with HapRay-verified parity, baseline comparison, and a CLI in one TypeScript toolkit.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://growvv.github.io/ohos-perf/">
 <meta property="og:image" content="https://growvv.github.io/ohos-perf/assets/poster.jpg">
@@ -60,14 +60,14 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P5 are complete — eight analyzers, six collectors, drill-down queries, baseline comparison, 847 tests" data-zh="P1–P5 已完成 — 八个分析器、六个采集器、下钻查询、基线对比、847 个测试">P1–P5 are complete — eight analyzers, six collectors, drill-down queries, baseline comparison, 847 tests</span>
+        <span data-en="P1–P6 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, 906 tests" data-zh="P1–P6 已完成 — 十四个分析器、六个采集器、下钻查询、基线对比、906 个测试">P1–P6 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, 906 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
         <span class="grad" data-en="made measurable." data-zh="从此可度量。">made measurable.</span>
       </h1>
-      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, eight analyzers — frames, fault tree, binder, threads, memory, memory measure, startup, render — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测，hitrace、hiprofiler、procfs、hiperf、hidumper 与 uitest 采集，trace 入库，类型化查询，八个分析器（帧、故障树、binder、线程、内存、内存测量、启动、渲染），基线对比与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
-        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, eight analyzers — frames, fault tree, binder, threads, memory, memory measure, startup, render — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies.
+      <p class="lead reveal" data-en="ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, fourteen analyzers — frames, fault tree, binder, threads, memory, memory measure, startup, render, GC pressure, VSync anomalies, empty frames, RenderService skips, flamegraph stacks, component reuse — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies." data-zh="ohos-perf 把一台鸿蒙设备变成结构化、可追溯的性能数据：能力探测，hitrace、hiprofiler、procfs、hiperf、hidumper 与 uitest 采集，trace 入库，类型化查询，十四个分析器（帧、故障树、binder、线程、内存、内存测量、启动、渲染、GC 压力、VSync 异常、空帧、RenderService 跳过、火焰图栈、组件复用），基线对比与 CLI，全部收在一个零原生依赖的 TypeScript 包里。">
+        ohos-perf turns a HarmonyOS device into structured, evidence-backed performance data. Capability probing, capture through hitrace, hiprofiler, procfs, hiperf, hidumper and uitest, trace ingest, typed queries, fourteen analyzers — frames, fault tree, binder, threads, memory, memory measure, startup, render, GC pressure, VSync anomalies, empty frames, RenderService skips, flamegraph stacks, component reuse — baseline comparison, and a CLI, in one TypeScript toolkit with zero native dependencies.
       </p>
       <div class="cta-row reveal">
         <a class="btn btn-primary" href="#quickstart">
@@ -95,7 +95,7 @@
         </div>
         <pre class="term"><code><span class="p">$</span> <span class="c">ohos-perf analyze ./scene --json</span>
 {
-  <span class="k">"metrics"</span>: [   <span class="cm">/* 39 metrics from the analyzers */</span>
+  <span class="k">"metrics"</span>: [   <span class="cm">/* 56 metrics from the analyzers */</span>
     { <span class="k">"id"</span>: <span class="s">"frame.jank.rate"</span>, <span class="k">"value"</span>: <span class="n">37.267080745341616</span>,
       <span class="k">"unit"</span>: <span class="s">"%"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
@@ -109,22 +109,23 @@
       <span class="k">"unit"</span>: <span class="s">"count"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
                       <span class="k">"table"</span>: <span class="s">"callstack"</span>, <span class="k">"rows"</span>: <span class="n">372</span> } },
-    <span class="cm">/* … 36 more, including binder.latency.avg, thread.*, mem.*, */</span>
-    <span class="cm">/* mem.measure.degraded, render.* */</span>
+    <span class="cm">/* … 53 more, including binder.latency.avg, thread.*, mem.*, gc.*, */</span>
+    <span class="cm">/* vsync.*, empty_frame.*, components.*, degraded proxies */</span>
   ],
-  <span class="k">"evidence"</span>: [ <span class="cm">/* 76 items: 60 jank, 6 fault patterns, 5 binder */</span>
-                 <span class="cm">/* hotspots, 1 startup, 2 no_data, 2 degraded */</span> ]
+  <span class="k">"evidence"</span>: [ <span class="cm">/* 92 items: 60 jank, 7 vsync periods, 6 empty frames, */</span>
+                 <span class="cm">/* 6 fault patterns, 5 binder hotspots, 1 gc, 1 startup, 3 */</span>
+                 <span class="cm">/* no_data and 3 degraded-capability notices */</span> ]
 }</code></pre>
-        <p class="terminal-note reveal" data-en="Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 39 metrics, 76 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的 17.9 MB 真实 trace 的实际输出：39 个指标、76 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from a 17.9 MB trace recorded on a HarmonyOS emulator: 39 metrics, 76 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
+        <p class="terminal-note reveal" data-en="Real output from the recorded emulator trace: 56 metrics, 92 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的真实 trace 的实际输出：56 个指标、92 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from the recorded emulator trace: 56 metrics, 92 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
       </div>
     </div>
   </div>
 
   <div class="wrap">
     <div class="stats reveal">
-      <div class="stat"><b>20</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
-      <div class="stat"><b>8</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>847</b><span data-en="tests pass with a device and spike fixtures; 815 + 32 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 815 通过 + 32 跳过">tests pass with a device and spike fixtures; 815 + 32 skipped on a clean checkout</span></div>
+      <div class="stat"><b>21</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
+      <div class="stat"><b>14</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
+      <div class="stat"><b>906</b><span data-en="tests pass with a device and spike fixtures; 874 + 32 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 874 通过 + 32 跳过">tests pass with a device and spike fixtures; 874 + 32 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -181,9 +182,9 @@
 <section class="section" id="analyzers">
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Analyzers" data-zh="分析器">Analyzers</p>
-    <h2 class="reveal" data-en="Eight analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，八个分析器。每个结论都带证据。">Eight analyzers over one trace. Every finding carries its evidence.</h2>
-    <p class="section-lead reveal" data-en="`analyze` runs all eight against a scene and merges the result into one report: 39 metrics and 76 evidence items on the recorded emulator trace — the eighth, memory measure, finds no `mem.rss` rows on this hitrace trace and reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部八个分析器，合并成一份报告：在录制的模拟器 trace 上产出 39 个指标与 76 条证据（第八个分析器“内存测量”在这条 hitrace trace 上找不到 `mem.rss` 行，因此给出带原因的降级代理值），跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
-      <code>analyze</code> runs all eight against a scene and merges the result into one report: 39 metrics and 76 evidence items on the recorded emulator trace — the eighth, memory measure, finds no <code>mem.rss</code> rows on this hitrace trace and reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
+    <h2 class="reveal" data-en="Fourteen analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，十四个分析器。每个结论都带证据。">Eight analyzers over one trace. Every finding carries its evidence.</h2>
+    <p class="section-lead reveal" data-en="`analyze` runs all fourteen against a scene and merges the result into one report: 56 metrics and 92 evidence items on the recorded emulator trace — memory measure finds no `mem.rss` rows and the flamegraph no `perf_sample` rows on a plain hitrace capture, so each reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部十四个分析器，合并成一份报告：在录制的模拟器 trace 上产出 56 个指标与 92 条证据（纯 hitrace 采集里“内存测量”找不到 `mem.rss` 行、“火焰图”找不到 `perf_sample` 行，因此各自给出带原因的降级代理值），跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
+      <code>analyze</code> runs all fourteen against a scene and merges the result into one report: 56 metrics and 92 evidence items on the recorded emulator trace — memory measure finds no <code>mem.rss</code> rows and the flamegraph no <code>perf_sample</code> rows on a plain hitrace capture, so each reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
     </p>
 
     <div class="table-wrap reveal">
@@ -245,10 +246,46 @@
             <td><code>render.*</code></td>
             <td class="center"><span class="no">—</span></td>
           </tr>
+          <tr>
+            <td><code>gc</code></td>
+            <td data-en="GC invocations by phase (full, partial, shared) over the whole callstack span, plus the app's share of perf samples from GC threads" data-zh="按阶段（full、partial、shared）统计整个 callstack 时间跨度上的 GC 调用次数，以及 GC 线程在 perf 采样中的占比">GC invocations by phase (full, partial, shared) over the whole callstack span, plus the app's share of perf samples from GC threads</td>
+            <td><code>gc.*</code></td>
+            <td class="center"><span class="yes">✓</span></td>
+          </tr>
+          <tr>
+            <td><code>vsync</code></td>
+            <td data-en="VSync cadence mismatches and high/low-frequency periods, scoped to the app's own vsync groups" data-zh="VSync 节奏失配与高频/低频周期，只统计应用自己的 vsync 分组">VSync cadence mismatches and high/low-frequency periods, scoped to the app's own vsync groups</td>
+            <td><code>vsync.*</code></td>
+            <td class="center"><span class="yes">✓</span></td>
+          </tr>
+          <tr>
+            <td><code>empty-frame</code></td>
+            <td data-en="Frames that rendered nothing, with HapRay's two false-positive filters (a NativeWindow/FlushBuffer call, and a sibling frame in the same vsync)" data-zh="没有渲染任何内容的帧，带 HapRay 的两道误报过滤（NativeWindow/FlushBuffer 调用，以及同一 vsync 下的兄弟帧）">Frames that rendered nothing, with HapRay's two false-positive filters (a NativeWindow/FlushBuffer call, and a sibling frame in the same vsync)</td>
+            <td><code>empty_frame.*</code></td>
+            <td class="center"><span class="yes">✓</span></td>
+          </tr>
+          <tr>
+            <td><code>rs-skip</code></td>
+            <td data-en="RenderService `DisplayNode skip` events reverse-traced through NativeWindow to the app frame they belong to, with a trace-accuracy figure" data-zh="RenderService 的 `DisplayNode skip` 事件经 NativeWindow 反向追溯到所属的应用帧，并给出追溯成功率">RenderService <code>DisplayNode skip</code> events reverse-traced through NativeWindow to the app frame they belong to, with a trace-accuracy figure</td>
+            <td><code>rs_skip.*</code></td>
+            <td class="center"><span class="yes">✓</span></td>
+          </tr>
+          <tr>
+            <td><code>flamegraph</code></td>
+            <td data-en="Folded stacks from `perf_sample` weighted by `event_count`, and the app's share of all samples. Needs `--hiperf` on a debuggable app" data-zh="来自 `perf_sample`、按 `event_count` 加权的折叠栈，以及应用在全部采样中的占比。需要可调试应用加 `--hiperf`">Folded stacks from <code>perf_sample</code> weighted by <code>event_count</code>, and the app's share of all samples. Needs <code>--hiperf</code> on a debuggable app</td>
+            <td><code>flamegraph.*</code></td>
+            <td class="center"><span class="no">—</span></td>
+          </tr>
+          <tr>
+            <td><code>components</code></td>
+            <td data-en="ArkUI component builds and recycle-pool reuse from `H:CustomNode:Build*` trace events" data-zh="从 `H:CustomNode:Build*` trace 事件统计 ArkUI 组件构建与复用池命中">ArkUI component builds and recycle-pool reuse from <code>H:CustomNode:Build*</code> trace events</td>
+            <td><code>components.*</code></td>
+            <td class="center"><span class="yes">✓</span></td>
+          </tr>
         </tbody>
       </table>
     </div>
-    <p class="footnote reveal" data-en="Parity means field-level comparison against golden output from ArkAnalyzer-HapRay rev `9386e4e` on two recorded traces. The threads scorer also has a synthetic HapRay golden, because the recorded traces contain no redundant patterns. Frames, memory, memory measure and startup have no HapRay equivalent to compare against, so none is claimed." data-zh="对拍指在两条录制 trace 上与 ArkAnalyzer-HapRay 修订 `9386e4e` 的 golden 输出做逐字段比较。线程评分另有一个 HapRay 生成的合成 golden，因为录制的 trace 中没有冗余线程模式。帧、内存、内存测量与启动没有对应的 HapRay 实现，因此不声称对拍。">Parity means field-level comparison against golden output from ArkAnalyzer-HapRay rev <code>9386e4e</code> on two recorded traces. The threads scorer also has a synthetic HapRay golden, because the recorded traces contain no redundant patterns. Frames, memory, memory measure and startup have no HapRay equivalent to compare against, so none is claimed.</p>
+    <p class="footnote reveal" data-en="Parity means the algorithm was compared field by field against ArkAnalyzer-HapRay rev `9386e4e`. Binder, threads and fault tree are pinned by committed goldens on two recorded traces; the threads scorer and component reuse also have synthetic HapRay goldens, because the traces contain no redundant patterns and no ArkUI build events. VSync, empty frames and RenderService skips reproduce each HapRay rule in their own tests, and their output on both recorded traces was checked against HapRay during development. Frames, memory, memory measure, startup, GC and the flamegraph have no HapRay equivalent that runs on these traces, so none is claimed." data-zh="对拍指算法与 ArkAnalyzer-HapRay 修订 `9386e4e` 做了逐字段比较。binder、线程与故障树由两条录制 trace 上已提交的 golden 固定；线程评分与组件复用另有 HapRay 生成的合成 golden，因为 trace 中没有冗余线程模式、也没有 ArkUI 构建事件。VSync、空帧与 RenderService 跳过在各自的测试中复现了 HapRay 的每条规则，其输出在开发期间也对着 HapRay 在两条录制 trace 上核对过。帧、内存、内存测量、启动、GC 与火焰图没有能在这些 trace 上运行的 HapRay 实现，因此不声称对拍。">Parity means the algorithm was compared field by field against ArkAnalyzer-HapRay rev <code>9386e4e</code>. Binder, threads and fault tree are pinned by committed goldens on two recorded traces; the threads scorer and component reuse also have synthetic HapRay goldens, because the traces contain no redundant patterns and no ArkUI build events. VSync, empty frames and RenderService skips reproduce each HapRay rule in their own tests, and their output on both recorded traces was checked against HapRay during development. Frames, memory, memory measure, startup, GC and the flamegraph have no HapRay equivalent that runs on these traces, so none is claimed.</p>
   </div>
 </section>
 
@@ -256,8 +293,8 @@
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Capability matrix" data-zh="能力矩阵">Capability matrix</p>
     <h2 class="reveal" data-en="Know what the device can actually give you." data-zh="先知道这台设备到底能给你什么。">Know what the device can actually give you.</h2>
-    <p class="section-lead reveal" data-en="Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 19 of 20 capabilities; the HarmonyOS emulator reports 9. Both numbers are first-class results — the missing ones carry a reason." data-zh="实测，而非假设。一台 OpenHarmony 7.0.0.111 的 Mate 60 报告 20 项中 19 项可用；鸿蒙模拟器报告 9 项。两个数字都是一等结果——缺失项会带上原因。">
-      Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 19 of 20 capabilities; the HarmonyOS emulator reports 9. Both numbers are first-class results — the missing ones carry a reason.
+    <p class="section-lead reveal" data-en="Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 20 of 21 capabilities; the HarmonyOS emulator reports 10. Both numbers are first-class results — the missing ones carry a reason." data-zh="实测，而非假设。一台 OpenHarmony 7.0.0.111 的 Mate 60 报告 21 项中 20 项可用；鸿蒙模拟器报告 10 项。两个数字都是一等结果——缺失项会带上原因。">
+      Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 20 of 21 capabilities; the HarmonyOS emulator reports 10. Both numbers are first-class results — the missing ones carry a reason.
     </p>
 
     <div class="table-wrap reveal">
@@ -277,6 +314,7 @@
           <tr><td><code>trace.binder</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>trace.thread_state</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>render.vsync</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>trace.ark</code></td><td><span class="badge hitrace">hitrace</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>perf.samples</code></td><td><span class="badge hiperf">hiperf</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>perf.pmu</code></td><td><span class="badge hiperf">hiperf</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>mem.procfs</code></td><td><span class="badge procfs">procfs</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
@@ -310,7 +348,7 @@
     <ol class="layers">
       <li class="reveal"><span class="ln">L7</span><div><h3>API / CLI / Skill</h3><p data-en="Programmatic API, `ohos-perf` CLI, named `query` drill-downs, `compare` against a baseline, and the shipped `ohos-perf` agent skill." data-zh="编程 API、`ohos-perf` CLI、命名 `query` 下钻、`compare` 基线对比，以及随仓库发布的 `ohos-perf` agent skill。">Programmatic API, <code>ohos-perf</code> CLI, named <code>query</code> drill-downs, <code>compare</code> against a baseline, and the shipped <code>ohos-perf</code> agent skill.</p></div></li>
       <li class="reveal"><span class="ln">L6</span><div><h3>Report</h3><p data-en="Metric and Evidence models, provenance, fidelity, stable ordering." data-zh="Metric 与 Evidence 模型、provenance、保真度、稳定排序。">Metric and Evidence models, provenance, fidelity, stable ordering.</p></div></li>
-      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Eight analyzers: frames, fault tree, binder, threads, memory, memory measure, startup and render, with a capability matrix that degrades what the trace cannot support." data-zh="八个分析器：帧、故障树、binder、线程、内存、内存测量、启动与渲染；能力矩阵会让 trace 不支持的分析器显式降级。">Eight analyzers: frames, fault tree, binder, threads, memory, memory measure, startup and render, with a capability matrix that degrades what the trace cannot support.</p></div></li>
+      <li class="reveal"><span class="ln">L5</span><div><h3>Analyze</h3><p data-en="Fourteen analyzers: frames, fault tree, binder, threads, memory, memory measure, startup, render, GC pressure, VSync, empty frames, RenderService skips, flamegraph and component reuse, with a capability matrix that degrades what the trace cannot support." data-zh="十四个分析器：帧、故障树、binder、线程、内存、内存测量、启动、渲染、GC 压力、VSync、空帧、RenderService 跳过、火焰图与组件复用；能力矩阵会让 trace 不支持的分析器显式降级。">Fourteen analyzers: frames, fault tree, binder, threads, memory, memory measure, startup, render, GC pressure, VSync, empty frames, RenderService skips, flamegraph and component reuse, with a capability matrix that degrades what the trace cannot support.</p></div></li>
       <li class="reveal"><span class="ln">L4</span><div><h3>Query</h3><p data-en="Eleven typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup, perf and memory measurements." data-zh="十一个类型化查询类，覆盖 trace_streamer 产出的 88 张表：帧、进程、线程、调度、瞬时事件、调用栈、binder、线程状态、启动、perf 与内存测量。">Eleven typed query classes over the 88 tables trace_streamer produces: frames, processes, threads, sched, instant, callstacks, binder, thread state, startup, perf and memory measurements.</p></div></li>
       <li class="reveal"><span class="ln">L3</span><div><h3>Ingest</h3><p data-en="trace_streamer wrapper, scene artifact layout, read-only database handle." data-zh="trace_streamer 封装、场景产物布局、只读数据库句柄。">trace_streamer wrapper, scene artifact layout, read-only database handle.</p></div></li>
       <li class="reveal"><span class="ln">L2</span><div><h3>Collectors</h3><p data-en="hitrace, procfs, hiprofiler, hiperf, hidumper and uitest. One `collect` runs every requested collector concurrently: `--procfs` memory samples, `--hiprofiler --plugins gpu,xpower,nativehook,memory` (the memory plugin records per-process `process_measure` without needing an app), `--hiperf` perf.data for a debuggable app (converted into a second perf.db), `--hidumper` render counters, `--uitest` the UI tree. `--app` is required only by the modes that resolve a pid. A failure restores the previous scene's artifacts rather than presenting a partial scene as complete." data-zh="hitrace、procfs、hiprofiler、hiperf、hidumper 与 uitest。一次 `collect` 并发运行所有被请求的采集器：`--procfs` 内存采样、`--hiprofiler --plugins gpu,xpower,nativehook,memory`（memory 插件记录每进程 `process_measure`，无需应用）、`--hiperf` 为可调试应用录制 perf.data（转换成第二个 perf.db）、`--hidumper` 渲染计数、`--uitest` UI 树。只有需要解析 pid 的采集器才必填 `--app`。任一失败都会还原上一份场景产物，而不是把残缺场景当作完整场景。">hitrace, procfs, hiprofiler, hiperf, hidumper and uitest. One <code>collect</code> runs every requested collector concurrently: <code>--procfs</code> memory samples, <code>--hiprofiler --plugins gpu,xpower,nativehook,memory</code> (the memory plugin records per-process <code>process_measure</code> without needing an app), <code>--hiperf</code> perf.data for a debuggable app (converted into a second perf.db), <code>--hidumper</code> render counters, <code>--uitest</code> the UI tree. <code>--app</code> is required only by the modes that resolve a pid. A failure restores the previous scene's artifacts rather than presenting a partial scene as complete.</p></div></li>
@@ -419,12 +457,12 @@ ohos-perf compare ./before ./after --json
       <article class="card reveal">
         <span class="status shipped" data-en="Shipped · v0.1.0" data-zh="已发布 · v0.1.0">Shipped · v0.1.0</span>
         <h3 data-en="The measurable core" data-zh="可度量的内核">The measurable core</h3>
-        <p data-en="P0–P5: capability probing, six collectors, trace ingest, typed queries, eight analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 847 tests, 19 of 20 capabilities driven on a Mate 60." data-zh="P0–P5：能力探测、六个采集器、trace 入库、类型化查询、八个带溯源与保真度的分析器、确定性 JSON、基线对比与 agent skill。847 个测试；在 Mate 60 上驱动 20 项能力中的 19 项。">P0–P5: capability probing, six collectors, trace ingest, typed queries, eight analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 847 tests, 19 of 20 capabilities driven on a Mate 60.</p>
+        <p data-en="P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests, 20 of 21 capabilities driven on a Mate 60." data-zh="P0–P6：能力探测、六个采集器、trace 入库、类型化查询、十四个带溯源与保真度的分析器、确定性 JSON、基线对比与 agent skill。906 个测试；在 Mate 60 上驱动 21 项能力中的 20 项。">P0–P5: capability probing, six collectors, trace ingest, typed queries, eight analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 847 tests, 19 of 20 capabilities driven on a Mate 60.</p>
       </article>
       <article class="card reveal">
-        <span class="status next" data-en="Next · P6" data-zh="下一步 · P6">Next · P6</span>
+        <span class="status shipped" data-en="Shipped on master" data-zh="已在 master 交付">Shipped on master</span>
         <h3 data-en="The rest of the analysis surface" data-zh="剩余的分析面">The rest of the analysis surface</h3>
-        <p data-en="The HapRay analyzers not yet ported: GC event counting, a flamegraph from perf samples, VSync anomaly detection with empty-frame reverse tracing, and the UI component-tree diff. All read data the existing collectors already produce, so each can be pinned against a HapRay golden offline." data-zh="尚未移植的 HapRay 分析器：GC 事件计数、基于 perf 采样的火焰图、带空帧反向追溯的 VSync 异常检测，以及 UI 组件树 diff。它们读取的数据现有采集器已经产出，因此每一个都能离线对拍 HapRay golden。">The HapRay analyzers not yet ported: GC event counting, a flamegraph from perf samples, VSync anomaly detection with empty-frame reverse tracing, and the UI component-tree diff. All read data the existing collectors already produce, so each can be pinned against a HapRay golden offline.</p>
+        <p data-en="P6: GC pressure, VSync anomaly periods, empty frames with HapRay's false-positive filters, RenderService skips reverse-traced through NativeWindow, folded flamegraph stacks, and ArkUI component reuse. Every one is pinned against HapRay rev 9386e4e — on the recorded traces where they have data, on synthetic goldens where they do not. HapRay's UI animation diff stays out: it needs per-step pages.json, element trees and screenshots no collector here produces." data-zh="P6：GC 压力、VSync 异常周期、带 HapRay 误报过滤的空帧、经 NativeWindow 反向追溯的 RenderService 跳过、折叠火焰图栈，以及 ArkUI 组件复用。每一项都对拍 HapRay 修订 9386e4e——有数据的部分用录制 trace，没数据的部分用合成 golden。HapRay 的 UI 动画 diff 仍不在范围内：它需要每步的 pages.json、元素树与截图，而本包的采集器都不产出这些。">P6: GC pressure, VSync anomaly periods, empty frames with HapRay's false-positive filters, RenderService skips reverse-traced through NativeWindow, folded flamegraph stacks, and ArkUI component reuse. Every one is pinned against HapRay rev 9386e4e — on the recorded traces where they have data, on synthetic goldens where they do not. HapRay's UI animation diff stays out: it needs per-step pages.json, element trees and screenshots no collector here produces.</p>
       </article>
       <article class="card reveal">
         <span class="status next" data-en="Next · P7" data-zh="下一步 · P7">Next · P7</span>
