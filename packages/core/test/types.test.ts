@@ -82,6 +82,7 @@ const VALUE_EXPORTS = [
   'Hdc', 'HdcNotFoundError', 'HiperfCollector', 'hiperfRecordCommand',
   'HitraceCollector', 'HiprofilerCollector',
   'IngestError', 'InstantQuery', 'MAX_QUERY_LIMIT', 'MIN_BUFFER_PAGES', 'MemoryAnalyzer',
+  'MemoryMeasureAnalyzer',
   'OhosPerfError', 'PLANE_A_PLUGINS', 'PerfQuery',
   'ProcessQuery', 'RenderAnalyzer', 'Scene', 'UitestCollector',
   'ProcfsCollector', 'parseFpsCounts', 'parseHitches', 'parseProcfsStatus',

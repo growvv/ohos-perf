@@ -77,7 +77,7 @@ describe('MemMeasureQuery', () => {
 
   it('returns [] when the scene has no process_measure table', () => {
     expect(new MemMeasureQuery(emptyDb()).all()).toEqual([]);
-    expect(new MemMeasureQuery(emptyDb()).forPids([42])).toEqual([]);
+    expect(new MemMeasureQuery(emptyDb()).forIpids([42])).toEqual([]);
     expect(new MemMeasureQuery(emptyDb()).filters()).toEqual([]);
     expect(new MemMeasureQuery(emptyDb()).hasTable()).toBe(false);
   });
@@ -101,7 +101,9 @@ describe('MemMeasureQuery', () => {
     ]);
   });
 
-  it('filters by pid on the filter table and returns [] for an empty list', () => {
+  it('filters by ipid on the filter table and returns [] for an empty list', () => {
+    // The filter column holds ipids, not pids: a pid here would match nothing
+    // or another process (measured: sceneboard ipid 117 vs pid 6500).
     const q = new MemMeasureQuery(dbWith(
       [{ ts: 1000, filterId: 1 }, { ts: 1000, filterId: 2 }],
       [
@@ -109,8 +111,8 @@ describe('MemMeasureQuery', () => {
         { id: 2, name: 'mem.rss', ipid: 43 },
       ],
     ));
-    expect(q.forPids([43]).map((row) => row.ipid)).toEqual([43]);
-    expect(q.forPids([])).toEqual([]);
+    expect(q.forIpids([43]).map((row) => row.ipid)).toEqual([43]);
+    expect(q.forIpids([])).toEqual([]);
   });
 
   it('filters on the nanosecond range inclusively', () => {

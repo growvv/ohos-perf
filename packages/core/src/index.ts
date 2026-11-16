@@ -163,6 +163,7 @@ export type {
 } from './analyze/threads-wakeup';
 export { ThreadAnalyzer, computeThreadAnalysis } from './analyze/threads-score';
 export { MemoryAnalyzer } from './analyze/memory';
+export { MemoryMeasureAnalyzer } from './analyze/mem-measure';
 export { StartupAnalyzer } from './analyze/startup';
 export { RenderAnalyzer } from './analyze/render';
 export type {

@@ -9,6 +9,7 @@ import {
   FrameQuery,
   Hdc,
   InstantQuery,
+  MemMeasureQuery,
   OhosPerfError,
   PerfQuery,
   ProcessQuery,
@@ -104,7 +105,7 @@ const OFFLINE_PROBE = (): CapabilityState['probe'] =>
 /** An available state in the offline matrix, with the exact probe shape. */
 function offlineState(
   id: CapabilityId,
-  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest',
+  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest' | 'hiprofiler',
 ): CapabilityState {
   return {
     id,
@@ -144,7 +145,7 @@ export interface SceneArtifacts {
 
 const TABLE_RULES: ReadonlyArray<{
   id: CapabilityId;
-  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest';
+  collector: 'hitrace' | 'procfs' | 'hiperf' | 'hidumper' | 'uitest' | 'hiprofiler';
   tables: readonly string[];
   /**
    * The rule's tables must live in the perf database, and the first must hold
@@ -163,6 +164,18 @@ const TABLE_RULES: ReadonlyArray<{
   { id: 'render.fps_live', collector: 'hidumper', tables: ['hidumper.json'] },
   { id: 'ui.tree', collector: 'uitest', tables: ['ui.json'] },
   { id: 'perf.samples', collector: 'hiperf', tables: ['perf_sample'], perf: true },
+  // `mem.native_hook` is the design's hiprofiler-memory row. Offline it is
+  // satisfied by the memory-plugin tables, exactly as `trace.frames` is
+  // satisfied by `frame_slice` + `process` rather than by the hitrace binary.
+  // The analyzer joins both tables, so a trace missing the filter table would
+  // crash rather than degrade; requiring both keeps the matrix honest. An
+  // ftrace-only scene does not offer it, and the engine reports `mem-measure`
+  // as skipped.
+  {
+    id: 'mem.native_hook',
+    collector: 'hiprofiler',
+    tables: ['process_measure', 'process_measure_filter'],
+  },
 ];
 
 /** Whether one rule's table name is satisfied by the scene's artifacts. */
@@ -288,6 +301,9 @@ async function analyzeScene(
       perf: new PerfQuery(opened.scene.perfDb ?? db),
       binder: new BinderQuery(db),
       startup: new StartupQuery(db),
+      // memory-plugin writes an .htrace that converts into trace.db, so the
+      // tables are in `db`, not in the separate perf database.
+      memMeasure: new MemMeasureQuery(db),
       ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
       ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
       ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),

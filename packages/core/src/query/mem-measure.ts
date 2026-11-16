@@ -99,14 +99,18 @@ export class MemMeasureQuery {
   }
 
   /**
-   * Measures whose filter `ipid` is one of `pids`.
+   * Measures whose filter `ipid` is one of `ipids`.
    *
-   * An empty `pids` returns `[]` without issuing `IN ()`.
+   * **The argument is an `ipid`, not a `pid`.** `process_measure_filter.ipid`
+   * is the trace database's internal process id: measured on the Mate 60,
+   * sceneboard has `ipid=117` and `pid=6500`, so passing a pid would silently
+   * return another process's rows (or none). `ProcessQuery.byPid` is the safe
+   * pid→ipid step. An empty `ipids` returns `[]` without issuing `IN ()`.
    */
-  forPids(pids: number[], range?: TimeRange): ProcessMeasure[] {
-    if (pids.length === 0) return [];
-    const placeholders = pids.map(() => '?').join(', ');
-    return this.select(` WHERE f.ipid IN (${placeholders})`, pids, range);
+  forIpids(ipids: number[], range?: TimeRange): ProcessMeasure[] {
+    if (ipids.length === 0) return [];
+    const placeholders = ipids.map(() => '?').join(', ');
+    return this.select(` WHERE f.ipid IN (${placeholders})`, ipids, range);
   }
 
   /** Every filter row, ordered by `id`. */

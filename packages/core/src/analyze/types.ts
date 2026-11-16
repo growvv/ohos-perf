@@ -6,6 +6,7 @@ import type { SceneMetadata } from '../ingest/metadata';
 import type { BinderQuery } from '../query/binder';
 import type { CallstackQuery } from '../query/callstack';
 import type { FrameQuery } from '../query/frames';
+import type { MemMeasureQuery } from '../query/mem-measure';
 import type { PerfQuery } from '../query/perf';
 import type { ProcessQuery, ThreadQuery } from '../query/process';
 import type { InstantQuery, SchedQuery } from '../query/sched';
@@ -51,6 +52,12 @@ export interface AnalyzeContext {
   perf?: PerfQuery;
   binder?: BinderQuery;
   startup?: StartupQuery;
+  /**
+   * The memory-plugin tables (`process_measure` joined to its filter). Present
+   * only when the scene was captured with `hiprofiler: { plugins: ['memory'] }`;
+   * the analyzer degrades with a reason when it is absent.
+   */
+  memMeasure?: MemMeasureQuery;
   procfs?: ProcfsSample[];
   /** RenderService counter snapshots; present only when a hidumper capture ran. */
   hidumper?: HidumperCapture;
