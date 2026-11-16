@@ -96,10 +96,10 @@ describe('buildMatrix', () => {
 });
 
 describe('buildMatrix availability rules', () => {
-  it('emits exactly the 22 spec capability ids', () => {
+  it('emits exactly the 23 spec capability ids', () => {
     const ids = buildMatrix(FULL_DEVICE).all().map((s) => s.id);
-    expect(ids).toHaveLength(22);
-    expect(new Set(ids).size).toBe(22);
+    expect(ids).toHaveLength(23);
+    expect(new Set(ids).size).toBe(23);
   });
 
   it('serves hilog.stream from the hilog binary', () => {

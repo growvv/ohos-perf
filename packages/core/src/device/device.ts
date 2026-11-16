@@ -26,6 +26,7 @@ import { HilogCollector } from '../collectors/hilog';
 import { HiperfCollector, hiperfEventsFor, type HiperfCapture } from '../collectors/hiperf';
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import { UitestCollector } from '../collectors/uitest';
+import { ScreenshotCollector, type ScreenshotCapture } from '../collectors/screenshot';
 import type { UiNode } from '../query/ui';
 import type { TraceCollectOptions } from '../collectors/types';
 import { frameDelta } from '../analyze/render';
@@ -97,6 +98,13 @@ export interface CollectOptions extends TraceCollectOptions {
   /** Also dump the on-screen UI tree. */
   uitest?: boolean;
   /**
+   * Also capture a screenshot of the whole screen.
+   *
+   * Independent of `uitest`: a screenshot without a tree is a valid capture,
+   * and the UI analyzer reports the half that is missing rather than zeros.
+   */
+  screenshot?: boolean;
+  /**
    * Also stream the device's `hilog` for `durationMs`.
    *
    * `hilog` is device-wide and needs no app, so this works on an app-less
@@ -126,6 +134,7 @@ export interface DeviceDeps {
   hiperf?: HiperfCollector;
   hidumper?: HidumperCollector;
   uitest?: UitestCollector;
+  screenshot?: ScreenshotCollector;
   hilog?: HilogCollector;
   gesture?: GestureDriver;
 }
@@ -202,7 +211,9 @@ export class Device {
   async collect(opts: CollectOptions): Promise<CollectSession> {
     const caps = await this.capabilities();
     const require = (
-      id: 'trace.frames' | 'perf.samples' | 'render.fps_live' | 'ui.tree' | 'hilog.stream',
+      id:
+        | 'trace.frames' | 'perf.samples' | 'render.fps_live' | 'ui.tree'
+        | 'ui.capture' | 'hilog.stream',
     ): void => {
       if (caps.has(id)) return;
       const reason = caps.get(id)?.reason;
@@ -219,6 +230,7 @@ export class Device {
     if (opts.hiperf !== undefined) require('perf.samples');
     if (opts.hidumper === true) require('render.fps_live');
     if (opts.uitest === true) require('ui.tree');
+    if (opts.screenshot === true) require('ui.capture');
     if (opts.hilog === true) require('hilog.stream');
 
     return {
@@ -314,6 +326,7 @@ export class Device {
         const wantsHiperf = opts.hiperf !== undefined;
         const wantsHidumper = opts.hidumper === true;
         const wantsUitest = opts.uitest === true;
+        const wantsScreenshot = opts.screenshot === true;
         const wantsHilog = opts.hilog === true;
         // Only hiperf needs a pid. hidumper and uitest read the whole screen,
         // so they work with no app at all.
@@ -360,6 +373,7 @@ export class Device {
         }
         if (wantsHidumper) remember(layout.hidumperFile);
         if (wantsUitest) remember(layout.uiFile);
+        if (wantsScreenshot) remember(layout.screenshotFile);
         if (wantsHilog) {
           remember(layout.hilogFile);
           remember(layout.hilogJsonlFile);
@@ -446,6 +460,7 @@ export class Device {
         let hiperfCapture: HiperfCapture | undefined;
         let hidumperCapture: HidumperCapture | undefined;
         let uiNodes: UiNode[] | undefined;
+        let screenshotCapture: ScreenshotCapture | undefined;
         let hilogLines: number | undefined;
         try {
           // Every requested collector starts in the same tick with the same
@@ -477,6 +492,10 @@ export class Device {
                 ? {}
                 : { callStacks: opts.hiperf.callStacks }),
             }, layout));
+          }
+          if (wantsScreenshot) {
+            const screenshot = this.deps.screenshot ?? new ScreenshotCollector();
+            runs.push(screenshot.collect(hdc, this.id, {}, layout));
           }
           if (wantsHidumper) {
             const hidumper = this.deps.hidumper ?? new HidumperCollector();
@@ -522,6 +541,7 @@ export class Device {
           if (wantsHiperf) hiperfCapture = results[index++] as HiperfCapture;
           if (wantsHidumper) hidumperCapture = results[index++] as HidumperCapture;
           if (wantsUitest) uiNodes = results[index++] as UiNode[];
+          if (wantsScreenshot) screenshotCapture = results[index++] as ScreenshotCapture;
           if (wantsHilog) hilogLines = (results[index] as { lines: number }).lines;
         } catch (err) {
           // Every collector has settled, so nothing can overwrite the restored
@@ -589,6 +609,7 @@ export class Device {
         }
         if (!wantsHidumper) removeIfPresent(layout.hidumperFile);
         if (!wantsUitest) removeIfPresent(layout.uiFile);
+        if (!wantsScreenshot) removeIfPresent(layout.screenshotFile);
         if (!wantsHilog) {
           removeIfPresent(layout.hilogFile);
           removeIfPresent(layout.hilogJsonlFile);
@@ -622,6 +643,7 @@ export class Device {
               ...(wantsHiperf ? ['hiperf'] : []),
               ...(wantsHidumper ? ['hidumper'] : []),
               ...(wantsUitest ? ['uitest'] : []),
+              ...(wantsScreenshot ? ['screenshot'] : []),
               ...(wantsHilog ? ['hilog'] : []),
             ],
             // A zero-count capture is recorded explicitly: "the collector ran
@@ -634,6 +656,7 @@ export class Device {
               ? {}
               : { hidumper: { frames: frameDelta(hidumperCapture).frames } }),
             ...(uiNodes === undefined ? {} : { uitest: { nodes: uiNodes.length } }),
+            ...(screenshotCapture === undefined ? {} : { screenshot: screenshotCapture }),
             ...(hilogLines === undefined ? {} : { hilog: { lines: hilogLines } }),
           },
         });

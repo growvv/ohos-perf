@@ -116,6 +116,8 @@ export type {
   HidumperCapture,
 } from './collectors/hidumper';
 export { UitestCollector, DEVICE_UI_PATH } from './collectors/uitest';
+export { ScreenshotCollector, DEVICE_SCREENSHOT_PATH } from './collectors/screenshot';
+export type { ScreenshotCapture } from './collectors/screenshot';
 export { HilogCollector, HILOG_COMMAND, readHilogText } from './collectors/hilog';
 export { parseHilogLine, parseHilogText } from './hilog/parse';
 export type { HilogLevel, HilogLine, HilogParseOptions } from './hilog/parse';

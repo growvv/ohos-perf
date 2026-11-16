@@ -15,7 +15,7 @@ export type CapabilityId =
   | 'perf.samples' | 'perf.pmu'
   | 'mem.procfs' | 'mem.native_hook' | 'mem.gpu'
   | 'render.fps_live' | 'render.hitch' | 'render.vsync'
-  | 'ui.tree' | 'ui.gesture'
+  | 'ui.tree' | 'ui.gesture' | 'ui.capture'
   | 'power.xpower' | 'net.io' | 'disk.io' | 'js.heap' | 'coverage'
   | 'hilog.stream'
   | 'startup.app_startup';
@@ -222,6 +222,9 @@ const RULES: Rule[] = [
   { id: 'render.hitch', collector: 'hidumper', binary: 'hidumper' },
 
   { id: 'ui.tree', collector: 'uitest', binary: 'uitest' },
+  // The same `uitest` binary; the collector's own `ScreenCap saved to` marker
+  // check is what proves the command works on this device.
+  { id: 'ui.capture', collector: 'uitest', binary: 'uitest' },
   // Driven by GestureDriver over `uitest uiInput`, measured working over plain
   // shell on the Mate 60. The old "needs the AAMS test framework" claim
   // belonged to `uitest uiRecord`, a different command.

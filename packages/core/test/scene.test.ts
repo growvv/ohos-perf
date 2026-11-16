@@ -69,6 +69,7 @@ describe('createSceneLayout', () => {
       hilogFile: join(dir, 'hilog.log'),
       hilogJsonlFile: join(dir, 'hilog.jsonl'),
       uiFile: join(dir, 'ui.json'),
+      screenshotFile: join(dir, 'screenshot.png'),
       metadataFile: join(dir, 'scene.json'),
     });
   });
@@ -151,6 +152,7 @@ describe('ingestScene', () => {
       hilogFile: join(root, 'hilog.log'),
       hilogJsonlFile: join(root, 'hilog.jsonl'),
       uiFile: join(root, 'ui.json'),
+      screenshotFile: join(root, 'screenshot.png'),
       metadataFile: join(root, 'scene.json'),
     };
     const { streamer, calls } = fakeStreamer();
@@ -220,6 +222,7 @@ describe('ingestScene', () => {
       hilogFile: join(root, 'hilog.log'),
       hilogJsonlFile: join(root, 'hilog.jsonl'),
       uiFile: join(root, 'ui.json'),
+      screenshotFile: join(root, 'screenshot.png'),
       metadataFile: join(root, 'scene.json'),
     };
     const { streamer, calls } = fakeStreamer();

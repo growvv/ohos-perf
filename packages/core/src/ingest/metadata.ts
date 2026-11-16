@@ -49,6 +49,12 @@ export interface SceneMetadata {
      */
     uitest?: { nodes: number };
     /**
+     * Present only when a screenshot capture ran. `bytes` is the size of
+     * `screenshot.png`; a capture that produced a zero-byte or undecodable file
+     * is a failure, so the counts here are always positive.
+     */
+    screenshot?: { width: number; height: number; bytes: number };
+    /**
      * Present only when a hilog capture ran. `lines` may be 0 only if the
      * collector succeeded on an empty stream, which it treats as a failure;
      * the field records the count the collector reported.
@@ -88,6 +94,21 @@ function isCountRecord(
   return isRecord(value) && Number.isSafeInteger(value[key]) && (value[key] as number) >= 0;
 }
 
+/**
+ * A screenshot descriptor is three positive integers: an image with no pixels
+ * or no bytes is not one the collector can produce, so it is untrustworthy.
+ */
+function isScreenshotRecord(
+  value: unknown,
+): value is { width: number; height: number; bytes: number } {
+  return (
+    isRecord(value) &&
+    Number.isSafeInteger(value.width) && (value.width as number) > 0 &&
+    Number.isSafeInteger(value.height) && (value.height as number) > 0 &&
+    Number.isSafeInteger(value.bytes) && (value.bytes as number) > 0
+  );
+}
+
 function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture']> {
   return (
     isRecord(value) &&
@@ -97,6 +118,7 @@ function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture'
     (value.hiperf === undefined || isCountRecord(value.hiperf, 'samples')) &&
     (value.hidumper === undefined || isCountRecord(value.hidumper, 'frames')) &&
     (value.uitest === undefined || isCountRecord(value.uitest, 'nodes')) &&
+    (value.screenshot === undefined || isScreenshotRecord(value.screenshot)) &&
     (value.hilog === undefined || isCountRecord(value.hilog, 'lines'))
   );
 }
@@ -186,6 +208,15 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
       ...(parsed.capture.uitest === undefined
         ? {}
         : { uitest: { nodes: parsed.capture.uitest.nodes } }),
+      ...(parsed.capture.screenshot === undefined
+        ? {}
+        : {
+            screenshot: {
+              width: parsed.capture.screenshot.width,
+              height: parsed.capture.screenshot.height,
+              bytes: parsed.capture.screenshot.bytes,
+            },
+          }),
       ...(parsed.capture.hilog === undefined
         ? {}
         : { hilog: { lines: parsed.capture.hilog.lines } }),

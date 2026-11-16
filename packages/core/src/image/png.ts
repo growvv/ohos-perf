@@ -221,7 +221,7 @@ export function decodePng(bytes: Uint8Array): RgbaImage {
   }
 
   const data = new Uint8Array(width * height * 4);
-  let previous = new Uint8Array(rowBytes);
+  let previous: Uint8Array = new Uint8Array(rowBytes);
   for (let y = 0; y < height; y += 1) {
     const start = y * (1 + rowBytes);
     const filter = raw[start];
