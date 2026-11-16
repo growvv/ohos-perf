@@ -9,6 +9,7 @@
  */
 
 const COORDINATE = /^\d+$/;
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 export function parseCoordinate(raw: string, label: string): number {
   const value = Number(raw);
@@ -37,4 +38,16 @@ export function parseKey(raw: string): string | number {
   throw new Error(
     `invalid <key>: expected Back, Home, Power or a positive key code, got ${JSON.stringify(raw)}`,
   );
+}
+
+export function parseText(raw: string): string {
+  if (raw === '') {
+    throw new Error('invalid <text>: expected a non-empty string');
+  }
+  if (CONTROL_CHARS.test(raw)) {
+    throw new Error(
+      `invalid <text>: expected no control characters, got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
 }

@@ -35,14 +35,14 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P8 are complete**: 1041 tests (1032 unit, 9 in the device
+**P1 through P8 are complete**: 1043 tests (1034 unit, 9 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1007 passed, 25
+attached device are absent — `npm run test:unit` reports **1009 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-eight device-gated skips, so the combined clean checkout is **1008 passed, 33
-skipped**. With both fixtures present and a device attached all 1041 pass. The
+eight device-gated skips, so the combined clean checkout is **1010 passed, 33
+skipped**. With both fixtures present and a device attached all 1043 pass. The
 fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
 `query-sched-state` and the CLI `index` end-to-end tests. The nine tests in
@@ -324,7 +324,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 1041 tests; 1008 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1043 tests; 1010 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
 ```
 
 `npm test` builds both packages first, so a clean checkout is never red.

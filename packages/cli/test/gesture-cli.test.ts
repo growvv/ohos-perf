@@ -90,6 +90,28 @@ describe('ohos-perf gesture', () => {
     expect(emitted[0].stderr).toMatch(/invalid --velocity/);
   });
 
+  it('rejects empty text before any device call', async () => {
+    let called = false;
+    const emitted = await parseWith((req) => { called = true; return ok(req); },
+      ['gesture', 'text', '']);
+    expect(called).toBe(false);
+    expect(emitted[0].stdout).toBe('');
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stderr).toMatch(/invalid <text>/);
+    expect(emitted[0].stderr).toMatch(/non-empty/);
+  });
+
+  it('rejects text with a control character before any device call', async () => {
+    let called = false;
+    const emitted = await parseWith((req) => { called = true; return ok(req); },
+      ['gesture', 'input', '500', '500', 'line\nbreak']);
+    expect(called).toBe(false);
+    expect(emitted[0].stdout).toBe('');
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stderr).toMatch(/invalid <text>/);
+    expect(emitted[0].stderr).toMatch(/control character/);
+  });
+
   it('emits the core result under --json', async () => {
     const emitted = await parseWith(ok, ['gesture', 'click', '500', '800', '--json']);
     expect(JSON.parse(emitted[0].stdout)).toEqual({

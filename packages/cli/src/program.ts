@@ -19,7 +19,7 @@ import {
   type EmulatorTargetOptions,
 } from './commands';
 import { parseDurationSeconds, parsePluginList } from './collect';
-import { parseCoordinate, parseKey, parseVelocity } from './gesture';
+import { parseCoordinate, parseKey, parseText, parseVelocity } from './gesture';
 import { parseLimit, parseQueryArgs } from './query';
 
 /**
@@ -516,7 +516,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         action: 'inputText',
         x: parseCoordinate(x, '<x>'),
         y: parseCoordinate(y, '<y>'),
-        text,
+        text: parseText(text),
       }),
       opts,
     );
@@ -528,7 +528,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       .description('type text at the focused field')
       .argument('<text>', 'text to type; quote it when it contains spaces'),
   ).action(async (text: string, opts: { target?: string; json?: boolean }) => {
-    await sendGesture(() => ({ action: 'text', text }), opts);
+    await sendGesture(() => ({ action: 'text', text: parseText(text) }), opts);
   });
 
   return program;
