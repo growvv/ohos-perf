@@ -1,4 +1,4 @@
-import { OhosPerfError, resolveQueryLimit } from '@ohos-perf/core';
+import { MAX_QUERY_LIMIT, OhosPerfError, resolveQueryLimit } from '@ohos-perf/core';
 
 /**
  * `query`'s flag parsers.
@@ -22,7 +22,26 @@ export function parseQueryArgs(raw: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Parse `--limit` with the same bounds the library enforces. */
+/**
+ * Parse `--limit` with the same bounds the library enforces.
+ *
+ * A non-integer is rejected here rather than coerced: `Number('abc')` is
+ * `NaN`, and a message about `NaN` does not tell the caller which value was
+ * wrong. `resolveQueryLimit` still owns the range rule and its message.
+ */
 export function parseLimit(raw: string): number {
-  return resolveQueryLimit(Number(raw));
+  const text = raw.trim();
+  const bad = (): OhosPerfError =>
+    new OhosPerfError(
+      `limit must be an integer between 1 and ${MAX_QUERY_LIMIT}, got ${JSON.stringify(raw)}`,
+      { code: 'QUERY_BAD_LIMIT' },
+    );
+  if (!/^-?\d+$/.test(text)) throw bad();
+  try {
+    return resolveQueryLimit(Number(text));
+  } catch {
+    // The range rule is the library's; only the message is re-worded so it
+    // names the value the caller typed.
+    throw bad();
+  }
 }

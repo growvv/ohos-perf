@@ -98,8 +98,9 @@ function numberArg(
   name: string,
 ): number {
   const value = args[name];
+  if (value === undefined) throw badArgs(query, `missing number argument "${name}"`);
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw badArgs(query, `missing number argument "${name}"`);
+    throw badArgs(query, `argument "${name}" must be a finite number`);
   }
   return value;
 }
@@ -110,8 +111,9 @@ function stringArg(
   name: string,
 ): string {
   const value = args[name];
+  if (value === undefined) throw badArgs(query, `missing string argument "${name}"`);
   if (typeof value !== 'string' || value === '') {
-    throw badArgs(query, `missing string argument "${name}"`);
+    throw badArgs(query, `argument "${name}" must be a non-empty string`);
   }
   return value;
 }

@@ -1,0 +1,9 @@
+# Repository storage is LF; the working tree follows core.autocrlf. Tests that
+# read files normalise line endings themselves (see cli/test/skill.test.ts).
+* text=auto
+
+*.db binary
+*.data binary
+*.htrace binary
+*.jpg binary
+*.png binary

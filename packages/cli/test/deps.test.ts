@@ -809,11 +809,20 @@ describe('realDeps().query', () => {
         }),
       ]);
 
-      rmSync(join(parent, 'scene.json'));
+      // An explicit --app must win over a descriptor that names a different,
+      // absent app; deleting scene.json would only prove the flag works when
+      // there is nothing to conflict with.
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.other', processNames: ['com.other'] },
+        pids: [9999], deviceId: 't1',
+        capture: { startedAtMs: 0, durationMs: 1, collectors: ['hitrace'] },
+      }));
       const fromFlag = await realDeps('0.0.0').query({
         sceneDir: parent, name: 'binder.processStats', app: 'com.demo',
       });
       expect(fromFlag.rows).toHaveLength(1);
+      rmSync(join(parent, 'scene.json'));
 
       const withoutApp = await realDeps('0.0.0').query({
         sceneDir: parent, name: 'binder.processStats',

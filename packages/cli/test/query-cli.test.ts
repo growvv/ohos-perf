@@ -44,6 +44,11 @@ describe('parseLimit', () => {
       expect(() => parseLimit(raw)).toThrowError(/between 1 and 1000/);
     }
   });
+
+  it('names the offending --limit value', () => {
+    expect(() => parseLimit('abc')).toThrowError(/got "abc"/);
+    expect(() => parseLimit('0')).toThrowError(/got "0"/);
+  });
 });
 
 describe('runQuery', () => {

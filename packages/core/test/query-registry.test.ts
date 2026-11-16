@@ -266,6 +266,32 @@ describe('runNamedQuery', () => {
     }
   });
 
+  it('names a wrongly typed argument as wrong, not missing', () => {
+    try {
+      runNamedQuery(ctx, 'frames.get', { id: '2' });
+      expect.unreachable();
+    } catch (err) {
+      expect((err as OhosPerfError).code).toBe('QUERY_BAD_ARGS');
+      expect((err as OhosPerfError).message).toContain('must be a finite number');
+      expect((err as OhosPerfError).message).not.toContain('missing');
+    }
+    try {
+      runNamedQuery(ctx, 'frames.all', { window: { startNs: 1, endNs: 'x' } });
+      expect.unreachable();
+    } catch (err) {
+      expect((err as OhosPerfError).message).toContain('must be a finite number');
+    }
+  });
+
+  it('reports an absent required argument as missing', () => {
+    try {
+      runNamedQuery(ctx, 'frames.get', {});
+      expect.unreachable();
+    } catch (err) {
+      expect((err as OhosPerfError).message).toContain('missing');
+    }
+  });
+
   it('rejects wrong argument types with QUERY_BAD_ARGS', () => {
     expect(codeOf(() => runNamedQuery(ctx, 'frames.get', {}))).toBe('QUERY_BAD_ARGS');
     expect(codeOf(() => runNamedQuery(ctx, 'frames.get', { id: '2' }))).toBe('QUERY_BAD_ARGS');

@@ -27,12 +27,16 @@ import { runDrillDown, type QueryContext } from '../src/query/registry';
 const here = dirname(fileURLToPath(import.meta.url));
 const DB = process.env.OHOS_PERF_E2E_DB ?? join(here, '../../../spike/out/emu_big.db');
 const HAVE_DB = existsSync(DB);
+const REQUIRED = process.env.OHOS_PERF_E2E_REQUIRED === '1';
 
-if (!HAVE_DB) {
-  console.warn(
-    `[drilldown-e2e] skipped: fixture not found at ${DB}; ` +
-      'set the trace path env var or run the spike conversion',
+if (!HAVE_DB && REQUIRED) {
+  throw new Error(
+    `OHOS_PERF_E2E_REQUIRED=1 but the drill-down fixture is missing at ${DB}. ` +
+      'Run the spike conversion or unset the variable.',
   );
+}
+if (!HAVE_DB) {
+  console.warn(`[drilldown-e2e] skipped: fixture not found at ${DB}`);
 }
 
 function available(id: CapabilityId) {
@@ -99,6 +103,14 @@ describe.skipIf(!HAVE_DB)('drill-down on a recorded trace', () => {
         expect(r.rows.length, `${handle.tool} returned too many rows`).toBeLessThanOrEqual(5);
         expect(r.total).toBeGreaterThanOrEqual(r.rows.length);
         expect(r.truncated).toBe(r.total > r.rows.length);
+        // The fixture is known to populate these; an empty result would mean
+        // the analyzer or the query regressed while the envelope stayed valid.
+        const NON_EMPTY = new Set([
+          'binder.processStats', 'callstack.matching', 'callstack.range', 'frames.get',
+        ]);
+        if (NON_EMPTY.has(handle.tool)) {
+          expect(r.total, `${handle.tool} returned no rows`).toBeGreaterThan(0);
+        }
         // Determinism: the same handle resolves identically twice.
         expect(JSON.stringify(runDrillDown(queryCtx, handle, { limit: 5 })))
           .toBe(JSON.stringify(r));

@@ -261,7 +261,7 @@ describe('command wiring', () => {
     expect(called).toBe(false);
     expect(emitted).toEqual([{
       stdout: '',
-      stderr: 'limit must be an integer between 1 and 1000, got 0\n',
+      stderr: 'limit must be an integer between 1 and 1000, got "0"\n',
       exitCode: 1,
     }]);
   });

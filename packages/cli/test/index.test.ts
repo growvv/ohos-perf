@@ -218,6 +218,28 @@ describe.skipIf(!distExists)('cli entry point', () => {
     }
   });
 
+  it('runs query against a scene with --json', () => {
+    // The pure command layer and the deps layer are both covered elsewhere;
+    // this is the only test that proves `query` works through the built
+    // entry point (argument parsing, io.emit and the exit code).
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-index-query-'));
+    try {
+      createTraceDb(join(dir, 'trace.db'));
+      const r = run(['query', dir, 'frames.all',
+        '--args', '{"window":{"startNs":0,"endNs":2000}}', '--limit', '2', '--json']);
+      expect(r.status).toBe(0);
+      expect(cliStderr(r.stderr)).toBe('');
+      const parsed = JSON.parse(r.stdout) as {
+        query: string; rows: unknown[]; total: number; truncated: boolean;
+      };
+      expect(parsed.query).toBe('frames.all');
+      expect(parsed.rows.length).toBeLessThanOrEqual(2);
+      expect(parsed.truncated).toBe(parsed.total > parsed.rows.length);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // I1: a scene.json written by collect supplies the app without --app.
   it.skipIf(!existsSync(spikeDb))('analyzes a real scene from its scene.json without --app', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ohosperf-index-'));
