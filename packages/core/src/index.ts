@@ -126,6 +126,7 @@ export { CallstackQuery } from './query/callstack';
 export type { CallstackEvent, CallstackEventWithArgs } from './query/callstack';
 export { PerfQuery } from './query/perf';
 export type {
+  FoldedStack,
   PerfCallchain,
   PerfFunction,
   PerfSampleRow,
@@ -179,6 +180,7 @@ export { EmptyFrameAnalyzer, filterEmptyFrames } from './analyze/empty-frame';
 export type { EmptyFrameFilter } from './analyze/empty-frame';
 export { RsSkipAnalyzer, computeRsSkip } from './analyze/rs-skip';
 export type { RsSkipFrame, RsSkipResult } from './analyze/rs-skip';
+export { FlamegraphAnalyzer } from './analyze/flamegraph';
 export type {
   BelowThresholdPattern,
   CallchainSample,

@@ -352,6 +352,41 @@ describe('PerfQuery', () => {
       many.close();
     }
   });
+
+  it('folds callchains into semicolon-joined stacks weighted by event_count', () => {
+    const stacks = new PerfQuery(perfDb).foldedStacks([100], { startNs: 0, endNs: 2000 }, 10);
+    expect(stacks[0]).toEqual({
+      stack: 'Foo();Bar();raw2;raw3', leaf: 'raw3', samples: 12,
+    });
+  });
+
+  it('orders folded stacks by samples desc, then stack string asc', () => {
+    // Thread 100 has chain 10 (12 samples) and chain 13 (2 samples). Thread 101
+    // adds chain 11 (3). Equal weights must not fall back to row order, so the
+    // tie between two 1-sample stacks is broken by the stack string.
+    const tie = withDb('perf-tie.db', (d) => {
+      d.exec(PERF_SAMPLE_DDL);
+      d.exec(PERF_CALLCHAIN_DDL);
+      d.exec(PERF_FILES_DDL);
+      d.exec(`INSERT INTO perf_sample VALUES
+        (0, 20, 100, 900, 1, 1, 100, 0, 'S'),
+        (1, 21, 200, 900, 1, 1, 200, 0, 'S')`);
+      // Chain 20 folds to `zeta`, chain 21 to `alpha`; both weigh 1.
+      d.exec(`INSERT INTO perf_callchain VALUES
+        (0, 20, 0, 0, 0, 0, NULL, NULL, 'zeta', 0, 0),
+        (1, 21, 0, 0, 0, 0, NULL, NULL, 'alpha', 0, 0)`);
+    });
+    try {
+      const stacks = new PerfQuery(tie).foldedStacks([900], { startNs: 0, endNs: 1000 }, 10);
+      expect(stacks.map((s) => s.stack)).toEqual(['alpha', 'zeta']);
+    } finally {
+      tie.close();
+    }
+  });
+
+  it('returns nothing for an empty thread list', () => {
+    expect(new PerfQuery(perfDb).foldedStacks([], { startNs: 0, endNs: 2000 }, 10)).toEqual([]);
+  });
 });
 
 describe('real trace smoke', () => {

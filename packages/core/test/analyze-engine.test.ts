@@ -15,6 +15,7 @@ import { BinderAnalyzer } from '../src/analyze/binder';
 import { EmptyFrameAnalyzer } from '../src/analyze/empty-frame';
 import { FaultTreeAnalyzer } from '../src/analyze/fault-tree';
 import { FrameAnalyzer } from '../src/analyze/frames';
+import { FlamegraphAnalyzer } from '../src/analyze/flamegraph';
 import { GcAnalyzer } from '../src/analyze/gc';
 import { MemoryAnalyzer } from '../src/analyze/memory';
 import { MemoryMeasureAnalyzer } from '../src/analyze/mem-measure';
@@ -338,6 +339,7 @@ describe('defaultAnalyzers', () => {
       'vsync',
       'empty-frame',
       'rs-skip',
+      'flamegraph',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FaultTreeAnalyzer);
@@ -351,6 +353,7 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[9]).toBeInstanceOf(VsyncAnalyzer);
     expect(analyzers[10]).toBeInstanceOf(EmptyFrameAnalyzer);
     expect(analyzers[11]).toBeInstanceOf(RsSkipAnalyzer);
+    expect(analyzers[12]).toBeInstanceOf(FlamegraphAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

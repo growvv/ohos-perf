@@ -77,6 +77,7 @@ const VALUE_EXPORTS = [
   'DEFAULT_QUERY_LIMIT', 'DEVICE_PERF_PATH', 'DEVICE_UI_PATH', 'DeviceNotFoundError',
   'EmptyFrameAnalyzer',
   'FaultTreeAnalyzer',
+  'FlamegraphAnalyzer',
   'FPS_COMMAND', 'flattenUiTree', 'FrameAnalyzer', 'FrameQuery', 'FTRACE_CATEGORIES',
   'GcAnalyzer', 'computeGc',
   'HidumperCollector', 'HIPROFILER_PLUGIN_NAMES', 'HITCH_COMMAND',

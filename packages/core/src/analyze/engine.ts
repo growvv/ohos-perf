@@ -5,6 +5,7 @@ import { metric, type Metric } from '../report/metric';
 import { BinderAnalyzer } from './binder';
 import { EmptyFrameAnalyzer } from './empty-frame';
 import { FaultTreeAnalyzer } from './fault-tree';
+import { FlamegraphAnalyzer } from './flamegraph';
 import { FrameAnalyzer } from './frames';
 import { GcAnalyzer } from './gc';
 import { MemoryAnalyzer } from './memory';
@@ -190,5 +191,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new VsyncAnalyzer(),
     new EmptyFrameAnalyzer(),
     new RsSkipAnalyzer(),
+    new FlamegraphAnalyzer(),
   ];
 }

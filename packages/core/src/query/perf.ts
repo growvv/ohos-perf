@@ -46,6 +46,19 @@ export interface PerfCallchain {
   functions: PerfFunction[];
 }
 
+/**
+ * One folded stack, in the format `flamegraph.pl` and every flamegraph viewer
+ * understands: `a;b;c` with `samples` samples ending at `c`.
+ */
+export interface FoldedStack {
+  /** Semicolon-joined symbol path, root first. */
+  stack: string;
+  /** The last symbol on the stack — the frame the samples were taken in. */
+  leaf: string;
+  /** Summed `event_count` of every sample folded into this stack. */
+  samples: number;
+}
+
 interface PerfThreadRow {
   id: number | null;
   thread_id: number | null;
@@ -263,14 +276,101 @@ ORDER BY thread_id, callchain_id`,
       ...new Set(uniqueThreadIds.flatMap((id) => chainIdsByThread.get(id) ?? [])),
     ].sort((a, b) => a - b);
     if (allChainIds.length === 0) return [];
-    if (!this.hasTable('perf_callchain') || !this.hasTable('perf_files')) return [];
+
+    const functionsByChain = this.chainFunctions(allChainIds);
+
+    const chains: PerfCallchain[] = [];
+    const limit = Math.max(0, maxChainsPerThread);
+    for (const threadId of uniqueThreadIds) {
+      const chainIds = (chainIdsByThread.get(threadId) ?? []).slice(0, limit);
+      for (const callchainId of chainIds) {
+        const functions = functionsByChain.get(callchainId);
+        // A chain with no frames is skipped, as upstream does.
+        if (functions === undefined || functions.length === 0) continue;
+        chains.push({ threadId, callchainId, functions });
+      }
+    }
+    return chains;
+  }
+
+  /**
+   * Folds every sample of `threadIds` in `range` into semicolon-joined stacks.
+   *
+   * Deliberately **not** built on {@link callchains}: that method caps at 50
+   * chain ids and 20 chains per thread (HapRay's UI budget), which would
+   * silently drop samples from an aggregate. This reads every distinct
+   * `callchain_id` the samples reference and weights each by `event_count` —
+   * the sample's weight, not 1 row.
+   *
+   * Stacks are sorted by `samples` descending then `stack` ascending, so equal
+   * weights never fall back to row order, and sliced to `top`. A chain with no
+   * frames contributes nothing. An empty `threadIds`, a missing
+   * `perf_callchain`/`perf_files`, or no samples in range yields `[]`.
+   */
+  foldedStacks(
+    threadIds: readonly number[],
+    range: TimeRange,
+    top: number,
+  ): FoldedStack[] {
+    if (threadIds.length === 0 || !this.hasTable('perf_sample')) return [];
+    const uniqueThreadIds = [...new Set(threadIds)];
+
+    const samples = this.db.query<{ callchain_id: number | null; weight: number | null }>(
+      `SELECT callchain_id, SUM(event_count) AS weight
+FROM perf_sample
+WHERE thread_id IN (${placeholders(uniqueThreadIds.length)})
+  AND timestamp_trace >= ? AND timestamp_trace <= ?
+  AND callchain_id IS NOT NULL
+GROUP BY callchain_id
+ORDER BY callchain_id`,
+      [...uniqueThreadIds, range.startNs, range.endNs],
+    );
+    const chainIds = samples.map((row) => num(row.callchain_id));
+    if (chainIds.length === 0) return [];
+
+    const functionsByChain = this.chainFunctions(chainIds);
+    const weights = new Map<number, number>();
+    for (const row of samples) {
+      weights.set(num(row.callchain_id), num(row.weight));
+    }
+
+    const folded = new Map<string, number>();
+    for (const callchainId of chainIds) {
+      const functions = functionsByChain.get(callchainId);
+      if (functions === undefined || functions.length === 0) continue;
+      const stack = functions.map((fn) => fn.symbol).join(';');
+      folded.set(stack, (folded.get(stack) ?? 0) + (weights.get(callchainId) ?? 0));
+    }
+
+    return [...folded.entries()]
+      .map(([stack, samples]) => ({
+        stack,
+        leaf: stack.slice(stack.lastIndexOf(';') + 1),
+        samples,
+      }))
+      .sort((a, b) => (a.samples !== b.samples ? b.samples - a.samples : a.stack < b.stack ? -1 : a.stack > b.stack ? 1 : 0))
+      .slice(0, Math.max(0, top));
+  }
+
+  /**
+   * Resolves each chain id to its frames, ordered by `depth`.
+   *
+   * Symbols resolve through `perf_files` by the exact `(file_id, serial_id)`
+   * pair first and by `file_id` alone as the fallback; a frame with neither
+   * keeps its raw `perf_callchain.name`. A missing `perf_callchain` or
+   * `perf_files` yields an empty map (nothing can be resolved).
+   */
+  private chainFunctions(chainIds: readonly number[]): Map<number, PerfFunction[]> {
+    const resolved = new Map<number, PerfFunction[]>();
+    if (chainIds.length === 0) return resolved;
+    if (!this.hasTable('perf_callchain') || !this.hasTable('perf_files')) return resolved;
 
     const frames = this.db.query<PerfFrameRow>(
       `SELECT callchain_id, depth, file_id, symbol_id, name
 FROM perf_callchain
-WHERE callchain_id IN (${placeholders(allChainIds.length)})
+WHERE callchain_id IN (${placeholders(chainIds.length)})
 ORDER BY callchain_id, depth, id`,
-      allChainIds,
+      [...chainIds],
     );
     const framesByChain = new Map<number, PerfFrameRow[]>();
     for (const frame of frames) {
@@ -299,44 +399,37 @@ ORDER BY id`,
     const exactSymbols = new Map<string, PerfFunction>();
     const fileSymbols = new Map<number, PerfFunction>();
     for (const file of files) {
-      const resolved: PerfFunction = {
+      const symbol: PerfFunction = {
         symbol: str(file.symbol).trim(),
         name: str(file.symbol).trim(),
         filePath: str(file.path).trim(),
       };
       const fileId = num(file.file_id);
-      if (!fileSymbols.has(fileId)) fileSymbols.set(fileId, resolved);
+      if (!fileSymbols.has(fileId)) fileSymbols.set(fileId, symbol);
       const key = `${fileId}:${num(file.serial_id)}`;
-      if (!exactSymbols.has(key)) exactSymbols.set(key, resolved);
+      if (!exactSymbols.has(key)) exactSymbols.set(key, symbol);
     }
 
-    const chains: PerfCallchain[] = [];
-    const limit = Math.max(0, maxChainsPerThread);
-    for (const threadId of uniqueThreadIds) {
-      const chainIds = (chainIdsByThread.get(threadId) ?? []).slice(0, limit);
-      for (const callchainId of chainIds) {
-        const chainFrames = framesByChain.get(callchainId) ?? [];
-        if (chainFrames.length === 0) continue;
-        const functions: PerfFunction[] = [];
-        for (const frame of chainFrames) {
-          const rawSymbol = str(frame.name).trim();
-          let functionName = rawSymbol;
-          let filePath = '';
-          if (frame.file_id != null && frame.symbol_id != null) {
-            const resolved =
-              exactSymbols.get(`${num(frame.file_id)}:${num(frame.symbol_id)}`) ??
-              fileSymbols.get(num(frame.file_id));
-            if (resolved) {
-              functionName = resolved.symbol;
-              filePath = resolved.filePath;
-            }
+    for (const [callchainId, chainFrames] of framesByChain) {
+      const functions: PerfFunction[] = [];
+      for (const frame of chainFrames) {
+        const rawSymbol = str(frame.name).trim();
+        let functionName = rawSymbol;
+        let filePath = '';
+        if (frame.file_id != null && frame.symbol_id != null) {
+          const match =
+            exactSymbols.get(`${num(frame.file_id)}:${num(frame.symbol_id)}`) ??
+            fileSymbols.get(num(frame.file_id));
+          if (match) {
+            functionName = match.symbol;
+            filePath = match.filePath;
           }
-          functions.push({ symbol: functionName, name: functionName, filePath });
         }
-        chains.push({ threadId, callchainId, functions });
+        functions.push({ symbol: functionName, name: functionName, filePath });
       }
+      resolved.set(callchainId, functions);
     }
-    return chains;
+    return resolved;
   }
 
   private hasTable(name: string): boolean {
