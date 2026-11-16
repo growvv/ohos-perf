@@ -53,7 +53,16 @@ export interface AnalyzeOutput {
     unit: string;
     fidelity: string;
   }>;
-  evidence: ReadonlyArray<{ kind: string }>;
+  /**
+   * Only `kind` is rendered, but the implementation returns core's full
+   * evidence items. `signals` is admitted here so a caller can read the
+   * measurement that produced an item (the tests do) without the renderer
+   * depending on it; a fake may still supply just `{ kind }`.
+   */
+  evidence: ReadonlyArray<{
+    kind: string;
+    signals?: Readonly<Record<string, number | string>>;
+  }>;
 }
 
 /** The arguments `collect` forwards to the IO layer. */
