@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';import { fileURLToPath } from 'node:url';
 import type { Scene, SceneLayout } from '@ohos-perf/core';
+import { encodePng } from '@ohos-perf/core';
 import {
   manifestPath, offlineCapabilities, packageVersion, realDeps,
   type CapabilityMatrixDb,
@@ -340,6 +341,61 @@ describe('realDeps().analyze', () => {
       // mem.procfs is absent from the matrix, so the degraded reason names it.
       const degraded = result.evidence.filter((e) => e.kind === 'degraded_capability');
       expect(degraded.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('decodes a declared screenshot.png for the ui analyzer', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-analyze-shot-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'screenshot.png'), encodePng({
+        width: 3, height: 2,
+        data: new Uint8Array(3 * 2 * 4).fill(200),
+      }));
+      writeMeta(parent, ['hitrace', 'screenshot']);
+      const result = await realDeps('0.0.0').analyze(parent);
+      const width = result.metrics.find((m) => m.id === 'ui.screenshot.width');
+      expect(width?.value).toBe(3);
+      expect(width?.fidelity).toBe('exact');
+      // No ui.json in this scene: the tree half degrades on its own.
+      expect(result.metrics.find((m) => m.id === 'ui.nodes.count')?.fidelity).toBe('proxy');
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('degrades the image half with the decoder message, not a crash', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-analyze-shot-bad-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'screenshot.png'), new Uint8Array([1, 2, 3, 4]));
+      writeMeta(parent, ['hitrace', 'screenshot']);
+      const result = await realDeps('0.0.0').analyze(parent);
+      const width = result.metrics.find((m) => m.id === 'ui.screenshot.width');
+      expect(width?.fidelity).toBe('proxy');
+      expect(width?.degraded?.reason).toMatch(/not a PNG/);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('ignores a screenshot.png that scene.json does not list', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-analyze-shot-stale-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'screenshot.png'), encodePng({
+        width: 3, height: 2,
+        data: new Uint8Array(3 * 2 * 4).fill(200),
+      }));
+      writeMeta(parent, ['hitrace']);
+      const result = await realDeps('0.0.0').analyze(parent);
+      // Neither artifact is declared, so the analyzer takes its no-data path
+      // rather than reading the stale file: no exact image metric appears.
+      const ids = result.metrics.map((m) => m.id);
+      expect(ids).toContain('ui.degraded');
+      expect(ids).not.toContain('ui.screenshot.width');
     } finally {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -1359,7 +1415,7 @@ describe('realDeps().query', () => {
       'hilog.around', 'hilog.matches', 'hilog.rules',
       'mem.native.callchain', 'mem.native.categories', 'mem.native.timeline',
       'mem.native.unreleased',
-      'threads.pattern', 'ui.get',
+      'threads.pattern', 'ui.get', 'ui.tree',
     ]);
   });
 });

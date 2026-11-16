@@ -863,6 +863,23 @@ const DEFINITIONS: NamedQueryDefinition[] = [
       );
     },
   },
+  {
+    name: 'ui.tree',
+    description:
+      'The captured UI tree with every attribute the UI diff compares, in document order.',
+    args: [],
+    returns: 'UiNode[]',
+    parseArgs(args) {
+      rejectUnknownArgs('ui.tree', args, []);
+    },
+    run(ctx) {
+      // A query answers over the scene it was opened on, and this one's
+      // consumer is the diff: it needs `boundsRect` and the raw attribute map,
+      // which `ui.get` deliberately drops. The tree was flattened with
+      // `{ full: true }` by the caller, so the rows already carry them.
+      return [...(ctx.uiTree ?? [])];
+    },
+  },
 ];
 
 const BY_NAME = new Map(DEFINITIONS.map((definition) => [definition.name, definition]));

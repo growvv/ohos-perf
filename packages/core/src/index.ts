@@ -125,8 +125,14 @@ export {
   compileRules, matchRules, DEFAULT_HILOG_RULES,
 } from './hilog/rules';
 export type { CompiledRule, HilogMatch, HilogRule } from './hilog/rules';
-export { flattenUiTree, readUiTree } from './query/ui';
+export { flattenUiTree, readUiTree, parseBounds } from './query/ui';
 export type { UiNode } from './query/ui';
+export { decodePng, encodePng } from './image/png';
+export type { RgbaImage } from './image/png';
+export { compareImages, dhash, markRegions } from './image/diff';
+export type { ImageComparison, Rect } from './image/diff';
+export { diffTrees, nodeIdentity, IGNORED_ATTRIBUTES, GEOMETRY_TOLERANCE_PX } from './ui/diff';
+export type { UiTreeDiff, UiTreeDifference } from './ui/diff';
 export type { Collector, TraceCollectOptions } from './collectors/types';
 
 // Ingestion
@@ -241,6 +247,7 @@ export type { NativeCategory } from './analyze/native-kinds';
 export { StartupAnalyzer } from './analyze/startup';
 export { RenderAnalyzer } from './analyze/render';
 export { HilogAnalyzer } from './analyze/hilog';
+export { UiAnalyzer } from './analyze/ui';
 export { GcAnalyzer, computeGc } from './analyze/gc';
 export type { GcSignals } from './analyze/gc';
 export { VsyncAnalyzer, computeVsyncAnomalies } from './analyze/vsync';

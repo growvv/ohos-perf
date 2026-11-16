@@ -27,6 +27,8 @@ import { RenderAnalyzer } from '../src/analyze/render';
 import { RsSkipAnalyzer } from '../src/analyze/rs-skip';
 import { ThreadAnalyzer } from '../src/analyze/threads-score';
 import { VsyncAnalyzer } from '../src/analyze/vsync';
+import { HilogAnalyzer } from '../src/analyze/hilog';
+import { UiAnalyzer } from '../src/analyze/ui';
 import {
   defaultAnalyzers,
   runAnalyzerSections,
@@ -367,6 +369,7 @@ describe('defaultAnalyzers', () => {
       'flamegraph',
       'components',
       'hilog',
+      'ui',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FrameLoadAnalyzer);
@@ -384,6 +387,8 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[13]).toBeInstanceOf(RsSkipAnalyzer);
     expect(analyzers[14]).toBeInstanceOf(FlamegraphAnalyzer);
     expect(analyzers[15]).toBeInstanceOf(ComponentReuseAnalyzer);
+    expect(analyzers[16]).toBeInstanceOf(HilogAnalyzer);
+    expect(analyzers[17]).toBeInstanceOf(UiAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

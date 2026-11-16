@@ -105,7 +105,7 @@ afterAll(() => {
 });
 
 describe('queryDefinitions', () => {
-  it('lists the nineteen registered names in sorted order', () => {
+  it('lists the twenty registered names in sorted order', () => {
     expect(queryDefinitions().map((d) => d.name)).toEqual([
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
       'frame.load.files', 'frame.load.symbols', 'frame.load.threads',
@@ -113,7 +113,7 @@ describe('queryDefinitions', () => {
       'hilog.around', 'hilog.matches', 'hilog.rules',
       'mem.native.callchain', 'mem.native.categories', 'mem.native.timeline',
       'mem.native.unreleased',
-      'threads.pattern', 'ui.get',
+      'threads.pattern', 'ui.get', 'ui.tree',
     ]);
   });
 
@@ -270,6 +270,23 @@ describe('runNamedQuery', () => {
     } catch (err) {
       expect((err as OhosPerfError).code).toBe('QUERY_BAD_ARGS');
     }
+  });
+
+  it('returns the full tree, attributes included, from ui.tree', () => {
+    const tree: QueryContext = { ...ctx, uiTree: [
+      { depth: 0, type: 'root', bundleName: 'com.demo', abilityName: '', text: '', id: '',
+        bounds: '[0,0][10,10]', clickable: false, enabled: true, scrollable: false,
+        children: 0, boundsRect: { left: 0, top: 0, right: 10, bottom: 10 },
+        attributes: { type: 'root', bounds: '[0,0][10,10]' } },
+    ] };
+    const r = runNamedQuery(tree, 'ui.tree', {});
+    expect(r.total).toBe(1);
+    expect(r.rows).toEqual([expect.objectContaining({
+      type: 'root',
+      boundsRect: { left: 0, top: 0, right: 10, bottom: 10 },
+      attributes: { type: 'root', bounds: '[0,0][10,10]' },
+    })]);
+    expect(runNamedQuery(ctx, 'ui.tree', {}).total).toBe(0);
   });
 
   it('returns no thread patterns without app pids', () => {

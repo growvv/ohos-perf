@@ -22,6 +22,7 @@ import {
   ThreadStateQuery,
   connect,
   createSceneLayout,
+  decodePng,
   defaultAnalyzers,
   ingestScene,
   lookupQuery,
@@ -59,6 +60,7 @@ import {
   type HilogLine,
   type ProcfsSample,
   type TimeRange,
+  type RgbaImage,
   type UiNode,
   type Scene,
   type SceneLayout,
@@ -166,6 +168,8 @@ export interface SceneArtifacts {
   hidumper?: HidumperCapture;
   /** Flattened UI nodes; absent when the scene carried no trusted `ui.json`. */
   uiTree?: readonly unknown[];
+  /** A decoded `screenshot.png`; absent when the scene carried none. */
+  screenshot?: RgbaImage;
   /** Parsed log rows; absent when the scene carried no trusted `hilog.log`. */
   hilog?: readonly unknown[];
 }
@@ -204,6 +208,7 @@ const TABLE_RULES: ReadonlyArray<{
   { id: 'mem.procfs', collector: 'procfs', tables: ['procfs.jsonl'] },
   { id: 'render.fps_live', collector: 'hidumper', tables: ['hidumper.json'] },
   { id: 'ui.tree', collector: 'uitest', tables: ['ui.json'] },
+  { id: 'ui.capture', collector: 'uitest', tables: ['screenshot.png'] },
   { id: 'hilog.stream', collector: 'hilog', tables: ['hilog.log'] },
   { id: 'perf.samples', collector: 'hiperf', tables: ['perf_sample'], perf: true },
   // `mem.native_hook` is the design's hiprofiler-memory row, and two plugins
@@ -233,6 +238,8 @@ function artifactPresent(name: string, artifacts: SceneArtifacts): boolean {
       return artifacts.hidumper !== undefined;
     case 'ui.json':
       return (artifacts.uiTree?.length ?? 0) > 0;
+    case 'screenshot.png':
+      return artifacts.screenshot !== undefined;
     case 'hilog.log':
       return (artifacts.hilog?.length ?? 0) > 0;
     default:
@@ -241,7 +248,9 @@ function artifactPresent(name: string, artifacts: SceneArtifacts): boolean {
 }
 
 /** Table names in the rules that are scene artifacts rather than DB tables. */
-const ARTIFACT_NAMES = new Set(['procfs.jsonl', 'hidumper.json', 'ui.json', 'hilog.log']);
+const ARTIFACT_NAMES = new Set([
+  'procfs.jsonl', 'hidumper.json', 'ui.json', 'screenshot.png', 'hilog.log',
+]);
 
 /**
  * Build the offline capability matrix from what the scene actually contains.
@@ -309,6 +318,13 @@ interface OpenedScene {
   caps: CapabilityMatrix;
   /** The scene's flattened UI tree, when it carried a `ui.json`. */
   uiTree?: readonly UiNode[];
+  /** The scene's decoded screenshot, when it carried a readable `screenshot.png`. */
+  screenshot?: RgbaImage;
+  /**
+   * Why a `screenshot.png` that exists could not be decoded. Kept so the `ui`
+   * analyzer reports the decoder's message instead of claiming no capture.
+   */
+  screenshotError?: string;
   /** The scene's render counters, when it carried a trusted `hidumper.json`. */
   hidumper?: HidumperCapture;
   /**
@@ -351,6 +367,9 @@ function analyzeContext(opened: OpenedScene) {
     // tables are in `db`, not in the separate perf database.
     memMeasure: new MemMeasureQuery(db),
     ...(opened.samples.length > 0 ? { procfs: opened.samples } : {}),
+    ...(opened.uiTree === undefined ? {} : { ui: opened.uiTree }),
+    ...(opened.screenshot === undefined ? {} : { screenshot: opened.screenshot }),
+    ...(opened.screenshotError === undefined ? {} : { screenshotError: opened.screenshotError }),
     ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
     ...(opened.hilog === undefined ? {} : { hilog: [...opened.hilog] }),
     ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
@@ -573,6 +592,19 @@ export function realDeps(
       // A UI dump is a scene artifact, not a table: the query layer receives
       // the flattened rows, and a scene without one simply has no tree.
       const uiTree = declared('uitest') ? readUiTree(layout.uiFile) : undefined;
+      // The screenshot is decoded here, not in the analyzer: a decode failure
+      // is a reason the UI section reports, never a crash that loses the rest
+      // of the analysis. An absent file is simply no capture.
+      const screenshotFile = declared('screenshot') ? layout.screenshotFile : undefined;
+      let screenshot: RgbaImage | undefined;
+      let screenshotError: string | undefined;
+      if (screenshotFile !== undefined && existsSync(screenshotFile)) {
+        try {
+          screenshot = decodePng(new Uint8Array(readFileSync(screenshotFile)));
+        } catch (err) {
+          screenshotError = safeMessage(err);
+        }
+      }
       // The log is captured raw and parsed here, not at capture time, so a
       // parser change is a re-analysis. The year is the capture's, which only
       // scene.json knows; a hand-built scene without one reads raw rows.
@@ -622,11 +654,14 @@ export function realDeps(
             procfsSamples: samples,
             ...(hidumper === undefined ? {} : { hidumper }),
             ...(uiTree === undefined ? {} : { uiTree }),
+            ...(screenshot === undefined ? {} : { screenshot }),
             ...(hilog === undefined ? {} : { hilog }),
           },
           scene.perfDb,
         ),
         ...(uiTree === undefined ? {} : { uiTree }),
+        ...(screenshot === undefined ? {} : { screenshot }),
+        ...(screenshotError === undefined ? {} : { screenshotError }),
         ...(hidumper === undefined ? {} : { hidumper }),
         ...(hilog === undefined ? {} : { hilog }),
       };

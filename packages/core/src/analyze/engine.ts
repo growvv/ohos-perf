@@ -18,6 +18,7 @@ import { StartupAnalyzer } from './startup';
 import { RenderAnalyzer } from './render';
 import { RsSkipAnalyzer } from './rs-skip';
 import { ThreadAnalyzer } from './threads-score';
+import { UiAnalyzer } from './ui';
 import { VsyncAnalyzer } from './vsync';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
@@ -241,5 +242,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new FlamegraphAnalyzer(),
     new ComponentReuseAnalyzer(),
     new HilogAnalyzer(),
+    new UiAnalyzer(),
   ];
 }

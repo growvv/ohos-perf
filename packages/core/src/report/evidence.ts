@@ -17,7 +17,8 @@ export type EvidenceKind =
   | 'hilog_match'
   | 'gc_pressure'
   | 'rs_skip'
-  | 'startup';
+  | 'startup'
+  | 'ui_tree';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.

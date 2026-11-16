@@ -2,6 +2,7 @@ import type { CapabilityId, CapabilityMatrix } from '../device/capability';
 import type { HidumperCapture } from '../collectors/hidumper';
 import type { ProcfsSample } from '../collectors/procfs';
 import type { QueryHandle } from '../db/driver';
+import type { RgbaImage } from '../image/png';
 import type { SceneMetadata } from '../ingest/metadata';
 import type { HilogLine } from '../hilog/parse';
 import type { HilogRule } from '../hilog/rules';
@@ -17,6 +18,7 @@ import type { ThreadStateQuery } from '../query/thread-state';
 import type { Evidence } from '../report/evidence';
 import type { Metric } from '../report/metric';
 import type { AppIdentity, TimeRange } from '../types';
+import type { UiNode } from '../query/ui';
 
 /**
  * Everything an analyzer needs, assembled by the orchestration layer.
@@ -74,6 +76,25 @@ export interface AnalyzeContext {
    * with no user configuration still produces HapRay's numbers.
    */
   hilogRules?: readonly HilogRule[];
+  /**
+   * The scene's flattened UI tree, when it carried a `ui.json`. The `ui`
+   * analyzer decides from what it is given rather than declaring `ui.tree` as a
+   * requirement: a scene can carry a dump captured on a different device, and a
+   * missing artifact is a degradation with a reason, not a skipped analyzer.
+   */
+  ui?: readonly UiNode[];
+  /**
+   * The scene's decoded screenshot, when it carried a `screenshot.png`. Decoded
+   * by the caller so the analyzer performs no IO; a decode failure reaches it
+   * as an absent field plus a reason.
+   */
+  screenshot?: RgbaImage;
+  /**
+   * Why a `screenshot.png` that exists could not be decoded. Present only when
+   * the file was there and the decoder refused it, so the image half degrades
+   * with the decoder's own message instead of claiming no capture happened.
+   */
+  screenshotError?: string;
   metadata?: SceneMetadata;
   app: AppIdentity;
   window: TimeRange;

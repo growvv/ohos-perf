@@ -106,6 +106,7 @@ export const SECTION_TITLES: Readonly<Record<string, string>> = {
   'rs-skip': 'RenderService skips',
   startup: 'Startup',
   threads: 'Threads',
+  ui: 'UI',
   vsync: 'VSync',
 };
 

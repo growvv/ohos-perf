@@ -59,6 +59,8 @@ export interface AnalyzeOutput {
     value: number | string;
     unit: string;
     fidelity: string;
+    /** Present when the value is a placeholder; a renderer may say why. */
+    degraded?: { reason: string; fallback: string };
   }>;
   /**
    * Only `kind` is rendered, but the implementation returns core's full

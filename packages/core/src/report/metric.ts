@@ -3,9 +3,11 @@ import type { TimeRange } from '../types';
 
 /**
  * Unit of a metric value. `none` is for dimensionless values such as rates,
- * ratios expressed as plain numbers, or identifiers.
+ * ratios expressed as plain numbers, or identifiers. `hash` is a computed
+ * fingerprint (a dHash), not a measurement: it is a string, and comparing two
+ * of them is a separate operation from comparing numbers.
  */
-export type MetricUnit = 'ms' | 'fps' | '%' | 'count' | 'bytes' | 'none';
+export type MetricUnit = 'ms' | 'fps' | '%' | 'count' | 'bytes' | 'none' | 'hash';
 
 /**
  * Where a metric came from.

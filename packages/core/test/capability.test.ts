@@ -140,7 +140,18 @@ describe('buildMatrix availability rules', () => {
     expect(m.get('startup.app_startup')!.collector).toBe('hiprofiler');
     expect(m.get('render.hitch')!.collector).toBe('hidumper');
     expect(m.get('ui.tree')!.collector).toBe('uitest');
+    expect(m.get('ui.capture')!.collector).toBe('uitest');
     expect(m.get('ui.gesture')!.collector).toBe('uitest');
+  });
+
+  it('gates ui.capture on the uitest binary, like the tree and gesture rows', () => {
+    expect(buildMatrix(FULL_DEVICE).get('ui.capture')!.available).toBe(true);
+    const s = buildMatrix({
+      ...FULL_DEVICE,
+      binaries: { ...FULL_DEVICE.binaries, uitest: false },
+    }).get('ui.capture')!;
+    expect(s.available).toBe(false);
+    expect(s.reason).toBe('uitest not present on device');
   });
 
   it('marks mem.procfs available even when every binary is absent', () => {
@@ -184,6 +195,7 @@ describe('buildMatrix availability rules', () => {
   it('uses the binary-name reason for other missing binaries', () => {
     const m = buildMatrix({ ...FULL_DEVICE, binaries: { ...FULL_DEVICE.binaries, uitest: false } });
     expect(m.get('ui.tree')!.reason).toBe('uitest not present on device');
+    expect(m.get('ui.capture')!.reason).toBe('uitest not present on device');
     expect(m.get('ui.gesture')!.reason).toBe('uitest not present on device');
   });
 
