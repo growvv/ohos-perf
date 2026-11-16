@@ -53,6 +53,10 @@ export type {
 export { runProbe } from './device/probe';
 export type { ProbeSnapshot, DeviceIdentity, ProbeRunner } from './device/probe';
 
+// UI gesture injection
+export { GestureDriver } from './device/gesture';
+export type { Gesture, GestureResult } from './device/gesture';
+
 // Emulator lifecycle
 export { EmulatorClient, EmulatorLifecycle } from './device/emulator';
 export type {

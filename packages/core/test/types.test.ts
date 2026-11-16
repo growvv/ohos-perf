@@ -82,7 +82,7 @@ const VALUE_EXPORTS = [
   'FaultTreeAnalyzer',
   'FlamegraphAnalyzer',
   'FPS_COMMAND', 'flattenUiTree', 'FrameAnalyzer', 'FrameQuery', 'FTRACE_CATEGORIES',
-  'GcAnalyzer', 'computeGc',
+  'GcAnalyzer', 'computeGc', 'GestureDriver',
   'HidumperCollector', 'HIPROFILER_PLUGIN_NAMES', 'HITCH_COMMAND',
   'HITRACE_DEFAULT_CATEGORIES',
   'Hdc', 'HdcNotFoundError', 'HiperfCollector', 'hiperfRecordCommand',
