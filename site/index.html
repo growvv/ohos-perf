@@ -60,7 +60,7 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P7 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, 1008 tests" data-zh="P1–P7 已完成 — 十四个分析器、六个采集器、下钻查询、基线对比、模拟器生命周期、1008 个测试">P1–P7 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, 1008 tests</span>
+        <span data-en="P1–P8 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, 1041 tests" data-zh="P1–P8 已完成 — 十四个分析器、六个采集器、下钻查询、基线对比、模拟器生命周期、手势注入、1041 个测试">P1–P8 are complete — fourteen analyzers, six collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, 1041 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
@@ -125,7 +125,7 @@
     <div class="stats reveal">
       <div class="stat"><b>21</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
       <div class="stat"><b>14</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>1008</b><span data-en="tests pass with a device and spike fixtures; 976 + 32 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 976 通过 + 32 跳过">tests pass with a device and spike fixtures; 976 + 32 skipped on a clean checkout</span></div>
+      <div class="stat"><b>1041</b><span data-en="tests pass with a device and spike fixtures; 1008 + 33 skipped on a clean checkout" data-zh="个测试在接入真机并含 spike 夹具时通过；干净检出为 1008 通过 + 33 跳过">tests pass with a device and spike fixtures; 1008 + 33 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -293,8 +293,8 @@
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Capability matrix" data-zh="能力矩阵">Capability matrix</p>
     <h2 class="reveal" data-en="Know what the device can actually give you." data-zh="先知道这台设备到底能给你什么。">Know what the device can actually give you.</h2>
-    <p class="section-lead reveal" data-en="Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 20 of 21 capabilities; the HarmonyOS emulator reports 10. Both numbers are first-class results — the missing ones carry a reason." data-zh="实测，而非假设。一台 OpenHarmony 7.0.0.111 的 Mate 60 报告 21 项中 20 项可用；鸿蒙模拟器报告 10 项。两个数字都是一等结果——缺失项会带上原因。">
-      Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 20 of 21 capabilities; the HarmonyOS emulator reports 10. Both numbers are first-class results — the missing ones carry a reason.
+    <p class="section-lead reveal" data-en="Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 19 of 21 capabilities; the HarmonyOS emulator reports 10. Both numbers are first-class results — the missing ones carry a reason." data-zh="实测，而非假设。一台 OpenHarmony 7.0.0.111 的 Mate 60 报告 21 项中 19 项可用；鸿蒙模拟器报告 10 项。两个数字都是一等结果——缺失项会带上原因。">
+      Measured, not assumed. A Mate 60 on OpenHarmony 7.0.0.111 reports 19 of 21 capabilities; the HarmonyOS emulator reports 10. Both numbers are first-class results — the missing ones carry a reason.
     </p>
 
     <div class="table-wrap reveal">
@@ -324,7 +324,7 @@
           <tr><td><code>net.io</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>disk.io</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>js.heap</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center no">—</td><td><span class="fid na">unavailable</span></td></tr>
-          <tr><td><code>coverage</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
+          <tr><td><code>coverage</code></td><td><span class="badge bjc">bjc_cov</span></td><td class="center no">—</td><td class="center no">—</td><td><span class="fid na">unavailable</span></td></tr>
           <tr><td><code>startup.app_startup</code></td><td><span class="badge hipro">hiprofiler</span></td><td class="center no">—</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
           <tr><td><code>render.fps_live</code></td><td><span class="badge hidumper">hidumper</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span> <span class="fid proxy">proxy on emu</span></td></tr>
           <tr><td><code>render.hitch</code></td><td><span class="badge hidumper">hidumper</span></td><td class="center yes">✓</td><td class="center yes">✓</td><td><span class="fid exact">exact</span></td></tr>
@@ -333,8 +333,8 @@
         </tbody>
       </table>
     </div>
-    <p class="footnote reveal" data-en="Measured on 2026-11-16 (Mate 60) and 2026-11-14 (emulator). † uitest was verified separately with `uitest dumpLayout` (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Rows marked — report a reason through the matrix; they are never silently zero. `js.heap` is unavailable on every device because no analyzer in this package consumes the `js_heap_*` tables." data-zh="实测于 2026-11-16（Mate 60）与 2026-11-14（模拟器）。† uitest 曾用 `uitest dumpLayout` 单独验证（输出 117 KB）；但生成矩阵所用的探针快照没有该命令，因此模拟器一列保持保守。标 — 的行会在矩阵里给出原因，而不是静默给 0。`js.heap` 在任何设备上都不可用，因为本包没有分析器消费 `js_heap_*` 表。">
-      Measured on 2026-11-16 (Mate 60) and 2026-11-14 (emulator). † uitest was verified separately with <code>uitest dumpLayout</code> (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Rows marked — report a reason through the matrix; they are never silently zero. <code>js.heap</code> is unavailable on every device because no analyzer in this package consumes the <code>js_heap_*</code> tables.
+    <p class="footnote reveal" data-en="Measured on 2026-11-16/17 (Mate 60) and 2026-11-14 (emulator). † uitest was verified separately with `uitest dumpLayout` (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Rows marked — report a reason through the matrix; they are never silently zero. `coverage` is gated on `bjc_cov` (absent on the Mate 60, where `aa` also prints nothing over plain shell) and stays unavailable because no collector in this package consumes its output. `js.heap` is unavailable on every device because no analyzer consumes the `js_heap_*` tables, and the measured `hidumper --mem-jsheap` route needs a debug-signed or profilerable app." data-zh="实测于 2026-11-16/17（Mate 60）与 2026-11-14（模拟器）。† uitest 曾用 `uitest dumpLayout` 单独验证（输出 117 KB）；但生成矩阵所用的探针快照没有该命令，因此模拟器一列保持保守。标 — 的行会在矩阵里给出原因，而不是静默给 0。`coverage` 以 `bjc_cov` 为准（Mate 60 上没有该二进制，`aa` 在普通 shell 下也没有任何输出），且本包没有采集器消费它的输出，因此仍不可用。`js.heap` 在任何设备上都不可用，因为本包没有分析器消费 `js_heap_*` 表，且实测 `hidumper --mem-jsheap` 需要 debug 签名或可被 profile 的应用。">
+      Measured on 2026-11-16/17 (Mate 60) and 2026-11-14 (emulator). † uitest was verified separately with <code>uitest dumpLayout</code> (117 KB of output); the probe snapshot used for the matrix does not include that command, so the emulator row stays conservative. Rows marked — report a reason through the matrix; they are never silently zero. <code>coverage</code> is gated on <code>bjc_cov</code> (absent on the Mate 60, where <code>aa</code> also prints nothing over plain shell) and stays unavailable because no collector in this package consumes its output. <code>js.heap</code> is unavailable on every device because no analyzer consumes the <code>js_heap_*</code> tables, and the measured <code>hidumper --mem-jsheap</code> route needs a debug-signed or profilerable app.
     </p>
   </div>
 </section>
@@ -428,6 +428,11 @@ ohos-perf doctor
 <span class="cm"># Machine-readable capability matrix.</span>
 ohos-perf caps --json
 
+<span class="cm"># Drive the UI first; gestures are their own command.</span>
+ohos-perf gesture click 500 800 --json
+ohos-perf gesture swipe 500 800 500 200 --velocity 600 --json
+ohos-perf gesture key Home --json
+
 <span class="cm"># Capture a scene; every collector runs concurrently.</span>
 ohos-perf collect --app com.example.app --duration 10 \
   --out ./scene --procfs --hiperf --hidumper --uitest
@@ -462,7 +467,7 @@ ohos-perf emulator stop ProbePhone
       <article class="card reveal">
         <span class="status shipped" data-en="Shipped · v0.2.0" data-zh="已发布 · v0.2.0">Shipped · v0.2.0</span>
         <h3 data-en="The measurable core" data-zh="可度量的内核">The measurable core</h3>
-        <p data-en="P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests at release, 20 of 21 capabilities driven on a Mate 60." data-zh="P0–P6：能力探测、六个采集器、trace 入库、类型化查询、十四个带溯源与保真度的分析器、确定性 JSON、基线对比与 agent skill。发布时 906 个测试；在 Mate 60 上驱动 21 项能力中的 20 项。">P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests at release, 20 of 21 capabilities driven on a Mate 60.</p>
+        <p data-en="P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests at release; the release reported 20 of 21 capabilities available on a Mate 60, and P8 later corrected the coverage row to 19." data-zh="P0–P6：能力探测、六个采集器、trace 入库、类型化查询、十四个带溯源与保真度的分析器、确定性 JSON、基线对比与 agent skill。发布时 906 个测试；发布时在 Mate 60 上报告 21 项能力中 20 项可用，P8 随后把 coverage 一行更正为 19 项。">P0–P6: capability probing, six collectors, trace ingest, typed queries, fourteen analyzers with provenance and fidelity, deterministic JSON, baseline comparison and the agent skill. 906 tests at release; the release reported 20 of 21 capabilities available on a Mate 60, and P8 later corrected the coverage row to 19.</p>
       </article>
       <article class="card reveal">
         <span class="status shipped" data-en="Shipped · v0.2.0" data-zh="已发布 · v0.2.0">Shipped · v0.2.0</span>
@@ -475,9 +480,14 @@ ohos-perf emulator stop ProbePhone
         <p data-en="P7: `ohos-perf emulator {list,start,stop,create}` so CI and an agent can boot their own target instead of relying on an attached device. `start` waits for `bootevent.boot.completed` and reports the target `collect --target` needs; `create` never downloads an image and prints the exact `-install` command instead. Verified against a real 6.1.1.200 install: a warm start returns in 4 s, a cold one in 35 s." data-zh="P7：`ohos-perf emulator {list,start,stop,create}`，让 CI 与 agent 自己启动目标设备，而不依赖已连接的真机。`start` 等到 `bootevent.boot.completed` 并给出 `collect --target` 需要的目标；`create` 不下载镜像，而是打印准确的 `-install` 命令。已在真实的 6.1.1.200 安装上验证：热启动 4 秒返回，冷启动 35 秒。">P7: <code>ohos-perf emulator {list,start,stop,create}</code> so CI and an agent can boot their own target instead of relying on an attached device. <code>start</code> waits for <code>bootevent.boot.completed</code> and reports the target <code>collect --target</code> needs; <code>create</code> never downloads an image and prints the exact <code>-install</code> command instead. Verified against a real 6.1.1.200 install: a warm start returns in 4 s, a cold one in 35 s.</p>
       </article>
       <article class="card reveal">
-        <span class="status exploring" data-en="Exploring" data-zh="探索中">Exploring</span>
-        <h3 data-en="ArkTS-side capabilities" data-zh="ArkTS 侧能力">ArkTS-side capabilities</h3>
-        <p data-en="`ui.gesture` needs the AAMS test framework, `coverage` needs bjc_cov, and `js.heap` needs an ArkTS profiler mode. Each stays reported unavailable with its reason until a device spike proves this package can drive it — an honest no is worth more than a metric nobody can reproduce." data-zh="`ui.gesture` 需要 AAMS 测试框架，`coverage` 需要 bjc_cov，`js.heap` 需要 ArkTS profiler 模式。在设备 spike 证明本包确实能驱动之前，它们都带着原因报告为不可用——诚实的“不可用”比一个无法复现的指标更有价值。">`ui.gesture` needs the AAMS test framework, `coverage` needs bjc_cov, and `js.heap` needs an ArkTS profiler mode. Each stays reported unavailable with its reason until a device spike proves this package can drive it — an honest no is worth more than a metric nobody can reproduce.</p>
+        <span class="status shipped" data-en="In master · unreleased" data-zh="已在 master · 未发布">In master · unreleased</span>
+        <h3 data-en="Gesture injection, honest coverage" data-zh="手势注入与诚实的 coverage">Gesture injection, honest coverage</h3>
+        <p data-en="P8: `ohos-perf gesture {click,swipe,key,input,text}` drives the app through `uitest uiInput`, reading success from the tool's `No Error` marker because hdc masks the device exit code. `coverage` was re-probed against `bjc_cov` and is now reported unavailable with its measured reason instead of inheriting hiprofiler's presence. The Mate 60 matrix went from 20 to 19 of 21 — the count dropped because a wrong claim was removed." data-zh="P8：`ohos-perf gesture {click,swipe,key,input,text}` 通过 `uitest uiInput` 驱动应用，以设备工具打印的 `No Error` 为成功标志，因为 hdc 会掩盖设备端退出码。`coverage` 改为按 `bjc_cov` 探测，据实报告不可用，而不再因为 hiprofiler 存在就假定可用。Mate 60 矩阵从 21 项中的 20 项变为 19 项——数字下降是因为删掉了一个错误结论。">P8: <code>ohos-perf gesture {click,swipe,key,input,text}</code> drives the app through <code>uitest uiInput</code>, reading success from the tool's <code>No Error</code> marker because hdc masks the device exit code. <code>coverage</code> was re-probed against <code>bjc_cov</code> and is now reported unavailable with its measured reason instead of inheriting hiprofiler's presence. The Mate 60 matrix went from 20 to 19 of 21 — the count dropped because a wrong claim was removed.</p>
+      </article>
+      <article class="card reveal">
+        <span class="status exploring" data-en="Measured · not shipped" data-zh="已实测 · 未交付">Measured · not shipped</span>
+        <h3 data-en="Deliberately out" data-zh="刻意排除">Deliberately out</h3>
+        <p data-en="`coverage` has no `bjc_cov` on the Mate 60 and no collector here to consume it; `js.heap` needs a debug-signed or profilerable app the Mate 60 did not offer, and no analyzer consumes `js_heap_*`. HapRay's UI animation diff also stays out: it needs per-step `pages.json`, element trees and screenshots no collector here produces. Each is a measured no with a reason, not a zero." data-zh="`coverage` 在 Mate 60 上没有 `bjc_cov`，本包也没有采集器消费它；`js.heap` 需要 debug 签名或可被 profile 的应用（Mate 60 上实测不满足），且没有分析器消费 `js_heap_*`。HapRay 的 UI 动画 diff 同样不在范围内：它需要每步的 `pages.json`、元素树与截图，而本包的采集器都不产出这些。每一项都是以实测为据、带原因的“不可用”，而不是 0。">`coverage` has no <code>bjc_cov</code> on the Mate 60 and no collector here to consume it; <code>js.heap</code> needs a debug-signed or profilerable app the Mate 60 did not offer, and no analyzer consumes <code>js_heap_*</code>. HapRay's UI animation diff also stays out: it needs per-step <code>pages.json</code>, element trees and screenshots no collector here produces. Each is a measured no with a reason, not a zero.</p>
       </article>
       <article class="card reveal">
         <span class="status exploring" data-en="Considering" data-zh="考虑中">Considering</span>

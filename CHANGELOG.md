@@ -4,6 +4,15 @@
 
 ### Added
 
+- `GestureDriver` and `ohos-perf gesture {click,swipe,key,input,text}` — UI
+  injection through `uitest uiInput`, so a scene can be driven into the state
+  worth measuring. `ui.gesture` is now a capability the package can actually
+  drive: success is the device tool's `No Error` marker, because `hdc` returns
+  0 even when the device tool fails. Coordinates, velocity (200–40000) and key
+  names are validated before the device is touched; text is shell-quoted and
+  control characters are refused.
+- `Device.gesture()` gates on `ui.gesture`, and the CLI gesture commands honour
+  `--target` and `--json` like the other device commands.
 - `ohos-perf emulator {list,start,stop,create}` — the HarmonyOS emulator
   lifecycle, so CI and an agent can boot their own target instead of relying on
   an attached device.
@@ -38,6 +47,22 @@
   `Unable to start the emulator`, still reports its own sentence), and a
   `-start` that keeps running (the process becomes the emulator) is no longer
   mistaken for a hang.
+- `coverage` no longer reports available merely because `hiprofiler_cmd`
+  exists. The probe now checks `bjc_cov` — measured absent on the Mate 60, where
+  `aa` also prints nothing over plain shell — and the capability stays
+  unavailable because no collector in this package consumes its output.
+
+### Changed
+
+- `js.heap`'s reason now names the measured `hidumper --mem-jsheap` gate
+  (`needs a debug-signed or profilerable app`) in addition to the missing
+  analyzer, so an agent does not chase a build that still would not work.
+
+### Removed
+
+- The claim that `ui.gesture` needs the AAMS test framework. That gate belongs
+  to `uitest uiRecord`, a different command; `uitest uiInput` works over the
+  plain shell.
 
 ## 0.2.0 — 2026-11-16
 

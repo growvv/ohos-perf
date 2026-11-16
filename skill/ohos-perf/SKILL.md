@@ -16,7 +16,7 @@ the interface; every command speaks stable JSON with `--json`.
      `ohos-perf emulator list --json` names the instances, then
      `ohos-perf emulator start <name> --json` blocks until the guest has booted
      and returns its `target`. Pass that id with `--target <id>` to the device
-     commands — `collect`, `caps` and `doctor` (e.g.
+     commands — `collect`, `caps`, `doctor` and `gesture` (e.g.
      `ohos-perf collect --target 127.0.0.1:5555 …`). The scene-reading
      commands (`analyze`, `query`, `compare`, `tools`) take no `--target` and
      reject it.
@@ -30,7 +30,20 @@ the interface; every command speaks stable JSON with `--json`.
 2. Read the capability matrix before asking for data that may not exist:
    `ohos-perf caps --json`. An unavailable capability is absent by design —
    never invent its metric.
-3. Capture a scene (10 seconds is a useful default):
+3. Drive the app to the state you want to measure:
+   `ohos-perf gesture click 500 800 --json`,
+   `ohos-perf gesture swipe 500 800 500 200 --velocity 600 --json`,
+   `ohos-perf gesture key Home --json`,
+   `ohos-perf gesture input 500 500 "hello" --json`,
+   `ohos-perf gesture text "hello" --json`.
+   - Each prints `{ gesture, output }`; the human line ends in `accepted`,
+     which means the device tool printed its `No Error` marker — not that a
+     widget reacted. A velocity outside 200–40000 and a key other than
+     Back/Home/Power or a positive code are rejected before anything touches
+     the device.
+   - Gestures are their own command: navigate first, then capture. `collect`
+     does not accept a gesture script.
+4. Capture a scene (10 seconds is a useful default):
    `ohos-perf collect --app <pkg> --duration 10s --out <dir> --json`
    - `--app` is required by the modes that resolve a pid (`--procfs`,
      `--cold-start`, `--hiperf` and the hiprofiler `nativehook` plugin). The
@@ -47,7 +60,7 @@ the interface; every command speaks stable JSON with `--json`.
    - A capture that produced nothing is not an error: `hiperf` on an idle app
      yields `samples: 0` with exit 0. The JSON says `hiperf: { samples: 0 }`
      and the human summary prints `hiperf 0`; report that, never a silent zero.
-4. Analyze it offline: `ohos-perf analyze <dir> --json`
+5. Analyze it offline: `ohos-perf analyze <dir> --json`
    - A scene captured with `--hiprofiler --plugins memory` carries exact
      per-process RSS: `mem.measure.rss.peak` and `mem.measure.rss.avg`, both
      in bytes. They cover only the analyzed app (`--app`); an app-less
@@ -64,7 +77,7 @@ the interface; every command speaks stable JSON with `--json`.
      capture has no `perf_sample` rows and reports `flamegraph.degraded` with
      that reason. Component reuse needs `H:CustomNode:Build*` events, which a
      capture without the `ace`/`ark` categories will not have.
-5. Read `evidence[].drillDown`. Each handle names a `tool`, its `args`, and a
+6. Read `evidence[].drillDown`. Each handle names a `tool`, its `args`, and a
    one-line `returns` shape with an optional `estRows`.
 
 ## Drilling down

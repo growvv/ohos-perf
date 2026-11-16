@@ -35,22 +35,23 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P7 are complete**: 1008 tests (1000 unit, 8 in the device project),
-two workspace typechecks and two builds, all green on the declared minimum
-Node (`22.13.0`). On a clean checkout — where the gitignored
+**P1 through P8 are complete**: 1041 tests (1032 unit, 9 in the device
+project), two workspace typechecks and two builds, all green on the declared
+minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **975 passed, 25
+attached device are absent — `npm run test:unit` reports **1007 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-seven device-gated skips, so the combined clean checkout is **976 passed, 32
-skipped**. With both fixtures present and a device attached all 1008 pass. The
+eight device-gated skips, so the combined clean checkout is **1008 passed, 33
+skipped**. With both fixtures present and a device attached all 1041 pass. The
 fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
 `analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
-`query-sched-state` and the CLI `index` end-to-end tests. The eight tests in
+`query-sched-state` and the CLI `index` end-to-end tests. The nine tests in
 the device project are `collect-hiprofiler.device.test.ts`,
-`collect-capture.device.test.ts`, `analyze-capture.device.test.ts` and
-`collect-memory.device.test.ts`. Seven of them need a device and run serially
-(`npm run test:device`) because they share one device and its fixed capture
-paths; the recorded Mate 60 hiprofiler probe runs from a committed fixture.
+`collect-capture.device.test.ts`, `analyze-capture.device.test.ts`,
+`collect-memory.device.test.ts` and `gesture.device.test.ts`. Eight of them
+need a device and run serially (`npm run test:device`) because they share one
+device and its fixed capture paths; the recorded Mate 60 hiprofiler probe runs
+from a committed fixture.
 
 Implemented today:
 
@@ -64,9 +65,15 @@ Implemented today:
   path), hiperf (`perf.data` for a debuggable app, converted into a second
   `perf.db`), hidumper (RenderService fps and hitch counters) and uitest (the
   on-screen UI tree); every requested collector runs concurrently in one
-  `collect`. `--app` is
-  required only by the modes that resolve a pid — `--hidumper`, `--uitest` and
-  `--hiprofiler --plugins memory` capture device-wide without it
+  `collect`. `--app` is required only by the modes that resolve a pid —
+  `--hidumper`, `--uitest` and `--hiprofiler --plugins memory` capture
+  device-wide without it
+- UI gesture injection: `GestureDriver` drives `uitest uiInput` over the plain
+  shell — click, swipe (with an optional velocity), key events, text into a
+  field and text into the focused field. Success is the device tool's
+  `No Error` marker, never the host exit code, which `hdc` reports as 0 even
+  when the device tool fails; coordinates, velocity and key names are validated
+  before anything reaches the device
 - baseline comparison: `ohos-perf compare <baseline> <current>` classifies each
   metric as improved, regressed, unchanged, added, removed or incomparable
 - `trace_streamer` wrapper and scene layout, with `scene.json` metadata
@@ -87,7 +94,8 @@ Implemented today:
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
-  `compare`, `emulator {list,start,stop,create}`
+  `compare`, `gesture {click,swipe,key,input,text}`,
+  `emulator {list,start,stop,create}`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
   instance to its `hdc` TCP target so `collect --target` can use it
@@ -136,13 +144,18 @@ component reuse reports 0 builds, a measured zero: neither capture recorded
 ArkUI build events. The flamegraph's proxy names its missing input; the reuse
 count is real and zero.
 
-Not implemented yet: `ui.gesture` and `coverage`, plus HapRay's UI animation
-diff. The animation diff needs `ui/<step>/pages.json`, two element-tree dumps
+Not implemented yet: `coverage`, plus HapRay's UI animation diff. Coverage was
+measured, not assumed: `bjc_cov` is absent from the Mate 60 (`which` finds
+nothing and `aa` prints nothing over plain shell), and even a device that has it
+would not make the capability usable — no collector in this package consumes
+its output, so the matrix reports that reason instead of claiming the data
+exists. The animation diff needs `ui/<step>/pages.json`, two element-tree dumps
 and two screenshots per step, which HapRay's CaptureUI produces and no collector
 here does; the trace-side component signal (`H:CustomNode:Build*`) is ported
 instead. `js.heap` stays unavailable even on a device whose hiprofiler can run
 the memory plugin: nothing in this package consumes the `js_heap_*` tables, and
-the matrix reports that reason instead of claiming the data is usable.
+the measured `hidumper --mem-jsheap` route needs a debug-signed or profilerable
+app, which the release apps on the Mate 60 are not.
 
 ## Roadmap
 
@@ -150,7 +163,7 @@ the matrix reports that reason instead of claiming the data is usable.
 | --- | --- | --- |
 | P0–P6 | capability probing, six collectors, trace ingest, typed queries, fourteen analyzers, deterministic JSON, baseline comparison, agent skill | shipped in `0.2.0` |
 | P7 | `ohos-perf emulator {list,start,stop,create}` lifecycle commands | in `master`, unreleased |
-| exploring | `ui.gesture` (AAMS), `coverage` (bjc_cov), `js.heap` (ArkTS profiler) — each stays reported unavailable until a device spike proves this package can drive it | device spike first |
+| P8 | `ui.gesture` driven through `uitest uiInput`, plus an honest `coverage` verdict from a measured `bjc_cov` probe | in `master`, unreleased |
 
 The rendered roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).
@@ -207,6 +220,25 @@ device-wide rows to an app.
 `--hiperf` needs a **debuggable** app; the device refuses others. An idle app
 legitimately produces `hiperf: { samples: 0 }` — a real capture, reported as
 `hiperf 0` in the human summary rather than dropped from it.
+
+Drive the app to the state you want to measure, then capture it — gestures are
+their own command, so `collect` never takes a gesture script:
+
+```bash
+ohos-perf gesture click 500 800 --json
+ohos-perf gesture swipe 500 800 500 200 --velocity 600 --json
+ohos-perf gesture key Home --json
+ohos-perf gesture input 500 500 "hello" --json    # tap a field, then type
+ohos-perf gesture text "hello" --json             # type into the focused field
+
+# a second target is explicit; the device commands accept --target
+ohos-perf gesture key Back --target 127.0.0.1:5555 --json
+```
+
+Each prints `{ gesture, output }`. The human line ends in `accepted`, which
+means the device tool printed its `No Error` marker — not that a widget reacted.
+A velocity outside 200–40000 and a key other than Back/Home/Power or a positive
+code are rejected before anything touches the device.
 
 Compare two captures — each argument is a scene directory or a saved
 `analyze --json` file:
@@ -292,7 +324,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 1008 tests; 976 pass + 32 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1041 tests; 1008 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
 ```
 
 `npm test` builds both packages first, so a clean checkout is never red.
@@ -331,7 +363,7 @@ Measured on 2026-11-16 (Mate 60) and 2026-11-14 (emulator):
 
 | Device | Available | Notes |
 | --- | --- | --- |
-| HUAWEI Mate 60, OpenHarmony 7.0.0.111, arm64-v8a | **20 / 21** | hardware PMU, hiprofiler (including `memory-plugin`), uitest and Ark-runtime trace events present; `js.heap` unavailable — no analyzer in this package consumes `js_heap_*` tables |
+| HUAWEI Mate 60, OpenHarmony 7.0.0.111, arm64-v8a | **19 / 21** | hardware PMU, hiprofiler (including `memory-plugin`), uitest, `ui.gesture` (driven through `uitest uiInput`) and Ark-runtime trace events present; `coverage` unavailable — no `bjc_cov` on the device and no collector in this package consumes its output; `js.heap` unavailable — no analyzer consumes `js_heap_*` tables, and `hidumper --mem-jsheap` needs a debug-signed or profilerable app |
 | HarmonyOS emulator 6.1.1.125, x86_64 | **10 / 21** | no hiprofiler; `perf.pmu` has no hardware events; `render.fps_live` is a `proxy`. `trace.ark` is available because `hitrace` records the `ark` and `ace` categories. The live probe did not run `uitest`, so `ui.tree` and `ui.gesture` stay out of this numerator — a matrix built from the committed emulator probe snapshot reports 12 / 21 |
 
 A missing capability is a value with a `reason` — never a silent zero. See
@@ -388,12 +420,14 @@ TypeScript 编写。它把设备能力探测、hitrace 采集、trace_streamer �
 2. **确定性输出**：同一输入两次运行字节一致，CI diff 有意义。
 3. **零原生依赖**：只用 Node 内置 `node:sqlite`，无编译、无 Python。
 
-当前 P0–P6 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
+当前 P0–P8 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
 hidumper / uitest 采集、trace_streamer 入库（含 perf.data → perf.db）、类型化查询、
 帧 / 故障树 / binder / 线程 / 内存 / 内存测量 / 启动 / 渲染 / GC 压力 / VSync 异常 /
 空帧 / RenderService 跳过 / 火焰图 / 组件复用共十四个分析器、降级指标引擎、证据图与
-命名下钻查询、基线对比，以及 `doctor` / `caps` / `collect` / `analyze` / `query` /
-`tools` / `compare` 七个命令和 `skill/ohos-perf/` 中的 agent skill 适配器。内存测量
+命名下钻查询、基线对比、通过 `uitest uiInput` 注入点击 / 滑动 / 按键 / 文本的
+`gesture` 命令，以及 `doctor` / `caps` / `collect` / `analyze` / `query` / `tools` /
+`compare` 七个命令、`emulator` 生命周期命令和 `skill/ohos-perf/` 中的 agent skill
+适配器。内存测量
 （`mem.measure.*`）来自 hiprofiler memory-plugin 记录的 `process_measure` 表，
 以 ipid 归属进程、把 KiB 换算成字节后报告 exact 的 RSS 峰值与均值；无应用采集时
 不带进程归属，显式降级而不是把全设备的行算到应用头上。录制的真实 trace
@@ -402,9 +436,13 @@ hidumper / uitest 采集、trace_streamer 入库（含 perf.data → perf.db）�
 需要冗余线程模式，后者需要 `H:CustomNode:Build*` 事件，而两条 trace 都没有。VSync、
 空帧与 RenderService 跳过在各自测试中复现 HapRay 的每条规则与误报过滤，其输出也对着
 HapRay 在两条录制 trace 上核对过。内存、启动、GC 与火焰图没有能在这些 trace 上运行的
-HapRay 实现，不声称对齐。`ui.gesture` 与 `coverage` 仍待实现；`js.heap` 即使在能运行
-hiprofiler 的真机上也不可用，因为本包没有任何分析器消费 `js_heap_*` 表，能力矩阵
-会据实给出该原因。`--app` 仅对需要解析 pid 的采集器必填；`--hidumper`、`--uitest`
+HapRay 实现，不声称对齐。`ui.gesture` 以设备工具打印的 `No Error` 为成功标志——hdc
+的退出码即使设备端失败也恒为 0——坐标、速度与按键在到达设备前就会校验，速度超出
+200–40000 会被拒绝而不是让设备悄悄回退到默认值。`coverage` 仍不可用：Mate 60 上
+没有 `bjc_cov`，且本包没有采集器消费它的输出，能力矩阵会据实给出该原因；`js.heap`
+即使在能运行 hiprofiler 的真机上也不可用，因为本包没有任何分析器消费 `js_heap_*`
+表，且实测 `hidumper --mem-jsheap` 需要 debug 签名或可被 profile 的应用。`--app`
+仅对需要解析 pid 的采集器必填；`--hidumper`、`--uitest`
 与 `--hiprofiler --plugins memory` 可以无应用采集。
 
 `--hiperf` 需要可调试应用，空闲应用产生 `samples: 0` 也是一次有效采集，CLI 会明确

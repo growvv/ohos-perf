@@ -17,7 +17,7 @@ const skill = readNormalized(join(root, 'skill/ohos-perf/SKILL.md'));
 const readme = readNormalized(join(root, 'README.md'));
 
 const COMMANDS = new Set([
-  'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'emulator',
+  'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'emulator', 'gesture',
 ]);
 
 describe('agent skill adapter', () => {
@@ -67,7 +67,23 @@ describe('agent skill adapter', () => {
     // `ohos-perf analyze ./scene --target X` exits 1 with `unknown option`.
     // An agent following "pass it to every later command" would break itself.
     expect(skill).not.toMatch(/every later command with\s+`--target/);
-    expect(skill).toMatch(/collect`, `caps` and `doctor`/);
+    expect(skill).toMatch(/collect`, `caps`, `doctor` and `gesture`/);
+  });
+
+  it('documents driving the UI before a capture', () => {
+    // Gestures are a separate command; the skill has to say so, otherwise an
+    // agent expects `collect` to accept a gesture script.
+    for (const needle of [
+      'ohos-perf gesture click',
+      'ohos-perf gesture swipe',
+      'ohos-perf gesture key',
+      'ohos-perf gesture input',
+      'ohos-perf gesture text',
+      'accepted',
+      'navigate first, then capture',
+    ]) {
+      expect(skill).toContain(needle);
+    }
   });
 
   it('is linked from the README', () => {
