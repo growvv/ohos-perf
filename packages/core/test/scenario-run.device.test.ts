@@ -70,6 +70,9 @@ describe.skipIf(HDC === undefined)('scenario runner on a real device', () => {
 
       const result = await new ScenarioRunner(device, { outDir: root, rounds: 1 }).run(scenario);
 
+      // A failed step must say why; an assertion that only reports
+      // `failed !== completed` hides the device's own message.
+      expect(result.steps.map((step) => step.error).filter(Boolean)).toEqual([]);
       expect(result.status).toBe('completed');
       expect(result.steps.map((step) => step.id)).toEqual(['first', 'second']);
       expect(result.device.id).toBe(device.id);

@@ -35,28 +35,29 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P12 are complete**: 1245 tests (1236 unit, 9 in the device
+**P1 through P13 are complete**: 1326 tests (1316 unit, 10 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1211 passed, 25
+attached device are absent — `npm run test:unit` reports **1291 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-eight device-gated skips, so the combined clean checkout is **1212 passed, 33
-skipped**. With both fixtures present and a device attached all 1245 pass. The
-fixture-dependent suites are `e2e-offline`, `drilldown-e2e`, `parity-hapray`,
-`analyze-thread-wakeup`, `query-binder-startup`, `query-callstack-perf`,
-`query-sched-state` and the CLI `index` end-to-end tests. The nine tests in
-the device project are `collect-hiprofiler.device.test.ts`,
-`collect-capture.device.test.ts`, `analyze-capture.device.test.ts`,
-`collect-memory.device.test.ts` and `gesture.device.test.ts`. Eight of them
-need a device and run serially (`npm run test:device`) because they share one
+nine device-gated skips, so the combined clean checkout is **1292 passed, 34
+skipped**. With both fixtures present and a device attached every test runs.
+The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
+`parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
+`query-callstack-perf`, `query-sched-state` and the CLI `index` end-to-end
+tests. The ten tests in the device project are
+`collect-hiprofiler.device.test.ts`, `collect-capture.device.test.ts`,
+`analyze-capture.device.test.ts`, `collect-memory.device.test.ts`,
+`gesture.device.test.ts` and `scenario-run.device.test.ts`. Nine of them need
+a device and run serially (`npm run test:device`) because they share one
 device and its fixed capture paths; the recorded Mate 60 hiprofiler probe runs
 from a committed fixture.
 
 Implemented today:
 
 - `hdc` transport: shell, port forwarding, file send/recv, target listing
-- one-shot capability probe → 21 verdicts with evidence
+- one-shot capability probe → 22 verdicts with evidence
 - collectors: hitrace (marker checks, stale-file protection, stop-on-failure),
   procfs (`/proc` memory/thread sampling with `pidof` resolution), hiprofiler
   (`hiprofiler_cmd` sessions with the ftrace, nativehook, gpu and xpower
@@ -104,10 +105,16 @@ Implemented today:
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
   `compare`, `gesture {click,swipe,key,input,text}`,
-  `emulator {list,start,stop,create}`
+  `emulator {list,start,stop,create}`, `run <scenario.json>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
   instance to its `hdc` TCP target so `collect --target` can use it
+- scenario runner: `ohos-perf run scenario.json --out <dir>` validates a
+  declarative JSON document before touching a device, then runs its steps in
+  order — setup before the capture, actions inside the capture window, cleanup
+  after it, always — writing one scene per (round, step) plus `steps.json`,
+  `testInfo.json` and `pids.json`. A failed action fails the step and keeps
+  its scene; `--keep-going` continues, and the exit code is 1 either way.
 
 Metric ids emitted by the analyzers:
 
@@ -191,7 +198,7 @@ The HapRay parity series (one release per major item, so far):
 | P10 | W2 frame load | per-frame sampled-event attribution, top-N loaded frames, stutter levels with expected/actual excess, 1 s FPS windows, empty-frame load share and severity, four attribution queries | shipped in `0.5.0` |
 | P11 | W3 native memory | `native_hook` alloc/free pairing, peak and unreleased by callchain, category evidence, timeline | shipped in `0.6.0` |
 | P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | shipped in `0.7.0` |
-| P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | planned |
+| P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | shipped in `0.8.0` |
 | P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | planned |
 | P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | planned |
 | P16 | W8 symbols | symbol statistics, `--so-dir` device symbolization, offline flamegraph artifact, unresolved-symbol evidence | planned |
@@ -322,6 +329,97 @@ ohos-perf query ./scene frame.load.symbols \
   --args '{"startNs":1000000000,"endNs":1100000000}' --json
 ```
 
+## Scenarios
+
+One capture is one window. When the window has to *contain* something — a tap,
+a swipe, a launch — write the sequence down instead of typing it in two
+terminals:
+
+```json
+{
+  "version": 1,
+  "name": "image-open",
+  "description": "open the viewer and measure the first frame",
+  "app": "com.example.image",
+  "rounds": 2,
+  "steps": [
+    {
+      "id": "open",
+      "name": "Open the viewer",
+      "setup": [
+        { "kind": "launch", "ability": "EntryAbility" },
+        { "kind": "wait", "ms": 1500 }
+      ],
+      "actions": [
+        { "kind": "click", "x": 500, "y": 800 },
+        { "kind": "marker", "name": "image-requested" }
+      ],
+      "cleanup": [{ "kind": "forceStop" }],
+      "capture": { "durationMs": 5000, "collectors": ["hitrace", "procfs", "hilog"] }
+    }
+  ]
+}
+```
+
+```bash
+ohos-perf run scenario.json --out runs/image-open --json
+```
+
+The document is validated whole before the first device call: an unknown key, a
+duplicate step `id`, a collector outside `hitrace|hiprofiler|procfs|hiperf|hidumper|uitest|hilog`,
+`hiprofiler` and `hitrace` together, a duration outside `(0, 2^31-1]` ms — each
+is an error naming the JSON path (`steps[0].capture.collectors[1]`), so a
+scenario that would fail on step 3 never fails after two captures have run.
+`id` is a directory name, so it is restricted to `^[a-z][a-z0-9_-]*$`.
+
+Each step runs three phases, all of them actually executed:
+
+- `setup` runs **before** the capture starts — get the app into the state you
+  want to measure without paying for it in the trace. A setup failure fails the
+  step before any collector starts.
+- `actions` run **inside** the capture window, concurrently with the
+  collectors, so the gesture that causes the work is in the trace. A failed
+  action fails the step and **keeps the scene**: the trace is a real
+  measurement of what the device did while the action was attempted.
+- `cleanup` runs after the capture, always — including after a failed action.
+  Its own failure marks the step failed but never masks the first error.
+
+Actions are `launch`, `forceStop`, `click`, `swipe`, `key`, `text`, `inputText`,
+`wait` and `marker`. The gesture actions go through the same `uitest uiInput`
+path as `ohos-perf gesture`, and `launch`/`forceStop` are `aa start` /
+`aa force-stop`; a non-zero exit fails the action with the device's own
+message. `marker` makes **no device call**: it records a named instant
+(`atMs`, host clock) in `steps.json` so a gesture can be correlated with the
+trace window it landed in. It is an annotation, not a trace event — there is no
+marker injection on the device. `atNs` (device uptime) is recorded when the
+device allows `cat /proc/uptime`; neither the Mate 60 nor the emulator does,
+and the field is omitted rather than fabricated.
+
+The run directory is a tree of ordinary scenes:
+
+```
+runs/image-open/testInfo.json     # scenario, app, device, rounds, status, duration
+runs/image-open/steps.json        # one entry per (round, step): status, scene, actions
+runs/image-open/pids.json         # pidof, resolved once at run start
+runs/image-open/open/round-1/     # a complete scene — analyze/report/query it directly
+runs/image-open/open/round-2/
+```
+
+Every step directory is a scene, so `ohos-perf report runs/image-open/open/round-1`
+is the report for that step — there is no separate per-step reporting path. Each
+`scene.json` also carries a `step: { round, index, id }` block, so a scene
+copied out of a run still says where it came from. The runner never analyzes:
+`run` is HapRay's `prepare` mode by construction.
+
+`--rounds <n>` overrides the document's `rounds`; each round re-runs every step
+in file order. `--only open,scroll` runs a subset (still in scenario order; an
+id that matches no step is an error naming the available ones). Fail-fast is the
+default: the first failed step stops the run and the exit code is 1 — with
+`steps.json` and `testInfo.json` still written, because a run that stopped on
+step 2 must say what step 1 produced. `--keep-going` continues after a failure;
+the exit code is still 1. A collector the device lacks fails that step with the
+capability matrix's reason and the message names the step.
+
 ## Emulators
 
 `ohos-perf emulator` drives the `Emulator.exe` that DevEco Studio installs, so a
@@ -384,7 +482,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 1245 tests; 1212 pass + 33 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1326 tests; 1292 pass + 34 skip on a clean checkout (no device, spike/out/ absent)
 npm run typecheck -w @ohos-perf/core   # src + tests, the same check CI runs
 npm run typecheck -w @ohos-perf/cli
 ```

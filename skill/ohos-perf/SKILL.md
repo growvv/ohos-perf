@@ -1,6 +1,6 @@
 ---
 name: ohos-perf
-description: Measure HarmonyOS app performance on real devices and drill down into captured traces — probe capabilities, collect a scene, read evidence, and follow drillDown handles into frames, callstacks, binder transactions, thread patterns and memory measurements with the ohos-perf CLI.
+description: Measure HarmonyOS app performance on real devices and drill down into captured traces — probe capabilities, collect a scene or run a declarative scenario, read evidence, and follow drillDown handles into frames, callstacks, binder transactions, thread patterns and memory measurements with the ohos-perf CLI.
 ---
 
 # ohos-perf
@@ -43,6 +43,9 @@ the interface; every command speaks stable JSON with `--json`.
      the device.
    - Gestures are their own command: navigate first, then capture. `collect`
      does not accept a gesture script.
+   - When the gesture has to be **inside** the capture window, or the same
+     sequence must run more than once, write a scenario instead of typing two
+     commands — see `## Scenarios` below.
 4. Capture a scene (10 seconds is a useful default):
    `ohos-perf collect --app <pkg> --duration 10s --out <dir> --json`
    - `--app` is required by the modes that resolve a pid (`--procfs`,
@@ -210,6 +213,82 @@ ohos-perf query <dir> hilog.matches --args '{"rule":"no_dmp"}' --json
 ohos-perf query <dir> hilog.rules --args '{}' --json
 ohos-perf query <dir> hilog.around --args '{"startNs":0,"endNs":1000000000}' --json
 ```
+
+## Scenarios
+
+`ohos-perf run` answers "what happens when the user does this" — a sequence
+that must be measured, not a state that happens to be on screen when you
+capture. Use it instead of `gesture` + `collect` whenever an action must land
+inside the capture window, or whenever the same steps must be repeated.
+
+```bash
+ohos-perf run scenario.json --out <dir> --json
+```
+
+The document is versioned JSON (`version: 1`, `name`, `app`, optional
+`description` and `rounds`, and a non-empty `steps` array). Each step is:
+
+```json
+{
+  "id": "open",
+  "name": "Open the viewer",
+  "setup":   [{ "kind": "launch", "ability": "EntryAbility" }],
+  "actions": [{ "kind": "click", "x": 500, "y": 800 },
+              { "kind": "marker", "name": "image-requested" }],
+  "cleanup": [{ "kind": "forceStop" }],
+  "capture": { "durationMs": 5000, "collectors": ["hitrace", "procfs"] }
+}
+```
+
+- The whole document is validated before the first device call. An unknown
+  key, a duplicate `id`, `id` outside `^[a-z][a-z0-9_-]*$`, an empty
+  `collectors`, `hitrace` together with `hiprofiler`, `plugins` without
+  `hiprofiler`, a `durationMs` outside `(0, 2^31-1]`, or an unknown action
+  `kind` exits 1 with `SCENARIO_BAD_INPUT` / `SCENARIO_BAD_STEP` naming the
+  JSON path. Never "fix" a rejection by editing the runner's copy of the
+  document — edit the file and re-run.
+- Three phases run for real: `setup` before the capture starts, `actions`
+  inside the capture window concurrently with the collectors, `cleanup` after
+  it always (also after a failed action). A setup failure fails the step
+  before any collector starts.
+- Actions: `launch` (`aa start -a <ability> -b <app>`), `forceStop`,
+  `click`, `swipe`, `key`, `text`, `inputText`, `wait`, `marker`. Gestures
+  use the same `uitest uiInput` path as `ohos-perf gesture`. A non-zero device
+  exit fails the action with the device's own message.
+- `marker` makes no device call. It records a named instant (`atMs`, host
+  clock) in `steps.json`, so a gesture can be lined up with the scene's
+  `capture.startedAtMs`. It is an annotation, not a trace event — do not
+  claim it appears in the trace. `atNs` is recorded only when the device
+  allows `cat /proc/uptime`; both measured devices refuse it, and the field
+  is then absent (never a zero).
+- Collectors per step: `hitrace` (default), `hiprofiler` (with `plugins`),
+  `procfs`, `hiperf`, `hidumper`, `uitest`, `hilog`. A collector the device
+  lacks fails that step with the capability matrix's reason, and the message
+  names the step.
+
+Each step directory is an ordinary scene, so the analysis loop is unchanged:
+
+```bash
+ohos-perf analyze <dir>/<stepId>/round-1 --json
+ohos-perf report  <dir>/<stepId>/round-1 --out reports/open
+```
+
+The run directory is:
+
+```
+<dir>/testInfo.json   # scenario, app (+version when the device answers), device, rounds, status
+<dir>/steps.json      # one entry per (round, step): status, sceneDir, actions with atMs
+<dir>/pids.json       # pidof at run start; { "pids": [] } when the app was not running
+<dir>/<id>/round-<n>/ # the scene, with a scene.json step block { round, index, id }
+```
+
+`--rounds <n>` overrides `rounds`. `--only a,b` runs a subset in scenario
+order; an unknown id exits 1 naming the available ones. Fail-fast is the
+default: the first failed step stops the run, and `steps.json` /
+`testInfo.json` are still written. `--keep-going` continues; the exit code is
+1 either way. A failed action keeps its scene — that trace is still a real
+measurement of what the device did, so analyze it rather than discard it.
+`run` never analyzes.
 
 ## Drilling down
 

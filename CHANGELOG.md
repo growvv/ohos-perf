@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.8.0 — 2026-11-17
+
+P13 (HapRay parity W5): declarative scenarios, measured from the inside.
+
+### Features
+
+- **`ohos-perf run <scenario.json> --out <dir>`** runs a versioned JSON
+  scenario and writes one complete scene per `(round, step)` at
+  `<out>/<id>/round-<n>/`, alongside `steps.json`, `testInfo.json` and
+  `pids.json`. Each step directory is an ordinary scene: `analyze`, `report`,
+  `query` and `compare` work on it unchanged.
+- **Three phases per step, all executed:** `setup` before the capture starts,
+  `actions` inside the capture window concurrently with the collectors, and
+  `cleanup` after it — always, including after a failed action. (HapRay's DSL
+  parses `setup`/`cleanup` and never runs them.)
+- **Actions:** `launch`, `forceStop`, `click`, `swipe`, `key`, `text`,
+  `inputText`, `wait`, `marker`. Gestures reuse the measured `uitest uiInput`
+  path; `launch`/`forceStop` are `aa start`/`aa force-stop` and a non-zero
+  device exit fails the action with the device's own message.
+- **`marker`** records a named instant (`atMs`, host clock; `atNs` device
+  uptime when the device allows `cat /proc/uptime`) with no device call, so a
+  gesture can be lined up with the scene's `capture.startedAtMs`.
+- **Per-step collectors:** `hitrace` (default), `hiprofiler` (with `plugins`),
+  `procfs`, `hiperf`, `hidumper`, `uitest`, `hilog`.
+- **`--rounds <n>`, `--only <ids>`, `--keep-going`, `--json`, `--target`.**
+  Fail-fast is the default; the exit code is 1 when any step failed.
+- **`scene.json` gains an optional `step: { round, index, id }` block**, so a
+  scene copied out of a run is still self-describing. The version stays `1`
+  and every existing reader keeps working.
+- **Public surface:** `parseScenario`, `executeAction`, `ScenarioRunner`,
+  `writeRunFiles`, `COLLECTOR_NAMES`, and the `Scenario` / `ScenarioStep` /
+  `ScenarioAction` / `StepCapture` / `CollectorName` / `ActionDevice` /
+  `ActionOutcome` / `RunResult` / `RunStepResult` / `RunOptions` /
+  `RunnerCollectOptions` / `RunnerDevice` / `SceneStepRef` types.
+
+### Semantics worth naming
+
+- **Validation precedes the first device call.** Unknown keys, a duplicate
+  step `id`, an `id` outside `^[a-z][a-z0-9_-]*$`, an empty or duplicated
+  `collectors` list, `hitrace` with `hiprofiler`, `plugins` without
+  `hiprofiler`, a duration outside `(0, 2^31-1]`, an unknown action kind or an
+  unknown key on one — each is a typed `SCENARIO_BAD_INPUT` /
+  `SCENARIO_BAD_STEP` naming the JSON path. A scenario that would fail on step
+  3 never fails after two captures have run.
+- **A failed action keeps its scene.** The trace is a real measurement of what
+  the device did while the action was attempted; the step is marked `failed`
+  with the action's error and `sceneDir` still names it. A failed *setup* or a
+  failed capture names no `sceneDir`, because there is no scene to point at.
+- **`steps.json` is structurally deterministic.** Same scenario, device and
+  outcomes produce identical ids, order, paths and statuses; exactly three
+  fields are host clock and vary — the run's `startedAtMs`/`durationMs` and
+  each action's `atMs`.
+- **Measured limitation:** both the Mate 60 and the HarmonyOS emulator answer
+  `cat /proc/uptime` with `Permission denied` from an ordinary shell, so
+  `atNs` is absent on every device this package has been measured on. The
+  field is omitted rather than fabricated as a zero (a zero would address the
+  trace origin).
+- **Not ported, deliberately:** Hypium/xdevice and executable Python
+  testcases, metric assertions inside a scenario (that is `compare`'s
+  question), device pools, and HapRay's retry-until-non-empty behavior —
+  silently re-running until something appears is how an empty capture becomes
+  a plausible number.
+
 ## 0.7.0 — 2026-11-17
 
 P12 (HapRay parity W4): the device log, captured and evaluated.

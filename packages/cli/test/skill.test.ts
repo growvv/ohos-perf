@@ -18,7 +18,7 @@ const readme = readNormalized(join(root, 'README.md'));
 
 const COMMANDS = new Set([
   'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report',
-  'emulator', 'gesture',
+  'emulator', 'gesture', 'run',
 ]);
 
 describe('agent skill adapter', () => {
@@ -90,5 +90,20 @@ describe('agent skill adapter', () => {
   it('is linked from the README', () => {
     expect(readme).toContain('ohos-perf query');
     expect(readme).toContain('skill/ohos-perf');
+  });
+
+  it('documents the scenario runner and what an agent must not claim about it', () => {
+    // A marker is an annotation, not a trace event, and a failed action keeps
+    // its scene — an agent that gets either wrong reports a trace it never had.
+    for (const needle of [
+      'ohos-perf run scenario.json --out',
+      'capture.startedAtMs',
+      'not a trace event',
+      'keeps its scene',
+      '--keep-going',
+      '--only',
+    ]) {
+      expect(skill).toContain(needle);
+    }
   });
 });
