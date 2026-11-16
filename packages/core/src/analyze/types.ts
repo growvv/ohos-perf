@@ -3,6 +3,8 @@ import type { HidumperCapture } from '../collectors/hidumper';
 import type { ProcfsSample } from '../collectors/procfs';
 import type { QueryHandle } from '../db/driver';
 import type { SceneMetadata } from '../ingest/metadata';
+import type { HilogLine } from '../hilog/parse';
+import type { HilogRule } from '../hilog/rules';
 import type { BinderQuery } from '../query/binder';
 import type { CallstackQuery } from '../query/callstack';
 import type { FrameQuery } from '../query/frames';
@@ -61,6 +63,17 @@ export interface AnalyzeContext {
   procfs?: ProcfsSample[];
   /** RenderService counter snapshots; present only when a hidumper capture ran. */
   hidumper?: HidumperCapture;
+  /**
+   * The scene's parsed hilog rows. Absent when the scene carries no
+   * `hilog.log`; the analyzer degrades with a reason rather than reporting
+   * zero matches for a capture that never logged.
+   */
+  hilog?: HilogLine[];
+  /**
+   * The rule set to evaluate. Defaults to HapRay's ported rules, so a capture
+   * with no user configuration still produces HapRay's numbers.
+   */
+  hilogRules?: readonly HilogRule[];
   metadata?: SceneMetadata;
   app: AppIdentity;
   window: TimeRange;

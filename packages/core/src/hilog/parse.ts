@@ -111,21 +111,36 @@ export function parseHilogLine(line: string, year: number, captureNs: number): H
 }
 
 /**
+ * How to place a year-less timestamp on the timeline.
+ *
+ * `year` comes from `scene.json`'s capture time and is **absent** for a scene
+ * with no descriptor. A raw scene still has a log worth counting, so an absent
+ * year yields raw rows (`parsed: false`, `ts: 0`) rather than a guess: 1970 or
+ * the host clock would be a confident wrong instant, and every `hilog.around`
+ * window built from it would be wrong too.
+ */
+export interface HilogParseOptions {
+  readonly year?: number;
+  /** The capture instant, ns since epoch. `0` means unknown. */
+  readonly captureNs: number;
+}
+
+/**
  * Parse a whole log.
  *
  * Splits on `\r?\n` and drops exactly one trailing empty element (the file's
  * final newline), so `lines.count` equals the number of lines a reader sees.
  * Interior blank lines stay as raw rows.
  */
-export function parseHilogText(
-  text: string,
-  opts: { year: number; captureNs: number },
-): HilogLine[] {
+export function parseHilogText(text: string, opts: HilogParseOptions): HilogLine[] {
   if (text === '') return [];
   const parts = text.split(/\r?\n/);
   if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+  const year = opts.year;
   return parts.map((line, index) => {
-    const parsed = parseHilogLine(line, opts.year, opts.captureNs);
+    const parsed = year === undefined
+      ? rawLine(index, line)
+      : parseHilogLine(line, year, opts.captureNs);
     return { ...parsed, index };
   });
 }

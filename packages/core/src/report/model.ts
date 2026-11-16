@@ -98,6 +98,7 @@ export const SECTION_TITLES: Readonly<Record<string, string>> = {
   'frame-load': 'Frame load',
   frames: 'Frames',
   gc: 'GC pressure',
+  hilog: 'Hilog',
   'mem-measure': 'Memory measurement',
   'native-memory': 'Native memory',
   memory: 'Memory trend',

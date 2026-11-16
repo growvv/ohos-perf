@@ -10,6 +10,7 @@ import { FlamegraphAnalyzer } from './flamegraph';
 import { FrameLoadAnalyzer } from './frame-load';
 import { FrameAnalyzer } from './frames';
 import { GcAnalyzer } from './gc';
+import { HilogAnalyzer } from './hilog';
 import { MemoryAnalyzer } from './memory';
 import { MemoryMeasureAnalyzer } from './mem-measure';
 import { NativeMemoryAnalyzer } from './native-memory';
@@ -239,5 +240,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new RsSkipAnalyzer(),
     new FlamegraphAnalyzer(),
     new ComponentReuseAnalyzer(),
+    new HilogAnalyzer(),
   ];
 }

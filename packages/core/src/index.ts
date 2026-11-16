@@ -117,6 +117,12 @@ export type {
 } from './collectors/hidumper';
 export { UitestCollector, DEVICE_UI_PATH } from './collectors/uitest';
 export { HilogCollector, HILOG_COMMAND, readHilogText } from './collectors/hilog';
+export { parseHilogLine, parseHilogText } from './hilog/parse';
+export type { HilogLevel, HilogLine, HilogParseOptions } from './hilog/parse';
+export {
+  compileRules, matchRules, DEFAULT_HILOG_RULES,
+} from './hilog/rules';
+export type { CompiledRule, HilogMatch, HilogRule } from './hilog/rules';
 export { flattenUiTree, readUiTree } from './query/ui';
 export type { UiNode } from './query/ui';
 export type { Collector, TraceCollectOptions } from './collectors/types';
@@ -221,6 +227,7 @@ export { classifyNativePath } from './analyze/native-kinds';
 export type { NativeCategory } from './analyze/native-kinds';
 export { StartupAnalyzer } from './analyze/startup';
 export { RenderAnalyzer } from './analyze/render';
+export { HilogAnalyzer } from './analyze/hilog';
 export { GcAnalyzer, computeGc } from './analyze/gc';
 export type { GcSignals } from './analyze/gc';
 export { VsyncAnalyzer, computeVsyncAnomalies } from './analyze/vsync';

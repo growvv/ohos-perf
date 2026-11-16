@@ -19,7 +19,7 @@ function escapeHtml(value: string): string {
 }
 
 /** Fixed key order so a render is byte-identical across runs. */
-function signalText(signals: Record<string, number | string>): string {
+function signalText(signals: Record<string, number | string | readonly string[]>): string {
   return Object.keys(signals)
     .sort()
     .map((key) => `${key}=${String(signals[key])}`)

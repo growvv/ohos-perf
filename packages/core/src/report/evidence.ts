@@ -14,6 +14,7 @@ export type EvidenceKind =
   | 'thread_redundancy'
   | 'memory_growth'
   | 'native_memory'
+  | 'hilog_match'
   | 'gc_pressure'
   | 'rs_skip'
   | 'startup';
@@ -37,9 +38,28 @@ export interface Evidence {
   id: string;
   kind: EvidenceKind;
   severity: 'info' | 'warn' | 'critical';
-  subject: { process: string; thread?: string; frameNo?: number; pid?: number };
+  subject: {
+    process: string;
+    thread?: string;
+    frameNo?: number;
+    pid?: number;
+    /**
+     * The rule a `hilog_match` item reports. It is part of the subject rather
+     * than a signal because two rules firing on one log are two findings, and
+     * the subject is what the id and the human-readable line describe.
+     */
+    rule?: string;
+  };
   window: TimeRange;
-  signals: Record<string, number | string>;
+  /**
+   * The measured facts behind the finding.
+   *
+   * Scalars are the common case; a `hilog_match` item carries its sample
+   * messages as a list, which the renderers stringify the same way they do a
+   * number. Lists are always ordered by the analyzer, so output stays
+   * byte-stable.
+   */
+  signals: Record<string, number | string | readonly string[]>;
   explain: string;
   drillDown: DrillDownHandle[];
 }
@@ -69,6 +89,8 @@ function evidenceId(input: Omit<Evidence, 'id'>, key?: string): string {
     subject.pid ?? '',
     window.startNs,
     window.endNs,
+    // Appended only when present, so every pre-existing id stays byte-identical.
+    ...(subject.rule === undefined ? [] : [subject.rule]),
   ].join('|');
   const hashMaterial = key === undefined ? material : `${material}|${key}`;
   return createHash('sha1').update(hashMaterial).digest('hex').slice(0, 12);

@@ -85,4 +85,14 @@ describe('parseHilogText', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].message).toBe('CreatePixelMap success, memType : 3, cost 120 us');
   });
+
+  it('keeps every line raw when the capture year is unknown', () => {
+    // A scene with no `scene.json` names no capture time, so a year-less
+    // timestamp cannot be placed. Inventing one (1970, the host clock) would
+    // be a confident wrong instant; raw rows keep the text and say so.
+    const rows = parseHilogText(`${LINE}\n${LINE}`, { year: undefined, captureNs: 0 });
+    expect(rows.map((r) => r.index)).toEqual([0, 1]);
+    expect(rows.every((r) => r.parsed === false && r.ts === 0)).toBe(true);
+    expect(rows[0].message).toBe(LINE);
+  });
 });

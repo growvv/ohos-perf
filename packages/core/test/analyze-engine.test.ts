@@ -366,6 +366,7 @@ describe('defaultAnalyzers', () => {
       'rs-skip',
       'flamegraph',
       'components',
+      'hilog',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FrameLoadAnalyzer);
