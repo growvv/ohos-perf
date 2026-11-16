@@ -219,7 +219,13 @@ export type {
   ThreadAnalysis,
   ThreadAnalysisSummary,
 } from './analyze/threads-score';
-export { runAnalyzers, defaultAnalyzers } from './analyze/engine';
+export {
+  runAnalyzers,
+  runAnalyzerSections,
+  defaultAnalyzers,
+  type AnalyzerRun,
+  type AnalyzerSection,
+} from './analyze/engine';
 export { resolveAppIdentity, resolveAppIpids } from './analyze/context';
 export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';
 

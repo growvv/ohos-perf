@@ -25,7 +25,11 @@ import { RenderAnalyzer } from '../src/analyze/render';
 import { RsSkipAnalyzer } from '../src/analyze/rs-skip';
 import { ThreadAnalyzer } from '../src/analyze/threads-score';
 import { VsyncAnalyzer } from '../src/analyze/vsync';
-import { defaultAnalyzers, runAnalyzers } from '../src/analyze/engine';
+import {
+  defaultAnalyzers,
+  runAnalyzerSections,
+  runAnalyzers,
+} from '../src/analyze/engine';
 import { resolveAppIdentity } from '../src/analyze/context';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from '../src/analyze/types';
 import { metric } from '../src/report/metric';
@@ -143,6 +147,22 @@ function skippedAnalyzer(id: string, requires: CapabilityId[]): Analyzer {
     },
   };
 }
+
+describe('runAnalyzerSections', () => {
+  it('reports one section per analyzer, marking a skipped analyzer degraded', async () => {
+    const analyzers = [skippedAnalyzer('native', ['mem.native_hook']), availableAnalyzer('ok', [m('a.metric', 1)])];
+    const run = await runAnalyzerSections(analyzers, makeCtx());
+
+    expect(run.sections.map((section) => [section.analyzerId, section.status])).toEqual([
+      ['native', 'degraded'],
+      ['ok', 'measured'],
+    ]);
+    const degraded = run.sections[0];
+    expect(degraded?.result.metrics.map((x) => x.id)).toEqual(['native.degraded']);
+    expect(degraded?.result.evidence.map((x) => x.kind)).toEqual(['degraded_capability']);
+    expect(run.result).toEqual(await runAnalyzers(analyzers, makeCtx()));
+  });
+});
 
 describe('runAnalyzers', () => {
   it('degrades unavailable analyzers and reports the device reason', async () => {

@@ -114,6 +114,25 @@ function degradedEvidence(
 }
 
 /**
+ * One analyzer's share of a run.
+ *
+ * A skipped analyzer still gets a section, with `status: 'degraded'` and the
+ * placeholder metric/evidence pair the engine synthesizes, so a report can
+ * name the missing capability in place instead of dropping the section.
+ */
+export interface AnalyzerSection {
+  readonly analyzerId: string;
+  readonly status: 'measured' | 'degraded';
+  readonly result: AnalyzeResult;
+}
+
+/** A whole run: the merged result plus the per-analyzer sections it came from. */
+export interface AnalyzerRun {
+  readonly result: AnalyzeResult;
+  readonly sections: AnalyzerSection[];
+}
+
+/**
  * Runs every analyzer whose capability requirements are satisfied.
  *
  * Analyzers are sorted by `id` and run sequentially, so both the call order
@@ -121,6 +140,8 @@ function degradedEvidence(
  * order (D5). An analyzer with an unsatisfied requirement is not called: it
  * contributes one `<id>.degraded` proxy metric and one `degraded_capability`
  * evidence item naming the missing capabilities and the device's own reasons.
+ * Every analyzer also contributes one {@link AnalyzerSection} to `sections`,
+ * in the same id order, so a report can attribute each metric to its source.
  *
  * The returned arrays are new and sorted (`metrics` by `id`, `evidence` by
  * `(kind, window.startNs, id)`). Two analyzers emitting the same metric id
@@ -129,25 +150,32 @@ function degradedEvidence(
  * integrity rule applies to evidence ids (`DUPLICATE_EVIDENCE_ID`). Neither
  * the context nor any analyzer (including its result arrays) is mutated.
  */
-export async function runAnalyzers(
+export async function runAnalyzerSections(
   analyzers: readonly Analyzer[],
   ctx: AnalyzeContext,
-): Promise<AnalyzeResult> {
+): Promise<AnalyzerRun> {
   const ordered = [...analyzers].sort(byAnalyzerId);
   const metrics: Metric[] = [];
   const evidenceItems: Evidence[] = [];
+  const sections: AnalyzerSection[] = [];
 
   for (const analyzer of ordered) {
     const check = ctx.caps.satisfies(analyzer.requires);
     if (!check.ok) {
-      metrics.push(degradedMetric(analyzer, ctx, check.missing));
-      evidenceItems.push(degradedEvidence(analyzer, ctx, check.missing));
+      const result: AnalyzeResult = {
+        metrics: [degradedMetric(analyzer, ctx, check.missing)],
+        evidence: [degradedEvidence(analyzer, ctx, check.missing)],
+      };
+      metrics.push(...result.metrics);
+      evidenceItems.push(...result.evidence);
+      sections.push({ analyzerId: analyzer.id, status: 'degraded', result });
       continue;
     }
 
     const result = await analyzer.run(ctx);
     metrics.push(...result.metrics);
     evidenceItems.push(...result.evidence);
+    sections.push({ analyzerId: analyzer.id, status: 'measured', result });
   }
 
   metrics.sort(byMetricId);
@@ -168,7 +196,20 @@ export async function runAnalyzers(
       });
     }
   }
-  return { metrics, evidence: evidenceItems };
+  return { result: { metrics, evidence: evidenceItems }, sections };
+}
+
+/**
+ * Runs every analyzer and returns only the merged result.
+ *
+ * A thin wrapper over {@link runAnalyzerSections}; existing callers keep the
+ * old shape and behavior exactly.
+ */
+export async function runAnalyzers(
+  analyzers: readonly Analyzer[],
+  ctx: AnalyzeContext,
+): Promise<AnalyzeResult> {
+  return (await runAnalyzerSections(analyzers, ctx)).result;
 }
 
 /**
