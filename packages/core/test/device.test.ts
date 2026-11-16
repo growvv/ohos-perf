@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { Device, connect } from '../src/device/device';
 import { CapabilityMatrix } from '../src/device/capability';
 import { DeviceNotFoundError } from '../src/errors';
+import { encodePng } from '../src/image/png';
 import type { SceneLayout } from '../src/ingest/scene';
 
 const probe = {
@@ -1003,6 +1004,7 @@ function extraCollectors(opts: {
   failHiperf?: boolean;
   failHidumper?: boolean;
   failUitest?: boolean;
+  failScreenshot?: boolean;
   failHilog?: boolean;
 } = {}) {
   const started: string[] = [];
@@ -1069,6 +1071,18 @@ function extraCollectors(opts: {
       return [{ depth: 0, type: 'Root' }];
     },
   };
+  const screenshot = {
+    collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+      started.push('screenshot');
+      if (opts.failScreenshot === true) throw new Error('screenshot exploded');
+      const png = encodePng({
+        width: 2, height: 1,
+        data: new Uint8Array([1, 2, 3, 255, 4, 5, 6, 255]),
+      });
+      writeFileSync(layout.screenshotFile, png);
+      return { width: 2, height: 1, bytes: png.length };
+    },
+  };
   const hilog = {
     collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
       started.push('hilog');
@@ -1087,6 +1101,7 @@ function extraCollectors(opts: {
     device: () => new Device('t1', probe as any, {
       hdc: hdc as any, streamer: streamer as any, collector: hitrace as any,
       hiperf: hiperf as any, hidumper: hidumper as any, uitest: uitest as any,
+      screenshot: screenshot as any,
       hilog: hilog as any,
     }),
   };
@@ -1110,6 +1125,29 @@ describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
       expect(meta.app).toEqual({ packageName: '', processNames: [] });
       expect(meta.pids).toEqual([]);
       expect(meta.capture.collectors).toEqual(['hitrace', 'hidumper', 'uitest']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('records the screenshot beside the tree, each under its own key', async () => {
+    // The results are unpacked positionally, so a screenshot pushed and read
+    // out of order would put the tree's node count under `screenshot`. This
+    // asserts both halves, not just that the collector ran.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-shot-'));
+    try {
+      const h = extraCollectors();
+      const scene = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, hidumper: true, uitest: true, screenshot: true,
+      }).then((s) => s.ingest());
+      scene.close();
+
+      expect(h.started.sort()).toEqual(['hidumper', 'hitrace', 'screenshot', 'uitest']);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors)
+        .toEqual(['hitrace', 'hidumper', 'uitest', 'screenshot']);
+      expect(meta.capture.uitest).toEqual({ nodes: 1 });
+      expect(meta.capture.screenshot).toEqual({ width: 2, height: 1, bytes: 74 });
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

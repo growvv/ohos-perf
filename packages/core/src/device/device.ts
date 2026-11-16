@@ -493,10 +493,6 @@ export class Device {
                 : { callStacks: opts.hiperf.callStacks }),
             }, layout));
           }
-          if (wantsScreenshot) {
-            const screenshot = this.deps.screenshot ?? new ScreenshotCollector();
-            runs.push(screenshot.collect(hdc, this.id, {}, layout));
-          }
           if (wantsHidumper) {
             const hidumper = this.deps.hidumper ?? new HidumperCollector();
             runs.push(hidumper.collect(
@@ -509,6 +505,13 @@ export class Device {
           if (wantsUitest) {
             const uitest = this.deps.uitest ?? new UitestCollector();
             runs.push(uitest.collect(hdc, this.id, {}, layout));
+          }
+          // Pushed and unpacked in the same order as the blocks above: the
+          // results are read positionally, so a collector added out of order
+          // would silently attribute one collector's result to another.
+          if (wantsScreenshot) {
+            const screenshot = this.deps.screenshot ?? new ScreenshotCollector();
+            runs.push(screenshot.collect(hdc, this.id, {}, layout));
           }
           if (wantsHilog) {
             const hilog = this.deps.hilog ?? new HilogCollector();
