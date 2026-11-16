@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CommanderError } from 'commander';
 import type { CliDeps, CliResult } from '../src/commands';
@@ -31,6 +33,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
       stop: async () => { throw new Error('emulator not stubbed'); },
       create: async () => { throw new Error('emulator not stubbed'); },
     },
+    run: async () => { throw new Error('run not stubbed'); },
     ...overrides,
   };
 }
@@ -81,7 +84,7 @@ describe('--help', () => {
     const { out } = await parse(['--help']);
     const text = out.join('');
     for (const name of [
-      'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report',
+      'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'run',
     ]) {
       expect(text).toContain(name);
     }
@@ -475,5 +478,93 @@ describe('command wiring', () => {
     }];
     const { emitted } = await parse(['tools', '--json'], { tools: () => info });
     expect(JSON.parse(emitted[0].stdout)).toEqual(info);
+  });
+});
+
+describe('run wiring', () => {
+  /** A real scenario file: the command layer reads and validates before deps.run. */
+  const SCENARIO = (() => {
+    const path = join(mkdtempSync(join(tmpdir(), 'program-run-')), 'scenario.json');
+    writeFileSync(path, JSON.stringify({
+      version: 1,
+      name: 'two',
+      app: 'com.example.app',
+      steps: [{ id: 'open', actions: [], capture: { durationMs: 1000, collectors: ['hitrace'] } }],
+    }));
+    return path;
+  })();
+
+  const runResult = {
+    scenario: 'two',
+    app: 'com.example.app',
+    device: { id: 't1', kind: 'emulator' },
+    rounds: 1,
+    status: 'completed' as const,
+    steps: [{
+      round: 1, index: 0, id: 'open', name: 'open', status: 'ok' as const,
+      sceneDir: '/out/open/round-1', startedAtMs: 1, durationMs: 2, actions: [],
+    }],
+    startedAtMs: 1,
+    durationMs: 2,
+    pids: { pids: [1], processNames: ['com.example.app'] },
+  };
+
+  it('forwards the scenario path, options and --json', async () => {
+    const calls: unknown[] = [];
+    const { emitted } = await parse(
+      ['run', SCENARIO, '--out', 'out', '--target', 't1', '--rounds', '2',
+        '--only', 'open, scroll', '--keep-going', '--json'],
+      { run: async (req) => { calls.push(req); return runResult; } },
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      scenarioPath: SCENARIO,
+      outDir: 'out',
+      target: 't1',
+      rounds: 2,
+      only: ['open', 'scroll'],
+      keepGoing: true,
+    });
+    expect(JSON.parse(emitted[0].stdout).steps).toHaveLength(1);
+  });
+
+  it('rejects a non-positive --rounds before calling the run layer', async () => {
+    for (const rounds of ['0', '-1', '1.5', 'x']) {
+      let called = false;
+      const { emitted } = await parse(
+        ['run', SCENARIO, '--out', 'out', '--rounds', rounds],
+        { run: async () => { called = true; return runResult; } },
+      );
+      expect(called, rounds).toBe(false);
+      expect(emitted[0].exitCode).toBe(1);
+      expect(emitted[0].stderr).toMatch(/--rounds/);
+    }
+  });
+
+  it('rejects an --only with an empty element before calling the run layer', async () => {
+    let called = false;
+    const { emitted } = await parse(
+      ['run', SCENARIO, '--out', 'out', '--only', 'open,'],
+      { run: async () => { called = true; return runResult; } },
+    );
+    expect(called).toBe(false);
+    expect(emitted[0]).toEqual({
+      stdout: '',
+      stderr: 'invalid --only "open,": an empty step id names no step;' +
+        ' expected a comma-separated list of ids\n',
+      exitCode: 1,
+    });
+  });
+
+  it('exits 1 when the run reports a failed step', async () => {
+    const { emitted } = await parse(['run', SCENARIO, '--out', 'out'], {
+      run: async () => ({
+        ...runResult,
+        status: 'failed',
+        steps: [{ ...runResult.steps[0], status: 'failed', error: 'boom' }],
+      }),
+    });
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stdout).toMatch(/failed  open/);
   });
 });

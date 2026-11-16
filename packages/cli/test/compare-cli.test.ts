@@ -31,6 +31,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
       stop: async () => { throw new Error('emulator not stubbed'); },
       create: async () => { throw new Error('emulator not stubbed'); },
     },
+    run: async () => { throw new Error('run not stubbed'); },
     ...overrides,
   };
 }

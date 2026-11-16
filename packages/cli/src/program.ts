@@ -13,6 +13,7 @@ import {
   runGesture,
   runQuery,
   runReport,
+  runScenarioCommand,
   runTools,
   safeMessage,
   type CliDeps,
@@ -22,6 +23,7 @@ import {
 import { parseDurationSeconds, parsePluginList } from './collect';
 import { parseCoordinate, parseKey, parseText, parseVelocity } from './gesture';
 import { parseLimit, parseQueryArgs } from './query';
+import { parseOnly } from './run';
 
 /**
  * Commander wiring, kept free of `process`.
@@ -292,6 +294,53 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         );
       },
     );
+
+  program
+    .command('run')
+    .description('run a declarative scenario, capturing one scene per step')
+    .argument('<scenario>', 'scenario JSON file')
+    .requiredOption('--out <dir>', 'run output directory (one scene per step)')
+    .option('--target <id>', 'run against this hdc target instead of the first connected one')
+    .option('--rounds <n>', 'repeat every step this many times (overrides the scenario)')
+    .option('--only <ids>', 'comma-separated step ids to run, in scenario order')
+    .option('--keep-going', 'continue after a failed step instead of stopping')
+    .option('--json', 'print the run result as JSON')
+    .action(async (scenarioPath: string, opts: {
+      out: string;
+      target?: string;
+      rounds?: string;
+      only?: string;
+      keepGoing?: boolean;
+      json?: boolean;
+    }) => {
+      // Parse both list/number flags before any device is touched, so a bad
+      // value produces the CLI-wide failure contract rather than a partial run.
+      let rounds: number | undefined;
+      let only: string[] | undefined;
+      try {
+        if (opts.rounds !== undefined) {
+          if (!/^[1-9]\d*$/.test(opts.rounds)) {
+            throw new Error(
+              `invalid --rounds ${JSON.stringify(opts.rounds)}: expected a positive whole number`,
+            );
+          }
+          rounds = Number(opts.rounds);
+        }
+        only = opts.only === undefined ? undefined : parseOnly(opts.only);
+      } catch (err) {
+        io.emit({ stdout: '', stderr: `${safeMessage(err)}
+`, exitCode: 1 });
+        return;
+      }
+      io.emit(await runScenarioCommand(deps, {
+        scenarioPath,
+        outDir: opts.out,
+        ...(opts.target === undefined ? {} : { target: opts.target }),
+        ...(rounds === undefined ? {} : { rounds }),
+        ...(only === undefined ? {} : { only }),
+        ...(opts.keepGoing === true ? { keepGoing: true } : {}),
+      }, { json: opts.json }));
+    });
 
   program
     .command('tools')

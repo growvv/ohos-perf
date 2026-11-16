@@ -133,6 +133,17 @@ export type { StreamerOptions } from './ingest/streamer';
 export { Scene, createSceneLayout, ingestScene } from './ingest/scene';
 export type { SceneLayout } from './ingest/scene';
 export { readSceneMetadata, writeSceneMetadata } from './ingest/metadata';
+// Scenario runner (P13)
+export { parseScenario, COLLECTOR_NAMES } from './scenario/schema';
+export { executeAction } from './scenario/actions';
+export { ScenarioRunner, writeRunFiles } from './scenario/runner';
+export type {
+  Scenario, ScenarioAction, ScenarioStep, StepCapture, CollectorName,
+} from './scenario/schema';
+export type { ActionDevice } from './scenario/actions';
+export type {
+  ActionOutcome, RunResult, RunStepResult, RunnerCollectOptions, RunnerDevice, RunOptions,
+} from './scenario/runner';
 export type { SceneMetadata, SceneStepRef } from './ingest/metadata';
 
 // Database

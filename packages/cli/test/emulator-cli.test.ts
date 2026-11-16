@@ -29,6 +29,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
       stop: async (name: string) => ({ name, wasRunning: true }),
       create: async (req) => ({ name: req.name, running: false, instancePath: `/i/${req.name}` }),
     },
+    run: async () => { throw new Error('run not stubbed'); },
     ...overrides,
   };
 }

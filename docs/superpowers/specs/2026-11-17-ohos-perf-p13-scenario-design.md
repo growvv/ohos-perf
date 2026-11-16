@@ -171,17 +171,28 @@ in flight, then awaits the capture. Two consequences are deliberate:
 
 ### Timestamps
 
-Every action records `atNs` (device uptime, ns) and `atMs` (host clock, ms).
-`atNs` is read with one `cat /proc/uptime` immediately before the action; a
-failed read omits `atNs` rather than writing a fabricated zero, because
-uptime `0` addresses the trace origin.
+Every action records `atMs` (host clock, ms) and, when the device will say,
+`atNs` (device uptime, ns). `atNs` is read with one `cat /proc/uptime`
+immediately before the action.
+
+**Measured limitation:** both the Mate 60 (`BRA-AL00`, HarmonyOS 7.0.0.111)
+and the HarmonyOS emulator answer `cat /proc/uptime` with
+`Permission denied` from an ordinary shell, so `atNs` is absent on every
+device this package has been measured on, and `Device.collect`'s
+`startedAtNs` marker is absent for the same reason. The field exists for
+devices that do allow the read and is omitted otherwise — never a fabricated
+zero, which would address the trace origin. The correlation route that works
+everywhere is `atMs` relative to the scene's `capture.startedAtMs`, which is
+an exact host-clock interval; the residual is the device's capture-startup
+delay, which no host clock can see.
 
 `steps.json` is **structurally** deterministic: same scenario, same device,
 same outcomes → identical keys in identical order, identical ids, identical
-paths, identical device-uptime instants. Exactly three fields are host clock
-and legitimately vary: the run's `startedAtMs`/`durationMs` and each action's
-`atMs`. They are the only ones, so a comparison can ignore exactly those and
-compare the rest byte for byte.
+paths. Exactly three fields are host clock and legitimately vary: the run's
+`startedAtMs`/`durationMs` and each action's `atMs`. They are the only ones,
+so a comparison can ignore exactly those and compare the rest byte for byte.
+(`atNs`, when a device provides it, is device uptime and is identical across
+runs that start from the same boot.)
 
 ### Failure
 

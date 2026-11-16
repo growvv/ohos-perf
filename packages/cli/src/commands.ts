@@ -1,7 +1,13 @@
-import type {
-  BaselineComparison, CapabilityState, CreateEmulatorRequest, DeltaStatus,
-  EmulatorInstance, EmulatorStartResult, EmulatorStopResult, Gesture, GestureResult,
-  HiprofilerPluginName, NamedQueryInfo, NamedQueryResult,
+import { readFileSync } from 'node:fs';
+import {
+  OhosPerfError,
+  parseScenario,
+  type BaselineComparison, type CapabilityState, type CreateEmulatorRequest,
+  type DeltaStatus,
+  type EmulatorInstance, type EmulatorStartResult, type EmulatorStopResult, type Gesture,
+  type GestureResult,
+  type HiprofilerPluginName, type NamedQueryInfo, type NamedQueryResult,
+  type RunResult, type Scenario,
 } from '@ohos-perf/core';
 import { doctorReport, safeMessage, type DoctorDeps } from './doctor';
 
@@ -119,6 +125,29 @@ export interface CollectOutput {
   hilog?: { lines: number };
 }
 
+/** A `run` invocation, with the scenario already read and validated. */
+export interface RunRequest {
+  /** The parsed document. Reading and validating happen in the command layer. */
+  scenario: Scenario;
+  /** The path it came from, for error wording and `testInfo.json`'s name. */
+  scenarioPath: string;
+  outDir: string;
+  target?: string;
+  rounds?: number;
+  only?: readonly string[];
+  keepGoing?: boolean;
+}
+
+/** What `run` needs from the caller before it can reach `deps.run`. */
+export interface RunInput {
+  scenarioPath: string;
+  outDir: string;
+  target?: string;
+  rounds?: number;
+  only?: readonly string[];
+  keepGoing?: boolean;
+}
+
 /** One gesture to inject, on the target that should receive it. */
 export interface GestureRequest {
   gesture: Gesture;
@@ -217,6 +246,8 @@ export interface CliDeps {
   report(req: ReportRequest): Promise<ReportOutput>;
   /** HarmonyOS emulator lifecycle. Throws on any failure; the caller maps it to exit 1. */
   emulator: EmulatorDeps;
+  /** Run a scenario. Throws on any failure; the caller maps it to exit 1. */
+  run(req: RunRequest): Promise<RunResult>;
   /** Package version, for `--version` and the help banner. */
   version: string;
 }
@@ -549,6 +580,82 @@ export async function runReport(
     };
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Read, validate and run a scenario.
+ *
+ * Reading and validating happen here, not in `deps.run`, so an invalid
+ * document fails without a device being resolved — the property the tests
+ * pin by observing that `deps.run` was never called.
+ *
+ * Human output is one line per step (`ok|failed  <id>  round <n>  <scene>`)
+ * plus a summary; the exit code is 1 when any step failed, because a caller
+ * scripting this run must not read a failed step as a completed one. A step
+ * failure is a result, not an invocation error, so stderr stays empty.
+ */
+export async function runScenarioCommand(
+  deps: CliDeps,
+  input: RunInput,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  let scenario: Scenario;
+  try {
+    let text: string;
+    try {
+      text = readFileSync(input.scenarioPath, 'utf8');
+    } catch (err) {
+      throw new OhosPerfError(
+        `cannot read scenario ${input.scenarioPath}: ${safeMessage(err)}`,
+        { code: 'SCENARIO_UNREADABLE', cause: err },
+      );
+    }
+    scenario = parseScenario(text);
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}
+`, exitCode: 1 };
+  }
+
+  try {
+    const result = await deps.run({
+      scenario,
+      scenarioPath: input.scenarioPath,
+      outDir: input.outDir,
+      ...(input.target === undefined ? {} : { target: input.target }),
+      ...(input.rounds === undefined ? {} : { rounds: input.rounds }),
+      ...(input.only === undefined ? {} : { only: input.only }),
+      ...(input.keepGoing === true ? { keepGoing: true } : {}),
+    });
+    if (opts.json) {
+      return {
+        stdout: json(result),
+        stderr: '',
+        exitCode: result.status === 'failed' ? 1 : 0,
+      };
+    }
+
+    const ok = result.steps.filter((step) => step.status === 'ok').length;
+    const failed = result.steps.length - ok;
+    const lines = result.steps.map((step) => {
+      const scene = step.sceneDir === undefined ? '' : `  ${step.sceneDir}`;
+      const error = step.status === 'ok' ? '' : `  ${step.error ?? 'failed'}`;
+      return `${step.status === 'ok' ? 'ok    ' : 'failed'}  ${step.id}` +
+        `  round ${step.round}${scene}${error}`;
+    });
+    const summary = failed === 0
+      ? `steps ${ok}/${result.steps.length} ok`
+      : `steps ${ok}/${result.steps.length} ok, ${failed} failed`;
+    return {
+      stdout: `${lines.map((line) => `${line}
+`).join('')}${summary}
+`,
+      stderr: '',
+      exitCode: result.status === 'failed' ? 1 : 0,
+    };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}
+`, exitCode: 1 };
   }
 }
 

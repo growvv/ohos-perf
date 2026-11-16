@@ -25,6 +25,7 @@ function baseDeps(): CliDeps {
       stop: async () => { throw new Error('x'); },
       create: async () => { throw new Error('x'); },
     },
+    run: async () => { throw new Error('run not stubbed'); },
   };
 }
 

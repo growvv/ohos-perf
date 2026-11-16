@@ -115,6 +115,7 @@ const VALUE_EXPORTS = [
   'renderSummaryJson', 'summarizeReport',
   'readSceneMetadata',
   'resolveAppIdentity', 'resolveAppIpids', 'resolveQueryLimit',
+  'ScenarioRunner', 'parseScenario', 'executeAction', 'writeRunFiles', 'COLLECTOR_NAMES',
   'runAnalyzerSections', 'runAnalyzers', 'runDrillDown', 'runNamedQuery', 'runProbe',
   'RsSkipAnalyzer', 'tableRowCounts',
   'unknownQueryError',

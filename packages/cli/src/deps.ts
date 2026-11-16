@@ -41,6 +41,7 @@ import {
   readSceneMetadata,
   readUiTree,
   resolveAppIdentity,
+  ScenarioRunner,
   resolveQueryLimit,
   runAnalyzerSections,
   runNamedQuery,
@@ -769,6 +770,20 @@ export function realDeps(
         args: definition.args,
         returns: definition.returns,
       }));
+    },
+
+    async run(req) {
+      // Reading and validating the document happened in the command layer;
+      // this is the first place a device is resolved, so an invalid scenario
+      // never reaches one.
+      const device = await connect(req.target === undefined ? {} : { target: req.target });
+      const runner = new ScenarioRunner(device, {
+        outDir: resolve(req.outDir),
+        ...(req.rounds === undefined ? {} : { rounds: req.rounds }),
+        ...(req.only === undefined ? {} : { only: req.only }),
+        ...(req.keepGoing === true ? { keepGoing: true } : {}),
+      });
+      return runner.run(req.scenario);
     },
 
     async collect(req) {
