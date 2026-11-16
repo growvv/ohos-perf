@@ -178,9 +178,10 @@ uptime `0` addresses the trace origin.
 
 `steps.json` is **structurally** deterministic: same scenario, same device,
 same outcomes → identical keys in identical order, identical ids, identical
-paths. The fields that legitimately vary are `startedAtMs` and `durationMs`;
-they are listed in one place (each step entry) so a comparison can ignore
-exactly those.
+paths, identical device-uptime instants. Exactly three fields are host clock
+and legitimately vary: the run's `startedAtMs`/`durationMs` and each action's
+`atMs`. They are the only ones, so a comparison can ignore exactly those and
+compare the rest byte for byte.
 
 ### Failure
 
