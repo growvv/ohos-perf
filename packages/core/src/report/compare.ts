@@ -80,6 +80,13 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
   // A higher trace accuracy means more of the skipped frames were explained.
   'rs_skip.trace.accuracy': 'higher',
   'rs_skip.traced.count': 'higher',
+
+  // Fewer builds of the busiest component is the goal, and a higher reuse
+  // rate means more of them came from the recycle pool. `components.top.name`
+  // is a label, not a quantity, so it has no direction.
+  'components.builds.count': 'lower',
+  'components.recycled.count': 'higher',
+  'components.reuse.rate': 'higher',
 };
 
 export type DeltaStatus =

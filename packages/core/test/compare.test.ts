@@ -200,6 +200,9 @@ describe('METRIC_DIRECTIONS', () => {
     expect(METRIC_DIRECTIONS['empty_frame.rate']).toBe('lower');
     expect(METRIC_DIRECTIONS['rs_skip.frames.count']).toBe('lower');
     expect(METRIC_DIRECTIONS['rs_skip.trace.accuracy']).toBe('higher');
+    expect(METRIC_DIRECTIONS['components.builds.count']).toBe('lower');
+    expect(METRIC_DIRECTIONS['components.recycled.count']).toBe('higher');
+    expect(METRIC_DIRECTIONS['components.reuse.rate']).toBe('higher');
   });
 
   it('leaves a count with no better direction incomparable', () => {

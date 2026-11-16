@@ -3,6 +3,7 @@ import { OhosPerfError } from '../errors';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import { BinderAnalyzer } from './binder';
+import { ComponentReuseAnalyzer } from './components';
 import { EmptyFrameAnalyzer } from './empty-frame';
 import { FaultTreeAnalyzer } from './fault-tree';
 import { FlamegraphAnalyzer } from './flamegraph';
@@ -192,5 +193,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new EmptyFrameAnalyzer(),
     new RsSkipAnalyzer(),
     new FlamegraphAnalyzer(),
+    new ComponentReuseAnalyzer(),
   ];
 }

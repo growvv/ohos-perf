@@ -47,12 +47,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--trace',
-        required=True,
         help='Trace database to analyze (trace_streamer SQLite output).',
     )
     parser.add_argument(
         '--pids',
-        required=True,
         help='Comma-separated app pids, for example "16702".',
     )
     parser.add_argument(
@@ -60,7 +58,18 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help='Directory for the generated *.json fixtures.',
     )
-    return parser.parse_args()
+    parser.add_argument(
+        '--components-trace',
+        help=(
+            'Run ONLY ComponentReusableAnalyzer against this trace and write '
+            'components.<stem>.json. For traces with no process/thread tables, '
+            'which the other four analyzers need.'
+        ),
+    )
+    args = parser.parse_args()
+    if args.components_trace is None and (args.trace is None or args.pids is None):
+        parser.error('--trace and --pids are required unless --components-trace is given')
+    return args
 
 
 def parse_pids(raw: str) -> list[int]:
@@ -129,22 +138,70 @@ def write_json(path: Path, value: Any) -> None:
     print(f'wrote {path}')
 
 
+def run_components(hapray_root: Path, trace: Path, out_dir: Path) -> int:
+    """Run ComponentReusableAnalyzer alone and write its payload.
+
+    The synthetic component fixture has a `callstack` table and nothing else,
+    so HapRay's other analyzers (which join `process`/`thread`) cannot run
+    against it. This mode exists to keep that one golden reproducible.
+    """
+    if not trace.is_file():
+        raise SystemExit(f'trace not found: {trace}')
+
+    from hapray.analyze.component_reusable_analyzer import ComponentReusableAnalyzer
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+    )
+
+    # `ignore_cleanup_errors`: HapRay leaves the copied trace open on Windows,
+    # so the temp directory cannot always be removed. The fixture is already
+    # written by then and the directory is under the system temp root.
+    with tempfile.TemporaryDirectory(
+        prefix='hapray-components-', ignore_cleanup_errors=True
+    ) as tmp:
+        scene = Path(tmp)
+        step_dir = scene / 'hiperf' / 'step1'
+        step_dir.mkdir(parents=True)
+        (step_dir / 'pids.json').write_text(
+            json.dumps({'pids': [], 'process_names': []}, ensure_ascii=False),
+            encoding='utf-8',
+        )
+        trace_copy = scene / 'htrace' / 'step1' / 'trace.db'
+        trace_copy.parent.mkdir(parents=True)
+        shutil.copy2(trace, trace_copy)
+
+        analyzer = ComponentReusableAnalyzer(str(scene))
+        analyzer.analyze('step1', str(trace_copy), str(trace_copy))
+        write_json(
+            out_dir / f'components.{trace.stem}.json',
+            analyzer.results.get('step1') or {},
+        )
+
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     hapray_root = Path(args.hapray_root).resolve()
-    trace = Path(args.trace).resolve()
     out_dir = Path(args.out_dir).resolve()
 
     if not (hapray_root / 'hapray').is_dir():
         raise SystemExit(f'not a HapRay checkout: {hapray_root}')
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    sys.path.insert(0, str(hapray_root))
+
+    if args.components_trace is not None:
+        return run_components(hapray_root, Path(args.components_trace).resolve(), out_dir)
+
+    trace = Path(args.trace).resolve()
     if not trace.is_file():
         raise SystemExit(f'trace not found: {trace}')
 
     pids = parse_pids(args.pids)
     names = process_names(trace, pids)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    sys.path.insert(0, str(hapray_root))
     from hapray.analyze.fault_tree_analyzer import FaultTreeAnalyzer
     from hapray.analyze.ipc_binder_analyzer import IpcBinderAnalyzer
     from hapray.analyze.thread_analyzer import ThreadAnalyzer

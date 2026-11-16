@@ -181,6 +181,12 @@ export type { EmptyFrameFilter } from './analyze/empty-frame';
 export { RsSkipAnalyzer, computeRsSkip } from './analyze/rs-skip';
 export type { RsSkipFrame, RsSkipResult } from './analyze/rs-skip';
 export { FlamegraphAnalyzer } from './analyze/flamegraph';
+export {
+  ComponentReuseAnalyzer,
+  computeComponentReuse,
+  round2HalfEven,
+} from './analyze/components';
+export type { ComponentReuse } from './analyze/components';
 export type {
   BelowThresholdPattern,
   CallchainSample,

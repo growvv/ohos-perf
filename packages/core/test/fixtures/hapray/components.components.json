@@ -1,0 +1,16 @@
+{
+ "max_component": "ItemView",
+ "total_builds": 4,
+ "recycled_builds": 2,
+ "reusability_ratio": 0.5,
+ "details": {
+  "ItemView": [
+   4,
+   2
+  ],
+  "Text": [
+   3,
+   0
+  ]
+ }
+}

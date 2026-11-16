@@ -74,6 +74,7 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 /** The runtime value exports of `@ohos-perf/core`; `index.test.ts` exercises them at runtime. */
 const VALUE_EXPORTS = [
   'BinderAnalyzer', 'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device',
+  'ComponentReuseAnalyzer', 'computeComponentReuse', 'round2HalfEven',
   'DEFAULT_QUERY_LIMIT', 'DEVICE_PERF_PATH', 'DEVICE_UI_PATH', 'DeviceNotFoundError',
   'EmptyFrameAnalyzer',
   'FaultTreeAnalyzer',

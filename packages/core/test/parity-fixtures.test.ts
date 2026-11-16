@@ -29,6 +29,10 @@ describe('HapRay parity fixtures', () => {
     ['fault-tree.real_device.json', ['arkui', 'RS', 'av_codec', 'Audio']],
     ['binder.emu_big.json', ['process_stats', 'thread_stats', 'interface_stats']],
     ['binder.real_device.json', []],
+    [
+      'components.components.json',
+      ['details', 'max_component', 'recycled_builds', 'reusability_ratio', 'total_builds'],
+    ],
     ['threads.emu_big.json', ['redundant_threads_summary', 'summary', 'below_threshold_patterns']],
     [
       'threads.real_device.json',
