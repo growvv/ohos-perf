@@ -93,6 +93,7 @@ const VALUE_EXPORTS = [
   'ThreadAnalyzer', 'ThreadQuery',
   'ThreadStateQuery', 'analyzeThreadWakeup', 'buildHiprofilerConfig', 'buildMatrix',
   'compareResults', 'computeBinderAnalysis', 'computeFaultTree', 'computeThreadAnalysis',
+  'computeVsyncAnomalies',
   'connect', 'createSceneLayout', 'defaultAnalyzers', 'evidence', 'ftracePlugin',
   'gpuPlugin', 'ingestScene', 'lookupQuery',
   'memoryPlugin', 'MemMeasureQuery',
@@ -101,6 +102,7 @@ const VALUE_EXPORTS = [
   'resolveAppIdentity', 'resolveAppIpids', 'resolveQueryLimit',
   'runAnalyzers', 'runDrillDown', 'runNamedQuery', 'runProbe', 'tableRowCounts',
   'unknownQueryError',
+  'VsyncAnalyzer',
   'writeSceneMetadata', 'xpowerPlugin',
 ];
 

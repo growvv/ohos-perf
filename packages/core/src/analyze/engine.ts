@@ -11,6 +11,7 @@ import { MemoryMeasureAnalyzer } from './mem-measure';
 import { StartupAnalyzer } from './startup';
 import { RenderAnalyzer } from './render';
 import { ThreadAnalyzer } from './threads-score';
+import { VsyncAnalyzer } from './vsync';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
@@ -184,5 +185,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new StartupAnalyzer(),
     new RenderAnalyzer(),
     new GcAnalyzer(),
+    new VsyncAnalyzer(),
   ];
 }

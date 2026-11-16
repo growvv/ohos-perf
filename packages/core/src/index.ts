@@ -168,6 +168,13 @@ export { StartupAnalyzer } from './analyze/startup';
 export { RenderAnalyzer } from './analyze/render';
 export { GcAnalyzer, computeGc } from './analyze/gc';
 export type { GcSignals } from './analyze/gc';
+export { VsyncAnalyzer, computeVsyncAnomalies } from './analyze/vsync';
+export type {
+  VsyncAnalysis,
+  VsyncPeriod,
+  VsyncPeriodKind,
+  VsyncSeverity,
+} from './analyze/vsync';
 export type {
   BelowThresholdPattern,
   CallchainSample,

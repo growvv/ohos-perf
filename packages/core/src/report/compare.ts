@@ -64,6 +64,12 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
   'gc.rate': 'lower',
   'gc.shared.count': 'lower',
   'gc.shared_full.count': 'lower',
+
+  // `vsync.signals.count` has no direction: more signals is neither better nor
+  // worse, it only changes the denominator of the anomaly rate.
+  'vsync.anomaly.rate': 'lower',
+  'vsync.mismatch.count': 'lower',
+  'vsync.periods.count': 'lower',
 };
 
 export type DeltaStatus =

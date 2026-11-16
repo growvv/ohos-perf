@@ -161,6 +161,9 @@ const TABLE_RULES: ReadonlyArray<{
   // GC and component-build events are callstack rows scoped through thread and
   // process; without either join the analyzers would crash rather than degrade.
   { id: 'trace.ark', collector: 'hitrace', tables: ['callstack', 'thread', 'process'] },
+  // VSync groups are `frame_slice` rows attributed through `process`; a trace
+  // with one and not the other cannot scope the cadence to the app.
+  { id: 'render.vsync', collector: 'hitrace', tables: ['frame_slice', 'process'] },
   // Scene artifacts, not tables: `procfs.jsonl`, `hidumper.json` and `ui.json`
   // are satisfied by the parsed artifact the caller passes in.
   { id: 'mem.procfs', collector: 'procfs', tables: ['procfs.jsonl'] },

@@ -20,6 +20,7 @@ import { MemoryMeasureAnalyzer } from '../src/analyze/mem-measure';
 import { StartupAnalyzer } from '../src/analyze/startup';
 import { RenderAnalyzer } from '../src/analyze/render';
 import { ThreadAnalyzer } from '../src/analyze/threads-score';
+import { VsyncAnalyzer } from '../src/analyze/vsync';
 import { defaultAnalyzers, runAnalyzers } from '../src/analyze/engine';
 import { resolveAppIdentity } from '../src/analyze/context';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from '../src/analyze/types';
@@ -332,6 +333,7 @@ describe('defaultAnalyzers', () => {
       'startup',
       'render',
       'gc',
+      'vsync',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FaultTreeAnalyzer);
@@ -342,6 +344,7 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[6]).toBeInstanceOf(StartupAnalyzer);
     expect(analyzers[7]).toBeInstanceOf(RenderAnalyzer);
     expect(analyzers[8]).toBeInstanceOf(GcAnalyzer);
+    expect(analyzers[9]).toBeInstanceOf(VsyncAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

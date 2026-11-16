@@ -417,6 +417,11 @@ describe('realDeps().analyze', () => {
       const arkTables = ['callstack', 'thread', 'process'];
       expect(offlineCapabilities(fakeDb(arkTables), {}).has('trace.ark')).toBe(true);
       expect(offlineCapabilities(fakeDb(['callstack', 'thread']), {}).has('trace.ark')).toBe(false);
+      // render.vsync scopes frame_slice rows through process; either table
+      // missing means the cadence cannot be attributed to the app.
+      expect(offlineCapabilities(fakeDb(['frame_slice', 'process']), {}).has('render.vsync'))
+        .toBe(true);
+      expect(offlineCapabilities(fakeDb(['frame_slice']), {}).has('render.vsync')).toBe(false);
       // startup.app_startup is dead: no capability row is emitted for it.
       expect(offlineCapabilities(fakeDb(['app_startup']), {}).has('startup.app_startup'))
         .toBe(false);
