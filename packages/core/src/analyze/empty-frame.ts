@@ -6,7 +6,7 @@ import type { Frame } from '../query/frames';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import { resolveAppIpids } from './context';
-import { FrameLoadIndex, NO_SAMPLES } from './frame-load';
+import { FrameLoadIndex, NO_SAMPLES, noSamplesReason } from './frame-load';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /**
@@ -86,8 +86,13 @@ function ruleOneFrames(db: QueryHandle, frames: readonly Frame[]): Set<Frame> {
   const windows = frames.filter((frame) => frame.dur > 0);
   if (windows.length === 0) return new Set();
 
-  const minTs = Math.min(...windows.map((frame) => frame.ts));
-  const maxTs = Math.max(...windows.map((frame) => frame.ts + frame.dur));
+  // A reduce, not `Math.min(...)`: one argument per empty frame overflows
+  // V8's argument limit (about 124k) on a long capture.
+  const minTs = windows.reduce((min, frame) => Math.min(min, frame.ts), windows[0].ts);
+  const maxTs = windows.reduce(
+    (max, frame) => Math.max(max, frame.ts + frame.dur),
+    windows[0].ts + windows[0].dur,
+  );
 
   const patterns = BUFFER_PATTERNS.map(() => 'c.name LIKE ?').join(' OR ');
   const exclusions = SYSTEM_PROCESSES.map(() => '?').join(', ');
@@ -353,9 +358,19 @@ export class EmptyFrameAnalyzer implements Analyzer {
     let loadOf = new Map<Frame, number>();
     let totalLoad = 0;
     let loadIndex: FrameLoadIndex | undefined;
+    // True only when a load was actually measured for every actual frame.
+    // Both degraded paths leave it false, so the evidence omits load rather
+    // than reporting the 0 an absent measurement would look like.
+    let loadMeasured = false;
     if (ctx.perf !== undefined && ctx.perf.hasSamples()) {
-      const firstTs = Math.min(...actual.map((frame) => frame.ts));
-      const lastEnd = Math.max(...actual.map((frame) => frame.ts + Math.max(0, frame.dur)));
+      // A reduce, not `Math.min(...)`: spreading one argument per frame
+      // overflows V8's argument limit (about 124k) on a long capture and
+      // crashes the analyzer instead of degrading.
+      const firstTs = actual.reduce((min, frame) => (frame.ts < min ? frame.ts : min), actual[0].ts);
+      const lastEnd = actual.reduce(
+        (max, frame) => Math.max(max, frame.ts + Math.max(0, frame.dur)),
+        actual[0].ts + Math.max(0, actual[0].dur),
+      );
       loadIndex = FrameLoadIndex.build({
         perf: ctx.perf,
         pids: ctx.app.pids,
@@ -380,7 +395,15 @@ export class EmptyFrameAnalyzer implements Analyzer {
           value: 0,
           unit: 'count',
           fidelity: 'proxy',
-          degraded: { reason: NO_SAMPLES, fallback: 'no empty-frame load' },
+          // Name the actual gap: samples for another process are not the same
+          // problem as a capture with no --hiperf at all.
+          degraded: {
+            reason:
+              ctx.perf === undefined
+                ? NO_SAMPLES
+                : noSamplesReason(ctx.perf, ctx.app.pids),
+            fallback: 'no empty-frame load',
+          },
           provenance: { collector: 'hiperf', device: ctx.deviceId },
           window: ctx.window,
         }),
@@ -411,6 +434,7 @@ export class EmptyFrameAnalyzer implements Analyzer {
         );
       } else {
         const share = totalLoad > 0 ? (emptyLoad / totalLoad) * 100 : 0;
+        loadMeasured = true;
         metrics.push(
           metric({
             id: 'empty_frame.load.total',
@@ -472,22 +496,31 @@ export class EmptyFrameAnalyzer implements Analyzer {
         signals: {
           vsync: frame.vsync,
           filtered: filteredByGroup.get(`${frame.vsync}:${frame.itid}`) ?? 0,
-          load: loadOf.get(frame) ?? 0,
-          loadShare:
-            totalLoad > 0 ? ((loadOf.get(frame) ?? 0) / totalLoad) * 100 : 0,
-          loadRank: loadRankOf.get(frame.id) ?? 0,
+          // Load fields appear only when a load was measured. In the two
+          // degraded paths they would read 0/0/1..n — a fabricated zero and a
+          // fabricated ranking, contradicting `empty_frame.load.degraded`.
+          ...(loadMeasured
+            ? {
+                load: loadOf.get(frame) ?? 0,
+                loadShare:
+                  totalLoad > 0 ? ((loadOf.get(frame) ?? 0) / totalLoad) * 100 : 0,
+                loadRank: loadRankOf.get(frame.id) ?? 0,
+              }
+            : {}),
         },
         explain:
           `${process} frame at vsync ${frame.vsync} drew nothing ` +
           `(flag 2, dur ${(frame.dur / 1e6).toFixed(1)}ms) and no buffer was submitted for it`,
         drillDown: [
           { label: 'Frame detail', tool: 'frames.get', args: { id: frame.id }, returns: 'Frame' },
-          {
-            label: 'Load by symbol',
-            tool: 'frame.load.symbols',
-            args: { startNs: frame.ts, endNs: frame.ts + frame.dur },
-            returns: 'PerfLeafAttribution[]',
-          },
+          ...(loadMeasured
+            ? [{
+                label: 'Load by symbol',
+                tool: 'frame.load.symbols',
+                args: { startNs: frame.ts, endNs: frame.ts + frame.dur },
+                returns: 'PerfLeafAttribution[]',
+              }]
+            : []),
         ],
       }));
 

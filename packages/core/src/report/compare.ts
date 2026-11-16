@@ -31,6 +31,30 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
   'frame.jank.rate': 'lower',
   'frame.rendered.count': 'higher',
 
+  // Frame load is sampled-event weight: less work in a frame is better, and a
+  // higher top-10 share means fewer frames carry it — also better, because it
+  // is a concentration figure, not a throughput one. The span weight is the
+  // denominator for those shares, so it has no direction of its own.
+  'frame.load.avg': 'lower',
+  'frame.load.frames.count': 'higher',
+  'frame.load.max': 'lower',
+  'frame.load.min': 'lower',
+  'frame.load.top10.share': 'higher',
+  'frame.load.total': 'lower',
+
+  // Every stutter rung is a count of bad frames; fewer is better.
+  'frame.stutter.count': 'lower',
+  'frame.stutter.level1.count': 'lower',
+  'frame.stutter.level2.count': 'lower',
+  'frame.stutter.level3.count': 'lower',
+  'frame.stutter.unpaired.count': 'lower',
+
+  // 1 s windows measure rendered frames per second: more is better. The
+  // window count is a capture-length artifact, so it has no direction.
+  'frame.fps.window.max': 'higher',
+  'frame.fps.window.mean': 'higher',
+  'frame.fps.window.min': 'higher',
+
   'binder.interfaces.count': 'lower',
   'binder.latency.avg': 'lower',
   'binder.latency.max': 'lower',
@@ -51,6 +75,20 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
   'mem.rss.mean': 'lower',
   'mem.rss.peak': 'lower',
   'mem.samples': 'lower',
+
+  // Native memory: every figure is bytes or counts still held (or churn that
+  // pairs nothing), so less is better. `peak.offset`, `events.count`,
+  // `alloc.*`/`free.*` volume and `callchains.count` are deliberately absent:
+  // they are where and how much activity happened, not how much memory was
+  // retained, and a bigger capture legitimately raises them.
+  'mem.native.free.unpaired.count': 'lower',
+  'mem.native.alloc.unaddressed.count': 'lower',
+  'mem.native.total.end': 'lower',
+  'mem.native.total.peak': 'lower',
+  'mem.native.total.trough': 'lower',
+  'mem.native.unreleased.end': 'lower',
+  'mem.native.unreleased.peak': 'lower',
+  'mem.native.unreleased.unattributed.bytes': 'lower',
 
   'startup.count': 'lower',
   'startup.duration': 'lower',
@@ -73,6 +111,9 @@ export const METRIC_DIRECTIONS: Readonly<Record<string, MetricDirection>> = {
 
   'empty_frame.count': 'lower',
   'empty_frame.filtered.count': 'lower',
+  // Empty frames' sampled load: less work spent drawing nothing is better.
+  'empty_frame.load.share': 'lower',
+  'empty_frame.load.total': 'lower',
   'empty_frame.rate': 'lower',
 
   'rs_skip.events.count': 'lower',

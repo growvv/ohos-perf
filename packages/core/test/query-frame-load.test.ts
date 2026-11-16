@@ -119,6 +119,37 @@ describe('frame load named queries', () => {
     ]);
   });
 
+  it('reads perf tables from perfDb when the scene keeps them apart', () => {
+    // A real `--hiperf` scene stores perf tables in perf.db, not trace.db:
+    // trace.db holds frame_slice and perf.db holds perf_thread/perf_sample.
+    // Reading only ctx.db made every frame.load.* query return [] on device.
+    const tracePath = join(dir, 'split-trace.db');
+    const trace = new DatabaseSync(tracePath);
+    trace.exec(FRAME_DDL);
+    insertFrame(trace, 0, 1_000_000_000);
+    trace.close();
+
+    const perfPath = join(dir, 'split-perf.db');
+    const perf = new DatabaseSync(perfPath);
+    perf.exec(PERF_THREAD_DDL);
+    perf.exec(`INSERT INTO perf_thread VALUES (0, 100, 4999, 'main')`);
+    perf.exec(PERF_SAMPLE_DDL);
+    perf.exec(`INSERT INTO perf_sample VALUES (0, 0, 1000, 100, 5, 1, 1000, 0, 'S')`);
+    perf.close();
+
+    const traceDb = openDb(tracePath);
+    const perfDb = openDb(perfPath);
+    try {
+      const split: QueryContext = { ...ctx(traceDb), perfDb };
+      expect(
+        runNamedQuery(split, 'frame.load.threads', { startNs: 1000, endNs: 2000 }).rows,
+      ).toEqual([{ threadId: 100, threadName: 'main', samples: 5, share: 100 }]);
+    } finally {
+      traceDb.close();
+      perfDb.close();
+    }
+  });
+
   it('returns [] without perf tables and validates required args', () => {
     const barePath = join(dir, 'bare.db');
     new DatabaseSync(barePath).close();

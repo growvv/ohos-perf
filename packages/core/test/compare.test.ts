@@ -205,6 +205,42 @@ describe('METRIC_DIRECTIONS', () => {
     expect(METRIC_DIRECTIONS['components.reuse.rate']).toBe('higher');
   });
 
+  it('covers the frame-load, stutter, FPS-window and empty-load families', () => {
+    // These shipped in 0.5.0 with no direction, so `compare` reported every
+    // one of them as `incomparable` and the baseline feature was silently off
+    // for the whole new surface.
+    expect(METRIC_DIRECTIONS['frame.load.total']).toBe('lower');
+    expect(METRIC_DIRECTIONS['frame.load.avg']).toBe('lower');
+    expect(METRIC_DIRECTIONS['frame.load.max']).toBe('lower');
+    expect(METRIC_DIRECTIONS['frame.load.top10.share']).toBe('higher');
+    expect(METRIC_DIRECTIONS['frame.stutter.level2.count']).toBe('lower');
+    expect(METRIC_DIRECTIONS['frame.stutter.unpaired.count']).toBe('lower');
+    expect(METRIC_DIRECTIONS['frame.fps.window.min']).toBe('higher');
+    expect(METRIC_DIRECTIONS['frame.fps.window.mean']).toBe('higher');
+    expect(METRIC_DIRECTIONS['empty_frame.load.total']).toBe('lower');
+    expect(METRIC_DIRECTIONS['empty_frame.load.share']).toBe('lower');
+  });
+
+  it('covers the native-memory retained-memory metrics', () => {
+    expect(METRIC_DIRECTIONS['mem.native.total.peak']).toBe('lower');
+    expect(METRIC_DIRECTIONS['mem.native.unreleased.end']).toBe('lower');
+    expect(METRIC_DIRECTIONS['mem.native.free.unpaired.count']).toBe('lower');
+    // Activity volume is not a retained figure: a longer capture raises it.
+    expect(METRIC_DIRECTIONS['mem.native.events.count']).toBeUndefined();
+    expect(METRIC_DIRECTIONS['mem.native.peak.offset']).toBeUndefined();
+  });
+
+  it('classifies a stutter rise as regressed and an fps-window drop as regressed', () => {
+    const run = compareResults(
+      result(metricOf('frame.stutter.level2.count', 1), metricOf('frame.fps.window.min', 60)),
+      result(metricOf('frame.stutter.level2.count', 3), metricOf('frame.fps.window.min', 42)),
+    );
+    expect(run.rows.map((r) => [r.id, r.status])).toEqual([
+      ['frame.fps.window.min', 'regressed'],
+      ['frame.stutter.level2.count', 'regressed'],
+    ]);
+  });
+
   it('leaves a count with no better direction incomparable', () => {
     // More vsync signals is neither better nor worse; only the anomaly rate
     // built on them is. `undefined` is what makes the comparison say so.

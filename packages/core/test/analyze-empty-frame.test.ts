@@ -56,6 +56,8 @@ interface Fixture {
   frames?: Frame[];
   events?: ReturnType<typeof event>[];
   perf?: Array<{ id: number; ts: number; threadId: number; count: number }>;
+  /** Default true: write the two app `perf_thread` rows. */
+  perfAppThreads?: boolean;
 }
 
 const PERF_THREAD_DDL = `CREATE TABLE perf_thread(id INT, thread_id INT,
@@ -96,8 +98,12 @@ function dbWith(name: string, fixture: Fixture): QueryHandle {
   if (fixture.perf !== undefined) {
     d.exec(PERF_THREAD_DDL);
     d.exec(PERF_SAMPLE_DDL);
-    d.exec(`INSERT INTO perf_thread VALUES (0, 100, 4999, 'main'),
-      (1, 101, 4999, 'worker')`);
+    // `perfAppThreads: false` models a capture whose perf rows belong to
+    // another process: the tables exist, no app thread does.
+    if (fixture.perfAppThreads !== false) {
+      d.exec(`INSERT INTO perf_thread VALUES (0, 100, 4999, 'main'),
+        (1, 101, 4999, 'worker')`);
+    }
     const insertSample = d.prepare(
       'INSERT INTO perf_sample VALUES (?, 0, ?, ?, ?, 0, ?, 0, 0)',
     );
@@ -238,14 +244,10 @@ describe('EmptyFrameAnalyzer', () => {
     expect(items[0].subject).toEqual({ process: 'com.demo', frameNo: 7 });
     expect(items[0].window).toEqual({ startNs: 1e9, endNs: 1e9 + 16e6 });
     expect(items[0].signals).toMatchObject({ vsync: 100, filtered: 0 });
+    // No perf capture here, so no load was measured and the symbol drill-down
+    // would resolve to nothing; only the frame detail is offered.
     expect(items[0].drillDown).toEqual([
       { label: 'Frame detail', tool: 'frames.get', args: { id: 7 }, returns: 'Frame' },
-      {
-        label: 'Load by symbol',
-        tool: 'frame.load.symbols',
-        args: { startNs: 1e9, endNs: 1e9 + 16e6 },
-        returns: 'PerfLeafAttribution[]',
-      },
     ]);
     db.close();
   });
@@ -270,6 +272,10 @@ describe('EmptyFrameAnalyzer', () => {
     expect(get('empty_frame.load.share').value).toBeCloseTo(2.9126, 3);
     expect(get('empty_frame.load.severity').value).toBe('normal');
     expect(metricOf(r, 'empty_frame.count').value).toBe(1);
+    // Measured load: the signals and the symbol drill-down are present.
+    const emptyItem = r.evidence.find((e) => e.kind === 'empty_frame')!;
+    expect(emptyItem.signals).toMatchObject({ load: 3, loadRank: 1 });
+    expect(emptyItem.drillDown.map((d) => d.tool)).toContain('frame.load.symbols');
     db.close();
   });
 
@@ -298,6 +304,61 @@ describe('EmptyFrameAnalyzer', () => {
     expect(await severity(3)).toBe('moderate'); // 3/100 = 3%
     expect(await severity(10)).toBe('moderate'); // 10/107 = 9.35%
     expect(await severity(11)).toBe('severe'); // 11/108 = 10.19%
+  });
+
+  it('omits load signals from empty-frame evidence when load is unavailable', async () => {
+    // Without perf samples the analyzer emits `empty_frame.load.degraded`, so
+    // there is no load to report. Emitting load=0 / loadShare=0 / loadRank=1
+    // per frame would claim the empties had zero load and that one was worst,
+    // contradicting the degraded metric in the same result.
+    const db = dbWith('empty-load-noperf-signals.db', {
+      frames: [
+        frame(0, 1_000_000_000, 1, 2),
+        frame(1, 2_000_000_000, 2, 2),
+      ],
+    });
+    const r = await new EmptyFrameAnalyzer().run(ctxWith(db));
+    expect(r.metrics.map((m) => m.id)).toContain('empty_frame.load.degraded');
+    expect(r.evidence).toHaveLength(2);
+    for (const item of r.evidence) {
+      expect(item.signals).not.toHaveProperty('load');
+      expect(item.signals).not.toHaveProperty('loadShare');
+      expect(item.signals).not.toHaveProperty('loadRank');
+      expect(item.drillDown.map((d) => d.tool)).not.toContain('frame.load.symbols');
+    }
+    db.close();
+  });
+
+  it('omits load signals when samples exist but none land in a frame window', async () => {
+    // The time-base-mismatch path: loadIndex built, every load zero, so the
+    // metrics degrade. The evidence must not then claim a zero load either.
+    const db = dbWith('empty-load-mismatch.db', {
+      frames: [frame(0, 1_000_000_000, 1, 2)],
+      perf: [{ id: 0, ts: 9_000_000_000, threadId: 100, count: 7 }],
+    });
+    const r = await new EmptyFrameAnalyzer().run(ctxWith(db));
+    expect(r.metrics.map((m) => m.id)).toContain('empty_frame.load.degraded');
+    const item = r.evidence.find((e) => e.kind === 'empty_frame')!;
+    expect(item.signals).not.toHaveProperty('load');
+    expect(item.signals).not.toHaveProperty('loadRank');
+    db.close();
+  });
+
+  it('names the app-thread gap when samples exist but none belong to the app', async () => {
+    // A perf capture with samples for another process: the reason must not
+    // claim the capture lacked --hiperf, which would send a reader to rebuild
+    // an app that is not the problem.
+    const db = dbWith('empty-load-otherproc.db', {
+      frames: [frame(0, 1_000_000_000, 1, 2)],
+      perf: [{ id: 0, ts: 1_050_000_000, threadId: 102, count: 9 }],
+      perfAppThreads: false,
+    });
+    const r = await new EmptyFrameAnalyzer().run(ctxWith(db));
+    const degraded = metricOf(r, 'empty_frame.load.degraded');
+    expect(degraded.fidelity).toBe('proxy');
+    expect(String(degraded.degraded?.reason)).toMatch(/no perf thread belongs to the app/i);
+    expect(String(degraded.degraded?.reason)).not.toMatch(/--hiperf/);
+    db.close();
   });
 
   it('degrades empty-frame load without perf samples', async () => {

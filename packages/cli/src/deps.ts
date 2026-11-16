@@ -634,6 +634,9 @@ export function realDeps(
         return runNamedQuery(
           {
             db: opened.scene.traceDb,
+            // A `--hiperf` scene keeps perf_sample/perf_thread in perf.db;
+            // omitting this made every frame.load.* query return [] on device.
+            ...(opened.scene.perfDb === undefined ? {} : { perfDb: opened.scene.perfDb }),
             app: opened.app,
             caps: opened.caps,
             ...(opened.uiTree === undefined ? {} : { uiTree: opened.uiTree }),

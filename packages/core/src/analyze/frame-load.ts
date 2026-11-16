@@ -188,6 +188,27 @@ export const NO_SAMPLES =
   'no perf samples: the scene was captured without --hiperf, or the app was ' +
   'not debuggable so perf recorded nothing';
 
+/**
+ * Why {@link FrameLoadIndex.build} returned `undefined`, when samples exist.
+ *
+ * The three absent states are different problems and a caller that collapses
+ * them into {@link NO_SAMPLES} sends the reader after the wrong one: samples
+ * for other processes mean the capture worked and the app simply recorded
+ * nothing, which rebuilding with a debug signature may not fix.
+ */
+export function noSamplesReason(
+  perf: PerfQuery,
+  pids: readonly number[],
+): string {
+  if (!perf.hasSamples()) return NO_SAMPLES;
+  if (perf.threads([...pids]).length === 0) {
+    return 'perf samples exist but no perf thread belongs to the app process, so ' +
+      'none of the load can be attributed to it';
+  }
+  return 'perf samples exist but none fall inside any app frame window; frame and ' +
+    'perf timestamps may use different time bases';
+}
+
 /** The proxy + explanation a caller gets when load cannot be measured. */
 function degradedResult(
   ctx: AnalyzeContext,
@@ -325,8 +346,13 @@ export class FrameLoadAnalyzer implements Analyzer {
     }
 
     const minTs = rendered[0].ts;
-    const last = rendered[rendered.length - 1];
-    const maxEnd = last.ts + Math.max(0, last.dur);
+    // The maximum frame end, not the last-by-`ts` frame's end: a frame that
+    // starts earlier can end later, and samples in that tail belong to its
+    // inclusive window. Taking the last row's end would silently drop them.
+    const maxEnd = rendered.reduce(
+      (max, frame) => Math.max(max, frame.ts + Math.max(0, frame.dur)),
+      minTs,
+    );
     const index = FrameLoadIndex.build({
       perf: ctx.perf,
       pids: ctx.app.pids,
@@ -454,6 +480,11 @@ export class FrameLoadAnalyzer implements Analyzer {
         severity: 'info',
         subject: { process, frameNo: frame.frameNo },
         window: { startNs: frame.ts, endNs: frame.ts + frame.dur },
+        // `frame_no` is 0 on every real row, so two same-process frames with
+        // the same (ts, dur) hash to the same id and the engine rejects the
+        // whole analysis with DUPLICATE_EVIDENCE_ID. The row id separates
+        // them; it is hash material only and does not enter the object.
+        key: `frame:${frame.id}`,
         signals: {
           rank: rankOf.get(frame.id) ?? 0,
           load,

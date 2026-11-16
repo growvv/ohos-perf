@@ -271,6 +271,42 @@ describe('FrameLoadAnalyzer', () => {
     } finally { trace.close(); perf.close(); }
   });
 
+  it('reads samples past the last-by-ts frame when an earlier frame ends later', async () => {
+    // Frame A (ts 1000, dur 1000) ends at 2000; frame B (ts 1500, dur 10) ends
+    // at 1510. Using the last-by-`ts` row's end would cap the sample read at
+    // 1510 and drop the 7-weight sample at 1999 inside A's inclusive window.
+    const trace = traceWith('analyzer-overlap.db', `
+      (0, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0),
+      (1, 1500, 0, 17, 44, 0, 10, '', 0, 0, 'actual', 1, 0, 0)`);
+    const perf = perfDb('analyzer-overlap-perf.db');
+    try {
+      const c = ctxFor(trace, perf);
+      c.window = { startNs: 0, endNs: 1_200 };
+      const r = await new FrameLoadAnalyzer().run(c);
+      const get = (id: string) => r.metrics.find((m) => m.id === id)!.value;
+      // A's inclusive [1000, 2000] holds 5 (at 1000) + 7 (at 1999) + 3 (at
+      // 2000) = 15; B holds nothing.
+      expect(get('frame.load.max')).toBe(15);
+      expect(get('frame.load.total')).toBe(15);
+    } finally { trace.close(); perf.close(); }
+  });
+
+  it('keeps two identical-window top frames from colliding on evidence id', async () => {
+    // `frame_no` is 0 on every real row and both frames share (process, ts,
+    // dur), so the id hash material is identical. The engine turns that into
+    // DUPLICATE_EVIDENCE_ID and fails the whole analysis; a key separates them.
+    const trace = traceWith('analyzer-dupid.db', `
+      (0, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0),
+      (1, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0)`);
+    const perf = perfDb('analyzer-dupid-perf.db');
+    try {
+      const r = await new FrameLoadAnalyzer().run(ctxFor(trace, perf));
+      const ev = r.evidence.filter((e) => e.kind === 'frame_load');
+      expect(ev).toHaveLength(2);
+      expect(new Set(ev.map((e) => e.id)).size).toBe(2);
+    } finally { trace.close(); perf.close(); }
+  });
+
   it('is deterministic across runs', async () => {
     const trace = traceWith('analyzer-det.db', `
       (0, 1000, 0, 17, 44, 0, 1000, '', 0, 0, 'actual', 0, 0, 0),

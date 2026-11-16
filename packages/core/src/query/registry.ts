@@ -49,6 +49,15 @@ export interface QueryContext {
   readonly app: AppIdentity;
   readonly caps: CapabilityMatrix;
   /**
+   * The scene's second handle, holding the perf tables when the capture
+   * included `--hiperf`. A scene that carries `perf.data` converts it into
+   * `perf.db`, so `perf_sample` / `perf_thread` / `perf_callchain` are **not**
+   * in `db`; a query that reads them through `db` alone returns nothing on a
+   * real capture. Absent means the scene has no perf capture, and every
+   * `frame.load.*` query returns `[]`.
+   */
+  readonly perfDb?: QueryHandle;
+  /**
    * The scene's flattened UI tree, when the capture included a `uitest`
    * dump. Absent means the scene has no `ui.json`; `ui.get` then returns no
    * rows rather than failing.
@@ -257,13 +266,25 @@ function requiredRange(
 }
 
 /**
+ * The perf tables, from the scene's perf handle when it has one.
+ *
+ * A `--hiperf` scene keeps `perf_sample` / `perf_thread` in `perf.db` and
+ * `frame_slice` in `trace.db`; the analyzer context resolves the same way
+ * (`opened.scene.perfDb ?? db`). Falling back to `db` keeps a single-file
+ * scene (and a library caller that opened one database) working.
+ */
+function perfQuery(ctx: QueryContext): PerfQuery {
+  return new PerfQuery(ctx.perfDb ?? ctx.db);
+}
+
+/**
  * App-thread ids that carry perf samples, sorted.
  *
  * `perf_thread` is optional, so an absent table or an app with no perf
  * threads yields `[]` and every caller returns no rows rather than throwing.
  */
 function perfThreadIds(ctx: QueryContext): number[] {
-  const perf = new PerfQuery(ctx.db);
+  const perf = perfQuery(ctx);
   if (ctx.app.pids.length === 0) return [];
   const ids = perf.threads([...ctx.app.pids]).map((thread) => thread.threadId);
   return [...new Set(ids)].sort((a, b) => a - b);
@@ -426,7 +447,7 @@ const DEFINITIONS: NamedQueryDefinition[] = [
       const range = requiredRange('frame.load.files', args);
       const threadIds = perfThreadIds(ctx);
       if (threadIds.length === 0) return [];
-      const perf = new PerfQuery(ctx.db);
+      const perf = perfQuery(ctx);
       const total = perf.eventCount(threadIds, range);
       const byFile = new Map<string, number>();
       for (const row of perf.leafAttribution(threadIds, range)) {
@@ -465,7 +486,7 @@ const DEFINITIONS: NamedQueryDefinition[] = [
       const range = requiredRange('frame.load.symbols', args);
       const threadIds = perfThreadIds(ctx);
       if (threadIds.length === 0) return [];
-      const perf = new PerfQuery(ctx.db);
+      const perf = perfQuery(ctx);
       const total = perf.eventCount(threadIds, range);
       return perf
         .leafAttribution(threadIds, range)
@@ -491,7 +512,7 @@ const DEFINITIONS: NamedQueryDefinition[] = [
       const range = requiredRange('frame.load.threads', args);
       if (ctx.app.pids.length === 0) return [];
       const index = FrameLoadIndex.build({
-        perf: new PerfQuery(ctx.db),
+        perf: perfQuery(ctx),
         pids: ctx.app.pids,
         range,
       });

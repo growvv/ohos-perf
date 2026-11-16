@@ -185,8 +185,16 @@ ORDER BY fs.ts, fs.id, c.ts`,
   }
 
   // One buffer-event query over the union of every frame's lookback window.
-  const minNs = Math.min(...frames.map((entry) => entry.frame.ts)) - EVENT_LOOKBACK_NS;
-  const maxNs = Math.max(...frames.map((entry) => entry.frame.ts + entry.frame.dur));
+  // A reduce, not `Math.min(...)`: one argument per frame overflows V8's
+  // argument limit (about 124k) on a long capture and throws instead of
+  // returning a result.
+  const minNs =
+    frames.reduce((min, entry) => Math.min(min, entry.frame.ts), frames[0].frame.ts) -
+    EVENT_LOOKBACK_NS;
+  const maxNs = frames.reduce(
+    (max, entry) => Math.max(max, entry.frame.ts + entry.frame.dur),
+    frames[0].frame.ts + frames[0].frame.dur,
+  );
   const bufferPatterns = BUFFER_PATTERNS.map(() => 'c.name LIKE ?').join(' OR ');
   const bufferRows = db.query<BufferRow>(
     `SELECT c.ts AS ts
