@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+Corrections to the static HAP inspection released in 0.10.0. Each was found
+by checking the shipped behaviour against a real package, and each is pinned
+by a test that failed first.
+
+- **The per-file inventory is in the document.** `HapAnalysis.files` carries
+  every entry (path, sizes, CRC32, extension, category). The spec's "no
+  `hap.files` query" argument and the promise that `hap.json` holds every file
+  both rested on this; the document had the totals but not the rows.
+- **Every entry is CRC-checked, not only the ones a rule reads.** Rule
+  matching excludes `resources/base/`, so a corrupt entry there — the largest
+  part of a typical package — was never verified. A corrupted archive now
+  fails with `HAP_CRC_MISMATCH` naming the entry.
+- **A malformed ZIP header is a typed refusal.** An offset pointing past the
+  end of the archive threw a bare `RangeError` from `DataView`; it is now a
+  `HAP_NOT_ZIP` naming the block (central directory, local header, entry name
+  or entry data).
+- **`--json` prints the `HapAnalysis` document `hap.json` writes**, plus the
+  one-row `static.hap` capability matrix the spec requires. It previously
+  printed a separate summary shape and omitted both. The caller's `--out`
+  path is not in the document.
+- **A package of assets is no longer inflated end to end.** The bare magic
+  rule in `RN bundles` — HapRay's shape — was offered every entry in the
+  archive; it is now gated on the extensions a Hermes bundle ships under, and
+  `and` short-circuits. Inflated bytes are released per file rather than
+  cached for the whole archive, which previously peaked near 500 MB RSS on a
+  100 MB package.
+- **Rules are validated before they run.** `matchHapRules` calls
+  `validateRules`, so an unknown rule kind is `HAP_BAD_RULE` naming the rule
+  instead of a detection that silently never fires.
+- **A failing command prints `CODE: message`.** The refusal code is the token
+  the skill tells an agent to report; the CLI printed only the message.
+
 ## 0.10.0 — 2026-11-17
 
 P15 (HapRay parity W7): the package on disk, read without a device.

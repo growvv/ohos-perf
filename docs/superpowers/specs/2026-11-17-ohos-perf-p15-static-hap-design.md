@@ -54,7 +54,8 @@ already exists, and keeps only the parts of HapRay's output that are facts.
   scripts 0.5 MiB, styles 0.2 MiB, binaries 5 MiB, bytecode 2 MiB, data 1 MiB,
   other 1 MiB).
 - **`ohos-perf hap <package.hap> [--out <dir>] [--json]`.** `--json` prints
-  the typed `HapAnalysis`; `--out` writes `hap.json` (the same document) and
+  `{ analysis, capabilities }` — the typed `HapAnalysis` and the one-row
+  `static.hap` matrix; `--out` writes `hap.json` (the same document) and
   `hap.html` (the existing report renderer, one `static-hap` section). Human
   output names the app, the file count and size, the detected technologies,
   duplicates and the largest files.
@@ -179,7 +180,10 @@ ohos-perf hap <package.hap> [--out <dir>] [--json]
 
 - A path that is not a file, or has no `.hap`/`.hsp`/`.zip` extension, exits 1
   naming the path; nothing is written.
-- `--json` prints `HapAnalysis` with a stable key order.
+- `--json` prints `{ analysis, capabilities }` with a stable key order:
+  `analysis` is the `HapAnalysis` document, `capabilities` the one-row
+  `static.hap` matrix. The caller's `--out` path is not in it — the document
+  is a function of the archive's bytes, not of the invocation.
 - `--out <dir>` creates the directory and writes `hap.json` and `hap.html`;
   the human line lists both.
 - The command never touches a device, so it takes no `--target` and rejects it.
