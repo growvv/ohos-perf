@@ -32,6 +32,7 @@ import {
   readHidumperCapture,
   readProcfsSamples,
   readHilogText,
+  readThermalRecords,
   parseHilogText,
   analyzeHap,
   buildReport,
@@ -87,6 +88,7 @@ import {
   type NamedQueryInfo,
   type HidumperCapture,
   type HilogLine,
+  type ThermalCapture,
   type ProcfsSample,
   type TimeRange,
   type FoldedStack,
@@ -422,6 +424,12 @@ interface OpenedScene {
    */
   hilog?: readonly HilogLine[];
   /**
+   * The scene's parsed thermal samples, when it carried a trusted
+   * `thermal.jsonl` (one scene.json declares). Absent means the analyzer
+   * degrades with a `--thermal` hint rather than reporting a cold device.
+   */
+  thermal?: ThermalCapture;
+  /**
    * The scene's raw `redundant_file.txt`, when it carried one. HapRay's
    * cold-start redundant-file I/O reads this file; nothing here produces it
    * yet, so it is read when present and its absence is a named `no_data`.
@@ -471,6 +479,7 @@ function analyzeContext(opened: OpenedScene) {
     ...(opened.screenshotError === undefined ? {} : { screenshotError: opened.screenshotError }),
     ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
     ...(opened.hilog === undefined ? {} : { hilog: [...opened.hilog] }),
+    ...(opened.thermal === undefined ? {} : { thermal: opened.thermal }),
     ...(opened.redundantFile === undefined ? {} : { redundantFile: opened.redundantFile }),
     ...(opened.coverage === undefined ? {} : { coverage: opened.coverage }),
     ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
@@ -867,6 +876,10 @@ export function realDeps(
       // parser change is a re-analysis. The year is the capture's, which only
       // scene.json knows; a hand-built scene without one reads raw rows.
       const hilogText = declared('hilog') ? readHilogText(layout) : undefined;
+      // Thermal is a scene artifact like the UI tree: the descriptor says
+      // whether the capture ran, and a stray file from an earlier capture is
+      // ignored rather than analyzed as this scene's temperatures.
+      const thermal = declared('thermal') ? readThermalRecords(layout) : undefined;
       // Not gated on `declared()`: the file is not a collector artifact, so a
       // scene either carries one or it does not.
       const redundantFile = existsSync(layout.redundantFile)
@@ -933,6 +946,7 @@ export function realDeps(
         ...(screenshotError === undefined ? {} : { screenshotError }),
         ...(hidumper === undefined ? {} : { hidumper }),
         ...(hilog === undefined ? {} : { hilog }),
+        ...(thermal === undefined ? {} : { thermal }),
         ...(redundantFile === undefined ? {} : { redundantFile }),
         ...(coverage === undefined ? {} : { coverage }),
       };
@@ -1548,6 +1562,7 @@ export function realDeps(
         ...(req.uitest === true ? { uitest: true } : {}),
         ...(req.screenshot === true ? { screenshot: true } : {}),
         ...(req.hilog === true ? { hilog: true } : {}),
+        ...(req.thermal === undefined ? {} : { thermal: req.thermal }),
         ...(req.jsheap === true ? { jsheap: true } : {}),
       });
       const scene = await session.ingest();
@@ -1590,6 +1605,9 @@ export function realDeps(
           ...(meta?.capture?.hilog === undefined
             ? {}
             : { hilog: { lines: meta.capture.hilog.lines } }),
+          ...(meta?.capture?.thermal === undefined
+            ? {}
+            : { thermal: { samples: meta.capture.thermal.samples } }),
         };
       } finally {
         scene.close();

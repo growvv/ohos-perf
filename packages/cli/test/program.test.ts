@@ -538,6 +538,79 @@ describe('command wiring', () => {
     expect(emitted[0].exitCode).toBe(0);
   });
 
+  it('collect forwards an app-less thermal request', async () => {
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1', '--thermal'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return {
+            sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' },
+            collectors: ['hitrace', 'thermal'],
+          };
+        },
+      },
+    );
+    expect(seen).toEqual([{ durationMs: 10_000, out: 'scene1', thermal: true }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('collect converts --thermal-interval seconds into milliseconds', async () => {
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1', '--thermal', '--thermal-interval', '1'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return {
+            sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' },
+            collectors: ['hitrace', 'thermal'],
+          };
+        },
+      },
+    );
+    expect(seen).toEqual([{
+      durationMs: 10_000, out: 'scene1', thermal: { intervalMs: 1000 },
+    }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('collect rejects a bad --thermal-interval before any device work', async () => {
+    let called = false;
+    const { emitted } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1', '--thermal', '--thermal-interval', '0'],
+      {
+        collect: async () => {
+          called = true;
+          return { sceneDir: '/scene1', device: { id: 't1', kind: 'emulator' }, collectors: [] };
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(emitted[0].stdout).toBe('');
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stderr).toMatch(/thermal interval/);
+  });
+
+  it('collect rejects --thermal-interval without --thermal', async () => {
+    // The interval only means something to a thermal capture; accepting it
+    // alone would run a capture that quietly drops the user's request.
+    let called = false;
+    const { emitted } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1', '--thermal-interval', '1'],
+      {
+        collect: async () => {
+          called = true;
+          return { sceneDir: '/scene1', device: { id: 't1', kind: 'emulator' }, collectors: [] };
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stderr).toMatch(/--thermal/);
+  });
+
   it('collect forwards a --jsheap request with the app it needs', async () => {
     // The snapshot is dumped for one process, so unlike screenshot and hilog
     // this flag needs `--app`; the action must reject it without one rather

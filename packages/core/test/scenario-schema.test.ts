@@ -78,9 +78,20 @@ describe('parseScenario', () => {
     }
   });
 
+  it('accepts thermal as a step collector', () => {
+    const scenario = parseStep({
+      capture: { durationMs: 1000, collectors: ['hitrace', 'thermal'] },
+    }) as { steps: Array<{ capture: { collectors: string[] } }> };
+    expect(scenario.steps[0]!.capture.collectors).toEqual(['hitrace', 'thermal']);
+  });
+
   it('rejects a collector name outside the known set', () => {
     expect(() => parseStep({ capture: { durationMs: 1000, collectors: ['hitrace', 'ftrace'] } }))
       .toThrow(/collectors\[1\]/);
+    // The message lists what a step MAY ask for, so a new collector must be in
+    // it — otherwise the user is told a valid name is invalid.
+    expect(() => parseStep({ capture: { durationMs: 1000, collectors: ['hitrace', 'ftrace'] } }))
+      .toThrow(/thermal/);
   });
 
   it('rejects an explicitly empty collector list', () => {

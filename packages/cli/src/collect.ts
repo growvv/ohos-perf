@@ -57,6 +57,47 @@ export function parseDurationSeconds(raw: string): number {
   return durationMs;
 }
 
+/** The thermal sampler's accepted interval range, in seconds. */
+const MIN_THERMAL_INTERVAL_S = 0.1;
+const MAX_THERMAL_INTERVAL_S = 3600;
+
+/**
+ * Parse `--thermal-interval <seconds>` into the integer milliseconds the
+ * collector takes.
+ *
+ * 0.1 s is the collector's own floor (below it, successive `hidumper` calls
+ * overlap); 3600 s is an hour, past which a capture interval cannot be shorter
+ * than its own run. The value must resolve to a whole millisecond for the same
+ * reason `--duration` does, and every rejection names the value.
+ */
+export function parseThermalIntervalSeconds(raw: string): number {
+  const text = raw.trim();
+  const match = /^(\d+(?:\.\d+)?|\.\d+)s?$/.exec(text);
+  const seconds = match === null ? Number.NaN : Number(match[1]);
+
+  const bad = (why: string): OhosPerfError =>
+    new OhosPerfError(
+      `invalid --thermal-interval ${JSON.stringify(raw)}: ${why}` +
+        ` (expected a thermal interval between ${MIN_THERMAL_INTERVAL_S}` +
+        ` and ${MAX_THERMAL_INTERVAL_S} seconds, e.g. 1 or 5)`,
+      { code: 'COLLECT_BAD_THERMAL_INTERVAL' },
+    );
+
+  if (!Number.isFinite(seconds)) {
+    throw bad('expected a number of seconds');
+  }
+  if (seconds < MIN_THERMAL_INTERVAL_S || seconds > MAX_THERMAL_INTERVAL_S) {
+    throw bad(`the interval must be between ${MIN_THERMAL_INTERVAL_S}` +
+      ` and ${MAX_THERMAL_INTERVAL_S} seconds`);
+  }
+  const rawMs = seconds * 1000;
+  const intervalMs = Math.round(rawMs);
+  if (Math.abs(rawMs - intervalMs) >= 1e-6) {
+    throw bad('the interval is not a whole number of milliseconds');
+  }
+  return intervalMs;
+}
+
 /**
  * Parse `--plugins gpu,xpower` into the names `Device.collect` accepts.
  *

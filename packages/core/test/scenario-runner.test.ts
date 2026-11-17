@@ -129,7 +129,7 @@ describe('ScenarioRunner', () => {
           actions: [],
           capture: {
             durationMs: 2000,
-            collectors: ['hiprofiler', 'procfs', 'hiperf', 'hidumper', 'uitest', 'hilog'],
+            collectors: ['hiprofiler', 'procfs', 'hiperf', 'hidumper', 'uitest', 'hilog', 'thermal'],
             hiprofiler: { plugins: ['ftrace', 'gpu'] },
             hiperf: { frequency: 1000 },
           },
@@ -146,6 +146,7 @@ describe('ScenarioRunner', () => {
       hidumper: true,
       uitest: true,
       hilog: true,
+      thermal: true,
     });
     expect(seen[0]).not.toHaveProperty('coldStart');
     // hitrace is the default trace collector, never a flag of its own.

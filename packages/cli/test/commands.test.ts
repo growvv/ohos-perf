@@ -343,6 +343,23 @@ describe('runCollect', () => {
     expect(r.stdout).toContain('samples  ui 76, screenshot 1260x2720\n');
   });
 
+  it('names the thermal sample count after the hilog line count', async () => {
+    const r = await runCollect(
+      deps({
+        collect: async () => ({
+          sceneDir: '/abs/scene1',
+          device: { id: 't1', kind: 'emulator' },
+          collectors: ['hitrace', 'hilog', 'thermal'],
+          hilog: { lines: 12 },
+          thermal: { samples: 3 },
+        }),
+      }),
+      req,
+      {},
+    );
+    expect(r.stdout).toContain('samples  hilog 12, thermal 3\n');
+  });
+
   it('prints a zero-frame hidumper capture explicitly', async () => {
     // Review Focus 1: a screen that presented nothing is a measurement. A
     // missing line would read as "hidumper did not run".

@@ -87,6 +87,8 @@ export interface RunnerCollectOptions {
   hidumper?: boolean;
   uitest?: boolean;
   hilog?: boolean;
+  /** `true` uses the collector's 5 s interval; the scenario has no override. */
+  thermal?: boolean;
 }
 
 /** The device surface the runner needs. `Device` satisfies it structurally. */
@@ -275,6 +277,7 @@ function collectOptions(
     ...(has('hidumper') ? { hidumper: true } : {}),
     ...(has('uitest') ? { uitest: true } : {}),
     ...(has('hilog') ? { hilog: true } : {}),
+    ...(has('thermal') ? { thermal: true } : {}),
   };
 }
 

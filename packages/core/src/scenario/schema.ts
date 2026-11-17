@@ -67,6 +67,7 @@ export const COLLECTOR_NAMES = [
   'hidumper',
   'uitest',
   'hilog',
+  'thermal',
 ] as const;
 export type CollectorName = (typeof COLLECTOR_NAMES)[number];
 

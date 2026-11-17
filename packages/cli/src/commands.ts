@@ -127,6 +127,12 @@ export interface CollectRequest {
    */
   hilog?: boolean;
   /**
+   * Also sample the device's thermal sensors. Device-wide like `hilog`, so no
+   * `--app` is required. `true` uses the collector's 5 s default; an object
+   * overrides the interval in milliseconds.
+   */
+  thermal?: boolean | { intervalMs?: number };
+  /**
    * Also dump a JS heap snapshot into `jsheap.heapsnapshot`. Requires `app`:
    * the dump targets one process, so unlike `hilog` there is nothing
    * device-wide to capture without it.
@@ -158,6 +164,12 @@ export interface CollectOutput {
   screenshot?: { width: number; height: number };
   /** Present only when a hilog capture ran; `lines` is what the collector read. */
   hilog?: { lines: number };
+  /**
+   * Present only when a thermal capture ran. `samples` is positive: a dump
+   * with no sensor readings fails the capture rather than writing an empty
+   * artifact.
+   */
+  thermal?: { samples: number };
 }
 
 /** An `explore` invocation: walk one app's UI and report what it reached. */
@@ -774,6 +786,8 @@ export async function runCollect(
       ...(result.screenshot === undefined
         ? []
         : [`screenshot ${result.screenshot.width}x${result.screenshot.height}`]),
+      ...(result.hilog === undefined ? [] : [`hilog ${result.hilog.lines}`]),
+      ...(result.thermal === undefined ? [] : [`thermal ${result.thermal.samples}`]),
     ];
     if (samples.length > 0) stdout += `samples  ${samples.join(', ')}\n`;
     // A symbolized capture and an unsymbolized one look identical until the

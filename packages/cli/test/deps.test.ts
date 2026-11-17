@@ -647,6 +647,56 @@ describe('realDeps().analyze', () => {
     }
   });
 
+  it('feeds a thermal.jsonl capture into the thermal analyzer', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-thermal-scene-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'thermal.jsonl'), [
+        '{"elapsedMs":0,"readings":[{"sensor":"Battery","raw":31000,"unit":"millidegree_celsius","celsius":31}]}',
+        '{"elapsedMs":2000,"readings":[{"sensor":"Battery","raw":32000,"unit":"millidegree_celsius","celsius":32}]}',
+        '',
+      ].join('\n'));
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: {
+          startedAtMs: 0, durationMs: 2_000,
+          collectors: ['hitrace', 'thermal'], thermal: { samples: 2 },
+        },
+      }));
+
+      const result = await realDeps('0.0.0').analyze(parent);
+      const value = (id: string): unknown => result.metrics.find((m) => m.id === id)?.value;
+      expect(value('thermal.samples.count')).toBe(2);
+      expect(value('thermal.battery.start.celsius')).toBe(31);
+      expect(value('thermal.battery.end.celsius')).toBe(32);
+      expect(value('thermal.battery.rise.celsius')).toBe(1);
+      expect(result.metrics.some((m) => m.id === 'thermal.degraded')).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('ignores a stale thermal.jsonl that scene.json does not list', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-thermal-stale-'));
+    try {
+      createTraceDb(join(parent, 'trace.db'));
+      writeFileSync(join(parent, 'thermal.jsonl'),
+        '{"elapsedMs":0,"readings":[{"sensor":"Battery","raw":31000,"unit":"millidegree_celsius","celsius":31}]}\n');
+      writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+        version: 1,
+        app: { packageName: 'com.demo', processNames: ['com.demo'] },
+        pids: [], deviceId: 't1',
+        capture: { startedAtMs: 1, durationMs: 2, collectors: ['hitrace'] },
+      }));
+      const result = await realDeps('0.0.0').analyze(parent);
+      expect(result.metrics.map((m) => m.id)).toContain('thermal.degraded');
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('claims perf.samples only when perf_sample has rows', () => {
     const tableDb = (names: string[]): CapabilityMatrixDb => ({
       query: <T = Record<string, unknown>>(): T[] =>
@@ -969,6 +1019,48 @@ describe('realDeps().collect', () => {
       sceneRoot: resolve('hipro-scene'),
       hiprofiler: { plugins: ['gpu', 'xpower'] },
     }]);
+  });
+
+  it('forwards the thermal request and reports its sample count from scene.json', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-collect-thermal-'));
+    try {
+      const seen: unknown[] = [];
+      const deps = realDeps('0.0.0', {
+        collectDevice: async () => ({
+          id: 't1',
+          kind: 'emulator',
+          collect: async (opts: unknown) => {
+            seen.push(opts);
+            return {
+              ingest: async () => {
+                writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+                  version: 1,
+                  app: { packageName: 'com.demo', processNames: ['com.demo'] },
+                  pids: [], deviceId: 't1',
+                  capture: {
+                    startedAtMs: 0, durationMs: 10_000,
+                    collectors: ['hitrace', 'thermal'], thermal: { samples: 3 },
+                  },
+                }));
+                return { close: () => {} } as unknown as Scene;
+              },
+            };
+          },
+        }),
+      });
+      const result = await deps.collect({
+        durationMs: 10_000, out: parent, thermal: { intervalMs: 1000 },
+      });
+      expect(seen).toEqual([{
+        app: undefined,
+        durationMs: 10_000,
+        sceneRoot: resolve(parent),
+        thermal: { intervalMs: 1000 },
+      }]);
+      expect(result.thermal).toEqual({ samples: 3 });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
   });
 
   it('resolves the output directory and closes the scene', async () => {

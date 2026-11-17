@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseDurationSeconds, parsePluginList } from '../src/collect';
+import {
+  parseDurationSeconds, parsePluginList, parseThermalIntervalSeconds,
+} from '../src/collect';
 
 /**
  * Duration parsing is a pure rule: `collect.ts` owns it so `program.ts` can
@@ -81,5 +83,26 @@ describe('parsePluginList', () => {
     for (const bad of ['', ',', 'gpu,', ',gpu', 'gpu,,xpower']) {
       expect(() => parsePluginList(bad), `value ${JSON.stringify(bad)}`).toThrow();
     }
+  });
+});
+
+describe('parseThermalIntervalSeconds', () => {
+  it('parses seconds into whole milliseconds', () => {
+    expect(parseThermalIntervalSeconds('1')).toBe(1_000);
+    expect(parseThermalIntervalSeconds('0.1')).toBe(100);
+    expect(parseThermalIntervalSeconds('2s')).toBe(2_000);
+    expect(parseThermalIntervalSeconds('3600')).toBe(3_600_000);
+  });
+
+  it('rejects intervals outside 0.1–3600 seconds', () => {
+    for (const bad of ['0', '0.05', '3600.001', '-1', 'abc', '', 'NaN', 'Infinity']) {
+      expect(() => parseThermalIntervalSeconds(bad), `value ${JSON.stringify(bad)}`)
+        .toThrow(/thermal interval/);
+    }
+  });
+
+  it('names the offending value', () => {
+    expect(() => parseThermalIntervalSeconds('0')).toThrow(/"0"/);
+    expect(() => parseThermalIntervalSeconds('abc')).toThrow(/"abc"/);
   });
 });

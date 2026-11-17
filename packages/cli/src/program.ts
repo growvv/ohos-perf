@@ -30,7 +30,9 @@ import {
   type CliResult,
   type EmulatorTargetOptions,
 } from './commands';
-import { parseDurationSeconds, parsePluginList } from './collect';
+import {
+  parseDurationSeconds, parsePluginList, parseThermalIntervalSeconds,
+} from './collect';
 import { parseMaxSteps, parseStrategy } from './explore';
 import { parseCoordinate, parseKey, parseText, parseVelocity } from './gesture';
 import { parseLimit, parseQueryArgs } from './query';
@@ -156,6 +158,11 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--uitest', 'also dump the on-screen UI tree')
     .option('--screenshot', 'also capture the whole screen into screenshot.png')
     .option('--hilog', 'also stream the device log (hilog) for the capture window')
+    .option('--thermal', 'also sample the device thermal sensors for the capture window')
+    .option(
+      '--thermal-interval <seconds>',
+      'thermal sampling interval in seconds (default 5, between 0.1 and 3600)',
+    )
     .option('--jsheap', 'also dump a JS heap snapshot for the app (debuggable app only)')
     .option('--target <id>', 'capture from this hdc target instead of the first connected one')
     .option('--json', 'print the result as JSON')
@@ -173,6 +180,8 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       uitest?: boolean;
       screenshot?: boolean;
       hilog?: boolean;
+      thermal?: boolean;
+      thermalInterval?: string;
       jsheap?: boolean;
       target?: string;
       json?: boolean;
@@ -210,6 +219,32 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         });
         return;
       }
+      // The interval only means something to a thermal capture; accepting it
+      // alone would run a capture that quietly drops the user's request.
+      if (opts.thermalInterval !== undefined && opts.thermal !== true) {
+        io.emit({
+          stdout: '',
+          stderr: 'invalid --thermal-interval: --thermal is required\n',
+          exitCode: 1,
+        });
+        return;
+      }
+      let thermalRequest: boolean | { intervalMs: number } | undefined;
+      if (opts.thermal === true) {
+        if (opts.thermalInterval === undefined) {
+          thermalRequest = true;
+        } else {
+          try {
+            thermalRequest = {
+              intervalMs: parseThermalIntervalSeconds(opts.thermalInterval),
+            };
+          } catch (err) {
+            io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+            return;
+          }
+        }
+      }
+
       let hiprofilerRequest: { plugins?: readonly HiprofilerPluginName[] } | undefined;
       if (opts.hiprofiler === true) {
         try {
@@ -255,6 +290,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         ...(opts.uitest === true ? { uitest: true } : {}),
         ...(opts.screenshot === true ? { screenshot: true } : {}),
         ...(opts.hilog === true ? { hilog: true } : {}),
+        ...(thermalRequest === undefined ? {} : { thermal: thermalRequest }),
         ...(opts.jsheap === true ? { jsheap: true } : {}),
         ...(opts.target === undefined ? {} : { target: opts.target }),
       }, { json: opts.json }));
