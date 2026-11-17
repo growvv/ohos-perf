@@ -308,10 +308,11 @@ ORDER BY timestamp_trace, id`,
    * Mirrors HapRay's `_query_callchains_batch`: per thread at most the first
    * 50 distinct `callchain_id`s (in chain-id order) are considered and at most
    * `maxChainsPerThread` (default 20) non-empty chains are returned. Frames
-   * are ordered by `depth`; symbols resolve through `perf_files` by the exact
-   * `(file_id, serial_id)` pair first and by `file_id` alone as the fallback.
-   * A frame keeps its raw `perf_callchain.name` and an empty path when neither
-   * lookup matches.
+   * are ordered by `depth`; a symbol resolves through the exact
+   * `(file_id, symbol_id → serial_id)` row of `perf_files`, then through the
+   * `data_dict` text for `perf_callchain.name`, and never from a neighbouring
+   * row of the same file. The file path still resolves from `file_id` alone,
+   * so an unresolved frame names the library it ran in.
    *
    * If `perf_callchain` or `perf_files` is absent there is nothing to return,
    * so the result is `[]` (HapRay does the same).
@@ -546,9 +547,12 @@ ORDER BY callchain_id`,
   /**
    * Resolves each chain id to its frames, ordered by `depth`.
    *
-   * Symbols resolve through `perf_files` by the exact `(file_id, serial_id)`
-   * pair first and by `file_id` alone as the fallback; a frame with neither
-   * keeps its raw `perf_callchain.name`. A missing `perf_callchain` or
+   * A symbol comes from the exact `(file_id, symbol_id → serial_id)` row of
+   * `perf_files`; when that row is missing or names nothing, from the
+   * `data_dict` text for `perf_callchain.name`; and when the column holds text
+   * rather than an id (a hand-built database), from that text. A frame whose
+   * `name` is a dangling id gets `''` — the recorder had no symbol, and
+   * repeating the number would claim a name. A missing `perf_callchain` or
    * `perf_files` yields an empty map (nothing can be resolved).
    */
   private chainFunctions(chainIds: readonly number[]): Map<number, PerfFunction[]> {
