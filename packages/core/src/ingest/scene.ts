@@ -26,6 +26,8 @@ export interface SceneLayout {
   hilogFile: string;
   /** `hilog.jsonl` from the same capture: one typed row per log line. */
   hilogJsonlFile: string;
+  /** `thermal.jsonl` from a `--thermal` capture: one record per sample. */
+  thermalFile: string;
   /**
    * `redundant_file.txt`: the cold-start redundant-read report, when a scene
    * carries one. Nothing here produces it yet; it is read when present.
@@ -58,6 +60,7 @@ export function createSceneLayout(root: string): SceneLayout {
     screenshotFile: join(root, 'screenshot.png'),
     hilogFile: join(root, 'hilog.log'),
     hilogJsonlFile: join(root, 'hilog.jsonl'),
+    thermalFile: join(root, 'thermal.jsonl'),
     redundantFile: join(root, 'redundant_file.txt'),
     coverageFile: join(root, 'coverageReport.json'),
     jsheapFile: join(root, 'jsheap.heapsnapshot'),
