@@ -277,6 +277,10 @@ The document is versioned JSON (`version: 1`, `name`, `app`, optional
   edge. The refusal says how many swipes it spent, so "1" means the list never
   moved and "5" means the target is past its end. A `scrollTo` that is not
   `scrollable` is refused before any swipe. `tap` also takes `timeoutMs`.
+- `swipeArea` swipes inside the selected component, centred and spanning
+  `distance` percent of its height or width (default 40, i.e. 70%→30%), which
+  is what a carousel or an inner list needs. Do not swipe the whole screen for
+  an inner list: the gesture lands on whatever is in the middle.
 - **Assert, or the status means nothing.** A step's `expect` block is evaluated
   against a fresh dump after the actions and before cleanup:
   `present: [{selector, min?, max?}]`, `absent: [selector]`, `foreground`

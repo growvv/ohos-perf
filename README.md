@@ -497,7 +497,8 @@ capability matrix's reason and the message names the step.
 ### Selectors: tap what the screen says, not a coordinate
 
 A coordinate is a claim about one resolution. A selector is a claim about the
-screen's content, which is what a scenario means to say:
+screen's content, which is what a scenario means to say. This is one step of
+the document above:
 
 ```json
 {
@@ -536,6 +537,11 @@ A selector that matches zero nodes and one that matches two are different
 refusals (`SCENARIO_SELECTOR_NO_MATCH` / `SCENARIO_SELECTOR_AMBIGUOUS`), because
 the fixes differ. A selected node whose `bounds` did not parse is refused rather
 than tapped at `(0,0)`.
+
+`swipeArea` swipes inside the selected component, centred and spanning
+`distance` percent of its height (for `up`/`down`) or width (for
+`left`/`right`); the default 40 runs from 70% to 30%, so the finger never
+starts on the area's edge.
 
 `tap` and `tapText` take an optional `scrollTo`: when the target is not on
 screen, the runner swipes that container from 70% to 30% of its height, re-dumps
