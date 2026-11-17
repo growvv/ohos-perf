@@ -45,7 +45,7 @@ export type ScenarioAction =
       readonly target: Selector;
       /** A scrollable container to swipe when `target` is below the fold. */
       readonly scrollTo?: Selector;
-      /** Give up after this many swipes; default 5. */
+      /** How long to wait for `target` to appear, in milliseconds; no wait by default. */
       readonly timeoutMs?: number;
     }
   | { readonly kind: 'tapText'; readonly text: string; readonly scrollTo?: Selector }
@@ -53,7 +53,7 @@ export type ScenarioAction =
       readonly kind: 'swipeArea';
       readonly area: Selector;
       readonly direction: 'up' | 'down' | 'left' | 'right';
-      /** Fraction of the area's extent to travel, 1-100; default 60. */
+      /** Percentage of the area's extent to travel, 1-100; default 40. */
       readonly distance?: number;
     }
   | { readonly kind: 'inputInto'; readonly target: Selector; readonly text: string };

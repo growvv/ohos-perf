@@ -80,7 +80,11 @@ export function discoverCases(dir: string, filter?: string): DiscoveredCase[] {
 
   let pattern: RegExp;
   try {
-    pattern = new RegExp(filter);
+    // Anchored here rather than left to the author: `--filter scroll` must
+    // not also run `no-scroll`, which is the silent extra-case failure this
+    // module exists to prevent. An author who writes `^` or `$` themselves is
+    // saying the same thing, so the extra anchor is harmless.
+    pattern = new RegExp(`^(?:${filter})$`);
   } catch (err) {
     throw new OhosPerfError(
       `invalid --filter ${JSON.stringify(filter)}: ${message(err)}`,
@@ -111,20 +115,28 @@ export function loadCases(cases: readonly DiscoveredCase[]): CaseLoad[] {
     try {
       text = readFileSync(entry.path, 'utf8');
     } catch (err) {
+      // The file name, not the path: this error reaches `cases.json`, which is
+      // a document, and a document carries no host path.
       return {
         id: entry.id,
         path: entry.path,
-        error: `cannot read ${entry.path}: ${message(err)}`,
+        error: `${basename(entry.path)}: cannot be read (${errorCode(err)})`,
       };
     }
     try {
       return { id: entry.id, path: entry.path, scenario: parseScenario(text) };
     } catch (err) {
-      return { id: entry.id, path: entry.path, error: `${entry.path}: ${message(err)}` };
+      return { id: entry.id, path: entry.path, error: `${basename(entry.path)}: ${message(err)}` };
     }
   });
 }
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** A filesystem error's code (`ENOENT`, `EACCES`), for a host-path-free message. */
+function errorCode(err: unknown): string {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? code : 'unreadable';
 }

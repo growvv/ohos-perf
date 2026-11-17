@@ -89,6 +89,25 @@ describe('Device.uiTree', () => {
     expect(existsSync(root)).toBe(false);
   });
 
+  it('asks the collector for full rows, because a selector taps a rect', async () => {
+    // The defect this pins: a capture's `ui.json` carries the `bounds` string
+    // but not the rect parsed from it, so a selector read that reused the
+    // capture's options got 86 nodes and 0 rects on a real device — every
+    // `tap` refused with "no parseable bounds" for a valid bounds string.
+    let seen: unknown;
+    const device = new Device('t1', probe as never, {
+      hdc: hdc as never,
+      uitest: {
+        collect: async (_hdc: unknown, _target: string, opts: unknown) => {
+          seen = opts;
+          return [NODE];
+        },
+      } as never,
+    });
+    await device.uiTree();
+    expect(seen).toMatchObject({ full: true });
+  });
+
   it('refuses when uitest is absent, naming the matrix reason', async () => {
     const noUitest = { ...probe, binaries: { ...probe.binaries, uitest: false } };
     const device = new Device('t1', noUitest as never, { hdc: hdc as never });

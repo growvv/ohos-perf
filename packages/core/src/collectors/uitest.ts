@@ -71,7 +71,19 @@ export class UitestCollector implements Collector {
   async collect(
     hdc: Hdc,
     target: string,
-    opts: { timeoutMs?: number },
+    opts: {
+      timeoutMs?: number;
+      /**
+       * Include `boundsRect` and the raw attributes on every row.
+       *
+       * A capture leaves this off: `ui.json` is a scene artifact and its
+       * rows are the documented subset, which is what `ui.get` returns. A
+       * selector read needs the geometry, because a tap is the centre of a
+       * node's bounds — without it every selector action refuses on a real
+       * device with "no parseable bounds" for a perfectly parseable string.
+       */
+      full?: boolean;
+    },
     layout: SceneLayout,
   ): Promise<UiNode[]> {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -111,7 +123,7 @@ export class UitestCollector implements Collector {
     }
 
     await hdc.recv(target, DEVICE_UI_PATH, layout.uiFile);
-    const nodes = readUiTree(layout.uiFile);
+    const nodes = readUiTree(layout.uiFile, opts.full === true ? { full: true } : {});
     if (nodes === undefined) {
       removeFile(layout.uiFile);
       throw new OhosPerfError(

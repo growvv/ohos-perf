@@ -105,3 +105,31 @@ describe('loadCases', () => {
     expect(load!.error).toContain('wrong.scenario.json');
   });
 });
+
+describe('discoverCases — the filter is anchored', () => {
+  it('does not match a longer id that merely contains the filter', () => {
+    // The docs say "anchored regex over the case id". An unanchored compile
+    // would run `no-scroll` for `--filter scroll`, which is the silent
+    // extra-case failure this module exists to prevent.
+    const root = dir();
+    write(root, 'scroll.scenario.json', validScenario('scroll'));
+    write(root, 'no-scroll.scenario.json', validScenario('no-scroll'));
+    expect(discoverCases(root, 'scroll').map((c) => c.id)).toEqual(['scroll']);
+    expect(discoverCases(root, 'scroll').map((c) => c.id)).not.toContain('no-scroll');
+  });
+
+  it('still allows an explicit alternation inside the anchor', () => {
+    const root = dir();
+    write(root, 'scroll.scenario.json', validScenario('scroll'));
+    write(root, 'tap.scenario.json', validScenario('tap'));
+    write(root, 'other.scenario.json', validScenario('other'));
+    expect(discoverCases(root, 'scroll|tap').map((c) => c.id)).toEqual(['scroll', 'tap']);
+  });
+
+  it('treats an explicit ^ or $ as the author writing the anchor, not doubling it', () => {
+    const root = dir();
+    write(root, 'scroll.scenario.json', validScenario('scroll'));
+    write(root, 'no-scroll.scenario.json', validScenario('no-scroll'));
+    expect(discoverCases(root, '^scroll$').map((c) => c.id)).toEqual(['scroll']);
+  });
+});

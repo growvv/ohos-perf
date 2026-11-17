@@ -120,7 +120,9 @@ function checkKeys(
 export function parseSelector(value: unknown, path: string): Selector {
   if (!isRecord(value)) bad(path, 'expected a selector object');
   const kind = value.kind;
-  if (typeof kind !== 'string' || !(kind in KEYS)) {
+  // `Object.hasOwn`, not `in`: `in` walks the prototype chain, so `toString`
+  // and `constructor` would pass this guard and then crash in `KEYS[kind]`.
+  if (typeof kind !== 'string' || !Object.hasOwn(KEYS, kind)) {
     bad(path, `unknown selector kind ${JSON.stringify(kind)}`);
   }
   const selectorKind = kind as Selector['kind'];

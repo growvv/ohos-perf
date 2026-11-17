@@ -147,3 +147,63 @@ describe('UitestCollector', () => {
     expect(DEVICE_UI_PATH).toBe('/data/local/tmp/ohosperf_ui.json');
   });
 });
+
+/*
+ * P17: the tree a selector reads must carry geometry.
+ *
+ * `flattenUiTree` only adds `boundsRect` with `full: true`, and the capture
+ * path deliberately omits it (a query row carries the documented subset). A
+ * selector, though, taps the centre of a node's bounds — so the read that
+ * feeds selectors has to ask for the full row. Without this, every selector
+ * action on a real device refuses with "no parseable bounds" for a bounds
+ * string that parsed perfectly well.
+ */
+describe('UitestCollector — full rows for selectors', () => {
+  it('adds boundsRect when asked for full rows', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-uitest-full-'));
+    const layout = createSceneLayout(dir);
+    const hdc = {
+      async shell(_t: string, cmd: string) {
+        if (cmd.startsWith('rm -f')) return { stdout: '', stderr: '', code: 0 };
+        if (cmd.startsWith('ls -l')) {
+          return { stdout: `-rw-r--r-- 1 shell shell 2048 ${DEVICE_UI_PATH}`, stderr: '', code: 0 };
+        }
+        return { stdout: SAVED, stderr: '', code: 0 };
+      },
+      async recv(_t: string, _f: string, to: string) {
+        writeFileSync(to, JSON.stringify(TREE));
+      },
+    } as unknown as Hdc;
+    try {
+      const nodes = await new UitestCollector().collect(hdc, 'dev', { full: true }, layout);
+      const scene = nodes.find((node) => node.type === 'WindowScene')!;
+      expect(scene.bounds).toBe('[0,107][1216,2688]');
+      expect(scene.boundsRect).toEqual({ left: 0, top: 107, right: 1216, bottom: 2688 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('still omits boundsRect for a capture, so ui.json stays the documented subset', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-uitest-plain-'));
+    const layout = createSceneLayout(dir);
+    const hdc = {
+      async shell(_t: string, cmd: string) {
+        if (cmd.startsWith('rm -f')) return { stdout: '', stderr: '', code: 0 };
+        if (cmd.startsWith('ls -l')) {
+          return { stdout: `-rw-r--r-- 1 shell shell 2048 ${DEVICE_UI_PATH}`, stderr: '', code: 0 };
+        }
+        return { stdout: SAVED, stderr: '', code: 0 };
+      },
+      async recv(_t: string, _f: string, to: string) {
+        writeFileSync(to, JSON.stringify(TREE));
+      },
+    } as unknown as Hdc;
+    try {
+      const nodes = await new UitestCollector().collect(hdc, 'dev', {}, layout);
+      expect(nodes.find((node) => node.type === 'WindowScene')!.boundsRect).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});

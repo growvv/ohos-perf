@@ -329,3 +329,63 @@ describe('runScenarioCommand --cases', () => {
     expect(parsed.cases[0].id).toBe('a');
   });
 });
+
+describe('runScenarioCommand --cases index honesty', () => {
+  const ONE_STEP = {
+    version: 1,
+    name: 'one',
+    app: 'com.example.app',
+    steps: [{ id: 'open', actions: [], capture: { durationMs: 1000, collectors: ['hitrace'] } }],
+  };
+
+  function casesDir(files: Record<string, unknown>): string {
+    const root = mkdtempSync(join(tmpdir(), 'cases-'));
+    for (const [name, doc] of Object.entries(files)) {
+      writeFileSync(join(root, name), typeof doc === 'string' ? doc : JSON.stringify(doc));
+    }
+    return root;
+  }
+
+  it('records the case directory relative to --out, not as a host path', async () => {
+    // A document must not carry a host path: two checkouts of the same
+    // scenarios would produce different indexes for a reason that has
+    // nothing to do with the run.
+    const out = mkdtempSync(join(tmpdir(), 'run-'));
+    await runScenarioCommand(
+      deps(),
+      { scenarioPath: '', casesDir: casesDir({ 'a.scenario.json': ONE_STEP }), outDir: out },
+      {},
+    );
+    const index = JSON.parse(readFileSync(join(out, 'cases.json'), 'utf8'));
+    expect(index.cases[0].outDir).toBe('a');
+    expect(index.cases[0].outDir).not.toContain(out);
+  });
+
+  it('omits outDir for a case that never ran', async () => {
+    // A device that is gone throws before any scene exists; naming a
+    // directory there sends a reader to a path that was never written.
+    const out = mkdtempSync(join(tmpdir(), 'run-'));
+    await runScenarioCommand(
+      deps({ run: async () => { throw new Error('no device'); } }),
+      { scenarioPath: '', casesDir: casesDir({ 'a.scenario.json': ONE_STEP }), outDir: out },
+      {},
+    );
+    const index = JSON.parse(readFileSync(join(out, 'cases.json'), 'utf8'));
+    expect(index.cases[0].status).toBe('failed');
+    expect(index.cases[0]).not.toHaveProperty('outDir');
+    expect(index.cases[0].error).toMatch(/no device/);
+  });
+
+  it('names a malformed case by file name, not by its host path', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'run-'));
+    const cases = casesDir({ 'bad.scenario.json': '{ not json' });
+    await runScenarioCommand(
+      deps(),
+      { scenarioPath: '', casesDir: cases, outDir: out },
+      {},
+    );
+    const index = JSON.parse(readFileSync(join(out, 'cases.json'), 'utf8'));
+    expect(index.cases[0].error).toContain('bad.scenario.json');
+    expect(index.cases[0].error).not.toContain(cases);
+  });
+});

@@ -299,3 +299,24 @@ describe('resolveSelector', () => {
       .toBe('only');
   });
 });
+
+describe('parseSelector — prototype keys are not selector kinds', () => {
+  it('refuses Object.prototype members with a typed error, not a TypeError', () => {
+    // `kind in KEYS` walks the prototype chain, so `toString` and
+    // `constructor` pass the guard and then crash in `KEYS[kind].includes`.
+    // The contract is a SCENARIO_BAD_SELECTOR naming the path.
+    for (const kind of ['toString', 'constructor', 'hasOwnProperty', '__proto__']) {
+      const err = (() => {
+        try {
+          parseSelector({ kind }, 'steps[0].target');
+        } catch (e) {
+          return e;
+        }
+        return undefined;
+      })();
+      expect(err, kind).toBeInstanceOf(OhosPerfError);
+      expect((err as OhosPerfError).code, kind).toBe('SCENARIO_BAD_SELECTOR');
+      expect((err as Error).message, kind).toContain('steps[0].target');
+    }
+  });
+});

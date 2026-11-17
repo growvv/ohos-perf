@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   discoverCases,
@@ -901,7 +901,12 @@ export async function runScenarioCommand(
 interface CaseOutcome {
   readonly id: string;
   readonly status: 'ok' | 'failed';
-  /** Where its scenes were written; absent when it never ran. */
+  /**
+   * The case's directory, relative to the `--out` the index sits in — the case
+   * id, which is also the directory's name. Relative because this is a
+   * document: an absolute path would make two identical runs differ by
+   * checkout location. Absent when the case never ran.
+   */
   readonly outDir?: string;
   readonly error?: string;
   /** The run's own summary, when it ran. */
@@ -963,7 +968,7 @@ async function runCases(
       outcomes.push({
         id: load.id,
         status: result.status === 'failed' ? 'failed' : 'ok',
-        outDir: caseOut,
+        outDir: load.id,
         steps: { ok, total: result.steps.length },
         ...(result.status === 'failed'
           ? { error: firstFailure(result) ?? 'the run reported failure' }
@@ -971,8 +976,15 @@ async function runCases(
       });
     } catch (err) {
       // A case that could not reach a device at all is that case's failure,
-      // not the suite's: the next case may be the one that matters.
-      outcomes.push({ id: load.id, status: 'failed', outDir: caseOut, error: safeMessage(err) });
+      // not the suite's: the next case may be the one that matters. `outDir`
+      // is recorded only when the run got far enough to create it — naming a
+      // directory that was never written sends a reader to nothing.
+      outcomes.push({
+        id: load.id,
+        status: 'failed',
+        ...(existsSync(caseOut) ? { outDir: load.id } : {}),
+        error: safeMessage(err),
+      });
     }
   }
 

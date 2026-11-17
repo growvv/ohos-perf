@@ -239,10 +239,13 @@ export class Device {
     const root = mkdtempSync(join(tmpdir(), 'ohosperf-ui-'));
     try {
       const layout = createSceneLayout(root);
+      // `full` because a selector taps the centre of a node's bounds: the
+      // subset a capture writes carries the `bounds` string but not the rect
+      // parsed from it, and every selector action needs the rect.
       return await (this.deps.uitest ?? new UitestCollector()).collect(
         hdc,
         this.id,
-        {},
+        { full: true },
         layout,
       );
     } finally {
