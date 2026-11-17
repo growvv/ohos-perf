@@ -55,6 +55,16 @@ the defect stayed invisible. Unresolved leaves (2,295 frames, 994 M,
   is byte-identical across runs, and a scene with no samples writes neither
   file and does not fail.
 
+### Fixes — symbol statistics
+
+- **A frame-less chain's weight stays in the table.** A `perf_sample` whose
+  `callchain_id` has no `perf_callchain` rows — a truncated conversion, or a
+  kernel chain the recorder dropped — used to vanish from `symbol.stats`, so
+  the documented identity (`symbol.samples.count` + `symbol.unresolved.count`
+  = the window's weight) was false and the unresolved share read better than
+  the capture was. That weight names nothing, so it is now the unresolved
+  `('', '')` row.
+
 ### Fixes — report windows
 
 - **A whole-capture window is stated as words.** `analyze` over a scene with
