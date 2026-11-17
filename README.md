@@ -689,9 +689,11 @@ symbolized capture is distinguishable from one that never was.
 
 **Drilling down.** `symbol.stats` takes `startNs` and `endNs` and returns
 `{symbol, filePath, samples, share, unresolved}` per leaf, sorted by weight.
-Its rows sum to the window's app-thread weight, so `share` totals 100%.
-`symbol_stats` and `unresolved_symbol` evidence items name the heaviest rows
-and drill into it.
+Its rows sum to the window's app-thread weight, so `share` totals 100% — a
+`perf_sample` whose chain has no frames at all is counted as unresolved
+`('', '')` weight rather than dropped, so truncation cannot flatter the
+profile. `symbol_stats` and `unresolved_symbol` evidence items name the
+heaviest rows and drill into it.
 
 ## Emulators
 
