@@ -1,8 +1,61 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 — 2026-11-17
+
+P16 (HapRay parity W8): symbols that are real, and a flamegraph that opens
+offline.
+
+A real `perf.db` from a Mate 60 capture (26,013 samples, 484,630 callchain
+frames, 215 files, 9,681 `perf_files` rows) showed that frame resolution was
+wrong in a way no synthetic fixture revealed. `perf_callchain.name` is not a
+symbol — it is a `data_dict` id — and `query/perf.ts` fell back to *the first
+`perf_files` row of the file* when the exact `(file_id, symbol_id)` pair
+missed. That fallback invented symbols: 1,972 leaf frames (753 M weight,
+**7.14%** of all samples) got the name of whichever symbol happened to be
+first in their file. `dlopen` was reported with 6.33 M weight where its
+genuine weight is 0.16 M; `dladdr` at 495 M was real, which is exactly why
+the defect stayed invisible. Unresolved leaves (2,295 frames, 994 M,
+**9.43%**) emitted a raw numeric id as the symbol.
 
 ### Fixes
+
+- **Frame symbols resolve exactly or not at all.** The order is now the exact
+  `(file_id, symbol_id → serial_id)` row, then the `data_dict` text for
+  `name` (which is `libfoo.so+0x1cce24` when the recorder saw the address but
+  could not name it, and `''` for a dangling id), then the raw `name` column
+  only for a database with no `data_dict` at all. The neighbour fallback is
+  gone. On the measured capture every one of the 437,767 resolvable frames
+  hits exactly.
+
+### Features
+
+- **`symbols` analyzer** (`symbol.*`, all `exact`): `symbol.samples.count`,
+  `symbol.unresolved.count`, `symbol.unresolved.share`, `symbol.files.count`
+  and, when a resolved row exists, `symbol.top.symbol` / `symbol.top.samples`.
+  The first two sum to the window's weight, so nothing goes missing. Evidence:
+  up to ten `symbol_stats` items naming the heaviest resolved rows and up to
+  ten `unresolved_symbol` items naming the heaviest unnamed ones, each
+  drilling into `symbol.stats`. The analyzer degrades with a reason naming
+  `--hiperf` when the scene has no samples.
+- **`symbol.stats` query**: `{symbol, filePath, samples, share, unresolved}`
+  per leaf over a nanosecond range, sorted by weight, with `share` totalling
+  100% over the window's app-thread weight.
+- **`collect --so-dir <dir>`** passes a host directory of shared objects to the
+  perf conversion as `--So_dir`, so frames come out named at capture time.
+  Refused before any device call when the flag cannot mean anything
+  (`COLLECT_SO_DIR_WITHOUT_HIPERF`) or the path is not a directory here
+  (`COLLECT_BAD_SO_DIR`). `scene.json` records
+  `capture.hiperf.symbolized: true`.
+- **Offline flamegraph artifact**: `report` now writes `flamegraph.svg` and
+  `flamegraph.html` after the six document artifacts when the scene has perf
+  samples. The SVG is one rectangle per distinct frame path, siblings ordered
+  by descending weight, the full path and share in each `<title>`, and no
+  script, link or fetch of any kind. The page states the unresolved share and
+  whether symbolization ran — or that the capture did not record it. The pair
+  is byte-identical across runs, and a scene with no samples writes neither
+  file and does not fail.
+
+### Fixes — static HAP inspection
 
 Corrections to the static HAP inspection released in 0.10.0. Each was found
 by checking the shipped behaviour against a real package, and each is pinned

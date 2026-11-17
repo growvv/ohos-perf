@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P15 are complete**: 1483 tests (1472 unit, 11 in the device
+**P1 through P16 are complete**: 1561 tests (1550 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1447 passed, 25
+attached device are absent — `npm run test:unit` reports **1525 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-ten device-gated skips, so the combined clean checkout is **1448 passed, 35
+ten device-gated skips, so the combined clean checkout is **1526 passed, 35
 skipped**. With both fixtures present and a device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -81,9 +81,11 @@ Implemented today:
   metric as improved, regressed, unchanged, added, removed or incomparable
 - report artifacts: `ohos-perf report <scene> --out <dir>` renders one typed
   model as a self-contained offline HTML page, `report.json`, `summary.json`,
-  `metrics.csv`, `evidence.csv` and a dependency-free `report.xlsx`; identical
-  inputs and package version produce byte-identical files, and skipped
-  analyzers appear as `degraded` sections with their reason
+  `metrics.csv`, `evidence.csv` and a dependency-free `report.xlsx`; a scene
+  with perf samples also gets `flamegraph.svg` and `flamegraph.html`, drawn
+  from the same folded stacks the analysis measured. Identical inputs and
+  package version produce byte-identical files, and skipped analyzers appear
+  as `degraded` sections with their reason
 - `trace_streamer` wrapper and scene layout, with `scene.json` metadata
   (device-uptime start marker, pids, collector list)
 - typed queries over the 88-table trace database: frames, processes, threads,
@@ -100,8 +102,9 @@ Implemented today:
   (`render.*`), GC pressure (`gc.*`), VSync anomalies (`vsync.*`), empty
   frames with HapRay's false-positive filters and exact load share
   (`empty_frame.*`), RenderService skips reverse-traced through NativeWindow
-  (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`), ArkUI component
-  reuse (`components.*`) and the UI tree and screenshot (`ui.*`), driven by an
+  (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`), symbol statistics
+  with the unresolved share (`symbol.*`), ArkUI component reuse
+  (`components.*`) and the UI tree and screenshot (`ui.*`), driven by an
   offline capability matrix derived from table presence
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
@@ -149,6 +152,7 @@ Metric ids emitted by the analyzers:
 | `empty_frame.*` | empty frames | `empty_frame.count`, `empty_frame.rate`, `empty_frame.load.severity` |
 | `rs_skip.*` | RenderService skips | `rs_skip.frames.count`, `rs_skip.trace.accuracy` |
 | `flamegraph.*` | folded stacks | `flamegraph.app.share`, `flamegraph.stacks.count` |
+| `symbol.*` | symbols | `symbol.samples.count`, `symbol.unresolved.count`, `symbol.unresolved.share`, `symbol.files.count`, `symbol.top.symbol` |
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
 | `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` |
 | `hap.*` | static HAP inspection | `hap.files.count`, `hap.size.bytes`, `hap.techstack.count`, `hap.duplicates.wasted.bytes`, `hap.oversized.count`, `hap.category.images.bytes` |
@@ -214,7 +218,7 @@ The HapRay parity series (one release per major item, so far):
 | P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | shipped in `0.8.0` |
 | P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | shipped in `0.9.0` |
 | P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | shipped in `0.10.0` |
-| P16 | W8 symbols | symbol statistics, `--so-dir` device symbolization, offline flamegraph artifact, unresolved-symbol evidence | planned |
+| P16 | W8 symbols | exact `(file_id, serial_id)` resolution, symbol statistics with the unresolved share, `--so-dir` device symbolization, offline flamegraph artifact | shipped in `0.11.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities, of which 16 are now ported, 10
@@ -232,7 +236,11 @@ unvalidated and resolution dependent, and "this region animated" is not a
 performance measurement. `0.10.0` moves static HAP tech-stack analysis (row
 25), the HapSize file inventory (row 26) and static report artifacts (row 27)
 to ported: the archive is read in memory, the rules are HapRay's own table as
-typed data, and the report section renders through the existing model. Its
+typed data, and the report section renders through the existing model.
+`0.11.0` moves symbol statistics and unresolved-symbol reporting (row 16) and
+the flamegraph artifact (row 17) to ported, and lifts ELF symbol extraction
+(row 18) from missing to partial: the capture is symbolized by the device's
+own `trace_streamer --So_dir` rather than by re-implementing an ELF reader. Its
 business metrics — ROI, UX scores, "estimated savings" — are not ported,
 because none of them is a measurement. Items deliberately not ported (Hypium/xdevice test
 execution, the LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery,
@@ -279,6 +287,9 @@ ohos-perf collect \
 ohos-perf collect \
   --app com.example.app --duration 10s --out ./full-scene \
   --procfs --hiperf --hidumper --uitest --screenshot --hilog --json
+
+# symbolize the perf capture as it converts: frames come out named, not file+0xoffset
+ohos-perf collect   --app com.example.app --duration 10s --out ./perf-scene   --hiperf --so-dir /path/to/symbols
 
 # device-wide memory sampling needs no app
 ohos-perf collect \
@@ -615,15 +626,67 @@ is a capability id with no device rule: a device cannot make a file on disk
 readable, so the device matrix keeps its 23 rows.
 
 What is deliberately not here: HapSize's business metrics (ROI, UX scores,
-"estimated savings" — none is a measurement), ELF symbol extraction (P16's
-work; the rules still detect those libraries by filename and the metadata
-fields those extractors fill are absent rather than guessed), `arkanalyzer`,
+"estimated savings" — none is a measurement), ELF symbol extraction from the
+package itself (the rules detect those libraries by filename, and the device's
+own `trace_streamer --So_dir` does the symbolizing — see [Symbols](#symbols)),
+`arkanalyzer`,
 `bjc` and `sql.js` (none is needed to read a ZIP and match names), resource
 index label resolution (a `$string:` label stays empty; a wrong label is worse
 than none), extraction to disk (the archive is read in memory, so a hostile
 entry name cannot escape anywhere) and nested archives (a HAP inside a HAP is
 not a package the device would install; the inner file is inventoried as a
 file).
+
+## Symbols
+
+A perf capture records addresses. Whether a frame comes out as `dlopen` or as
+`libjdimage.so+0x1cce24` depends on two things: whether the conversion was
+given the shared objects to read, and whether this package resolves the
+frames correctly.
+
+**Resolution.** `perf_callchain.name` is not a symbol — it is a `data_dict`
+id. On a measured 26,013-sample capture (484,630 frames, 215 files, 9,681
+`perf_files` rows) every frame resolved through `data_dict`, and 46,863
+frames carried `symbol_id = -1`. The other 437,767 resolve **exactly**
+through `(file_id, symbol_id → serial_id)`, a 100% hit rate. The resolution
+order is now:
+
+1. the exact `(file_id, symbol_id)` row of `perf_files`, when it exists;
+2. otherwise the `data_dict` text for `name`, which is
+   `libfoo.so+0x1cce24` when the recorder saw the address but could not name
+   it, and `''` when the id dangles;
+3. otherwise the raw `name` column, only for a database with no `data_dict`
+   at all — there is no id space to be dangling in.
+
+An earlier version fell back to *the first `perf_files` row of the file* when
+the exact pair missed. That fallback invented symbols: 1,972 leaf frames
+(753 M weight, **7.14%** of all samples) got the name of whichever symbol
+happened to be first in their file. `dlopen` was reported with 6.33 M weight
+where its genuine weight is 0.16 M. `dladdr` at 495 M was real, which is
+exactly why the defect was invisible without checking.
+
+**What the numbers mean.** `symbol.samples.count` is the sampled weight whose
+symbol is a name; `symbol.unresolved.count` is the weight still
+`file+0xoffset`; `symbol.unresolved.share` is the latter over all leaf
+weight. The first two sum to the window's weight, so nothing goes missing.
+Unresolved weight is not an error — it is the recorder being honest about
+what it did not know, and a `libfoo.so+0x…` reference is still evidence about
+which library was running. On the measured capture it was **9.43%** (2,295
+leaves, 994 M).
+
+**Fixing the capture.** `collect --hiperf --so-dir <dir>` passes a host
+directory of shared objects to the perf conversion as `--So_dir`, so frames
+come out named at capture time. The request is refused before any device call
+when it cannot mean anything (`COLLECT_SO_DIR_WITHOUT_HIPERF`) or names a path
+that is not a directory here (`COLLECT_BAD_SO_DIR`). `scene.json` records
+`capture.hiperf.symbolized: true`, and the flamegraph header states it, so a
+symbolized capture is distinguishable from one that never was.
+
+**Drilling down.** `symbol.stats` takes `startNs` and `endNs` and returns
+`{symbol, filePath, samples, share, unresolved}` per leaf, sorted by weight.
+Its rows sum to the window's app-thread weight, so `share` totals 100%.
+`symbol_stats` and `unresolved_symbol` evidence items name the heaviest rows
+and drill into it.
 
 ## Emulators
 
@@ -793,7 +856,7 @@ TypeScript 编写。它把设备能力探测、hitrace 采集、trace_streamer �
 当前 P0–P15 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
 hidumper / uitest / screenshot 采集、trace_streamer 入库（含 perf.data → perf.db）、类型化查询、
 帧 / 故障树 / binder / 线程 / 内存 / 内存测量 / 启动 / 渲染 / GC 压力 / VSync 异常 /
-空帧 / RenderService 跳过 / 火焰图 / 组件复用 / UI 树与截图共十八个分析器、降级指标引擎、证据图与
+空帧 / RenderService 跳过 / 火焰图 / 符号统计 / 组件复用 / UI 树与截图共十九个分析器、降级指标引擎、证据图与
 命名下钻查询、基线对比、通过 `uitest uiInput` 注入点击 / 滑动 / 按键 / 文本的
 `gesture` 命令，以及 `doctor` / `caps` / `collect` / `analyze` / `query` / `tools` /
 `compare` / `ui-compare` / `hap` 命令、`emulator` 生命周期命令、`run` 场景运行器和
@@ -834,8 +897,20 @@ Node 内置 `zlib`）把安装包读进内存，按 HapRay 自己的扩展名分
 判断的规则 id；带 `requireMetadata` 的规则只有在被匹配文件本身能取到元数据时才算命中
 （Flutter 是同时带 Dart 版本串的 `libflutter.so`），绝不会给出空解释。`--out` 写出
 `hap.json` 与离线 `hap.html`，全程不接触设备、不落地解压。刻意不做：HapSize 的 ROI /
-UX 评分 / “预计节省”等商业指标（都不是测量值）、ELF 符号提取（P16）、`resources.index`
+UX 评分 / “预计节省”等商业指标（都不是测量值）、从安装包里自行提取 ELF 符号（符号化交给设备
+自己的 `trace_streamer --So_dir`，见下）、`resources.index`
 标签解析（`$string:` 标签保持为空，错误的标签比没有更糟）、嵌套压缩包。
+
+符号：`perf_callchain.name` 不是符号名，而是 `data_dict` 的 id。实测一次 26,013 个采样、
+484,630 个栈帧、215 个文件的采集：全部栈帧都要经 `data_dict` 解析，其中 46,863 帧的
+`symbol_id = -1`，其余 437,767 帧通过 `(file_id, symbol_id → serial_id)` **精确命中**
+（命中率 100%）。早先的实现在精确配对失败时会退回该文件的第一个 `perf_files` 行，这会
+编造符号：1,972 个叶子帧（7.14% 的权重）被冠上文件里恰好排第一的符号名，`dlopen` 被
+报成 6.33 M，真实权重只有 0.16 M。现在只走精确配对，再退回 `data_dict` 文本
+（`libfoo.so+0x1cce24`，或悬空 id 的 `''`）。无法命名的叶子权重单独报为
+`symbol.unresolved.*`（实测 9.43%），与已命名权重之和等于窗口总权重。采集时加
+`--hiperf --so-dir <目录>` 可让设备在转换时直接符号化；`report` 会额外写出
+`flamegraph.svg` 与 `flamegraph.html`。
 
 `--hiperf` 需要可调试应用，空闲应用产生 `samples: 0` 也是一次有效采集，CLI 会明确
 打印 `hiperf 0` 而不是省略。`compare` 把每个指标标为 improved / regressed /

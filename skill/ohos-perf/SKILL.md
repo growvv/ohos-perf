@@ -58,6 +58,11 @@ the interface; every command speaks stable JSON with `--json`.
      and needs no app.
    - `--hiperf` also records a `perf.data` for CPU samples and callstacks. It
      needs a **debuggable** app; a non-debuggable one is refused by the device.
+   - `--so-dir <dir>` symbolizes the perf capture while it converts: a host
+     directory of shared objects, passed to `trace_streamer` as `--So_dir`.
+     It requires `--hiperf` (`COLLECT_SO_DIR_WITHOUT_HIPERF`) and an existing
+     directory here (`COLLECT_BAD_SO_DIR`); both are refused before any device
+     call. `scene.json` records `capture.hiperf.symbolized: true`.
    - `--hidumper` also samples the RenderService fps and hitch counters.
    - `--uitest` also dumps the on-screen UI tree (device-wide, not app-filtered).
    - `--hilog` also streams the device log for the capture window into
@@ -80,7 +85,8 @@ the interface; every command speaks stable JSON with `--json`.
      app's own vsync groups), empty frames (`empty_frame.*`, with HapRay's
      false-positive filters), RenderService `DisplayNode skip` events
      reverse-traced to the app frame they belong to (`rs_skip.*`), folded
-     CPU stacks (`flamegraph.*`) and ArkUI component reuse (`components.*`).
+     CPU stacks (`flamegraph.*`), symbol statistics (`symbol.*`) and ArkUI
+     component reuse (`components.*`).
    - `flamegraph.*` needs `--hiperf` on a **debuggable** app; a plain hitrace
      capture has no `perf_sample` rows and reports `flamegraph.degraded` with
      that reason. Component reuse needs `H:CustomNode:Build*` events, which a
@@ -431,11 +437,43 @@ ohos-perf query <dir> frames.fpsSeries --args '{"startNs":0,"endNs":5000000000}'
 ohos-perf query <dir> frame.load.threads --args '{"startNs":1000000000,"endNs":1100000000}'
 ohos-perf query <dir> frame.load.symbols --args '{"startNs":1000000000,"endNs":1100000000}'
 ohos-perf query <dir> frame.load.files --args '{"startNs":1000000000,"endNs":1100000000}'
+ohos-perf query <dir> symbol.stats --args '{"startNs":1000000000,"endNs":1100000000}'
 ```
 
 `frame.load.threads`, `.symbols` and `.files` carry `share` as a percentage of
 the window's summed app-thread weight, so rows that do not sum to 100% mean
 some samples were not attributable — not that the numbers are wrong.
+
+## Symbols
+
+A perf capture records addresses; a frame is only named when resolution is
+right. What the analyzer sees:
+
+- `perf_callchain.name` is **not** a symbol. It is a `data_dict` id.
+  Resolution order is: the exact `(file_id, symbol_id → perf_files.serial_id)`
+  row, then the `data_dict` text for `name`, then — only when the database has
+  no `data_dict` at all — the raw `name` column. It never uses a neighbour:
+  the old file-only fallback invented names for 7.14% of a measured capture's
+  leaf weight.
+- `symbol.samples.count` is the sampled weight whose symbol is a name;
+  `symbol.unresolved.count` is the weight still `file+0xoffset`;
+  `symbol.unresolved.share` is the latter over all leaf weight. The first two
+  sum to the window's weight. `symbol.files.count` counts distinct paths, and
+  `symbol.top.symbol` / `symbol.top.samples` name the heaviest resolved row.
+- Unresolved weight is not an error. `libfoo.so+0x1cce24` is honest evidence
+  about which library ran; on the measured capture it was 9.43%. A report that
+  shows only named frames understates how much of the profile is unexplained.
+- `symbol_stats` evidence items (severity `info`) name the heaviest resolved
+  rows; `unresolved_symbol` items (severity `warn`) name the heaviest unnamed
+  ones and their `explain` names `--so-dir` as the flag that improves the next
+  capture. Both drill into `symbol.stats`.
+- `symbol.stats` takes `startNs`/`endNs` and returns
+  `{symbol, filePath, samples, share, unresolved}`, sorted by weight. Its
+  `share` totals 100% over the window's app-thread weight.
+- `report` writes `flamegraph.svg` and `flamegraph.html` when the scene has
+  samples. The page states the unresolved share and whether symbolization ran
+  (`capture.hiperf.symbolized`); a capture that never recorded it says
+  `unknown` rather than claiming either.
 
 ## Comparing against a baseline
 
