@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.19.0 — 2026-11-17
+
+Parity row 24 is ported: coverage ingestion. The ledger drops to three refused
+rows.
+
+HapRay does not measure coverage. It shells out to `bjc`, which needs an
+instrumented build (`ohos-test-coverage=true`, `coverage-mode=black`), a debug
+HAP, an on-device cache, `aa dump` and a matching project source path — and when
+any of that is missing its analyzer returns `None`, so the section silently
+disappears from the report. A reader cannot tell "coverage was never measured"
+from "0% of lines ran", which are opposite conclusions.
+
+- **`analyze` reads a scene's `coverageReport.json`.** That is the document
+  `bjc` writes and HapRay's own HTML template renders: `{ date, summary, files }`
+  with `lines`, `functions` and `branches` counts. The package still does not
+  ship `bjc` — an instrumented build is a property of how the app was compiled —
+  but the analysis of its output is now here, offline, with no Node toolchain.
+- **Six metrics, marked `approximate`.** `coverage.lines.percent`,
+  `coverage.lines.covered`, `coverage.lines.total`, `coverage.functions.percent`,
+  `coverage.branches.percent` and `coverage.files.count`. `approximate`, not
+  `exact`: the counts are exact about the instrumented build, which is not the
+  app a user runs.
+- **Percentages are recomputed, not trusted.** Keeping bjc's `pct` would make
+  the report a function of a tool this package does not control, and a `total`
+  of zero has to be 0% rather than `NaN`.
+- **A missing report is `no_data` with a reason**, naming the instrumented build
+  and `bjc` — the distinction HapRay's silent skip cannot make.
+- **The least-covered file is named**, with its line, function and branch
+  ratios, rather than repeating the report's file list as evidence.
+- **Refusals instead of guesses.** Malformed JSON, a missing `summary`, a
+  non-integer count and `covered > total` are all typed errors naming the
+  section; a report claiming 120% of lines ran cannot reach a reader.
+- 1844 unit tests (11 for the parser and analyzer, 2 end-to-end through
+  `analyze`), two typechecks, two builds.
+
 ## 0.18.1 — 2026-11-17
 
 One fix to what 0.18.0 printed.

@@ -57,19 +57,22 @@ describe('the parity ledger', () => {
   });
 
   it('keeps the structurally-out rows out, with the prerequisite named', () => {
-    // These four are the reason the project can claim parity without shipping
-    // an LLM client, a TensorFlow venv, a disassembler or an instrumented
-    // build. Each reason must name the prerequisite it refuses, so a reader
-    // can tell "not worth it" from "not done".
+    // These three are the reason the project can claim parity without shipping
+    // an LLM client, a TensorFlow venv or a disassembler. Each reason must name
+    // the prerequisite it refuses, so a reader can tell "not worth it" from
+    // "not done".
     //
     // Row 4 (HapTest exploration) left this list when `explore` replaced it:
     // HapRay's version is nondeterministic and verifies nothing, which is a
     // defect in its implementation rather than a prerequisite we cannot meet.
+    // Row 24 (coverage) left it when the package started reading the report
+    // `bjc` writes: the instrumented build is still external, but the analysis
+    // of its output no longer is, and the absence is a named `no_data` rather
+    // than HapRay's silent skip.
     const out = PARITY_ROWS.filter((row) => row.status === 'out');
-    expect(out.map((row) => row.row).sort((a, b) => a - b)).toEqual([5, 24, 27, 28]);
+    expect(out.map((row) => row.row).sort((a, b) => a - b)).toEqual([5, 27, 28]);
     const prerequisites: Record<number, RegExp> = {
       5: /LLM/i,
-      24: /bjc/i,
       27: /TensorFlow/i,
       28: /disassembl/i,
     };

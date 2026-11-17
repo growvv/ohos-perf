@@ -9,7 +9,7 @@
 A TypeScript toolkit for HarmonyOS performance analysis. It turns an attached device
 into structured, evidence-backed data: capability probing, nine collectors,
 `trace_streamer` ingest, typed queries over the resulting SQLite
-databases, twenty analyzers, metrics with provenance, an evidence graph,
+databases, twenty-one analyzers, metrics with provenance, an evidence graph,
 baseline comparison, and a CLI designed to be called by agents.
 
 - Website: <https://growvv.github.io/ohos-perf/>
@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P23 are complete**: 1842 tests (1831 unit, 11 in the device
+**P1 through P24 are complete**: 1855 tests (1844 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1792 passed, 28
+attached device are absent — `npm run test:unit` reports **1805 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1792 passed, 39 skipped**. With both fixtures present and a
+checkout is **1805 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -132,6 +132,12 @@ Implemented today:
   so a step's status says the screen held what the author asserted, not just
   that the device accepted a gesture. `run --cases <dir>` runs a directory of
   scenarios as one suite and indexes the verdicts in `cases.json`.
+- coverage ingestion: `analyze` reads a scene's `coverageReport.json` — the
+  document an instrumented build plus the external `bjc` toolchain writes — and
+  reports line, function and branch percentages as `approximate`, naming the
+  file they came from. The least-covered file is called out. A scene without a
+  report gets a `no_data` item saying coverage was not measured, where HapRay
+  silently omits the section.
 - static HAP inspection: `ohos-perf hap <package.hap>` reads the archive in
   memory through a pure-TypeScript ZIP reader, inventories every file by
   HapRay's own category table, detects the technology stack from a typed port
@@ -184,6 +190,7 @@ Metric ids emitted by the analyzers:
 | `symbol.*` | symbols | `symbol.samples.count`, `symbol.unresolved.count`, `symbol.unresolved.share`, `symbol.files.count`, `symbol.top.symbol` |
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
 | `hilog.*` | hilog | `hilog.lines.count`, `hilog.rules.matched.count`, `hilog.rule.<name>.count` |
+| `coverage.*` | coverage ingestion | `coverage.lines.percent`, `coverage.lines.covered`, `coverage.functions.percent`, `coverage.branches.percent`, `coverage.files.count` |
 | `redundant_file.*` | redundant-file I/O | `redundant_file.reads.count`, `redundant_file.files.used`, `redundant_file.files.unused` |
 | `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` (animation labels live in `ui-diff.json`, not as metrics) |
 | `hap.*` | static HAP inspection | `hap.files.count`, `hap.size.bytes`, `hap.techstack.count`, `hap.duplicates.wasted.bytes`, `hap.oversized.count`, `hap.category.images.bytes` |
@@ -202,8 +209,8 @@ their tests pin the parser, aggregation and marker fallback instead, and no
 parity is claimed for them.
 
 Measured on the two recorded traces with `analyze <scene> --app <pkg> --json`,
-`analyze` reports 80 metrics and 98 evidence items on `emu_big` (20.8 MB,
-`pbench.baseline`) and 79 metrics and 184 evidence items on `real_device`
+`analyze` reports 80 metrics and 99 evidence items on `emu_big` (20.8 MB,
+`pbench.baseline`) and 79 metrics and 185 evidence items on `real_device`
 (13.1 MB, `erviceAbility:1`). Four of the older analyzers report real numbers
 there: `vsync.signals.count` 60 with `vsync.periods.count` 7 and
 `vsync.anomaly.rate` 101.67 on `emu_big` (160 / 0 / 0 on `real_device`),
@@ -222,12 +229,16 @@ count is real and zero. `frame-load`, the empty-frame load metrics and
 `native-memory` degrade the same way on these traces, with a reason naming
 `--hiperf` or `--plugins nativehook`, rather than reporting zeros.
 
-Not implemented yet: `coverage`. It was
-measured, not assumed: `bjc_cov` is absent from the Mate 60 (`which` finds
-nothing and `aa` prints nothing over plain shell), and even a device that has it
-would not make the capability usable — no collector in this package consumes
-its output, so the matrix reports that reason instead of claiming the data
-exists. `js.heap` stays unavailable even on a device whose hiprofiler can run
+Coverage is read, not produced. The device capability stays unavailable, and
+that is measured rather than assumed: `bjc_cov` is absent from the Mate 60
+(`which` finds nothing and `aa` prints nothing over plain shell), and an
+instrumented build is a property of how the app was compiled, so no collector
+here can create one. What the package does do is read the `coverageReport.json`
+that `bjc` writes — the same document HapRay's own HTML template renders — and
+report its line, function and branch counts as `approximate`, with the file
+named as their source. HapRay returns `None` when the report is absent, so its
+section silently disappears and "not measured" reads as "0% covered"; here the
+absence is a `no_data` item that says so. `js.heap` stays unavailable even on a device whose hiprofiler can run
 the memory plugin: nothing in this package consumes the `js_heap_*` tables, and
 the measured `hidumper --mem-jsheap` route needs a debug-signed or profilerable
 app, which the release apps on the Mate 60 are not.
@@ -259,6 +270,7 @@ The HapRay parity series (one release per major item, so far):
 | P21 | row 35 completion | `trend` aggregates any number of saved report bundles into one page: per-metric points, gaps for what a run did not measure, deltas across the runs that did, and a stated ordering | shipped in `0.16.0` |
 | P22 | row 33 completion | `render` re-renders a saved bundle from its typed model with no scene, device or analyzer — every artifact byte-identical to the bundle it came from | shipped in `0.17.0` |
 | P23 | row 4 completion | `explore` walks the UI on a total order, records a dead tap as `no_change`, remembers visits per screen, replays `random` from a recorded seed, and settles on the screen's change instead of HapRay's fixed 5 s window | shipped in `0.18.0` |
+| P24 | row 24 completion | `analyze` reads a scene's `coverageReport.json` — the document `bjc` writes — and reports line, function and branch coverage as `approximate`, with a missing report a named `no_data` rather than HapRay's silent skip | shipped in `0.19.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities. The status of every row is
@@ -269,17 +281,22 @@ the engine actually registers, so a claim cannot outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 31 |
+| ported | 32 |
 | partial | 0 |
 | missing | 0 |
-| out, with a measured reason | 4 |
+| out, with a measured reason | 3 |
 
-The four `out` rows are capabilities whose prerequisite this package refuses
+The three `out` rows are capabilities whose prerequisite this package refuses
 to ship, and each reason names it: the LLM GUI agent (row 5, needs a network
-endpoint and API key), coverage (row 24, needs an instrumented build and the
-external `bjc` toolchain), the TensorFlow opt-detector (row 27, a ~2 GB stack
-and a probabilistic guess), and radare2 symbol recovery (row 28, heuristic
+endpoint and API key), the TensorFlow opt-detector (row 27, a ~2 GB stack and a
+probabilistic guess), and radare2 symbol recovery (row 28, heuristic
 disassembly plus LLM naming with no accuracy measurement).
+
+Row 24 (coverage) left that list in `0.19.0`. The instrumented build is still
+external — that is a property of how the app was compiled — but the analysis of
+the report it produces is not: `analyze` reads the scene's
+`coverageReport.json` and labels every number `approximate`, while HapRay skips
+the section silently and leaves "not measured" indistinguishable from "0%".
 
 Row 4 (HapTest autonomous exploration) left that list in `0.18.0`. HapRay's
 `haptest` is not blocked by a prerequisite this package lacks — it was a
@@ -291,7 +308,7 @@ and fixes both, so the row is now `ported` on its own merits.
 No row is `partial` any more. Row 33's last clause was re-rendering a bundle
 from its saved inputs, and `render <report.json> --out <dir>` now does it from
 the typed model alone — no scene, no device, no analyzer — reproducing every
-artifact byte for byte. That leaves 31 ported and the 4 refused rows, each with
+artifact byte for byte. That leaves 32 ported and the 3 refused rows, each with
 the prerequisite it names.
 
 `0.13.0` closed the last four `missing` rows. The fault tree now carries an

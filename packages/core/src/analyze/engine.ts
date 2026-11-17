@@ -4,6 +4,7 @@ import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import { BinderAnalyzer } from './binder';
 import { ComponentReuseAnalyzer } from './components';
+import { CoverageAnalyzer } from './coverage';
 import { EmptyFrameAnalyzer } from './empty-frame';
 import { FaultTreeAnalyzer } from './fault-tree';
 import { RedundantFileAnalyzer } from './redundant-file';
@@ -247,5 +248,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new HilogAnalyzer(),
     new UiAnalyzer(),
     new RedundantFileAnalyzer(),
+    new CoverageAnalyzer(),
   ];
 }

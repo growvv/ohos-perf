@@ -94,6 +94,15 @@ export interface AnalyzeContext {
    */
   redundantFile?: string;
   /**
+   * The raw `coverageReport.json` a scene carried, when it did.
+   *
+   * Written by an external instrumented build and the `bjc` toolchain, never by
+   * this package. The analyzer reports `no_data` with a reason when it is
+   * absent rather than a zero — HapRay silently skips the section, which makes
+   * "not measured" and "0% covered" the same absence.
+   */
+  coverage?: string;
+  /**
    * The scene's flattened UI tree, when it carried a `ui.json`. The `ui`
    * analyzer decides from what it is given rather than declaring `ui.tree` as a
    * requirement: a scene can carry a dump captured on a different device, and a

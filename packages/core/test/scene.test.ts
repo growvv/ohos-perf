@@ -69,6 +69,7 @@ describe('createSceneLayout', () => {
       hilogFile: join(dir, 'hilog.log'),
       hilogJsonlFile: join(dir, 'hilog.jsonl'),
       redundantFile: join(dir, 'redundant_file.txt'),
+      coverageFile: join(dir, 'coverageReport.json'),
       jsheapFile: join(dir, 'jsheap.heapsnapshot'),
       uiFile: join(dir, 'ui.json'),
       screenshotFile: join(dir, 'screenshot.png'),

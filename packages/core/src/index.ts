@@ -170,6 +170,8 @@ export type { BundleRerenderInput } from './report/rerender';
 export type {
   Trend, TrendOrder, TrendPoint, TrendRun, TrendSeries,
 } from './report/trend';
+export { CoverageAnalyzer, parseCoverageReport } from './analyze/coverage';
+export type { CoverageCounts, CoverageFile, CoverageRatio, CoverageReport } from './analyze/coverage';
 export { executeAction } from './scenario/actions';
 export { explore, deviceExplorationHost, explorationDevice, hashTree, planNextAction } from './scenario/explore';
 export type {

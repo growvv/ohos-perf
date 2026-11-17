@@ -366,6 +366,12 @@ interface OpenedScene {
    * yet, so it is read when present and its absence is a named `no_data`.
    */
   redundantFile?: string;
+  /**
+   * The scene's raw `coverageReport.json`, when it carried one. Written by an
+   * instrumented build and the external `bjc` toolchain; this package reads it
+   * and never produces it.
+   */
+  coverage?: string;
 }
 
 /** True when `path` exists and is a directory (a scene, not an `analyze --json` file). */
@@ -405,6 +411,7 @@ function analyzeContext(opened: OpenedScene) {
     ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
     ...(opened.hilog === undefined ? {} : { hilog: [...opened.hilog] }),
     ...(opened.redundantFile === undefined ? {} : { redundantFile: opened.redundantFile }),
+    ...(opened.coverage === undefined ? {} : { coverage: opened.coverage }),
     ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
     app: opened.app,
     // The whole database: a CLI run has no capture window to honour.
@@ -705,6 +712,11 @@ export function realDeps(
       const redundantFile = existsSync(layout.redundantFile)
         ? readFileSync(layout.redundantFile, 'utf8')
         : undefined;
+      // Same rule: a supplied report is not a collector artifact, so it is
+      // read when present rather than gated on a declared capture.
+      const coverage = existsSync(layout.coverageFile)
+        ? readFileSync(layout.coverageFile, 'utf8')
+        : undefined;
       const hilog = hilogText === undefined
         ? undefined
         : parseHilogText(hilogText, {
@@ -762,6 +774,7 @@ export function realDeps(
         ...(hidumper === undefined ? {} : { hidumper }),
         ...(hilog === undefined ? {} : { hilog }),
         ...(redundantFile === undefined ? {} : { redundantFile }),
+        ...(coverage === undefined ? {} : { coverage }),
       };
     } catch (err) {
       scene.close();

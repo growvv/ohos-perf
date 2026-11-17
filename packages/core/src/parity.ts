@@ -196,10 +196,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 24,
     name: 'Coverage',
-    status: 'out',
-    reason:
-      'Needs an instrumented build and the external `bjc` toolchain; the capability ' +
-      'reports the measured `bjc_cov` probe result instead of a silent zero.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 25,

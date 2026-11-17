@@ -32,6 +32,7 @@ const words: Record<number, string> = {
   14: 'fourteen',
   19: 'nineteen',
   20: 'twenty',
+  21: 'twenty-one',
 };
 
 function countPattern(n: number): RegExp {
@@ -64,7 +65,7 @@ describe('the documented analyzer and collector counts match the code', () => {
   it('has a name for every count the docs currently use', () => {
     // A new count that has no word spelling would make the regexes below fall
     // back to digits only, and a prose "twenty-one" would slip past.
-    expect(ANALYZER_COUNT).toBe(20);
+    expect(ANALYZER_COUNT).toBe(21);
     expect(COLLECTOR_COUNT).toBe(9);
   });
 

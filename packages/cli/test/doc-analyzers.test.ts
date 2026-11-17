@@ -41,6 +41,7 @@ const TOKENS: Record<string, { phrase: string; prefix?: string }> = {
   components: { phrase: 'component reuse', prefix: 'components.*' },
   hilog: { phrase: 'device log', prefix: 'hilog.*' },
   'redundant-file': { phrase: 'redundant-file', prefix: 'redundant_file.*' },
+  coverage: { phrase: 'coverage ingestion', prefix: 'coverage.*' },
   ui: { phrase: 'UI tree', prefix: 'ui.*' },
 };
 

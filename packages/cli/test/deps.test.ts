@@ -1664,3 +1664,59 @@ describe('realDeps().explore', () => {
     expect(asked).toEqual(['emu-9']);
   });
 });
+
+describe('realDeps().analyze with a supplied coverage report', () => {
+  it('reads coverageReport.json from the scene and reports it as approximate', async () => {
+    // bjc writes this file; nothing here produces it. A scene that carries one
+    // gets coverage metrics naming the file, and a scene that does not gets a
+    // no_data item — the distinction HapRay's silent skip cannot make.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-cli--cov-'));
+    try {
+      createTraceDb(join(root, 'trace.db'));
+      writeFileSync(
+        join(root, 'coverageReport.json'),
+        JSON.stringify({
+          date: '2026-11-17T10:00:00.000Z',
+          summary: {
+            lines: { total: 400, covered: 300, pct: 75 },
+            functions: { total: 40, covered: 30, pct: 75 },
+            branches: { total: 80, covered: 40, pct: 50 },
+          },
+          files: [
+            {
+              path: 'entry/src/main/ets/pages/Index.ets',
+              summary: {
+                lines: { total: 400, covered: 300, pct: 75 },
+                functions: { total: 40, covered: 30, pct: 75 },
+                branches: { total: 80, covered: 40, pct: 50 },
+              },
+            },
+          ],
+        }),
+      );
+      const result = await realDeps('0.0.0').analyze(root);
+      const lines = result.metrics.find((m) => m.id === 'coverage.lines.percent');
+      expect(lines?.value).toBe(75);
+      expect(lines?.fidelity).toBe('approximate');
+      expect(lines?.provenance.collector).toBe('scene:coverageReport.json');
+      expect(result.evidence.some((item) => item.kind === 'coverage')).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports no coverage data, with a reason, when the scene has no report', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-cli--nocov-'));
+    try {
+      createTraceDb(join(root, 'trace.db'));
+      const result = await realDeps('0.0.0').analyze(root);
+      const noData = result.evidence.find(
+        (item) => item.kind === 'no_data' && item.explain.includes('coverageReport.json'),
+      );
+      expect(noData).toBeDefined();
+      expect(result.metrics.some((m) => m.id.startsWith('coverage.'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

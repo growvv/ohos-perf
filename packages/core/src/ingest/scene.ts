@@ -32,6 +32,12 @@ export interface SceneLayout {
    */
   redundantFile: string;
   /**
+   * `coverageReport.json`: coverage written by an instrumented build and the
+   * external `bjc` toolchain. Nothing here produces it; it is read when present
+   * and its absence is a named `no_data` rather than a zero.
+   */
+  coverageFile: string;
+  /**
    * `jsheap.heapsnapshot`: the raw heap snapshot a `--mem-jsheap` capture
    * pulled. Opaque to this package; it exists for DevEco Studio to open.
    */
@@ -53,6 +59,7 @@ export function createSceneLayout(root: string): SceneLayout {
     hilogFile: join(root, 'hilog.log'),
     hilogJsonlFile: join(root, 'hilog.jsonl'),
     redundantFile: join(root, 'redundant_file.txt'),
+    coverageFile: join(root, 'coverageReport.json'),
     jsheapFile: join(root, 'jsheap.heapsnapshot'),
     metadataFile: join(root, 'scene.json'),
   };

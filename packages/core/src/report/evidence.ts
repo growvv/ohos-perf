@@ -24,7 +24,8 @@ export type EvidenceKind =
   | 'oversized_asset'
   | 'symbol_stats'
   | 'unresolved_symbol'
-  | 'redundant_file';
+  | 'redundant_file'
+  | 'coverage';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.
