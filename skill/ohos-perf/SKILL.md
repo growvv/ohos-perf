@@ -465,8 +465,10 @@ right. What the analyzer sees:
   shows only named frames understates how much of the profile is unexplained.
 - `symbol_stats` evidence items (severity `info`) name the heaviest resolved
   rows; `unresolved_symbol` items (severity `warn`) name the heaviest unnamed
-  ones and their `explain` names `--so-dir` as the flag that improves the next
-  capture. Both drill into `symbol.stats`.
+  ones. Their `explain` names the cause, and `--so-dir` only when a flag can
+  help: a frame-less chain (a truncated conversion) and a database with no
+  `perf_files` table are named as such, because no flag symbolizes an address
+  that is not there. Both drill into `symbol.stats`.
 - `symbol.stats` takes `startNs`/`endNs` and returns
   `{symbol, filePath, samples, share, unresolved}`, sorted by weight. Its
   `share` totals 100% over the window's app-thread weight.
