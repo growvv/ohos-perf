@@ -91,6 +91,24 @@ describe('parseThermalOutput', () => {
     ]);
   });
 
+  it('does not fabricate a reading from a blank or non-decimal temperature', () => {
+    // `Number('')` is 0 and `Number('0x10')` is 16, so an empty or truncated
+    // field used to become a real-looking 0 °C (or 16 °C) reading.
+    const text = [
+      'Type: blank',
+      'Temperature:',
+      'Type: spaces',
+      'Temperature:    ',
+      'Type: hex',
+      'Temperature: 0x10',
+      'Type: good',
+      'Temperature: 25000',
+    ].join('\n');
+    expect(parseThermalOutput(text)).toEqual([
+      { sensor: 'good', raw: 25000, unit: 'millidegree_celsius', celsius: 25 },
+    ]);
+  });
+
   it('keeps the last reading when one output repeats a sensor', () => {
     const text = 'Type: x\nTemperature: 1000\nType: x\nTemperature: 2000\n';
     expect(parseThermalOutput(text)).toEqual([

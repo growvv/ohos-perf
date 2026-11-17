@@ -36,7 +36,7 @@ names the absence.
   `thermal <n>` in its samples line.
 
 Parity row 39 is `ported`: 38 ported, 0 partial, 0 missing, 1 out (37,
-`build`). 2176 unit tests; the device suite is unchanged.
+`build`). 2180 unit tests; the device suite is unchanged.
 
 ## 0.24.0 — 2026-11-18
 

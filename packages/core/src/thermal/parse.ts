@@ -36,6 +36,13 @@ export interface ThermalReading {
 const TYPE = 'Type:';
 const TEMPERATURE = 'Temperature:';
 
+/**
+ * A decimal literal, the only temperature form the service prints. `Number()`
+ * is not usable alone for the check: it turns `''` into 0 and `0x10` into 16,
+ * either of which would turn a blank field into a real-looking reading.
+ */
+const DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
 function bySensor(a: ThermalReading, b: ThermalReading): number {
   return a.sensor < b.sensor ? -1 : a.sensor > b.sensor ? 1 : 0;
@@ -62,11 +69,12 @@ export function parseThermalOutput(text: string): ThermalReading[] {
     if (!line.startsWith(TEMPERATURE)) continue;
     if (current === undefined || current === '') continue;
 
-    const raw = Number(line.slice(TEMPERATURE.length).trim());
-    if (!Number.isFinite(raw)) {
+    const value = line.slice(TEMPERATURE.length).trim();
+    if (!DECIMAL.test(value)) {
       current = undefined;
       continue;
     }
+    const raw = Number(value);
     const unit: ThermalUnit =
       Math.abs(raw) >= 1000 ? 'millidegree_celsius' : 'celsius';
     const celsius = round2HalfEven(unit === 'millidegree_celsius' ? raw / 1000 : raw);

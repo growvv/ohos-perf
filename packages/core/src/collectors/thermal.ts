@@ -20,6 +20,14 @@ export const MIN_THERMAL_INTERVAL_MS = 100;
 /** Node's setTimeout clamps anything larger to 1 ms (32-bit signed limit). */
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
+/**
+ * The smallest timeout a dump is given. HapRay's sampler lets a dump use the
+ * rest of the capture window; at the window's endpoint that is zero, and a
+ * budget of a few milliseconds kills the dump mid-print. The dump exits on
+ * its own after a few tens of milliseconds, so this is a ceiling, not a wait.
+ */
+const MIN_DUMP_TIMEOUT_MS = 1_000;
+
 /** One sample: the sensor readings and the host-measured elapsed time. */
 export interface ThermalRecord {
   readonly elapsedMs: number;
@@ -73,12 +81,15 @@ function assertInterval(intervalMs: number): void {
  * The first sample is taken immediately, then one per interval while the
  * capture has at least one full interval left. A capture shorter than the
  * interval therefore gets exactly one sample rather than waiting past its own
- * window for a partial one.
+ * window for a partial one. Deadlines are absolute (`start + k * interval`)
+ * so the time a dump takes does not push later samples off the schedule.
  *
- * A dump with no sensor readings is a failed capture: the artifact is not
- * written at all. An empty `thermal.jsonl` would make "the service was not
- * there" indistinguishable from "the device was cool", which is the class of
- * ambiguity this package exists to remove.
+ * A dump must exit 0 to be recorded: `shellFor` resolves a killed process
+ * with `code: null` and whatever stdout arrived, and a truncated `310` is not
+ * a temperature. Any failed dump fails the capture and writes no artifact. An
+ * empty `thermal.jsonl` would make "the service was not there" indistinguishable
+ * from "the device was cool", which is the class of ambiguity this package
+ * exists to remove.
  */
 export class ThermalCollector {
   private readonly now: () => number;
@@ -104,10 +115,24 @@ export class ThermalCollector {
     const start = this.now();
     const records: ThermalRecord[] = [];
 
-    for (;;) {
+    // Sample at 0, interval, 2*interval while the deadline is inside the
+    // capture window. Sleeping to the deadline rather than for a whole
+    // interval after each dump keeps the schedule independent of dump latency.
+    for (let offsetMs = 0; offsetMs <= opts.durationMs; offsetMs += intervalMs) {
+      const wait = start + offsetMs - this.now();
+      if (wait > 0) await this.sleep(wait);
       const elapsedMs = Math.max(0, Math.round(this.now() - start));
-      const remaining = Math.max(1, Math.min(MAX_TIMEOUT_MS, opts.durationMs - elapsedMs));
-      const result = await hdc.shellFor(target, THERMAL_COMMAND, remaining);
+      const budget = Math.max(MIN_DUMP_TIMEOUT_MS, opts.durationMs - offsetMs);
+      const timeoutMs = Math.min(MAX_TIMEOUT_MS, budget);
+      const result = await hdc.shellFor(target, THERMAL_COMMAND, timeoutMs);
+      if (result.code !== 0) {
+        const stderr = result.stderr.trim();
+        throw new OhosPerfError(
+          `${THERMAL_COMMAND} failed at ${elapsedMs} ms (exit ${String(result.code)})` +
+            (stderr === '' ? '' : `; device stderr: ${stderr.slice(0, 200)}`),
+          { code: 'THERMAL_DUMP_FAILED' },
+        );
+      }
       const readings = parseThermalOutput(result.stdout);
       if (readings.length === 0) {
         const stderr = result.stderr.trim();
@@ -118,13 +143,6 @@ export class ThermalCollector {
         );
       }
       records.push({ elapsedMs, readings });
-
-      const elapsed = this.now() - start;
-      if (elapsed >= opts.durationMs) break;
-      // No partial-interval sample: waiting out the capture window would
-      // extend the capture the trace is timing.
-      if (opts.durationMs - elapsed < intervalMs) break;
-      await this.sleep(intervalMs);
     }
 
     mkdirSync(layout.root, { recursive: true });

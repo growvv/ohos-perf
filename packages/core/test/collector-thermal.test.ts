@@ -25,7 +25,16 @@ afterEach(() => {
 const OUTPUT = 'Type: Battery\nTemperature: 31000\nType: ambient\nTemperature: 22000\n';
 
 /** A structural Hdc fake, returning one canned dump per call. */
-function fakeHdc(outputs: string | string[] = OUTPUT): {
+function fakeHdc(
+  outputs: string | string[] = OUTPUT,
+  opts: {
+    /** Advance a shared clock during the call, the way a real dump takes time. */
+    advance?: (ms: number) => void;
+    latencyMs?: number;
+    code?: number | null;
+    stderr?: string;
+  } = {},
+): {
   hdc: Hdc;
   calls: Array<{ command: string; timeoutMs: number }>;
 } {
@@ -35,20 +44,28 @@ function fakeHdc(outputs: string | string[] = OUTPUT): {
   const hdc = {
     async shellFor(_target: string, command: string, timeoutMs: number) {
       calls.push({ command, timeoutMs });
+      if (opts.latencyMs !== undefined) opts.advance?.(opts.latencyMs);
       const stdout = sequence[Math.min(index, sequence.length - 1)]!;
       index += 1;
-      return { stdout, stderr: '', code: 0 };
+      return { stdout, stderr: opts.stderr ?? '', code: opts.code ?? 0 };
     },
   } as unknown as Hdc;
   return { hdc, calls };
 }
 
 /** A clock whose sleep advances time, so a 10 s capture runs in microseconds. */
-function fakeClock(): { now: () => number; sleep: (ms: number) => Promise<void> } {
+function fakeClock(): {
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+  advance: (ms: number) => void;
+} {
   let clock = 0;
   return {
     now: () => clock,
     sleep: async (ms: number) => {
+      clock += ms;
+    },
+    advance: (ms: number) => {
       clock += ms;
     },
   };
@@ -107,6 +124,62 @@ describe('ThermalCollector', () => {
       createSceneLayout(dir),
     );
     expect(out.samples).toBe(3);
+  });
+
+  it('rejects a dump killed at its deadline instead of recording it', async () => {
+    // `shellFor` kills the process at the deadline and resolves `code: null`
+    // with whatever stdout arrived. Partial output is not a sample: parsing it
+    // would turn a truncated `31000` into a real-looking reading.
+    const hdc = {
+      async shellFor() {
+        return { stdout: 'Type: Battery\nTemperature: 310', stderr: '', code: null };
+      },
+    } as unknown as Hdc;
+    const layout = createSceneLayout(dir);
+    await expect(
+      new ThermalCollector(fakeClock()).collect(hdc, 'dev', { durationMs: 10_000 }, layout),
+    ).rejects.toMatchObject({ code: 'THERMAL_DUMP_FAILED' });
+    expect(existsSync(layout.thermalFile)).toBe(false);
+  });
+
+  it('samples on schedule when each dump takes time', async () => {
+    // A real dump takes tens of milliseconds. The next sample is timed from
+    // the schedule, not from the end of the previous dump, or a 10 s capture
+    // at a 5 s interval would take only two samples.
+    const clock = fakeClock();
+    const { hdc, calls } = fakeHdc(OUTPUT, { advance: clock.advance, latencyMs: 150 });
+    const layout = createSceneLayout(dir);
+    const out = await new ThermalCollector(clock).collect(
+      hdc,
+      'dev',
+      { durationMs: 10_000, intervalMs: 5_000 },
+      layout,
+    );
+
+    expect(out.samples).toBe(3);
+    const records = readFileSync(layout.thermalFile, 'utf8')
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { elapsedMs: number });
+    expect(records.map((record) => record.elapsedMs)).toEqual([0, 5_000, 10_000]);
+    // Every dump gets a viable budget; the endpoint dump gets the minimum
+    // rather than a 1 ms timeout that would kill it instantly.
+    expect(calls.map((call) => call.timeoutMs)).toEqual([10_000, 5_000, 1_000]);
+  });
+
+  it('never issues a dump with a sub-second budget', async () => {
+    // 10.3 s leaves 300 ms between the last two deadlines; the dump still
+    // needs its own minimum, and the old `max(1, remaining)` allowed 1 ms.
+    const clock = fakeClock();
+    const { hdc, calls } = fakeHdc(OUTPUT, { advance: clock.advance, latencyMs: 150 });
+    const out = await new ThermalCollector(clock).collect(
+      hdc,
+      'dev',
+      { durationMs: 10_300, intervalMs: 5_000 },
+      createSceneLayout(dir),
+    );
+    expect(out.samples).toBe(3);
+    for (const call of calls) expect(call.timeoutMs).toBeGreaterThanOrEqual(1_000);
   });
 
   it('fails THERMAL_NO_OUTPUT when the service printed no sensors', async () => {

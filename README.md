@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P30 are complete**: 2187 tests (2176 unit, 11 in the device
+**P1 through P30 are complete**: 2191 tests (2180 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2148 passed, 28
+attached device are absent — `npm run test:unit` reports **2152 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2148 passed, 39 skipped**. With both fixtures present and a
+checkout is **2152 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -67,8 +67,9 @@ Implemented today:
   path), hiperf (`perf.data` for a debuggable app, converted into a second
   `perf.db`), hidumper (RenderService fps and hitch counters), uitest (the
   on-screen UI tree), screenshot (`uitest screenCap` pulled into
-  `screenshot.png`), hilog (the raw device log stream) and jsheap
-  (`hidumper --mem-jsheap`, pulled into `jsheap.heapsnapshot`); every
+  `screenshot.png`), hilog (the raw device log stream), jsheap
+  (`hidumper --mem-jsheap`, pulled into `jsheap.heapsnapshot`) and thermal
+  (`hidumper -s ThermalService -a '-t'` samples into `thermal.jsonl`); every
   requested collector runs concurrently in one `collect`. `--app` is required
   only by the modes that resolve a pid — `--hidumper`, `--uitest`,
   `--screenshot`, `--hilog` and
@@ -621,7 +622,7 @@ ohos-perf run scenario.json --out runs/image-open --json
 ```
 
 The document is validated whole before the first device call: an unknown key, a
-duplicate step `id`, a collector outside `hitrace|hiprofiler|procfs|hiperf|hidumper|uitest|hilog`,
+duplicate step `id`, a collector outside `hitrace|hiprofiler|procfs|hiperf|hidumper|uitest|hilog|thermal`,
 `hiprofiler` and `hitrace` together, a duration outside `(0, 2^31-1]` ms — each
 is an error naming the JSON path (`steps[0].capture.collectors[1]`), so a
 scenario that would fail on step 3 never fails after two captures have run.
