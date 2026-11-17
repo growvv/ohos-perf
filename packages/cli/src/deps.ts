@@ -42,6 +42,9 @@ import {
   renderReportJson,
   renderReportXlsx,
   renderSummaryJson,
+  renderFlamegraphHtml,
+  renderFlamegraphSvg,
+  FLAMEGRAPH_FILES,
   hapSection,
   readSceneMetadata,
   readUiTree,
@@ -64,6 +67,7 @@ import {
   type HilogLine,
   type ProcfsSample,
   type TimeRange,
+  type FoldedStack,
   type RgbaImage,
   type UiNode,
   type Scene,
@@ -412,6 +416,19 @@ function sceneWindow(opened: OpenedScene): TimeRange {
   return { startNs: 0, endNs: Number.MAX_SAFE_INTEGER };
 }
 
+/**
+ * The inputs the flamegraph page needs that are not part of an analysis.
+ *
+ * Read while the scene is open, because the perf database is closed with it:
+ * the folded stacks are the drawing's whole data set, and `symbolized` is the
+ * scene's own statement about whether those stacks were ever named.
+ */
+interface FlamegraphInputs {
+  readonly stacks: FoldedStack[];
+  /** `null` when the scene did not record whether symbolization ran. */
+  readonly symbolized: boolean | null;
+}
+
 /** A section-aware analysis plus the scenario fields a report needs. */
 interface DetailedAnalysis {
   run: AnalyzerRun;
@@ -423,6 +440,30 @@ interface DetailedAnalysis {
   screenshot?: { width: number; height: number };
   /** The screenshot's source path, when it carried a readable one. */
   screenshotFile?: string;
+  /** Present only when the caller asked for it and the scene had samples. */
+  flamegraph?: FlamegraphInputs;
+}
+
+/**
+ * Fold the scene's perf stacks, and read the scene's symbol-state claim.
+ *
+ * The thread set is derived exactly as `perfThreadIds` does for a query — the
+ * app's pids, deduplicated — so the drawing covers the same threads the
+ * `symbols` analyzer measured. A scene with no perf database, or one whose
+ * samples are empty, yields no stacks and therefore no drawing.
+ */
+function flamegraphInputs(opened: OpenedScene): FlamegraphInputs {
+  const perf = new PerfQuery(opened.scene.perfDb ?? opened.scene.traceDb);
+  const threadIds = [...new Set(perf.threads([...opened.app.pids]).map((t) => t.threadId))]
+    .sort((a, b) => a - b);
+  const stacks = perf.foldedStacks(threadIds, { startNs: 0, endNs: Number.MAX_SAFE_INTEGER });
+
+  // `capture.hiperf.symbolized` is written by `collect --so-dir`; a scene
+  // captured before that field existed has no answer, which is not a "no".
+  const hiperf = (opened.metadata?.capture as { hiperf?: { symbolized?: unknown } } | undefined)
+    ?.hiperf;
+  const symbolized = typeof hiperf?.symbolized === 'boolean' ? hiperf.symbolized : null;
+  return { stacks, symbolized };
 }
 
 /**
@@ -431,11 +472,15 @@ interface DetailedAnalysis {
  * Shared by `analyze`, `compare` and `report`, so a baseline directory and a
  * current directory are measured by exactly the same code. The caller owns
  * nothing: the scene is opened and closed here.
+ *
+ * `flamegraph` is opt-in: only `report` writes the artifact, and folding every
+ * stack is work the other commands would pay for no output.
  */
 async function analyzeSceneDetailed(
   open: (sceneDir: string, app?: string) => Promise<OpenedScene>,
   sceneDir: string,
   app?: string,
+  options: { flamegraph?: boolean } = {},
 ): Promise<DetailedAnalysis> {
   const opened = await open(sceneDir, app);
   try {
@@ -454,6 +499,9 @@ async function analyzeSceneDetailed(
             screenshot: { width: opened.screenshot.width, height: opened.screenshot.height },
             screenshotFile: opened.layout.screenshotFile,
           }),
+      ...(options.flamegraph === true
+        ? { flamegraph: flamegraphInputs(opened) }
+        : {}),
     };
   } finally {
     // Windows keeps the file handle open otherwise, so a second analysis of
@@ -787,7 +835,10 @@ export function realDeps(
       // Analyze the scene first: a scene that cannot be read or analyzed must
       // fail before the baseline is touched, and nothing is written until the
       // whole model exists — a half-written bundle is worse than none.
-      const detailed = await analyzeSceneDetailed(openOfflineScene, req.sceneDir, req.app);
+      // The flamegraph inputs are read while the scene is still open.
+      const detailed = await analyzeSceneDetailed(
+        openOfflineScene, req.sceneDir, req.app, { flamegraph: true },
+      );
       let comparison;
       if (req.baseline !== undefined) {
         const baseline = await (await isDirectory(req.baseline)
@@ -815,6 +866,26 @@ export function realDeps(
         ['evidence.csv', renderEvidenceCsv(model)],
         ['report.xlsx', renderReportXlsx(model)],
       ];
+
+      // A scene with samples gets the drawing too; a scene without them gets
+      // no file rather than an empty canvas a reader could mistake for a
+      // capture in which nothing ran.
+      const flamegraph = detailed.flamegraph;
+      if (flamegraph !== undefined && flamegraph.stacks.length > 0) {
+        const share = model.sections
+          .find((section) => section.id === 'symbols')
+          ?.metrics.find((metric) => metric.id === 'symbol.unresolved.share')?.value;
+        artifacts.push(
+          ['flamegraph.svg', renderFlamegraphSvg(flamegraph.stacks)],
+          ['flamegraph.html', renderFlamegraphHtml({
+            stacks: flamegraph.stacks,
+            app: detailed.app.packageName,
+            window: detailed.window,
+            unresolvedShare: typeof share === 'number' ? share : null,
+            symbolized: flamegraph.symbolized,
+          })],
+        );
+      }
 
       const outDir = resolve(req.outDir);
       await mkdir(outDir, { recursive: true });
