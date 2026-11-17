@@ -122,6 +122,7 @@ const VALUE_EXPORTS = [
   'compareSceneDirs', 'UI_DIFF_FILES', 'renderUiDiffHtml',
   'resolveAppIdentity', 'resolveAppIpids', 'resolveQueryLimit',
   'ScenarioRunner', 'parseScenario', 'executeAction', 'writeRunFiles', 'COLLECTOR_NAMES',
+  'discoverCases', 'loadCases', 'matchSelector', 'parseSelector', 'resolveSelector',
   'runAnalyzerSections', 'runAnalyzers', 'runDrillDown', 'runNamedQuery', 'runProbe',
   'RsSkipAnalyzer', 'ScreenshotCollector', 'SymbolsAnalyzer', 'tableRowCounts',
   'unknownQueryError',

@@ -603,6 +603,40 @@ describe('run wiring', () => {
     });
   });
 
+  it('forwards --cases and --filter without a positional scenario', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'program-cases-'));
+    for (const id of ['scroll', 'tap']) {
+      writeFileSync(join(root, `${id}.scenario.json`), JSON.stringify({
+        version: 1,
+        name: id,
+        app: 'com.example.app',
+        steps: [{ id: 'open', actions: [], capture: { durationMs: 1000, collectors: ['hitrace'] } }],
+      }));
+    }
+    const out = mkdtempSync(join(tmpdir(), 'program-out-'));
+    const calls: unknown[] = [];
+    const { emitted } = await parse(
+      ['run', '--cases', root, '--filter', '^scroll$', '--out', out, '--json'],
+      { run: async (req) => { calls.push(req); return runResult; } },
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ scenarioPath: join(root, 'scroll.scenario.json') });
+    const index = JSON.parse(emitted[0].stdout);
+    expect(index.cases.map((c: { id: string }) => c.id)).toEqual(['scroll']);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('refuses a positional scenario together with --cases', async () => {
+    let called = false;
+    const { emitted } = await parse(
+      ['run', SCENARIO, '--cases', 'cases', '--out', 'out'],
+      { run: async () => { called = true; return runResult; } },
+    );
+    expect(called).toBe(false);
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stderr).toMatch(/--cases/);
+  });
+
   it('exits 1 when the run reports a failed step', async () => {
     const { emitted } = await parse(['run', SCENARIO, '--out', 'out'], {
       run: async () => ({

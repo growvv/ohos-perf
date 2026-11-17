@@ -351,15 +351,19 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
   program
     .command('run')
     .description('run a declarative scenario, capturing one scene per step')
-    .argument('<scenario>', 'scenario JSON file')
+    .argument('[scenario]', 'scenario JSON file (omit when using --cases)')
     .requiredOption('--out <dir>', 'run output directory (one scene per step)')
+    .option('--cases <dir>', 'run every *.scenario.json in this directory as one suite')
+    .option('--filter <regex>', 'anchored regex over case ids; only with --cases')
     .option('--target <id>', 'run against this hdc target instead of the first connected one')
     .option('--rounds <n>', 'repeat every step this many times (overrides the scenario)')
     .option('--only <ids>', 'comma-separated step ids to run, in scenario order')
     .option('--keep-going', 'continue after a failed step instead of stopping')
     .option('--json', 'print the run result as JSON')
-    .action(async (scenarioPath: string, opts: {
+    .action(async (scenarioPath: string | undefined, opts: {
       out: string;
+      cases?: string;
+      filter?: string;
       target?: string;
       rounds?: string;
       only?: string;
@@ -386,8 +390,10 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         return;
       }
       io.emit(await runScenarioCommand(deps, {
-        scenarioPath,
+        scenarioPath: scenarioPath ?? '',
         outDir: opts.out,
+        ...(opts.cases === undefined ? {} : { casesDir: opts.cases }),
+        ...(opts.filter === undefined ? {} : { filter: opts.filter }),
         ...(opts.target === undefined ? {} : { target: opts.target }),
         ...(rounds === undefined ? {} : { rounds }),
         ...(only === undefined ? {} : { only }),

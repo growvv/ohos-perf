@@ -146,6 +146,8 @@ export type { SceneLayout } from './ingest/scene';
 export { readSceneMetadata, writeSceneMetadata } from './ingest/metadata';
 // Scenario runner (P13)
 export { parseScenario, COLLECTOR_NAMES } from './scenario/schema';
+export { discoverCases, loadCases } from './scenario/cases';
+export { matchSelector, parseSelector, resolveSelector } from './scenario/selector';
 export { executeAction } from './scenario/actions';
 export { ScenarioRunner, writeRunFiles } from './scenario/runner';
 export type {
@@ -154,6 +156,7 @@ export type {
 } from './scenario/schema';
 export type { ActionContext, ActionDevice } from './scenario/actions';
 export type { Selector, SelectorRect } from './scenario/selector';
+export type { CaseLoad, DiscoveredCase } from './scenario/cases';
 export type {
   ActionOutcome, ExpectationOutcome, RunResult, RunStepResult, RunnerCollectOptions,
   RunnerDevice, RunOptions,

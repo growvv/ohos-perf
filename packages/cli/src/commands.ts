@@ -1,5 +1,8 @@
-import { readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
+  discoverCases,
+  loadCases,
   OhosPerfError,
   parseScenario,
   type BaselineComparison, type CapabilityState, type CreateEmulatorRequest,
@@ -158,8 +161,19 @@ export interface RunRequest {
 
 /** What `run` needs from the caller before it can reach `deps.run`. */
 export interface RunInput {
+  /**
+   * A scenario file, or `''` when `casesDir` is given.
+   *
+   * Two modes rather than two commands: `run` already owns the device, the
+   * rounds and the keep-going policy, and a case is just a scenario with an
+   * id. Giving each case its own command would duplicate all of that.
+   */
   scenarioPath: string;
   outDir: string;
+  /** A directory of `*.scenario.json` files to run as one suite. */
+  casesDir?: string;
+  /** Anchored regex over the case id; only meaningful with `casesDir`. */
+  filter?: string;
   target?: string;
   rounds?: number;
   only?: readonly string[];
@@ -813,6 +827,17 @@ export async function runScenarioCommand(
   input: RunInput,
   opts: { json?: boolean },
 ): Promise<CliResult> {
+  if (input.casesDir !== undefined) {
+    if (input.scenarioPath !== '') {
+      return {
+        stdout: '',
+        stderr: 'run: give either a scenario file or --cases <dir>, not both\n',
+        exitCode: 1,
+      };
+    }
+    return runCases(deps, input, opts);
+  }
+
   let scenario: Scenario;
   try {
     let text: string;
@@ -870,6 +895,125 @@ export async function runScenarioCommand(
     return { stdout: '', stderr: `${failureLine(err)}
 `, exitCode: 1 };
   }
+}
+
+/** One case's verdict, as `cases.json` records it. */
+interface CaseOutcome {
+  readonly id: string;
+  readonly status: 'ok' | 'failed';
+  /** Where its scenes were written; absent when it never ran. */
+  readonly outDir?: string;
+  readonly error?: string;
+  /** The run's own summary, when it ran. */
+  readonly steps?: { readonly ok: number; readonly total: number };
+}
+
+/** The `cases.json` document: every case in name order, with its verdict. */
+interface CasesIndex {
+  readonly version: 1;
+  readonly cases: readonly CaseOutcome[];
+}
+
+/**
+ * Run a directory of scenarios as one suite.
+ *
+ * Each case gets its own run directory under `--out`, so `steps.json` and the
+ * scenes stay exactly what a single run produces. The index is written even
+ * when a case fails: a suite's most useful artifact is the list of what did
+ * and did not pass.
+ *
+ * A malformed case file fails that case and does not stop the suite — one
+ * typo must not hide the other results — and the exit code is 1 when any case
+ * failed, which is the only thing a caller has to check.
+ */
+async function runCases(
+  deps: CliDeps,
+  input: RunInput,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  let loads;
+  try {
+    loads = loadCases(discoverCases(input.casesDir!, input.filter));
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+  }
+
+  const outcomes: CaseOutcome[] = [];
+  for (const load of loads) {
+    if (load.scenario === undefined) {
+      outcomes.push({
+        id: load.id,
+        status: 'failed',
+        error: load.error ?? 'the case could not be read',
+      });
+      continue;
+    }
+    const caseOut = join(input.outDir, load.id);
+    try {
+      const result = await deps.run({
+        scenario: load.scenario,
+        scenarioPath: load.path,
+        outDir: caseOut,
+        ...(input.target === undefined ? {} : { target: input.target }),
+        ...(input.rounds === undefined ? {} : { rounds: input.rounds }),
+        ...(input.only === undefined ? {} : { only: input.only }),
+        ...(input.keepGoing === true ? { keepGoing: true } : {}),
+      });
+      const ok = result.steps.filter((step) => step.status === 'ok').length;
+      outcomes.push({
+        id: load.id,
+        status: result.status === 'failed' ? 'failed' : 'ok',
+        outDir: caseOut,
+        steps: { ok, total: result.steps.length },
+        ...(result.status === 'failed'
+          ? { error: firstFailure(result) ?? 'the run reported failure' }
+          : {}),
+      });
+    } catch (err) {
+      // A case that could not reach a device at all is that case's failure,
+      // not the suite's: the next case may be the one that matters.
+      outcomes.push({ id: load.id, status: 'failed', outDir: caseOut, error: safeMessage(err) });
+    }
+  }
+
+  const index: CasesIndex = { version: 1, cases: outcomes };
+  try {
+    mkdirSync(input.outDir, { recursive: true });
+    writeFileSync(join(input.outDir, 'cases.json'), `${JSON.stringify(index, null, 2)}\n`);
+  } catch (err) {
+    return {
+      stdout: '',
+      stderr: `cannot write cases.json: ${safeMessage(err)}\n`,
+      exitCode: 1,
+    };
+  }
+
+  const failed = outcomes.filter((entry) => entry.status === 'failed').length;
+  const exitCode = failed === 0 ? 0 : 1;
+  if (opts.json) {
+    return { stdout: `${JSON.stringify(index, null, 2)}\n`, stderr: '', exitCode };
+  }
+
+  const lines = outcomes.map((entry) => {
+    const steps = entry.steps === undefined
+      ? ''
+      : `  steps ${entry.steps.ok}/${entry.steps.total} ok`;
+    const error = entry.status === 'ok' ? '' : `  ${entry.error ?? 'failed'}`;
+    return `${entry.status === 'ok' ? 'ok    ' : 'failed'}  ${entry.id}${steps}${error}`;
+  });
+  const summary = failed === 0
+    ? `cases ${outcomes.length}/${outcomes.length} ok`
+    : `cases ${outcomes.length - failed}/${outcomes.length} ok, ${failed} failed`;
+  return {
+    stdout: `${lines.map((line) => `${line}\n`).join('')}${summary}\n`,
+    stderr: '',
+    exitCode,
+  };
+}
+
+/** The first failed step's error, for the case summary. */
+function firstFailure(result: RunResult): string | undefined {
+  return result.steps.find((step) => step.status === 'failed')?.error;
 }
 
 /**

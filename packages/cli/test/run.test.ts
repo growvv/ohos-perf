@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { CliDeps } from '../src/commands';
 import { runScenarioCommand } from '../src/commands';
 import { parseOnly } from '../src/run';
@@ -190,5 +190,142 @@ describe('runScenarioCommand', () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toMatch(/no device/);
+  });
+});
+
+/*
+ * P17: `run --cases <dir>`.
+ *
+ * The cases command is a suite: one run directory per case, one index, and an
+ * exit code that means "every case passed". A case file that does not parse
+ * fails that case only, so one typo never hides the rest.
+ */
+describe('runScenarioCommand --cases', () => {
+  function casesDir(files: Record<string, unknown>): string {
+    const root = mkdtempSync(join(tmpdir(), 'cases-'));
+    for (const [name, doc] of Object.entries(files)) {
+      writeFileSync(join(root, name), typeof doc === 'string' ? doc : JSON.stringify(doc));
+    }
+    return root;
+  }
+
+  const ONE_STEP = {
+    version: 1,
+    name: 'one',
+    app: 'com.example.app',
+    steps: [{ id: 'open', actions: [], capture: { durationMs: 1000, collectors: ['hitrace'] } }],
+  };
+
+  it('runs every case into its own directory and writes cases.json', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'run-'));
+    const seen: string[] = [];
+    const result = await runScenarioCommand(
+      deps({
+        run: async (req) => {
+          seen.push(req.outDir);
+          return runResult({ scenario: req.scenario.name });
+        },
+      }),
+      {
+        scenarioPath: '',
+        casesDir: casesDir({ 'b.scenario.json': ONE_STEP, 'a.scenario.json': ONE_STEP }),
+        outDir: out,
+      },
+      {},
+    );
+    expect(result.exitCode).toBe(0);
+    // One run directory per case, named by the case id, in name order.
+    expect(seen.map((dir) => basename(dir))).toEqual(['a', 'b']);
+    const index = JSON.parse(readFileSync(join(out, 'cases.json'), 'utf8'));
+    expect(index.cases.map((c: { id: string }) => c.id)).toEqual(['a', 'b']);
+    expect(index.cases.every((c: { status: string }) => c.status === 'ok')).toBe(true);
+  });
+
+  it('fails the run when any case fails, and names which', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'run-'));
+    const result = await runScenarioCommand(
+      deps({
+        run: async (req) => runResult({
+          scenario: req.scenario.name,
+          status: req.scenario.name === 'b' ? 'failed' : 'completed',
+          steps: [{ ...runResult().steps[0], status: req.scenario.name === 'b' ? 'failed' : 'ok' }],
+        }),
+      }),
+      {
+        scenarioPath: '',
+        casesDir: casesDir({
+          'a.scenario.json': { ...ONE_STEP, name: 'a' },
+          'b.scenario.json': { ...ONE_STEP, name: 'b' },
+        }),
+        outDir: out,
+      },
+      {},
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatch(/^failed\s+b\b/m);
+    expect(result.stdout).toMatch(/^ok\s+a\b/m);
+  });
+
+  it('reports a malformed case without running the others', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'run-'));
+    const ran: string[] = [];
+    const result = await runScenarioCommand(
+      deps({ run: async (req) => { ran.push(req.scenario.name); return runResult(); } }),
+      {
+        scenarioPath: '',
+        casesDir: casesDir({
+          'good.scenario.json': { ...ONE_STEP, name: 'good' },
+          'bad.scenario.json': '{ not json',
+        }),
+        outDir: out,
+      },
+      {},
+    );
+    expect(ran).toEqual(['good']);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatch(/^failed\s+bad\b/m);
+    const index = JSON.parse(readFileSync(join(out, 'cases.json'), 'utf8'));
+    expect(index.cases.find((c: { id: string }) => c.id === 'bad').error).toBeDefined();
+  });
+
+  it('refuses --cases together with a positional scenario', async () => {
+    const result = await runScenarioCommand(
+      deps(),
+      { scenarioPath: scenarioFile(), casesDir: '/tmp/whatever', outDir: '/out' },
+      {},
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/--cases/);
+  });
+
+  it('refuses a filter that matches nothing, naming the cases found', async () => {
+    const result = await runScenarioCommand(
+      deps(),
+      {
+        scenarioPath: '',
+        casesDir: casesDir({ 'scroll.scenario.json': ONE_STEP }),
+        filter: '^nothing$',
+        outDir: '/out',
+      },
+      {},
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/scroll/);
+  });
+
+  it('--json is the cases index', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'run-'));
+    const result = await runScenarioCommand(
+      deps(),
+      {
+        scenarioPath: '',
+        casesDir: casesDir({ 'a.scenario.json': ONE_STEP }),
+        outDir: out,
+      },
+      { json: true },
+    );
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.cases).toHaveLength(1);
+    expect(parsed.cases[0].id).toBe('a');
   });
 });
