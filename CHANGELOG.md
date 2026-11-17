@@ -54,7 +54,7 @@ parsed and never run, and ours runs.
 - Every swipe checks `uitest uiInput`'s `No Error` marker. The host exit code
   is 0 even when the device refuses a gesture, so the marker is the only proof
   of acceptance.
-- 1650 tests (1639 unit, 11 device). The device suite on the attached emulator
+- 1652 tests (1641 unit, 11 device). The device suite on the attached emulator
   reports four environmental failures — no `hiprofiler_cmd`, a non-debuggable
   app, no PMU — in files this phase does not touch.
 
