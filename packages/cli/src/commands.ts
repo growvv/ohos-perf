@@ -9,6 +9,7 @@ import {
   type DeltaStatus,
   type EmulatorInstance, type EmulatorStartResult, type EmulatorStopResult, type Gesture,
   type GestureResult,
+  type ExplorationStrategy,
   type HapAnalysis,
   type HiprofilerPluginName, type NamedQueryInfo, type NamedQueryResult,
   type RunResult, type Scenario,
@@ -150,6 +151,44 @@ export interface CollectOutput {
   screenshot?: { width: number; height: number };
   /** Present only when a hilog capture ran; `lines` is what the collector read. */
   hilog?: { lines: number };
+}
+
+/** An `explore` invocation: walk one app's UI and report what it reached. */
+export interface ExploreRequest {
+  /** The bundle name to explore. */
+  app: string;
+  /** Hard cap on taps. HapRay's default is 30. */
+  maxSteps: number;
+  strategy: ExplorationStrategy;
+  /** Makes `random` reproducible; ignored by the ordered strategies. */
+  seed?: number;
+  /**
+   * How long a tap may take to change the screen before it is called dead.
+   * Defaults to HapRay's fixed 5 s window, which here is a ceiling rather than
+   * a cost paid on every step.
+   */
+  settleMs?: number;
+  target?: string;
+}
+
+/** What a successful `explore` reached, in the terms a reader can check. */
+export interface ExploreOutput {
+  app: string;
+  device: { id: string; kind: string };
+  strategy: ExplorationStrategy;
+  /** Present for `random`: the seed the walk actually used. */
+  seed?: number;
+  steps: number;
+  /** Taps whose resulting screen hash differed from the one before. */
+  navigated: number;
+  /** Taps that changed nothing. HapRay counts these as progress. */
+  noChange: number;
+  /** Distinct screen hashes reached, including the start. */
+  statesReached: number;
+  /** True when it stopped because the screen had no unvisited clickable. */
+  exhausted: boolean;
+  /** The hashes in the order they were first reached. */
+  screens: string[];
 }
 
 /** A `run` invocation, with the scenario already read and validated. */
@@ -399,6 +438,8 @@ export interface CliDeps {
   trend(req: TrendRequest): Promise<TrendOutput>;
   /** Re-render a saved bundle from its `report.json`. */
   render(req: RenderRequest): Promise<RenderOutput>;
+  /** Walk an app's UI and report the screens it reached. */
+  explore(req: ExploreRequest): Promise<ExploreOutput>;
   /**
    * Inspect a HAP on disk. Throws on any failure; the caller maps it to exit 1.
    *
@@ -862,6 +903,50 @@ export async function runTrend(
         ` ${result.regressed} regressed, ${result.unchanged} unchanged,` +
         ` ${result.verdictless} without a known direction,` +
         ` ${result.unmeasured} not measured\n`,
+      stderr: '',
+      exitCode: 0,
+    };
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Walk an app's UI and report what the walk reached.
+ *
+ * The summary deliberately does not lead with the step count. HapRay reports
+ * how many actions it took, which is identical for a walk that opened thirty
+ * screens and one that tapped a dead button thirty times. The first number here
+ * is the states reached; the taps follow, split by whether they moved the
+ * screen.
+ *
+ * `--strategy` is validated in the command layer so a typo is an invocation
+ * error rather than a device round trip — and so an unknown value never reaches
+ * the walk, where it would have to fall back to something.
+ */
+export async function runExplore(
+  deps: CliDeps,
+  req: ExploreRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.explore(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+
+    const order = result.strategy === 'random'
+      ? `random (seed ${result.seed ?? 0})`
+      : result.strategy;
+    const stopped = result.exhausted
+      ? 'the screen had no unvisited clickable left'
+      : `the step cap (${req.maxSteps}) was reached`;
+    return {
+      stdout:
+        `explore  ${result.app} on ${result.device.id} (${result.device.kind})\n` +
+        `states  ${result.statesReached} reached · ${result.steps} taps ` +
+        `(${result.navigated} navigated, ${result.noChange} no change)\n` +
+        `order   ${order}\n` +
+        `stopped  ${stopped}\n` +
+        (result.screens.length === 0 ? '' : `screens  ${result.screens.join(' ')}\n`),
       stderr: '',
       exitCode: 0,
     };

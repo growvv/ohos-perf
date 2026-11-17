@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P22 are complete**: 1797 tests (1786 unit, 11 in the device
+**P1 through P23 are complete**: 1841 tests (1830 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1758 passed, 28
+attached device are absent — `npm run test:unit` reports **1791 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1758 passed, 39 skipped**. With both fixtures present and a
+checkout is **1791 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -115,7 +115,7 @@ Implemented today:
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
   `compare`, `ui-compare`, `report`, `render`, `trend`, `hap`,
-  `gesture {click,swipe,key,input,text}`,
+  `gesture {click,swipe,key,input,text}`, `explore <app>`,
   `emulator {list,start,stop,create}`, `run <scenario.json> | --cases <dir>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
@@ -144,6 +144,15 @@ Implemented today:
   identity and pixel changes by dHash and a bounded diff, with two marked PNGs
   and an offline HTML page. A pure-TypeScript PNG codec does the decoding, so
   no OpenCV, Pillow or native build is involved.
+- autonomous exploration: `explore <app>` dumps the screen, hashes it, and
+  taps an unvisited clickable until `--max-steps` (default 30) runs out or the
+  screen has nothing left, under `--strategy depth_first|breadth_first|random`.
+  Every order is a total order, `random` is seeded and the seed is reported, a
+  tap that changed nothing is counted `no change` rather than as progress, and
+  the visited set is per screen. After each tap it polls until the screen
+  changes instead of waiting a flat 5 s, so the wait is a ceiling rather than a
+  cost. `render <report.json> --out <dir>` re-renders a saved bundle without
+  re-analyzing it.
 - report bundle and trend: `report <scene> --out <dir>` writes `report.html`,
   `report.json`, `summary.json`, `metrics.csv`, `evidence.csv` and
   `report.xlsx` from one scene, plus `flamegraph.svg`/`.html` when the scene
@@ -249,6 +258,7 @@ The HapRay parity series (one release per major item, so far):
 | P20 | row 31 completion | animation labels that require the pixels and the tree to agree, HapRay's severity bands, pixel-only regions reported separately, unmeasurable regions named | shipped in `0.15.0` |
 | P21 | row 35 completion | `trend` aggregates any number of saved report bundles into one page: per-metric points, gaps for what a run did not measure, deltas across the runs that did, and a stated ordering | shipped in `0.16.0` |
 | P22 | row 33 completion | `render` re-renders a saved bundle from its typed model with no scene, device or analyzer — every artifact byte-identical to the bundle it came from | shipped in `0.17.0` |
+| P23 | row 4 completion | `explore` walks the UI on a total order, records a dead tap as `no_change`, remembers visits per screen, replays `random` from a recorded seed, and settles on the screen's change instead of HapRay's fixed 5 s window | shipped in `0.18.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities. The status of every row is
@@ -259,24 +269,29 @@ the engine actually registers, so a claim cannot outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 30 |
+| ported | 31 |
 | partial | 0 |
 | missing | 0 |
-| out, with a measured reason | 5 |
+| out, with a measured reason | 4 |
 
-The five `out` rows are capabilities whose prerequisite this package refuses
-to ship, and each reason names it: HapTest autonomous exploration (row 4,
-nondeterministic and unverified — the agent skill drives selectors instead),
-the LLM GUI agent (row 5, needs a network endpoint and API key), coverage
-(row 24, needs an instrumented build and the external `bjc` toolchain), the
-TensorFlow opt-detector (row 27, a ~2 GB stack and a probabilistic guess), and
-radare2 symbol recovery (row 28, heuristic disassembly plus LLM naming with no
-accuracy measurement).
+The four `out` rows are capabilities whose prerequisite this package refuses
+to ship, and each reason names it: the LLM GUI agent (row 5, needs a network
+endpoint and API key), coverage (row 24, needs an instrumented build and the
+external `bjc` toolchain), the TensorFlow opt-detector (row 27, a ~2 GB stack
+and a probabilistic guess), and radare2 symbol recovery (row 28, heuristic
+disassembly plus LLM naming with no accuracy measurement).
+
+Row 4 (HapTest autonomous exploration) left that list in `0.18.0`. HapRay's
+`haptest` is not blocked by a prerequisite this package lacks — it was a
+defect in the implementation: an unseeded walk whose two runs of the same
+build explore different screens, and a step counter that cannot tell a tap
+that opened a screen from a tap on a dead element. `explore` keeps the shape
+and fixes both, so the row is now `ported` on its own merits.
 
 No row is `partial` any more. Row 33's last clause was re-rendering a bundle
 from its saved inputs, and `render <report.json> --out <dir>` now does it from
 the typed model alone — no scene, no device, no analyzer — reproducing every
-artifact byte for byte. That leaves 30 ported and the 5 refused rows, each with
+artifact byte for byte. That leaves 31 ported and the 4 refused rows, each with
 the prerequisite it names.
 
 `0.13.0` closed the last four `missing` rows. The fault tree now carries an

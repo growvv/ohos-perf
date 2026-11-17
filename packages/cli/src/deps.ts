@@ -22,6 +22,8 @@ import {
   ThreadStateQuery,
   connect,
   createSceneLayout,
+  deviceExplorationHost,
+  explore,
   decodePng,
   defaultAnalyzers,
   ingestScene,
@@ -75,6 +77,7 @@ import {
   type FoldedStack,
   type RgbaImage,
   type UiNode,
+  type ExplorationClock,
   type Scene,
   type SceneLayout,
   type SceneMetadata,
@@ -137,6 +140,15 @@ export interface RealDepsOverrides {
     id: string;
     gesture(g: Gesture): Promise<GestureResult>;
   }>;
+  /** Device used by `explore`; replaced in tests to avoid touching a device. */
+  exploreDevice?: (target?: string) => Promise<{
+    id: string;
+    kind: string;
+    uiTree(): Promise<readonly UiNode[]>;
+    gesture(g: Gesture): Promise<GestureResult>;
+  }>;
+  /** Clock for `explore`'s settle loop; replaced in tests so no test sleeps. */
+  exploreClock?: ExplorationClock;
 }
 
 /** The empty probe an offline capability state carries (no device was asked). */
@@ -591,6 +603,8 @@ export function realDeps(
   const collectDevice = overrides.collectDevice ??
     ((target) => connect(target === undefined ? {} : { target }));
   const gestureDevice = overrides.gestureDevice ??
+    ((target) => connect(target === undefined ? {} : { target }));
+  const exploreDevice = overrides.exploreDevice ??
     ((target) => connect(target === undefined ? {} : { target }));
 
   const doctor: DoctorDeps = {
@@ -1113,6 +1127,34 @@ export function realDeps(
         args: definition.args,
         returns: definition.returns,
       }));
+    },
+
+    async explore(req) {
+      const device = await exploreDevice(req.target);
+      const host = deviceExplorationHost(device, {
+        ...(req.settleMs === undefined ? {} : { settleMs: req.settleMs }),
+        ...(overrides.exploreClock === undefined ? {} : { clock: overrides.exploreClock }),
+      });
+      const result = await explore(host, {
+        maxSteps: req.maxSteps,
+        strategy: req.strategy,
+        ...(req.seed === undefined ? {} : { seed: req.seed }),
+      });
+      return {
+        app: req.app,
+        device: { id: device.id, kind: device.kind },
+        strategy: result.strategy,
+        ...(result.seed === undefined ? {} : { seed: result.seed }),
+        steps: result.steps.length,
+        navigated: result.steps.filter((step) => step.outcome === 'navigated').length,
+        noChange: result.steps.filter((step) => step.outcome === 'no_change').length,
+        statesReached: result.statesReached,
+        exhausted: result.exhausted,
+        // First-reach order: the sequence of hashes as the walk saw them, which
+        // is what a reader follows to see where it went.
+        screens: [...new Set([...(result.steps[0] === undefined ? [] : [result.steps[0].before]),
+          ...result.steps.map((step) => step.after)])],
+      };
     },
 
     async run(req) {

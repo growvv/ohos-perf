@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';import { fileURLToPath } from 'node:url';
-import type { Scene, SceneLayout } from '@ohos-perf/core';
+import type { Scene, SceneLayout, UiNode } from '@ohos-perf/core';
 import { encodePng } from '@ohos-perf/core';
 import {
   manifestPath, offlineCapabilities, packageVersion, realDeps,
@@ -1554,5 +1554,113 @@ describe('realDeps()', () => {
       process.chdir(before);
       rmSync(elsewhere, { recursive: true, force: true });
     }
+  });
+});
+
+describe('realDeps().explore', () => {
+  /** A virtual clock, so a settle costs no real time. */
+  function clock(): { now(): number; sleep(ms: number): Promise<void>; slept: number[] } {
+    let at = 0;
+    const slept: number[] = [];
+    return {
+      slept,
+      now: () => at,
+      sleep: async (ms) => {
+        slept.push(ms);
+        at += ms;
+      },
+    };
+  }
+
+  const node = (
+    overrides: Partial<UiNode> & { bounds: string },
+  ): UiNode => ({
+    depth: 1, type: 'Button', bundleName: 'com.demo', abilityName: 'Main',
+    text: '', id: '', clickable: true, enabled: true, scrollable: false,
+    children: 0, ...overrides,
+  });
+
+  const screen = (bounds: string): UiNode[] => [
+    node({ id: 'root', bounds: '[0,0][100,100]', clickable: false }),
+    node({ id: 'b', bounds }),
+  ];
+  /** A screen with nothing left to tap. */
+  const terminal = (): UiNode[] => [
+    node({ id: 'root', bounds: '[0,0][100,100]', clickable: false }),
+  ];
+
+  it('reports states reached, not taps spent', async () => {
+    // Two screens, one tap each, then the walk is exhausted. HapRay would
+    // report three steps; the interesting number is two screens.
+    let current = screen('[0,0][10,10]');
+    const deps = realDeps('0.0.0', {
+      exploreClock: clock(),
+      exploreDevice: async () => ({
+        id: 'emu-1',
+        kind: 'emulator',
+        uiTree: async () => current,
+        gesture: async (g) => {
+          current = terminal();
+          return { gesture: g, output: 'No Error' };
+        },
+      }),
+    });
+    const result = await deps.explore({ app: 'com.demo', maxSteps: 10, strategy: 'depth_first' });
+    expect(result.device).toEqual({ id: 'emu-1', kind: 'emulator' });
+    expect(result.steps).toBe(1);
+    expect(result.navigated).toBe(1);
+    expect(result.noChange).toBe(0);
+    expect(result.statesReached).toBe(2);
+    expect(result.exhausted).toBe(true);
+  });
+
+  it('counts a dead tap as no change rather than progress', async () => {
+    const current = screen('[0,0][10,10]');
+    const deps = realDeps('0.0.0', {
+      exploreClock: clock(),
+      exploreDevice: async () => ({
+        id: 'emu-1',
+        kind: 'emulator',
+        uiTree: async () => current,
+        gesture: async (g) => ({ gesture: g, output: 'No Error' }),
+      }),
+    });
+    const result = await deps.explore({ app: 'com.demo', maxSteps: 10, strategy: 'depth_first' });
+    expect(result.navigated).toBe(0);
+    expect(result.noChange).toBe(1);
+    expect(result.statesReached).toBe(1);
+  });
+
+  it('records the seed a random walk used, so the order can be replayed', async () => {
+    const current = screen('[0,0][10,10]');
+    const deps = realDeps('0.0.0', {
+      exploreClock: clock(),
+      exploreDevice: async () => ({
+        id: 'emu-1',
+        kind: 'emulator',
+        uiTree: async () => current,
+        gesture: async (g) => ({ gesture: g, output: 'No Error' }),
+      }),
+    });
+    const result = await deps.explore({ app: 'com.demo', maxSteps: 2, strategy: 'random', seed: 11 });
+    expect(result.seed).toBe(11);
+  });
+
+  it('forwards --target to the device resolver', async () => {
+    const asked: Array<string | undefined> = [];
+    const deps = realDeps('0.0.0', {
+      exploreClock: clock(),
+      exploreDevice: async (target) => {
+        asked.push(target);
+        return {
+          id: target ?? 'first',
+          kind: 'emulator',
+          uiTree: async () => screen('[0,0][10,10]'),
+          gesture: async (g) => ({ gesture: g, output: 'No Error' }),
+        };
+      },
+    });
+    await deps.explore({ app: 'com.demo', maxSteps: 1, strategy: 'depth_first', target: 'emu-9' });
+    expect(asked).toEqual(['emu-9']);
   });
 });

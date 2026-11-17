@@ -64,10 +64,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 4,
     name: 'HapTest autonomous exploration (`haptest`)',
-    status: 'out',
-    reason:
-      'HapRay\'s own implementation is nondeterministic and has no success verification; ' +
-      'the agent skill drives selectors and drill-down queries deterministically instead.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 5,

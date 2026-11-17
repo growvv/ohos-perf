@@ -60,7 +60,7 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P22 are complete — twenty analyzers, nine collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, a scenario runner with selectors and assertions, UI capture, diff and animation labels, offline HAP inspection, symbol statistics and an offline flamegraph and a machine-checked parity ledger and a multi-run trend page, 1797 tests" data-zh="P1–P22 全部完成 —— 二十个分析器、九个采集器、命名下钻查询、基线对比、模拟器生命周期、手势注入、报告产物、带选择器与断言的场景运行器、UI 采集、diff 与动画标签、离线 HAP 检查、符号统计与离线火焰图与可机器校验的对齐清单，1797 个测试">P1–P21 are complete — twenty analyzers, nine collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, a scenario runner with selectors and assertions, UI capture, diff and animation labels, offline HAP inspection, symbol statistics and an offline flamegraph and a machine-checked parity ledger and a multi-run trend page, 1776 tests</span>
+        <span data-en="P1–P23 are complete — twenty analyzers, nine collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, a scenario runner with selectors and assertions, UI capture, diff and animation labels, offline HAP inspection, symbol statistics and an offline flamegraph and a machine-checked parity ledger, a multi-run trend page and deterministic UI exploration, 1841 tests" data-zh="P1–P23 全部完成 —— 二十个分析器、九个采集器、命名下钻查询、基线对比、模拟器生命周期、手势注入、报告产物、带选择器与断言的场景运行器、UI 采集、diff 与动画标签、离线 HAP 检查、符号统计与离线火焰图与可机器校验的对齐清单，以及确定性的 UI 探索，1841 个测试">P1–P23 are complete — twenty analyzers, nine collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, a scenario runner with selectors and assertions, UI capture, diff and animation labels, offline HAP inspection, symbol statistics and an offline flamegraph and a machine-checked parity ledger, a multi-run trend page and deterministic UI exploration, 1841 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
@@ -125,7 +125,7 @@
     <div class="stats reveal">
       <div class="stat"><b>23</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
       <div class="stat"><b>19</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>1786</b><span data-en="unit tests, plus 11 against a real device; 1758 + 39 skipped on a clean checkout" data-zh="个单元测试，另有 11 个真机测试；干净检出为 1758 通过 + 39 跳过">unit tests, plus 11 against a real device; 1737 + 39 skipped on a clean checkout</span></div>
+      <div class="stat"><b>1830</b><span data-en="unit tests, plus 11 against a real device; 1791 + 39 skipped on a clean checkout" data-zh="个单元测试，另有 11 个真机测试；干净检出为 1791 通过 + 39 跳过">unit tests, plus 11 against a real device; 1791 + 39 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -586,10 +586,15 @@ ohos-perf emulator stop ProbePhone
 
       </article>
       <article class="card reveal">
+        <span class="status shipped" data-en="Shipped · v0.18.0" data-zh="已发布 · v0.18.0">Shipped · v0.18.0</span>
+        <h3 data-en="A walk that can be repeated and can tell you what it saw" data-zh="可以重放的探索，并且说得清它看到了什么">A walk that can be repeated and can tell you what it saw</h3>
+        <p data-en="P23: HapRay's `haptest` dumps the screen, hashes it and taps an unvisited element — but its `random` strategy is unseeded, so two runs of the same build explore different screens, and it counts every tap as progress, so a tap on a dead button looks exactly like one that opened a screen. `explore <app>` keeps the shape and fixes both. Every order is a total order: depth-first is the dump's pre-order, breadth-first sorts by depth and is stable within one, and `random` is a seeded permutation whose seed is reported, so a walk replays. A tap that leaves the hash unchanged is recorded `no change`, and the summary leads with states reached rather than taps spent. Visited is per screen, because a node id is unique within one dump and two screens can both have `button1`. After each tap it polls until the screen changes instead of HapRay's flat 5 s, so the wait is a ceiling only a dead element pays. An unparseable rect is skipped rather than tapped at (0,0), and a target that left the screen fails instead of clicking whatever moved in." data-zh="P23：HapRay 的 `haptest` 会抓取界面、计算哈希、点击未访问过的元素 —— 但它的 `random` 策略没有种子，于是同一构建的两次运行会探索到不同界面；而它把每次点击都算作进展，点击一个失效按钮与打开一个新界面看起来一模一样。`explore <app>` 保留了这个形状并修好这两点。所有顺序都是全序：深度优先就是 dump 的先序，广度优先按深度排序且同深度内稳定，`random` 是带种子的置换且会报告种子，所以一次探索可以重放。哈希不变的点击记为 `no change`，摘要先给出到达的状态数，而不是花掉的点击次数。已访问集合按界面划分，因为节点 id 只在单次 dump 内唯一，两个界面都可能有个 `button1`。每次点击后它轮询到界面变化为止，而不是 HapRay 固定的 5 秒，因此这段等待是上限，只有失效元素才需要付满。无法解析的 rect 会被跳过而不是点 (0,0)；目标已经离开界面时直接失败，而不是点到挪过来的东西上。">P23: HapRay's <code>haptest</code> dumps the screen, hashes it and taps an unvisited element — but its <code>random</code> strategy is unseeded, so two runs of the same build explore different screens, and it counts every tap as progress, so a tap on a dead button looks exactly like one that opened a screen. <code>explore &lt;app&gt;</code> keeps the shape and fixes both. Every order is a total order: depth-first is the dump's pre-order, breadth-first sorts by depth and is stable within one, and <code>random</code> is a seeded permutation whose seed is reported, so a walk replays. A tap that leaves the hash unchanged is recorded <code>no change</code>, and the summary leads with states reached rather than taps spent. Visited is per screen, because a node id is unique within one dump and two screens can both have <code>button1</code>. After each tap it polls until the screen changes instead of HapRay's flat 5 s, so the wait is a ceiling only a dead element pays. An unparseable rect is skipped rather than tapped at (0,0), and a target that left the screen fails instead of clicking whatever moved in.</p>
+      </article>
+      <article class="card reveal">
         <span class="status exploring" data-en="Planned · HapRay parity" data-zh="计划中 · HapRay 对齐">Planned · HapRay parity</span>
 
         <h3 data-en="One release per workstream" data-zh="每个工作流一版">One release per workstream</h3>
-        <p data-en="A source-level inventory of HapRay rev 9386e4e found 35 user-facing capabilities. P9 shipped the report layer, P10 frame load and stutter, P11 native memory, P12 hilog, P13 the scenario runner, P14 UI capture and diff, P15 offline HAP inspection, P16 symbol intelligence, P17 selector-driven scenarios and P18 the last four gaps. Every row now lives in a machine-checked ledger: 30 ported, 0 partial, 0 missing, and 5 out with the prerequisite each refuses — HapTest exploration, the LLM GUI agent, coverage, the TensorFlow opt-detector and radare2 symbol recovery. A test fails if a ported row names an analyzer the engine does not register, so the claim cannot drift again.</p>
+        <p data-en="A source-level inventory of HapRay rev 9386e4e found 35 user-facing capabilities. P9 shipped the report layer, P10 frame load and stutter, P11 native memory, P12 hilog, P13 the scenario runner, P14 UI capture and diff, P15 offline HAP inspection, P16 symbol intelligence, P17 selector-driven scenarios and P18 the last four gaps. Every row now lives in a machine-checked ledger: 31 ported, 0 partial, 0 missing, and 4 out with the prerequisite each refuses — the LLM GUI agent, coverage, the TensorFlow opt-detector and radare2 symbol recovery. HapTest exploration left that list: its problem was a defect in HapRay's implementation, not a prerequisite we lack. A test fails if a ported row names an analyzer the engine does not register, so the claim cannot drift again.</p>
       </article>
     </div>
   </div>
@@ -610,7 +615,7 @@ ohos-perf emulator stop ProbePhone
       </div>
       <div class="codewrap reveal">
         <button class="copy" type="button" data-copy="quick-code" data-en="Copy" data-zh="复制">Copy</button>
-        <pre class="code"><code id="quick-code"><span class="p">$</span> npm install -g @ohos-perf/cli      <span class="cm"># 0.17.2 on npmjs</span>
+        <pre class="code"><code id="quick-code"><span class="p">$</span> npm install -g @ohos-perf/cli      <span class="cm"># 0.18.0 on npmjs</span>
 
 <span class="cm"># Probe the attached device (real or emulator).</span>
 <span class="p">$</span> ohos-perf doctor
@@ -627,6 +632,9 @@ ohos-perf emulator stop ProbePhone
 
 <span class="cm"># Drive a sequence and capture each step: one scene per (round, step).</span>
 <span class="p">$</span> ohos-perf run scenario.json --out ./runs --json
+
+<span class="cm"># Or let it walk the UI itself, and say which screens it reached.</span>
+<span class="p">$</span> ohos-perf explore com.example.app --max-steps 20 --json
 
 <span class="cm"># The library: the same pipeline as typed calls.</span>
 <span class="p">$</span> npm install @ohos-perf/core</code></pre>

@@ -15,6 +15,7 @@ import {
   runQuery,
   runReport,
   runRender,
+  runExplore,
   runScenarioCommand,
   runTools,
   runTrend,
@@ -26,6 +27,7 @@ import {
   type EmulatorTargetOptions,
 } from './commands';
 import { parseDurationSeconds, parsePluginList } from './collect';
+import { parseMaxSteps, parseStrategy } from './explore';
 import { parseCoordinate, parseKey, parseText, parseVelocity } from './gesture';
 import { parseLimit, parseQueryArgs } from './query';
 import { parseOnly } from './run';
@@ -446,13 +448,62 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     });
 
   program
+    .command('explore')
+    .description('walk an app\'s UI, tapping unvisited elements, and report the screens reached')
+    .argument('<app>', 'bundle name to explore, e.g. com.example.app')
+    .option('--max-steps <n>', 'stop after this many taps (default: 30)', '30')
+    .option(
+      '--strategy <name>',
+      'depth_first, breadth_first or random (default: depth_first)',
+      'depth_first',
+    )
+    .option('--seed <n>', 'make --strategy random reproducible')
+    .option('--target <id>', 'walk this hdc target instead of the first connected one')
+    .option('--json', 'print the walk result as JSON')
+    .action(async (app: string, opts: {
+      maxSteps: string;
+      strategy: string;
+      seed?: string;
+      target?: string;
+      json?: boolean;
+    }) => {
+      // Parse before touching a device: an unknown strategy is an invocation
+      // error, and the walk has no sensible fallback to run instead.
+      let maxSteps: number;
+      let strategy: 'depth_first' | 'breadth_first' | 'random';
+      let seed: number | undefined;
+      try {
+        maxSteps = parseMaxSteps(opts.maxSteps);
+        strategy = parseStrategy(opts.strategy);
+        if (opts.seed !== undefined) {
+          seed = parseMaxSteps(opts.seed);
+        }
+      } catch (err) {
+        io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+        return;
+      }
+      io.emit(
+        await runExplore(
+          deps,
+          {
+            app,
+            maxSteps,
+            strategy,
+            ...(seed === undefined ? {} : { seed }),
+            ...(opts.target === undefined ? {} : { target: opts.target }),
+          },
+          { json: opts.json },
+        ),
+      );
+    });
+
+  program
     .command('tools')
     .description('list the named drill-down queries an agent can call')
     .option('--json', 'print the query definitions as JSON')
     .action((opts: { json?: boolean }) => {
       io.emit(runTools(deps, opts));
     });
-
   /**
    * Add the emulator location options to one subcommand.
    *

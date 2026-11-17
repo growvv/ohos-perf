@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.18.0 — 2026-11-17
+
+Parity row 4 is ported: autonomous UI exploration, and the ledger drops to four
+refused rows. HapRay's `haptest` was never blocked by a prerequisite this
+package lacks — it was a defect in the implementation, and a port could fix it.
+
+- **`explore <app>`** dumps the screen, hashes it, and taps an unvisited
+  clickable until `--max-steps` (default 30, HapRay's) runs out or the screen
+  has nothing left. `--strategy depth_first|breadth_first|random`.
+- **Every order is a total order.** Depth-first is the dump's pre-order,
+  breadth-first sorts by depth and is stable within a depth, and `random` is a
+  seeded Fisher–Yates permutation. HapRay's `random` walks an unseeded RNG, so
+  two runs of the same build explore different screens and neither replays;
+  here the seed is reported and the walk reproduces.
+- **A tap that changed nothing is `no_change`.** HapRay counts every tap as a
+  step forward. The report leads with states reached — distinct screen hashes —
+  and splits the taps into those that navigated and those that did not, so a
+  walk that tapped a dead button thirty times no longer looks like one that
+  opened thirty screens.
+- **Visited is per screen.** A node id is unique within one dump, not across
+  the run; two screens can both have `button1`. A global visited set would skip
+  the second screen's element and call the screen covered.
+- **The settle is change-triggered.** HapRay spends a fixed 5 s on every
+  action. After each tap this re-dumps until the hash changes, capped at 5 s,
+  so a live element costs one poll and only a dead one pays the window.
+- **Refusals instead of guesses.** An unparseable rect is skipped rather than
+  tapped at (0,0); a tap whose bounds are no longer on the screen fails instead
+  of clicking whatever moved into place; a `--strategy` typo is an invocation
+  error before any device is touched.
+- 1830 unit tests (27 of them for the walk and its settle, 9 for the command),
+  two typechecks, two builds.
+
 ## 0.17.2 — 2026-11-17
 
 One reporting fix to `trend`, found by running it on two real saved bundles.

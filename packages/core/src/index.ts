@@ -171,6 +171,12 @@ export type {
   Trend, TrendOrder, TrendPoint, TrendRun, TrendSeries,
 } from './report/trend';
 export { executeAction } from './scenario/actions';
+export { explore, deviceExplorationHost, explorationDevice, hashTree, planNextAction } from './scenario/explore';
+export type {
+  ExplorationAction, ExplorationClock, ExplorationDevice, ExplorationDeviceOptions,
+  ExplorationHost, ExplorationOptions, ExplorationOutcome, ExplorationResult,
+  ExplorationState, ExplorationStep, ExplorationStrategy, ExplorationTargetDevice,
+} from './scenario/explore';
 export { ScenarioRunner, writeRunFiles } from './scenario/runner';
 export type {
   Scenario, ScenarioAction, ScenarioStep, StepCapture, CollectorName,
