@@ -119,6 +119,20 @@ export { UitestCollector, DEVICE_UI_PATH } from './collectors/uitest';
 export { ScreenshotCollector, DEVICE_SCREENSHOT_PATH } from './collectors/screenshot';
 export type { ScreenshotCapture } from './collectors/screenshot';
 export { HilogCollector, HILOG_COMMAND, readHilogText } from './collectors/hilog';
+export {
+  ThermalCollector,
+  THERMAL_COMMAND,
+  DEFAULT_THERMAL_INTERVAL_MS,
+  MIN_THERMAL_INTERVAL_MS,
+  readThermalRecords,
+} from './collectors/thermal';
+export type {
+  ThermalCapture,
+  ThermalCollectorDeps,
+  ThermalRecord,
+} from './collectors/thermal';
+export { parseThermalOutput } from './thermal/parse';
+export type { ThermalReading, ThermalUnit } from './thermal/parse';
 export { parseHilogLine, parseHilogText } from './hilog/parse';
 export type { HilogLevel, HilogLine, HilogParseOptions } from './hilog/parse';
 export {

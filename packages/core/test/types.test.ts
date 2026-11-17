@@ -94,6 +94,8 @@ const VALUE_EXPORTS = [
   'FrameQuery', 'FTRACE_CATEGORIES',
   'GcAnalyzer', 'computeGc', 'GestureDriver',
   'HidumperCollector', 'HILOG_COMMAND', 'HilogAnalyzer', 'HilogCollector',
+  'ThermalCollector', 'THERMAL_COMMAND', 'DEFAULT_THERMAL_INTERVAL_MS',
+  'MIN_THERMAL_INTERVAL_MS', 'readThermalRecords', 'parseThermalOutput',
   'HIPROFILER_PLUGIN_NAMES', 'HITCH_COMMAND',
   'HITRACE_DEFAULT_CATEGORIES',
   'Hdc', 'HdcNotFoundError', 'HiperfCollector', 'hiperfRecordCommand',

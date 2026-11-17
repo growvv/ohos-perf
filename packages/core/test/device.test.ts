@@ -9,7 +9,8 @@ import { Device, connect } from '../src/device/device';
 import { CapabilityMatrix } from '../src/device/capability';
 import { DeviceNotFoundError } from '../src/errors';
 import { encodePng } from '../src/image/png';
-import type { SceneLayout } from '../src/ingest/scene';
+import { readSceneMetadata } from '../src/ingest/metadata';
+import { createSceneLayout, type SceneLayout } from '../src/ingest/scene';
 
 const probe = {
   identity: {
@@ -1007,8 +1008,10 @@ function extraCollectors(opts: {
   failScreenshot?: boolean;
   failHilog?: boolean;
   failJsheap?: boolean;
+  failThermal?: boolean;
 } = {}) {
   const started: string[] = [];
+  const thermalCalls: Array<{ durationMs: number; intervalMs?: number }> = [];
   const hdc = {
     shell: async (_target: string, cmd: string) => {
       if (cmd === 'cat /proc/uptime') {
@@ -1104,8 +1107,27 @@ function extraCollectors(opts: {
       };
     },
   };
+  const thermal = {
+    collect: async (
+      _h: unknown,
+      _t: string,
+      o: { durationMs: number; intervalMs?: number },
+      layout: SceneLayout,
+    ) => {
+      started.push('thermal');
+      thermalCalls.push({ ...o });
+      if (opts.failThermal === true) throw new Error('thermal exploded');
+      writeFileSync(
+        layout.thermalFile,
+        '{"elapsedMs":0,"readings":[{"sensor":"Battery","raw":31000,' +
+          '"unit":"millidegree_celsius","celsius":31}]}\n',
+      );
+      return { samples: 2 };
+    },
+  };
   return {
     started,
+    thermalCalls,
     // The pieces a test needs when it substitutes one collector and keeps the
     // rest, e.g. a zero-sample hiperf fake over the same trace capture.
     hdcLike: hdc,
@@ -1115,7 +1137,7 @@ function extraCollectors(opts: {
       hdc: hdc as any, streamer: streamer as any, collector: hitrace as any,
       hiperf: hiperf as any, hidumper: hidumper as any, uitest: uitest as any,
       screenshot: screenshot as any,
-      hilog: hilog as any, jsheap: jsheap as any,
+      hilog: hilog as any, jsheap: jsheap as any, thermal: thermal as any,
     }),
   };
 }
@@ -1275,6 +1297,117 @@ describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
       await expect(
         device.collect({ durationMs: 1000, sceneRoot: root, hilog: true }),
       ).rejects.toMatchObject({ code: 'MISSING_CAPABILITY' });
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('captures thermal beside hilog and records its sample count', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-thermal-'));
+    try {
+      const h = extraCollectors();
+      const scene = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, hilog: true, thermal: true,
+      }).then((s) => s.ingest());
+      scene.close();
+
+      expect(h.started.sort()).toEqual(['hilog', 'hitrace', 'thermal']);
+      // `thermal: true` passes no interval: the collector's default applies.
+      expect(h.thermalCalls).toEqual([{ durationMs: 1000, intervalMs: undefined }]);
+      expect(existsSync(join(root, 'thermal.jsonl'))).toBe(true);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hitrace', 'hilog', 'thermal']);
+      expect(meta.capture.thermal).toEqual({ samples: 2 });
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('forwards a thermal interval override to the collector', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-thermal-interval-'));
+    try {
+      const h = extraCollectors();
+      const scene = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, thermal: { intervalMs: 1000 },
+      }).then((s) => s.ingest());
+      scene.close();
+
+      expect(h.thermalCalls).toEqual([{ durationMs: 1000, intervalMs: 1000 }]);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hitrace', 'thermal']);
+      expect(meta.capture.thermal).toEqual({ samples: 2 });
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('removes a stale thermal.jsonl when a re-capture did not ask for thermal', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-thermal-stale-'));
+    try {
+      writeFileSync(join(root, 'thermal.jsonl'), '{"elapsedMs":0,"readings":[]}\n');
+      const h = extraCollectors();
+      const scene = await h.device().collect({ durationMs: 1000, sceneRoot: root })
+        .then((s) => s.ingest());
+      scene.close();
+
+      expect(existsSync(join(root, 'thermal.jsonl'))).toBe(false);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hitrace']);
+      expect(meta.capture.thermal).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('restores the previous thermal.jsonl and scene.json when the capture fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-thermal-restore-'));
+    try {
+      const previousLine =
+        '{"elapsedMs":0,"readings":[{"sensor":"Battery","raw":30000,' +
+        '"unit":"millidegree_celsius","celsius":30}]}\n';
+      const previousMeta = JSON.stringify({
+        version: 1,
+        app: { packageName: '', processNames: [] },
+        pids: [],
+        deviceId: 't1',
+      });
+      writeFileSync(join(root, 'thermal.jsonl'), previousLine);
+      writeFileSync(join(root, 'scene.json'), previousMeta);
+      const h = extraCollectors({ failThermal: true });
+      const session = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, thermal: true,
+      });
+      await expect(session.ingest()).rejects.toThrow(/thermal exploded/);
+
+      expect(readFileSync(join(root, 'thermal.jsonl'), 'utf8')).toBe(previousLine);
+      // scene.json is written only on success, so the failed attempt must not
+      // have replaced the descriptor of the capture still on disk.
+      expect(readFileSync(join(root, 'scene.json'), 'utf8')).toBe(previousMeta);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('rejects a capture.thermal descriptor no thermal capture could produce', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-metadata-thermal-'));
+    try {
+      const layout = createSceneLayout(root);
+      const base = {
+        version: 1,
+        app: { packageName: '', processNames: [] },
+        pids: [],
+        deviceId: 't1',
+        capture: { startedAtMs: 0, durationMs: 1000, collectors: ['hilog'] },
+      };
+      writeFileSync(layout.metadataFile,
+        JSON.stringify({ ...base, capture: { ...base.capture, thermal: { samples: 3 } } }));
+      expect(readSceneMetadata(layout)?.capture?.thermal).toEqual({ samples: 3 });
+
+      for (const samples of [0, 1.5]) {
+        writeFileSync(layout.metadataFile,
+          JSON.stringify({ ...base, capture: { ...base.capture, thermal: { samples } } }));
+        expect(readSceneMetadata(layout)).toBeUndefined();
+      }
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

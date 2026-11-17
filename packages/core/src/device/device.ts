@@ -26,6 +26,7 @@ import {
 } from '../collectors/hiprofiler/templates';
 import { HidumperCollector, type HidumperCapture } from '../collectors/hidumper';
 import { HilogCollector } from '../collectors/hilog';
+import { ThermalCollector } from '../collectors/thermal';
 import { HiperfCollector, hiperfEventsFor, type HiperfCapture } from '../collectors/hiperf';
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import { UitestCollector } from '../collectors/uitest';
@@ -126,6 +127,14 @@ export interface CollectOptions extends TraceCollectOptions {
    */
   hilog?: boolean;
   /**
+   * Also sample the device's thermal sensors for `durationMs`.
+   *
+   * `true` uses HapRay's 5 s interval; an object overrides it. The sensors are
+   * read from the device (`hidumper -s ThermalService -a '-t'`), never from a
+   * list compiled into this package. Needs no app: thermal is device-wide.
+   */
+  thermal?: boolean | { intervalMs?: number };
+  /**
    * Also pull a JS heap snapshot.
    *
    * Capture only — the snapshot is opaque to this package and exists for
@@ -159,6 +168,7 @@ export interface DeviceDeps {
   screenshot?: ScreenshotCollector;
   jsheap?: JsheapCollector;
   hilog?: HilogCollector;
+  thermal?: ThermalCollector;
   gesture?: GestureDriver;
 }
 
@@ -406,6 +416,7 @@ export class Device {
         const wantsUitest = opts.uitest === true;
         const wantsScreenshot = opts.screenshot === true;
         const wantsHilog = opts.hilog === true;
+        const wantsThermal = opts.thermal !== undefined && opts.thermal !== false;
         const wantsJsheap = opts.jsheap === true;
         // Only hiperf needs a pid. hidumper and uitest read the whole screen,
         // so they work with no app at all.
@@ -458,6 +469,7 @@ export class Device {
           remember(layout.hilogFile);
           remember(layout.hilogJsonlFile);
         }
+        if (wantsThermal) remember(layout.thermalFile);
 
         // Host wall-clock at capture start, recorded for humans only.
         const startedAtMs = Date.now();
@@ -542,6 +554,7 @@ export class Device {
         let uiNodes: UiNode[] | undefined;
         let screenshotCapture: ScreenshotCapture | undefined;
         let hilogLines: number | undefined;
+        let thermalSamples: number | undefined;
         let jsheapCapture: JsheapCapture | undefined;
         try {
           // Every requested collector starts in the same tick with the same
@@ -598,6 +611,17 @@ export class Device {
             const hilog = this.deps.hilog ?? new HilogCollector();
             runs.push(hilog.collect(hdc, this.id, { durationMs: opts.durationMs }, layout));
           }
+          if (wantsThermal) {
+            const thermal = this.deps.thermal ?? new ThermalCollector();
+            const intervalMs =
+              typeof opts.thermal === 'object' ? opts.thermal.intervalMs : undefined;
+            runs.push(thermal.collect(
+              hdc,
+              this.id,
+              { durationMs: opts.durationMs, intervalMs },
+              layout,
+            ));
+          }
           if (wantsJsheap) {
             const jsheap = this.deps.jsheap ?? new JsheapCollector();
             runs.push(
@@ -633,6 +657,9 @@ export class Device {
           if (wantsUitest) uiNodes = results[index++] as UiNode[];
           if (wantsScreenshot) screenshotCapture = results[index++] as ScreenshotCapture;
           if (wantsHilog) hilogLines = (results[index++] as { lines: number }).lines;
+          if (wantsThermal) {
+            thermalSamples = (results[index++] as { samples: number }).samples;
+          }
           if (wantsJsheap) jsheapCapture = results[index++] as JsheapCapture;
         } catch (err) {
           // Every collector has settled, so nothing can overwrite the restored
@@ -706,6 +733,7 @@ export class Device {
           removeIfPresent(layout.hilogFile);
           removeIfPresent(layout.hilogJsonlFile);
         }
+        if (!wantsThermal) removeIfPresent(layout.thermalFile);
 
         writeSceneMetadata(layout, {
           version: 1,
@@ -737,6 +765,7 @@ export class Device {
               ...(wantsUitest ? ['uitest'] : []),
               ...(wantsScreenshot ? ['screenshot'] : []),
               ...(wantsHilog ? ['hilog'] : []),
+              ...(wantsThermal ? ['thermal'] : []),
               ...(wantsJsheap ? ['jsheap'] : []),
             ],
             // A zero-count capture is recorded explicitly: "the collector ran
@@ -756,6 +785,7 @@ export class Device {
             ...(uiNodes === undefined ? {} : { uitest: { nodes: uiNodes.length } }),
             ...(screenshotCapture === undefined ? {} : { screenshot: screenshotCapture }),
             ...(hilogLines === undefined ? {} : { hilog: { lines: hilogLines } }),
+            ...(thermalSamples === undefined ? {} : { thermal: { samples: thermalSamples } }),
             ...(jsheapCapture === undefined
               ? {}
               : { jsheap: { bytes: jsheapCapture.bytes } }),

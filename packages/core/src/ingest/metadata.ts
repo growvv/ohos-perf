@@ -71,6 +71,12 @@ export interface SceneMetadata {
      */
     hilog?: { lines: number };
     /**
+     * Present only when a thermal capture ran. `samples` is positive: a dump
+     * with no sensor readings is a failed capture, so a thermal collector
+     * that succeeded always wrote at least one sample.
+     */
+    thermal?: { samples: number };
+    /**
      * Present only when a JS heap snapshot was captured. `bytes` is the size
      * of `jsheap.heapsnapshot`; a zero-byte file is a failed capture, so the
      * value is always positive. The snapshot's own format is one only DevEco
@@ -110,6 +116,19 @@ function isCountRecord(
   key: 'samples' | 'frames' | 'nodes' | 'lines',
 ): value is Record<typeof key, number> {
   return isRecord(value) && Number.isSafeInteger(value[key]) && (value[key] as number) >= 0;
+}
+
+/**
+ * A thermal descriptor is a positive sample count. Zero samples describes a
+ * capture the collector cannot produce — it fails instead of writing an empty
+ * artifact — so a zero here means the scene.json is untrustworthy.
+ */
+function isThermalRecord(value: unknown): value is { samples: number } {
+  return (
+    isRecord(value) &&
+    Number.isSafeInteger(value.samples) &&
+    (value.samples as number) > 0
+  );
 }
 
 /**
@@ -167,6 +186,7 @@ function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture'
     (value.uitest === undefined || isCountRecord(value.uitest, 'nodes')) &&
     (value.screenshot === undefined || isScreenshotRecord(value.screenshot)) &&
     (value.hilog === undefined || isCountRecord(value.hilog, 'lines')) &&
+    (value.thermal === undefined || isThermalRecord(value.thermal)) &&
     (value.jsheap === undefined || isJsheapRecord(value.jsheap))
   );
 }
@@ -275,6 +295,9 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
       ...(parsed.capture.hilog === undefined
         ? {}
         : { hilog: { lines: parsed.capture.hilog.lines } }),
+      ...(parsed.capture.thermal === undefined
+        ? {}
+        : { thermal: { samples: parsed.capture.thermal.samples } }),
       ...(parsed.capture.jsheap === undefined
         ? {}
         : { jsheap: { bytes: parsed.capture.jsheap.bytes } }),
