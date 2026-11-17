@@ -1,22 +1,6 @@
 import type { Metric } from './metric';
 import type { ReportModel, ReportSection } from './model';
-
-/**
- * HTML-escape every interpolated value.
- *
- * `&` first, or the other replacements would double-escape. The result is safe
- * inside text nodes and double-quoted attributes; the report never emits single
- * quotes into attribute values, but escaping them is cheaper than remembering
- * that at each call site.
- */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+import { escapeHtml } from './escape';
 
 /** Fixed key order so a render is byte-identical across runs. */
 function signalText(signals: Record<string, number | string | readonly string[]>): string {

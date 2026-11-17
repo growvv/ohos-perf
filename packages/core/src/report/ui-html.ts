@@ -1,21 +1,6 @@
 import type { UiDiff } from '../ui/compare';
 import type { UiTreeDifference } from '../ui/diff';
-
-/**
- * HTML-escape every interpolated value.
- *
- * `&` first, or the other replacements would double-escape. The result is safe
- * inside text nodes and double-quoted attributes; the page emits no single
- * quotes into attribute values.
- */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+import { escapeHtml } from './escape';
 
 const STYLE = `
 :root { color-scheme: light; }

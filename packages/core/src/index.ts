@@ -340,3 +340,7 @@ export type {
 export { renderEvidenceCsv, renderMetricsCsv } from './report/csv';
 export { renderReportHtml } from './report/html';
 export { renderReportXlsx } from './report/xlsx';
+export { escapeHtml } from './report/escape';
+export { FLAMEGRAPH_FILES, renderFlamegraphSvg } from './report/flamegraph-svg';
+export { renderFlamegraphHtml } from './report/flamegraph-html';
+export type { FlamegraphPageInput } from './report/flamegraph-html';
