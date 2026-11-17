@@ -55,6 +55,9 @@ import {
   hapSection,
   analyzeBinaries,
   extractBinaries,
+  httpAgentModel,
+  readAgentConfig,
+  runAgent,
   readSceneMetadata,
   readUiTree,
   resolveAppIdentity,
@@ -80,6 +83,7 @@ import {
   type RgbaImage,
   type UiNode,
   type ExplorationClock,
+  type AgentModel,
   type Scene,
   type SceneLayout,
   type SceneMetadata,
@@ -151,6 +155,18 @@ export interface RealDepsOverrides {
   }>;
   /** Clock for `explore`'s settle loop; replaced in tests so no test sleeps. */
   exploreClock?: ExplorationClock;
+  /**
+   * The model client `agent` drives the app with. Replaced in tests so no test
+   * opens a socket; the real one is built from the environment at call time.
+   */
+  agentModel?: (name?: string) => AgentModel;
+  /** Device used by `agent`; replaced in tests to avoid touching a device. */
+  agentDevice?: (target?: string) => Promise<{
+    id: string;
+    kind: string;
+    uiTree(): Promise<readonly UiNode[]>;
+    gesture(g: Gesture): Promise<GestureResult>;
+  }>;
 }
 
 /** The empty probe an offline capability state carries (no device was asked). */
@@ -615,6 +631,30 @@ export function realDeps(
     ((target) => connect(target === undefined ? {} : { target }));
   const exploreDevice = overrides.exploreDevice ??
     ((target) => connect(target === undefined ? {} : { target }));
+  const agentDevice = overrides.agentDevice ?? exploreDevice;
+  /**
+   * The model client, built per invocation.
+   *
+   * No client is bundled and no endpoint is guessed: an unconfigured host gets
+   * a refusal naming the variables to set, rather than a request to a host the
+   * user never named. A named `--model` overrides the configured name.
+   */
+  const agentModel = overrides.agentModel ?? ((name?: string): AgentModel => {
+    const config = readAgentConfig(process.env);
+    if (config === undefined) {
+      throw new OhosPerfError(
+        'no model endpoint is configured; set OHOS_PERF_AGENT_BASE_URL and' +
+          ' OHOS_PERF_AGENT_API_KEY (or GLM_BASE_URL and GLM_API_KEY),' +
+          ' and optionally OHOS_PERF_AGENT_MODEL (or GLM_MODEL)',
+        { code: 'AGENT_BAD_CONFIG' },
+      );
+    }
+    return httpAgentModel({
+      ...config,
+      ...(name === undefined ? {} : { model: name }),
+      fetch: (url, init) => fetch(url, init),
+    });
+  });
 
   const doctor: DoctorDeps = {
     resolveHdc,
@@ -1187,6 +1227,20 @@ export function realDeps(
         screens: [...new Set([...(result.steps[0] === undefined ? [] : [result.steps[0].before]),
           ...result.steps.map((step) => step.after)])],
       };
+    },
+
+    async agent(req) {
+      // The model is resolved before the device: an unconfigured endpoint is a
+      // setup mistake, and failing on it should not spend a device connection.
+      const model = agentModel(req.model);
+      const device = await agentDevice(req.target);
+      const transcript = await runAgent(device, model, {
+        task: req.task,
+        app: req.app,
+        maxSteps: req.maxSteps,
+        ...(req.allowIrreversible === true ? { allowIrreversible: true } : {}),
+      });
+      return { transcript, device: { id: device.id, kind: device.kind } };
     },
 
     async run(req) {

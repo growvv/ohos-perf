@@ -540,7 +540,7 @@ function parseStep(
 
   const expect = step.expect === undefined
     ? undefined
-    : parseExpect(step.expect, `${path}.expect`);
+    : parseExpectation(step.expect, `${path}.expect`);
 
   return {
     id,
@@ -560,7 +560,7 @@ function parseStep(
  * that silently never runs — which is the failure mode that makes a test suite
  * look green while testing nothing.
  */
-function parseExpect(value: unknown, path: string): StepExpectation {
+export function parseExpectation(value: unknown, path: string): StepExpectation {
   const block = fields(value, path, ['present', 'absent', 'foreground'], stepError);
 
   let present: readonly ExpectPresent[] | undefined;

@@ -75,10 +75,16 @@ describe('the parity ledger', () => {
     // An ELF records LTO markers and compiler flags directly, and its
     // instruction mix is a measurement rather than an inference from a byte
     // histogram, so `opt` reports both and labels the inferred part `proxy`.
+    //
+    // Row 5 (LLM GUI agent) left it in `0.21.0`. The blocker was the external
+    // `phone_agent` dependency and the API key, and both were defects in how
+    // HapRay used the model rather than in what it asked: the loop is written
+    // here against an injected client, the endpoint is read from the same
+    // variables HapRay reads, and completion is verified against the screen
+    // instead of trusted.
     const out = PARITY_ROWS.filter((row) => row.status === 'out');
-    expect(out.map((row) => row.row).sort((a, b) => a - b)).toEqual([5, 28]);
+    expect(out.map((row) => row.row).sort((a, b) => a - b)).toEqual([28]);
     const prerequisites: Record<number, RegExp> = {
-      5: /LLM/i,
       28: /disassembl/i,
     };
     for (const row of out) {

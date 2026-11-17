@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P25 are complete**: 1919 tests (1908 unit, 11 in the device
+**P1 through P26 are complete**: 1984 tests (1973 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1880 passed, 28
+attached device are absent — `npm run test:unit` reports **1945 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1880 passed, 39 skipped**. With both fixtures present and a
+checkout is **1945 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -115,7 +115,7 @@ Implemented today:
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
   `compare`, `ui-compare`, `report`, `render`, `trend`, `hap`,
-  `gesture {click,swipe,key,input,text}`, `explore <app>`,
+  `gesture {click,swipe,key,input,text}`, `explore <app>`, `agent <app> <task>`,
   `emulator {list,start,stop,create}`, `run <scenario.json> | --cases <dir>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
@@ -167,6 +167,16 @@ Implemented today:
   changes instead of waiting a flat 5 s, so the wait is a ceiling rather than a
   cost. `render <report.json> --out <dir>` re-renders a saved bundle without
   re-analyzing it.
+- model-driven agent: `agent <app> <task>` asks an injected model what to do
+  next and shows it the tree as one line per node. A `done` answer carries an
+  expectation that is evaluated against the screen, so a claim the screen
+  contradicts is `unverified` and exits non-zero; a tap on payment, ordering,
+  transfer, sign-in or delete is refused before the device sees it; and every
+  step records the gesture plus the screen hash either side of it, so the walk
+  can be replayed without a model and stops at the first screen that differs.
+  The client is not bundled: the endpoint comes from
+  `OHOS_PERF_AGENT_BASE_URL`/`_API_KEY`/`_MODEL`, falling back to HapRay's
+  `GLM_*` variables, and `--model` overrides the name.
 - report bundle and trend: `report <scene> --out <dir>` writes `report.html`,
   `report.json`, `summary.json`, `metrics.csv`, `evidence.csv` and
   `report.xlsx` from one scene, plus `flamegraph.svg`/`.html` when the scene
@@ -281,6 +291,7 @@ The HapRay parity series (one release per major item, so far):
 | P23 | row 4 completion | `explore` walks the UI on a total order, records a dead tap as `no_change`, remembers visits per screen, replays `random` from a recorded seed, and settles on the screen's change instead of HapRay's fixed 5 s window | shipped in `0.18.0` |
 | P24 | row 24 completion | `analyze` reads a scene's `coverageReport.json` — the document `bjc` writes — and reports line, function and branch coverage as `approximate`, with a missing report a named `no_data` rather than HapRay's silent skip | shipped in `0.19.0` |
 | P25 | row 27 completion | `opt <package\|lib.so>` reads each arm64 library's ELF: LTO from `lto_priv.*`/`.gnu.lto_*`, the level from a recorded `-O` flag, and otherwise from the instruction mix, labelled `proxy` with its signals named — no TensorFlow model | shipped in `0.20.0` |
+| P26 | row 5 completion | `agent <app> <task>` drives the app with an injected model: a completion claim carries an expectation the screen is checked against, an irreversible tap is refused before the device sees it, and every step records the gesture and both screen hashes so `replayAgent` can re-walk it without a model | shipped in `0.21.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities. The status of every row is
@@ -291,15 +302,26 @@ the engine actually registers, so a claim cannot outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 33 |
+| ported | 34 |
 | partial | 0 |
 | missing | 0 |
-| out, with a measured reason | 2 |
+| out, with a measured reason | 1 |
 
-The two `out` rows are capabilities whose prerequisite this package refuses
-to ship, and each reason names it: the LLM GUI agent (row 5, needs a network
-endpoint and API key) and radare2 symbol recovery (row 28, heuristic
+The one remaining `out` row is radare2 symbol recovery (row 28, heuristic
 disassembly plus LLM naming with no accuracy measurement).
+
+Row 5 (the LLM GUI agent) left that list in `0.21.0`. HapRay's blocker was
+the external `phone_agent` dependency, and the three things that made its
+output unusable were defects rather than prerequisites: it trusted the model's
+`finished` flag without looking at the screen, guarded payment and ordering in
+a prompt sentence, and recorded prose that could not be replayed. `agent <app>
+<task>` keeps the shape and fixes all three — a completion claim carries an
+expectation the screen is checked against, an irreversible tap is refused
+before it reaches the device, and every step records the gesture plus the
+screen hash either side of it, so `replayAgent` can walk the same path on
+another build without a model. The endpoint is read from
+`OHOS_PERF_AGENT_BASE_URL`/`_API_KEY`/`_MODEL`, falling back to the
+`GLM_BASE_URL`/`GLM_API_KEY`/`GLM_MODEL` variables HapRay already reads.
 
 Row 27 (the TensorFlow opt-detector) left that list in `0.20.0`. Its blocker
 was never the question — "was this built optimized, and with LTO?" — but the
@@ -326,8 +348,8 @@ and fixes both, so the row is now `ported` on its own merits.
 No row is `partial` any more. Row 33's last clause was re-rendering a bundle
 from its saved inputs, and `render <report.json> --out <dir>` now does it from
 the typed model alone — no scene, no device, no analyzer — reproducing every
-artifact byte for byte. That leaves 33 ported and the 2 refused rows, each with
-the prerequisite it names.
+artifact byte for byte. That leaves 34 ported and the 1 refused row, with the
+prerequisite it names.
 
 `0.13.0` closed the last four `missing` rows. The fault tree now carries an
 `ipc_binder` section derived from the typed binder analysis rather than from a
@@ -782,6 +804,9 @@ ohos-perf hap app.hap --json                 # the typed document
 
 ohos-perf opt app.hap                        # optimization level and LTO
 ohos-perf opt libs/arm64/libapp.so --json
+
+ohos-perf agent com.example.app "open settings and enable dark mode"
+ohos-perf agent com.example.app "..." --max-steps 20 --model my-model --json
 ```
 
 The human output names the app, the file count and both sizes, one line per

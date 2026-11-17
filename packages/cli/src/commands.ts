@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { join } from 'node:path';
 import {
   discoverCases,
+  describeDecision,
   loadCases,
   OhosPerfError,
   parseScenario,
@@ -12,6 +13,7 @@ import {
   type ExplorationStrategy,
   type HapAnalysis,
   type OptimizationAnalysis,
+  type AgentTranscript,
   type HiprofilerPluginName, type NamedQueryInfo, type NamedQueryResult,
   type RunResult, type Scenario,
 } from '@ohos-perf/core';
@@ -192,8 +194,35 @@ export interface ExploreOutput {
   screens: string[];
 }
 
-/** A `run` invocation, with the scenario already read and validated. */
-export interface RunRequest {
+/**
+ * An `agent` invocation: drive one app toward a task with a model.
+ *
+ * The model is named, never bundled: `model` selects which client the seam
+ * builds, and the seam refuses when the caller has configured none. That keeps
+ * a network client out of this package and makes the command testable without
+ * one.
+ */
+export interface AgentRequest {
+  /** The bundle name to drive. */
+  app: string;
+  /** What the model is asked to accomplish, in the user's words. */
+  task: string;
+  /** Hard cap on model turns. HapRay's default is 50. */
+  maxSteps: number;
+  /** Let the guard's refusals through. Off by default. */
+  allowIrreversible?: boolean;
+  /** Which model client to use; the seam decides what names it knows. */
+  model?: string;
+  target?: string;
+}
+
+/** What an `agent` run produced: the walk, and the device it walked on. */
+export interface AgentOutput {
+  transcript: AgentTranscript;
+  device: { id: string; kind: string };
+}
+
+/** A `run` invocation, with the scenario already read and validated. */export interface RunRequest {
   /** The parsed document. Reading and validating happen in the command layer. */
   scenario: Scenario;
   /** The path it came from, for error wording and `testInfo.json`'s name. */
@@ -458,6 +487,11 @@ export interface CliDeps {
   render(req: RenderRequest): Promise<RenderOutput>;
   /** Walk an app's UI and report the screens it reached. */
   explore(req: ExploreRequest): Promise<ExploreOutput>;
+  /**
+   * Drive an app toward a task with a model, and report what the walk verified.
+   * Throws on any failure; the caller maps it to exit 1.
+   */
+  agent(req: AgentRequest): Promise<AgentOutput>;
   /**
    * Inspect a HAP on disk. Throws on any failure; the caller maps it to exit 1.
    *
@@ -976,6 +1010,69 @@ export async function runExplore(
   } catch (err) {
     return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
+}
+
+/**
+ * Drive an app toward a task with a model, and report the walk.
+ *
+ * The exit code is the point of the command. HapRay records the model's
+ * `finished` flag and exits 0, so a model that declared success on a screen it
+ * never reached is a green run. Here only a verified claim exits 0; a claim
+ * the screen contradicted, a run the guard stopped, and a budget that ran out
+ * are all failures, each naming the step that ended it.
+ */
+export async function runAgentCommand(
+  deps: CliDeps,
+  req: AgentRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  if (req.task.trim() === '') {
+    return {
+      stdout: '',
+      stderr: 'agent: the task must not be empty\n',
+      exitCode: 1,
+    };
+  }
+
+  try {
+    const result = await deps.agent(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+
+    const { transcript, device } = result;
+    const outcome = transcript.status === 'completed'
+      ? 'completed (the screen confirmed it)'
+      : transcript.status === 'unverified'
+        ? 'unverified (the screen did not confirm it)'
+        : transcript.status === 'refused'
+          ? 'refused (an irreversible action was stopped)'
+          : `exhausted (the step cap, ${req.maxSteps}, was reached)`;
+
+    const lines = transcript.steps.map((step) => {
+      const did = step.action === undefined ? step.status : `${describeStep(step)} — ${step.status}`;
+      const moved = step.navigated ? 'moved' : 'no change';
+      const detail = step.detail === undefined ? '' : `\n           ${step.detail}`;
+      return `  ${String(step.index + 1).padStart(2)}. ${did} (${moved}): ${step.reason}${detail}`;
+    });
+
+    return {
+      stdout:
+        `agent  ${transcript.app} on ${device.id} (${device.kind})\n` +
+        `task   ${transcript.task}\n` +
+        `result ${outcome}\n` +
+        `walk   ${transcript.steps.length} steps, ${transcript.statesReached} states reached\n` +
+        lines.map((line) => `${line}\n`).join(''),
+      stderr: '',
+      exitCode: transcript.status === 'completed' ? 0 : 1,
+    };
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+  }
+}
+
+/** A step's gesture in words, matching the transcript's own rendering. */
+function describeStep(step: AgentTranscript['steps'][number]): string {
+  if (step.action === undefined) return step.status;
+  return describeDecision({ action: step.action, reason: step.reason });
 }
 
 /**

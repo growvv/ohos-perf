@@ -70,10 +70,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 5,
     name: 'LLM GUI agent (`gui-agent`)',
-    status: 'out',
-    reason:
-      'Requires a network LLM endpoint and an API key, and never verifies task success; ' +
-      'the agent skill is the deterministic replacement.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 6,

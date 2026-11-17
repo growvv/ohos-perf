@@ -179,7 +179,18 @@ export type {
   ExplorationHost, ExplorationOptions, ExplorationOutcome, ExplorationResult,
   ExplorationState, ExplorationStep, ExplorationStrategy, ExplorationTargetDevice,
 } from './scenario/explore';
-export { ScenarioRunner, writeRunFiles } from './scenario/runner';
+export { ScenarioRunner, writeRunFiles, evaluateExpectation } from './scenario/runner';
+export {
+  agentPrompt, describeDecision, IRREVERSIBLE_PATTERNS, irreversibleReason,
+  parseDecision, renderTree, replayAgent, runAgent,
+} from './scenario/agent';
+export { httpAgentModel, readAgentConfig } from './scenario/agent-client';
+export type { AgentConfig, AgentFetch, HttpAgentModelOptions } from './scenario/agent-client';
+export type {
+  AgentDecision, AgentDevice, AgentHistoryEntry, AgentModel, AgentOptions,
+  AgentTurn, AgentResult, AgentStatus, AgentStep, AgentStepStatus,
+  AgentTranscript, IrreversiblePattern, ReplayResult,
+} from './scenario/agent';
 export type {
   Scenario, ScenarioAction, ScenarioStep, StepCapture, CollectorName,
   ExpectPresent, StepExpectation,

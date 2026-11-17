@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.21.0 — 2026-11-17
+
+Parity row 5 is ported: the LLM GUI agent. The ledger drops to one refused row.
+
+HapRay's `gui-agent` wraps the external `phone_agent` package: the model sees a
+screenshot, answers with one action, and says `finished` when it believes the
+task is done. Three things make that unusable as a measurement tool, and each
+is fixed here rather than reproduced.
+
+- **`finished` is checked, not trusted.** A `done` answer must carry an
+  expectation; it is evaluated against the screen, and a claim the screen
+  contradicts is `unverified` — a failed step naming the clause that missed.
+  A bare `done` with no assertion is also `unverified`, because a model that
+  asserts nothing has proven nothing. Only a verified claim exits 0.
+- **The guard is code, not a prompt sentence.** HapRay tells the model to
+  avoid payment and ordering. Here a tap or text entry is resolved to the node
+  it lands on — reading both the node's text and its id, with `_`/`-` read as
+  word breaks, so `pay_button` is caught — and an irreversible target is
+  refused before the gesture reaches the device. `--allow-irreversible` opts
+  out, deliberately.
+- **The transcript replays.** Every step records the gesture and the screen
+  hash either side of it. `replayAgent` re-walks a transcript with no model,
+  stops at the first step whose recorded screen no longer matches, and skips
+  steps that never touched the device.
+- **The loop is native and the client is injected.** `runAgent` takes a
+  one-method `AgentModel`; `httpAgentModel` implements it over an
+  OpenAI-compatible `/chat/completions` endpoint with an injected `fetch`, and
+  parses the answer inside the client so an unparseable reply names the answer
+  rather than the step. `agentPrompt` and `parseDecision` are exported, so a
+  caller can drive any endpoint with its own transport.
+- **No endpoint is guessed.** The client reads
+  `OHOS_PERF_AGENT_BASE_URL`/`_API_KEY`/`_MODEL`, falling back to HapRay's
+  `GLM_BASE_URL`/`GLM_API_KEY`/`GLM_MODEL`; with neither set, the command
+  refuses and names the variables instead of sending a task to an unnamed host.
+- **`agent <app> <task>`** with `--max-steps` (default 50, HapRay's),
+  `--model`, `--allow-irreversible`, `--target` and `--json`.
+- 1973 unit tests (41 for the loop, 14 for the client, 7 for the command),
+  two typechecks, two builds.
+
 ## 0.20.0 — 2026-11-17
 
 Parity row 27 is ported: optimization detection. The ledger drops to two

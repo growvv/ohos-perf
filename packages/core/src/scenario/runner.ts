@@ -190,7 +190,7 @@ async function resolveAppVersion(
  * belong to it — so requiring the app to own *every* node would fail on the
  * one case an author most wants to assert.
  */
-function evaluate(
+export function evaluateExpectation(
   expect: StepExpectation,
   nodes: readonly UiNode[],
   app: string,
@@ -433,7 +433,7 @@ export class ScenarioRunner {
           );
         }
         const nodes = await this.device.uiTree();
-        expectations = evaluate(step.expect, nodes, scenario.app);
+        expectations = evaluateExpectation(step.expect, nodes, scenario.app);
         failure ??= failureOf(expectations);
       } catch (err) {
         // An assertion that cannot be evaluated is a step failure: a run that

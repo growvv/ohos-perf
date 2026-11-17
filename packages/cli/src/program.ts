@@ -17,6 +17,7 @@ import {
   runReport,
   runRender,
   runExplore,
+  runAgentCommand,
   runScenarioCommand,
   runTools,
   runTrend,
@@ -502,6 +503,48 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
             maxSteps,
             strategy,
             ...(seed === undefined ? {} : { seed }),
+            ...(opts.target === undefined ? {} : { target: opts.target }),
+          },
+          { json: opts.json },
+        ),
+      );
+    });
+
+  program
+    .command('agent')
+    .description('drive an app toward a task with a model, and verify the screen reached')
+    .argument('<app>', 'bundle name to drive, e.g. com.example.app')
+    .argument('<task>', 'what the model should accomplish, in your words')
+    .option('--max-steps <n>', 'stop after this many model turns', '50')
+    .option('--model <name>', 'model name to send; defaults to the configured one')
+    .option('--allow-irreversible', "let the guard's refusals through (payment, ordering, ...)")
+    .option('--target <id>', 'drive this hdc target instead of the first connected one')
+    .option('--json', 'print the transcript as JSON')
+    .action(async (app: string, task: string, opts: {
+      maxSteps: string;
+      model?: string;
+      allowIrreversible?: boolean;
+      target?: string;
+      json?: boolean;
+    }) => {
+      // Parsed before any device or endpoint is touched, for the same reason
+      // `explore` does: a bad count is an invocation error, not a run.
+      let maxSteps: number;
+      try {
+        maxSteps = parseMaxSteps(opts.maxSteps);
+      } catch (err) {
+        io.emit({ stdout: '', stderr: `${failureLine(err)}\\n`, exitCode: 1 });
+        return;
+      }
+      io.emit(
+        await runAgentCommand(
+          deps,
+          {
+            app,
+            task,
+            maxSteps,
+            ...(opts.model === undefined ? {} : { model: opts.model }),
+            ...(opts.allowIrreversible === true ? { allowIrreversible: true } : {}),
             ...(opts.target === undefined ? {} : { target: opts.target }),
           },
           { json: opts.json },

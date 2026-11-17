@@ -38,6 +38,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
       create: async () => { throw new Error('emulator not stubbed'); },
     },
     run: async () => { throw new Error('run not stubbed'); },
+    agent: async () => { throw new Error('agent not stubbed'); },
     ...overrides,
   };
 }
@@ -89,7 +90,7 @@ describe('--help', () => {
     const text = out.join('');
     for (const name of [
       'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'render', 'trend',
-      'run', 'ui-compare',
+      'run', 'ui-compare', 'explore', 'agent', 'opt',
     ]) {
       expect(text).toContain(name);
     }
@@ -97,6 +98,44 @@ describe('--help', () => {
 });
 
 describe('command wiring', () => {
+  it('agent forwards the app, task and every flag to runAgentCommand', async () => {
+    const transcript = {
+      version: 1 as const, task: 'open it', app: 'com.demo', steps: [],
+      status: 'completed' as const, statesReached: 1,
+    };
+    const calls: Array<Record<string, unknown>> = [];
+    const { emitted } = await parse(
+      ['agent', 'com.demo', 'open it', '--max-steps', '7', '--model', 'm',
+        '--allow-irreversible', '--target', 'emu-1'],
+      {
+        agent: async (req) => {
+          calls.push(req as unknown as Record<string, unknown>);
+          return { transcript, device: { id: 'emu-1', kind: 'emulator' } };
+        },
+      },
+    );
+    expect(calls).toEqual([{
+      app: 'com.demo', task: 'open it', maxSteps: 7, model: 'm',
+      allowIrreversible: true, target: 'emu-1',
+    }]);
+    expect(emitted[0]!.exitCode).toBe(0);
+  });
+
+  it('agent refuses a non-numeric --max-steps before the seam', async () => {
+    let called = false;
+    const { emitted } = await parse(['agent', 'com.demo', 't', '--max-steps', '0'], {
+      agent: async () => { called = true; throw new Error('unreachable'); },
+    });
+    expect(called).toBe(false);
+    expect(emitted[0]!.exitCode).toBe(1);
+    expect(emitted[0]!.stderr).toMatch(/max-steps/);
+  });
+
+  it('agent requires a task argument', async () => {
+    const { error } = await parse(['agent', 'com.demo']);
+    expect(error?.code).toBe('commander.missingArgument');
+  });
+
   it('compare forwards both arguments and --json to runCompare', async () => {
     const comparison = { rows: [], totals: {
       improved: 0, regressed: 0, unchanged: 0, added: 0, removed: 0, incomparable: 0,
