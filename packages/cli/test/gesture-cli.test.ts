@@ -1,37 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import type { CliDeps, GestureRequest } from '../src/commands';
 import { buildProgram } from '../src/program';
 import type { Gesture, GestureResult } from '@ohos-perf/core';
 
-function baseDeps(): CliDeps {
-  return {
-    version: '1.0.0',
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/s', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('x'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => { throw new Error('x'); },
-    gesture: async (req) => ({ gesture: req.gesture, output: 'No Error' }),
-    query: async () => { throw new Error('x'); },
-    tools: () => [],
-    compare: async () => { throw new Error('x'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('report not stubbed'); },
-    trend: async () => { throw new Error('trend not stubbed'); },
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => { throw new Error('hap not stubbed'); },
-    emulator: {
-      list: async () => [],
-      start: async () => { throw new Error('x'); },
-      stop: async () => { throw new Error('x'); },
-      create: async () => { throw new Error('x'); },
-    },
-    run: async () => { throw new Error('run not stubbed'); },
-  };
-}
+
+/** The shared deps, with `gesture` echoing the request it received. */
+const baseDeps = (): CliDeps =>
+  cliDeps({ gesture: async (req) => ({ gesture: req.gesture, output: 'No Error' }) });
 
 async function parseWith(
   gesture: (req: GestureRequest) => Promise<GestureResult>,

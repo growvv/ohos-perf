@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import { runAgentCommand } from '../src/commands';
-import type { CliDeps } from '../src/commands';
 import type { AgentTranscript } from '../../core/src/scenario/agent';
 
 /*
@@ -29,22 +29,10 @@ const transcript: AgentTranscript = {
   statesReached: 2,
 };
 
-function stubDeps(overrides: Partial<CliDeps> = {}): CliDeps {
-  const unused = (): never => {
-    throw new Error('not used by this command');
-  };
-  return {
-    agent: unused, opt: unused, analyze: unused, collect: unused, probe: unused,
-    emulator: unused, run: unused, hap: unused, tools: unused, explore: unused,
-    version: '0.0.0-test',
-    ...overrides,
-  } as unknown as CliDeps;
-}
-
 describe('runAgentCommand', () => {
   it('leads with the verified outcome, then the walk', async () => {
     const result = await runAgentCommand(
-      stubDeps({ agent: async () => ({ transcript, device: { id: 'emu-1', kind: 'emulator' } }) }),
+      cliDeps({ agent: async () => ({ transcript, device: { id: 'emu-1', kind: 'emulator' } }) }),
       { app: 'com.demo', task: 'open the settings page', maxSteps: 10 },
       {},
     );
@@ -73,7 +61,7 @@ describe('runAgentCommand', () => {
       ],
     };
     const result = await runAgentCommand(
-      stubDeps({ agent: async () => ({ transcript: unverified, device: { id: 'emu-1', kind: 'emulator' } }) }),
+      cliDeps({ agent: async () => ({ transcript: unverified, device: { id: 'emu-1', kind: 'emulator' } }) }),
       { app: 'com.demo', task: 't', maxSteps: 5 },
       {},
     );
@@ -96,7 +84,7 @@ describe('runAgentCommand', () => {
       ],
     };
     const result = await runAgentCommand(
-      stubDeps({ agent: async () => ({ transcript: refused, device: { id: 'emu-1', kind: 'emulator' } }) }),
+      cliDeps({ agent: async () => ({ transcript: refused, device: { id: 'emu-1', kind: 'emulator' } }) }),
       { app: 'com.demo', task: 't', maxSteps: 5 },
       {},
     );
@@ -106,7 +94,7 @@ describe('runAgentCommand', () => {
 
   it('prints the whole document with --json', async () => {
     const result = await runAgentCommand(
-      stubDeps({ agent: async () => ({ transcript, device: { id: 'emu-1', kind: 'emulator' } }) }),
+      cliDeps({ agent: async () => ({ transcript, device: { id: 'emu-1', kind: 'emulator' } }) }),
       { app: 'com.demo', task: 'open the settings page', maxSteps: 10 },
       { json: true },
     );
@@ -118,7 +106,7 @@ describe('runAgentCommand', () => {
   it('passes every flag to the seam', async () => {
     let seen: unknown;
     await runAgentCommand(
-      stubDeps({
+      cliDeps({
         async agent(req) {
           seen = req;
           return { transcript, device: { id: 'emu-1', kind: 'emulator' } };
@@ -139,7 +127,7 @@ describe('runAgentCommand', () => {
   it('refuses an empty task before touching the seam', async () => {
     let called = false;
     const result = await runAgentCommand(
-      stubDeps({ agent: async () => { called = true; throw new Error('unreachable'); } }),
+      cliDeps({ agent: async () => { called = true; throw new Error('unreachable'); } }),
       { app: 'com.demo', task: '   ', maxSteps: 5 },
       {},
     );
@@ -150,7 +138,7 @@ describe('runAgentCommand', () => {
 
   it('reports a seam failure as one line', async () => {
     const result = await runAgentCommand(
-      stubDeps({ agent: async () => { throw new Error('no model configured'); } }),
+      cliDeps({ agent: async () => { throw new Error('no model configured'); } }),
       { app: 'com.demo', task: 't', maxSteps: 5 },
       {},
     );

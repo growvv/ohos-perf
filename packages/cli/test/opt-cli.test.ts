@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +17,6 @@ import {
   text,
 } from '../../core/test/helpers/elf-writer';
 import { runOptimization } from '../src/commands';
-import type { CliDeps } from '../src/commands';
 
 /*
  * `ohos-perf opt <package|lib.so>` — HapRay parity row 27.
@@ -71,23 +71,12 @@ function withFile(name: string, bytes: Uint8Array, run: (path: string) => Promis
  * exercised through `realDeps` elsewhere, so this stub only proves the command
  * calls the seam with the parsed request.
  */
-function stubDeps(overrides: Partial<CliDeps> = {}): CliDeps {
-  const unused = (): never => {
-    throw new Error('not used by this command');
-  };
-  return {
-    opt: unused, analyze: unused, collect: unused, probe: unused, emulator: unused,
-    run: unused, hap: unused, tools: unused, explore: unused, version: '0.0.0-test',
-    ...overrides,
-  } as unknown as CliDeps;
-}
-
 describe('runOptimization', () => {
   it('reports each binary with its level, basis and LTO verdict', async () => {
     const bytes = packageWithLibrary();
     await withFile('demo.hap', bytes, async (path) => {
       const result = await runOptimization(
-        stubDeps({
+        cliDeps({
           async opt(req) {
             expect(req.packagePath).toBe(path);
             return {
@@ -136,7 +125,7 @@ describe('runOptimization', () => {
     };
     await withFile('demo.hap', new Uint8Array(0), async (path) => {
       const result = await runOptimization(
-        stubDeps({ opt: async () => ({ analysis, capabilities: [] }) }),
+        cliDeps({ opt: async () => ({ analysis, capabilities: [] }) }),
         { packagePath: path },
         { json: true },
       );
@@ -146,7 +135,7 @@ describe('runOptimization', () => {
 
   it('refuses a path that is not a package or a library', async () => {
     await withFile('notes.txt', new TextEncoder().encode('hi'), async (path) => {
-      const result = await runOptimization(stubDeps(), { packagePath: path }, {});
+      const result = await runOptimization(cliDeps(), { packagePath: path }, {});
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toMatch(/expected \.hap, \.hsp, \.zip or \.so/);
     });
@@ -154,7 +143,7 @@ describe('runOptimization', () => {
 
   it('refuses an .a archive by name, before any byte is read', async () => {
     await withFile('libx.a', new Uint8Array(8), async (path) => {
-      const result = await runOptimization(stubDeps(), { packagePath: path }, {});
+      const result = await runOptimization(cliDeps(), { packagePath: path }, {});
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toMatch(/\.a archive is not read/);
     });
@@ -163,7 +152,7 @@ describe('runOptimization', () => {
   it('reports a missing file without touching the dependency seam', async () => {
     let called = false;
     const result = await runOptimization(
-      stubDeps({ opt: async () => { called = true; throw new Error('unreachable'); } }),
+      cliDeps({ opt: async () => { called = true; throw new Error('unreachable'); } }),
       { packagePath: join(tmpdir(), 'definitely-absent-9f8a7.hap') },
       {},
     );
@@ -176,7 +165,7 @@ describe('runOptimization', () => {
     const empty = makeZip([{ name: 'module.json', data: encoder.encode('{}') }]);
     await withFile('empty.hap', empty, async (path) => {
       const result = await runOptimization(
-        stubDeps({
+        cliDeps({
           async opt() {
             throw new Error('demo.hap: no arm64 libraries (libs/arm64/*.so) in the package');
           },
@@ -193,7 +182,7 @@ describe('runOptimization', () => {
     let seen = '';
     await withFile('libx.so', new Uint8Array(0), async (path) => {
       const result = await runOptimization(
-        stubDeps({
+        cliDeps({
           async opt(req) {
             seen = req.packagePath;
             return {

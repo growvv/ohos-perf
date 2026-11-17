@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.22.1 — 2026-11-17
+
+The build has been red since 0.19.0 and this release fixes it. No behaviour
+changes; the fixes are to how the project verifies itself.
+
+- **CI typecheck runs again.** `npm test` transpiles with esbuild, which strips
+  types without checking them, and the local habit was `tsc -p tsconfig.json` —
+  the `src`-only config. CI runs `tsconfig.test.json`, which also compiles the
+  tests, and it had been failing since 0.19.0: 73 errors in the CLI and 3 in
+  core. The CLI's test config also set `rootDir` to the package, so every test
+  that imports a core source or a core test helper was an error before its own
+  content was read; `rootDir` is now the repo root with core's sources and
+  helpers included.
+- **One `CliDeps` fixture instead of seventeen.** Each command test file copied
+  the whole injected-deps object, so adding a seam to `CliDeps` turned fifteen
+  files red at once — which is how the breakage went unnoticed for five
+  releases. `packages/cli/test/helpers/deps.ts` now holds it, with every seam
+  throwing `<name> not stubbed` unless a test overrides it, and
+  `helpers-deps.test.ts` pins both halves of that contract: an unstubbed seam
+  refuses by name, and an override patches one seam rather than replacing the
+  object.
+- **`npm run verify`** runs what CI runs — build, both typechecks, unit suite —
+  so the two can no longer drift apart.
+- Three test-side type errors fixed where the code was right and the fixture was
+  stale: a `.dynsym` entry missing `type`, two `SceneLayout` literals missing
+  `coverageFile`, and two `trend` stubs missing `unmeasured`.
+
+2009 unit tests (1981 passed + 28 skipped on a clean checkout).
+
 ## 0.22.0 — 2026-11-17
 
 Parity row 28 is ported: symbol recovery. Every HapRay row is now ported —

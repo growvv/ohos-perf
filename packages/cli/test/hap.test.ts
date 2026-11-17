@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -75,36 +76,6 @@ function packageFile(name = 'demo.hap', body = 'stored'): string {
 }
 
 /** A complete deps object; only `hap` matters to these tests. */
-function deps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    version: '1.0.0',
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('no device'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
-    gesture: async () => ({ gesture: { action: 'key' as const, key: 'Home' }, output: 'No Error' }),
-    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
-    tools: () => [],
-    compare: async () => { throw new Error('compare not stubbed'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('report not stubbed'); },
-    trend: async () => { throw new Error('trend not stubbed'); },
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => output,
-    emulator: {
-      list: async () => [],
-      start: async () => { throw new Error('emulator not stubbed'); },
-      stop: async () => { throw new Error('emulator not stubbed'); },
-      create: async () => { throw new Error('emulator not stubbed'); },
-    },
-    run: async () => { throw new Error('run not stubbed'); },
-    ...overrides,
-  };
-}
 
 function harness(overrides: Partial<CliDeps> = {}) {
   const emitted: Array<{ stdout: string; stderr: string; exitCode: number }> = [];
@@ -126,6 +97,10 @@ async function parse(argv: string[], overrides: Partial<CliDeps> = {}) {
   }
   return { ...h, error };
 }
+
+/** The shared deps, with this file's own seam returning its fixture. */
+const deps = (overrides: Partial<CliDeps> = {}): CliDeps =>
+  cliDeps({ hap: async () => output, ...overrides });
 
 describe('runHap', () => {
   it('prints the package, totals, technologies, duplicates and largest files', async () => {

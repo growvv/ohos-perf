@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps as deps } from './helpers/deps';
 import { compareResults, type BaselineComparison, type Metric } from '@ohos-perf/core';
 import type { CliDeps } from '../src/commands';
 import { runCompare } from '../src/commands';
@@ -9,36 +10,6 @@ const metricOf = (id: string, value: number | string): Metric => ({
 });
 
 /** A complete deps object; only `compare` matters to these tests. */
-function deps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    version: '1.0.0',
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('no device'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
-    gesture: async () => ({ gesture: { action: 'key' as const, key: 'Home' }, output: 'No Error' }),
-    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
-    tools: () => [],
-    compare: async () => { throw new Error('compare not stubbed'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('report not stubbed'); },
-    trend: async () => { throw new Error('trend not stubbed'); },
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => { throw new Error('hap not stubbed'); },
-    emulator: {
-      list: async () => [],
-      start: async () => { throw new Error('emulator not stubbed'); },
-      stop: async () => { throw new Error('emulator not stubbed'); },
-      create: async () => { throw new Error('emulator not stubbed'); },
-    },
-    run: async () => { throw new Error('run not stubbed'); },
-    ...overrides,
-  };
-}
 
 const comparison: BaselineComparison = compareResults(
   { metrics: [metricOf('frame.jank.rate', 40)], evidence: [] },

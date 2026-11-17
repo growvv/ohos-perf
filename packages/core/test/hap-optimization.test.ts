@@ -231,7 +231,7 @@ describe('classifyOptimization', () => {
       { name: '.rodata', type: SHT_PROGBITS, data: new Uint8Array(16) },
       // The real file is not stripped: it carries a `.dynsym`, which is what
       // makes "no LTO marker found" a claim of absence rather than ignorance.
-      { name: '.dynsym', type: 11, symbols: [{ name: 'flutter_main', bind: STB_GLOBAL }] },
+      { name: '.dynsym', type: 11, symbols: [{ name: 'flutter_main', bind: STB_GLOBAL, type: STT_FUNC }] },
     ]));
     expect(facts.instructions.total).toBe(10_000);
     expect(facts.lto).toBe('absent');

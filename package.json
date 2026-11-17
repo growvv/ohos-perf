@@ -11,7 +11,9 @@
     "build": "npm run build -w @ohos-perf/core",
     "test": "npm run build -w @ohos-perf/core && npm run build -w @ohos-perf/cli && npm run test:unit && npm run test:device",
     "test:unit": "vitest run --project unit",
-    "test:device": "vitest run --project device --fileParallelism=false"
+    "test:device": "vitest run --project device --fileParallelism=false",
+    "typecheck": "npm run typecheck -w @ohos-perf/core && npm run typecheck -w @ohos-perf/cli",
+    "verify": "npm run build && npm run typecheck && npm run test:unit"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
@@ -19,7 +21,7 @@
     "tsup": "^8.3.0",
     "@types/node": "^24.0.0"
   },
-  "version": "0.22.0",
+  "version": "0.22.1",
   "description": "**HarmonyOS performance, made measurable.**",
   "main": "index.js",
   "directories": {

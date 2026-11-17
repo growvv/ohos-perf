@@ -1745,7 +1745,12 @@ describe('realDeps().analyze with a supplied coverage report', () => {
         }),
       );
       const result = await realDeps('0.0.0').analyze(root);
-      const lines = result.metrics.find((m) => m.id === 'coverage.lines.percent');
+      // `AnalyzeOutput` is the narrow view the renderer needs; `provenance` is
+      // on the metric the implementation actually returns, so the test reads it
+      // through the same widening cast this file uses for `explain`.
+      const lines = result.metrics.find((m) => m.id === 'coverage.lines.percent') as
+        | { value: number | string; fidelity: string; provenance: { collector: string } }
+        | undefined;
       expect(lines?.value).toBe(75);
       expect(lines?.fidelity).toBe('approximate');
       expect(lines?.provenance.collector).toBe('scene:coverageReport.json');
@@ -1761,7 +1766,8 @@ describe('realDeps().analyze with a supplied coverage report', () => {
       createTraceDb(join(root, 'trace.db'));
       const result = await realDeps('0.0.0').analyze(root);
       const noData = result.evidence.find(
-        (item) => item.kind === 'no_data' && item.explain.includes('coverageReport.json'),
+        (item) => item.kind === 'no_data' &&
+          (item as unknown as { explain: string }).explain.includes('coverageReport.json'),
       );
       expect(noData).toBeDefined();
       expect(result.metrics.some((m) => m.id.startsWith('coverage.'))).toBe(false);

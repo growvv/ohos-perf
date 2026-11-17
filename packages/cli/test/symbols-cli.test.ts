@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -50,17 +51,13 @@ function library(): Uint8Array {
  * only prove the command can echo its own fake.
  */
 function stubDeps(overrides: Partial<CliDeps> = {}): CliDeps {
-  const unused = (): never => { throw new Error('not used by this command'); };
-  return {
+  return cliDeps({
     symbols: async (req) => {
       const bytes = readFileSync(req.library);
       return { library: basename(req.library), ...recoverSymbols(bytes, req.addresses) };
     },
-    agent: unused, opt: unused, analyze: unused, collect: unused,
-    probe: unused, emulator: unused, run: unused, hap: unused, tools: unused,
-    explore: unused, version: '0.0.0-test',
     ...overrides,
-  } as unknown as CliDeps;
+  });
 }
 
 function withFile(name: string, bytes: Uint8Array, run: (path: string) => Promise<void>): Promise<void> {

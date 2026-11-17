@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import type { CliDeps, TrendOutput } from '../src/commands';
 import { runTrend } from '../src/commands';
 import { collectLabels } from '../src/trend';
@@ -30,36 +31,10 @@ const output: TrendOutput = {
   unmeasured: 0,
 };
 
-function deps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    version: '1.0.0',
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('no device'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
-    gesture: async () => ({ gesture: { action: 'key' as const, key: 'Home' }, output: 'No Error' }),
-    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
-    tools: () => [],
-    compare: async () => { throw new Error('compare not stubbed'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('report not stubbed'); },
-    trend: async () => output,
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => { throw new Error('hap not stubbed'); },
-    emulator: {
-      list: async () => [],
-      start: async () => { throw new Error('emulator not stubbed'); },
-      stop: async () => { throw new Error('emulator not stubbed'); },
-      create: async () => { throw new Error('emulator not stubbed'); },
-    },
-    run: async () => { throw new Error('run not stubbed'); },
-    ...overrides,
-  };
-}
+
+/** The shared deps, with this file's own seam returning its fixture. */
+const deps = (overrides: Partial<CliDeps> = {}): CliDeps =>
+  cliDeps({ trend: async () => output, ...overrides });
 
 describe('runTrend', () => {
   it('names the page, the artifacts, the runs and the verdict counts', async () => {
@@ -120,7 +95,10 @@ describe('runTrend', () => {
   });
 
   it('defaults each run label to the report path when none is given', async () => {
-    const seen: Array<{ label: string; path: string }> = [];
+    // `label` is optional on the request — filling it is the behaviour under
+    // test — so the recorder keeps the request's own shape and `toEqual`
+    // below is what proves every label was filled in.
+    const seen: Array<{ label?: string; path: string }> = [];
     await runTrend(
       deps({
         trend: async (req) => {

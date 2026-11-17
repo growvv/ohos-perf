@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import type { CliDeps, ExploreOutput } from '../src/commands';
 import { runExplore } from '../src/commands';
 import { buildProgram } from '../src/program';
@@ -25,37 +26,10 @@ const output: ExploreOutput = {
   screens: ['a1b2c3d4e5f60718', '1111222233334444', '5555666677778888', '9999aaaabbbbcccc'],
 };
 
-function deps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    version: '1.0.0',
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('no device'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
-    gesture: async () => ({ gesture: { action: 'key' as const, key: 'Home' }, output: 'No Error' }),
-    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
-    tools: () => [],
-    compare: async () => { throw new Error('compare not stubbed'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('report not stubbed'); },
-    trend: async () => { throw new Error('trend not stubbed'); },
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => { throw new Error('hap not stubbed'); },
-    emulator: {
-      list: async () => [],
-      start: async () => { throw new Error('emulator not stubbed'); },
-      stop: async () => { throw new Error('emulator not stubbed'); },
-      create: async () => { throw new Error('emulator not stubbed'); },
-    },
-    run: async () => { throw new Error('run not stubbed'); },
-    explore: async () => output,
-    ...overrides,
-  };
-}
+
+/** The shared deps, with this file's own seam returning its fixture. */
+const deps = (overrides: Partial<CliDeps> = {}): CliDeps =>
+  cliDeps({ explore: async () => output, ...overrides });
 
 describe('runExplore', () => {
   it('separates taps that moved the screen from taps that did not', async () => {

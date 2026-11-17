@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -43,36 +44,6 @@ function runResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function deps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    version: '0.8.0',
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('no device'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/s', device: { id: 't', kind: 'emulator' }, collectors: [] }),
-    gesture: async () => ({ gesture: { action: 'key' as const, key: 'Home' }, output: 'No Error' }),
-    query: async () => ({ query: 'q', rows: [], total: 0, truncated: false }),
-    tools: () => [],
-    compare: async () => { throw new Error('not stubbed'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('not stubbed'); },
-    trend: async () => { throw new Error('trend not stubbed'); },
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => { throw new Error('hap not stubbed'); },
-    emulator: {
-      list: async () => [],
-      start: async () => { throw new Error('not stubbed'); },
-      stop: async () => { throw new Error('not stubbed'); },
-      create: async () => { throw new Error('not stubbed'); },
-    },
-    run: async () => runResult(),
-    ...overrides,
-  };
-}
 
 const REQ = { outDir: '/out' };
 
@@ -90,6 +61,10 @@ describe('parseOnly', () => {
     expect(() => parseOnly('  ')).toThrow(/empty/i);
   });
 });
+
+/** The shared deps, with `run` returning a completed scenario by default. */
+const deps = (overrides: Partial<CliDeps> = {}): CliDeps =>
+  cliDeps({ run: async () => runResult(), ...overrides });
 
 describe('runScenarioCommand', () => {
   it('rejects an unreadable scenario before calling deps.run', async () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import type { CliDeps } from '../src/commands';
 import { buildProgram } from '../src/program';
 
@@ -7,36 +8,18 @@ const instances = [
   { name: 'SpecProbe', running: false, instancePath: '/i/SpecProbe', apiVersion: '24', osVersion: 'HarmonyOS 6.1.1(24)' },
 ];
 
-function deps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    version: '1.0.0',
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('no device'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
-    gesture: async () => ({ gesture: { action: 'key' as const, key: 'Home' }, output: 'No Error' }),
-    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
-    tools: () => [],
-    compare: async () => { throw new Error('compare not stubbed'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('report not stubbed'); },
-    trend: async () => { throw new Error('trend not stubbed'); },
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => { throw new Error('hap not stubbed'); },
+
+/** The shared deps, with this file's own emulator fixtures. */
+const deps = (overrides: Partial<CliDeps> = {}): CliDeps =>
+  cliDeps({
     emulator: {
       list: async () => instances,
       start: async (name: string) => ({ name, target: '127.0.0.1:5555', alreadyRunning: false, waitedMs: 61_840 }),
       stop: async (name: string) => ({ name, wasRunning: true }),
       create: async (req) => ({ name: req.name, running: false, instancePath: `/i/${req.name}` }),
     },
-    run: async () => { throw new Error('run not stubbed'); },
     ...overrides,
-  };
-}
+  });
 
 async function parse(argv: string[], overrides: Partial<CliDeps> = {}) {
   const emitted: { stdout: string; stderr: string; exitCode: number }[] = [];

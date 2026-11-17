@@ -1,40 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps as deps } from './helpers/deps';
 import type { NamedQueryInfo } from '@ohos-perf/core';
 import type { CliDeps } from '../src/commands';
 import { runQuery, runTools } from '../src/commands';
 import { parseLimit, parseQueryArgs } from '../src/query';
 
 /** A complete deps object; only `query` and `tools` matter to these tests. */
-function deps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    version: '1.0.0',
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('no device'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
-    gesture: async () => ({ gesture: { action: 'key' as const, key: 'Home' }, output: 'No Error' }),
-    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
-    tools: () => [],
-    compare: async () => { throw new Error('compare not stubbed'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('report not stubbed'); },
-    trend: async () => { throw new Error('trend not stubbed'); },
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => { throw new Error('hap not stubbed'); },
-    emulator: {
-      list: async () => [],
-      start: async () => { throw new Error('emulator not stubbed'); },
-      stop: async () => { throw new Error('emulator not stubbed'); },
-      create: async () => { throw new Error('emulator not stubbed'); },
-    },
-    run: async () => { throw new Error('run not stubbed'); },
-    ...overrides,
-  };
-}
 
 describe('parseQueryArgs', () => {
   it('parses a JSON object', () => {

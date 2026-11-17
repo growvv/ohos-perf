@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cliDeps } from './helpers/deps';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,36 +13,9 @@ const manifest = JSON.parse(
 ) as { version: string };
 
 function deps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    version: manifest.version,
-    doctor: {
-      resolveHdc: async () => '/hdc',
-      resolveStreamer: async () => ({ path: '/streamer', version: '4.3.7' }),
-      connectDevice: async () => { throw new Error('no device'); },
-    },
-    capsReport: async () => ({ hdcOk: true, capabilities: [] }),
-    analyze: async () => ({ metrics: [], evidence: [] }),
-    collect: async () => ({ sceneDir: '/scene', device: { id: 't1', kind: 'emulator' }, collectors: [] }),
-    gesture: async () => ({ gesture: { action: 'key' as const, key: 'Home' }, output: 'No Error' }),
-    query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
-    tools: () => [],
-    compare: async () => { throw new Error('compare not stubbed'); },
-    uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
-    report: async () => { throw new Error('report not stubbed'); },
-    trend: async () => { throw new Error('trend not stubbed'); },
-    render: async () => { throw new Error('render not stubbed'); },
-    hap: async () => { throw new Error('hap not stubbed'); },
-    emulator: {
-      list: async () => [],
-      start: async () => { throw new Error('emulator not stubbed'); },
-      stop: async () => { throw new Error('emulator not stubbed'); },
-      create: async () => { throw new Error('emulator not stubbed'); },
-    },
-    run: async () => { throw new Error('run not stubbed'); },
-    agent: async () => { throw new Error('agent not stubbed'); },
-    symbols: async () => { throw new Error('symbols not stubbed'); },
-    ...overrides,
-  };
+  // The banner prints `deps.version`, so this file pins it to the manifest
+  // rather than the shared default.
+  return cliDeps({ version: manifest.version, ...overrides });
 }
 
 /** Builds a program whose output and results are captured instead of printed. */
@@ -206,7 +180,7 @@ describe('command wiring', () => {
     const result = {
       outDir: '/out', files: ['trend.html', 'trend.json'], runs: [],
       orderedBy: 'argument' as const, series: 0, improved: 0, regressed: 0,
-      unchanged: 0, verdictless: 0,
+      unchanged: 0, verdictless: 0, unmeasured: 0,
     };
     const { emitted } = await parse(
       ['trend', 'r1', 'r2', '--out', '/out', '--label', 'v1', '--label', 'v2', '--json'],
@@ -226,7 +200,7 @@ describe('command wiring', () => {
         calls.push(req);
         return {
           outDir: '/out', files: [], runs: [], orderedBy: 'argument' as const, series: 0,
-          improved: 0, regressed: 0, unchanged: 0, verdictless: 0,
+          improved: 0, regressed: 0, unchanged: 0, verdictless: 0, unmeasured: 0,
         };
       },
     });
