@@ -30,6 +30,7 @@ import { createHash } from 'node:crypto';
 import type { Gesture, GestureResult } from '../device/gesture';
 import { OhosPerfError } from '../errors';
 import { parseBounds, type UiNode } from '../query/ui';
+import { irreversibleReason } from './guard';
 
 /** The three orders HapRay offers, kept under their names. */
 export type ExplorationStrategy = 'depth_first' | 'breadth_first' | 'random';
@@ -96,6 +97,10 @@ export interface ExplorationStep {
   /** The screen hash after it; equal to `before` means `no_change`. */
   readonly after: string;
   readonly outcome: ExplorationOutcome;
+  /** Who picked this step: the deterministic order, or a supplied chooser. */
+  readonly decidedBy: 'strategy' | 'model';
+  /** The chooser's one-line reason, for a step it decided. */
+  readonly reason?: string;
 }
 
 export interface ExplorationResult {
@@ -120,7 +125,63 @@ export interface ExplorationResult {
   readonly stoppedBy: 'budget' | 'exhausted' | 'model' | 'left_app';
   /** True when it stopped because nothing was left to tap, scroll or return to. */
   readonly exhausted: boolean;
+  /**
+   * What a supplied chooser proposed, when one was supplied: how many proposals
+   * the walk used, and every answer it refused with the reason. A refusal is
+   * evidence, not an error — the deterministic order decides instead.
+   */
+  readonly proposals?: {
+    readonly used: number;
+    readonly refused: number;
+    readonly refusals: readonly { readonly step: number; readonly detail: string }[];
+  };
 }
+
+/** One element a chooser may name, as the walk saw it. */
+export interface ExplorationCandidate {
+  /** The identity the walk records for this element; the answer must match it. */
+  readonly identity: string;
+  readonly type: string;
+  readonly text: string;
+  readonly bounds: string;
+  readonly depth: number;
+}
+
+/** Everything a chooser is shown about the moment it decides. */
+export interface ExplorationChoiceContext {
+  /** The bundle the walk must stay inside, when one was named. */
+  readonly app?: string;
+  /** Zero-based index of the step being decided. */
+  readonly step: number;
+  readonly maxSteps: number;
+  /** The exact tree the offer was computed from. */
+  readonly screen: readonly UiNode[];
+  /** The elements the chooser may choose, in document order. */
+  readonly candidates: readonly ExplorationCandidate[];
+  /** The steps already taken, oldest first. */
+  readonly history: readonly ExplorationStep[];
+  /** Whether this step could scroll. */
+  readonly canScroll: boolean;
+  /** Whether this step could go back. */
+  readonly canBack: boolean;
+}
+
+/** What a chooser answers: one action, or a refusal it could not parse a choice from. */
+export type ExplorationProposal =
+  | { readonly kind: 'tap'; readonly identity: string; readonly reason: string }
+  | { readonly kind: 'scroll'; readonly direction: ScrollDirection; readonly reason: string }
+  | { readonly kind: 'back'; readonly reason: string }
+  | { readonly kind: 'stop'; readonly reason: string }
+  | { readonly kind: 'refusal'; readonly detail: string };
+
+/**
+ * An optional decision-maker consulted at each step that has an element to
+ * choose. Its answer is verified against the offer before it decides anything;
+ * a name that was not offered is recorded as a refusal.
+ */
+export type ExplorationChooser = (
+  context: ExplorationChoiceContext,
+) => Promise<ExplorationProposal>;
 
 export interface ExplorationOptions {
   /** Hard cap on steps. HapRay's default is 30. */
@@ -130,6 +191,12 @@ export interface ExplorationOptions {
   readonly seed?: number;
   /** The bundle the walk must stay inside. */
   readonly app?: string;
+  /**
+   * A model (or anything else) that may choose each step. Absent means the
+   * deterministic order decides every step. With a chooser, irreversible
+   * targets are not offered at all.
+   */
+  readonly choose?: ExplorationChooser;
 }
 
 /** How many scrolls one exact screen gets before the walk calls it exhausted. */
@@ -276,28 +343,40 @@ function rectOf(node: UiNode): UiNode['boundsRect'] {
  * here — the signal that this screen is done, not that the walk is over.
  */
 export function planNextAction(state: ExplorationState): ExplorationAction | undefined {
-  const candidates = candidatesOf(state);
-  if (candidates.length === 0) return undefined;
+  const first = orderCandidates(candidatesOf(state), state.strategy, state.seed)[0];
+  if (first === undefined) return undefined;
+  return { kind: 'tap', nodeId: first.identity, bounds: first.node.bounds };
+}
 
-  let ordered: readonly Candidate[];
-  switch (state.strategy) {
+/** The deterministic order for one strategy. */
+function orderCandidates(
+  candidates: readonly Candidate[],
+  strategy: ExplorationStrategy,
+  seed: number | undefined,
+): readonly Candidate[] {
+  switch (strategy) {
     case 'depth_first':
       // Document order is the dump's pre-order: parents before children, and
       // each subtree before its next sibling.
-      ordered = candidates;
-      break;
+      return candidates;
     case 'breadth_first':
       // Shallow before deep, and document order within a depth. Sorting is
       // stable, so equal depths keep the dump's order.
-      ordered = [...candidates].sort((a, b) => a.node.depth - b.node.depth);
-      break;
+      return [...candidates].sort((a, b) => a.node.depth - b.node.depth);
     case 'random':
-      ordered = shuffled(candidates, state.seed ?? DEFAULT_SEED);
-      break;
+      return shuffled(candidates, seed ?? DEFAULT_SEED);
   }
+}
 
-  const first = ordered[0]!;
-  return { kind: 'tap', nodeId: first.identity, bounds: first.node.bounds };
+/** A candidate as a chooser sees it. */
+function offerOf(candidate: Candidate): ExplorationCandidate {
+  return {
+    identity: candidate.identity,
+    type: candidate.node.type,
+    text: candidate.node.text,
+    bounds: candidate.node.bounds,
+    depth: candidate.node.depth,
+  };
 }
 
 /** A node a walk may act on, with the identity it is visited under. */
@@ -392,6 +471,9 @@ export async function explore(
   const visitedByScreen = new Map<string, Set<string>>();
   const scrollsByScreen = new Map<string, number>();
   const backsByScreen = new Map<string, number>();
+  const proposals = options.choose === undefined
+    ? undefined
+    : { used: 0, refused: 0, refusals: [] as Array<{ step: number; detail: string }> };
 
   let tree = await device.dump();
   let hash = hashTree(tree);
@@ -419,14 +501,103 @@ export async function explore(
       trail.length > 1 &&
       (backsByScreen.get(hash) ?? 0) < BACKS_PER_SCREEN;
 
+    // With a model steering, a target that names an irreversible act is not
+    // offered at all. The deterministic pick comes from the same filtered set,
+    // so a refused proposal cannot fall back onto one either.
+    const all = candidatesOf(state);
+    const allowed = options.choose === undefined
+      ? all
+      : all.filter((candidate) => irreversibleReason(candidate.node) === undefined);
+    const ordered = orderCandidates(allowed, options.strategy, seed);
+
     let decision: Decision | undefined;
-    const action = planNextAction(state);
-    if (action !== undefined) {
-      decision = { kind: 'tap', nodeId: action.nodeId, bounds: action.bounds };
-    } else if (canScroll) {
-      decision = { kind: 'scroll', bounds: target!.bounds, direction: 'up' };
-    } else if (canBack) {
-      decision = { kind: 'back' };
+    let decidedBy: 'strategy' | 'model' = 'strategy';
+    let reason: string | undefined;
+
+    if (options.choose !== undefined && allowed.length > 0) {
+      const proposal = await options.choose({
+        ...(options.app === undefined ? {} : { app: options.app }),
+        step: steps.length,
+        maxSteps: options.maxSteps,
+        screen: tree,
+        candidates: allowed.map(offerOf),
+        history: steps.slice(),
+        canScroll,
+        canBack,
+      });
+
+      let refusal: string | undefined;
+      switch (proposal.kind) {
+        case 'tap': {
+          const match = allowed.find(
+            (candidate) => candidate.identity === proposal.identity,
+          );
+          if (match === undefined) {
+            refusal =
+              `the chooser named ${JSON.stringify(proposal.identity)}, which is not`
+              + ` among the ${allowed.length} offered element(s)`;
+          } else {
+            decision = { kind: 'tap', nodeId: match.identity, bounds: match.node.bounds };
+            decidedBy = 'model';
+            reason = proposal.reason;
+          }
+          break;
+        }
+        case 'scroll':
+          if (!canScroll) {
+            refusal =
+              'the chooser asked to scroll, but this screen has no scrollable node'
+              + ' left to swipe';
+          } else {
+            decision = {
+              kind: 'scroll',
+              bounds: target!.bounds,
+              direction: proposal.direction,
+            };
+            decidedBy = 'model';
+            reason = proposal.reason;
+          }
+          break;
+        case 'back':
+          if (!canBack) {
+            refusal =
+              'the chooser asked to go back, but the walk has no earlier page to'
+              + ' return to';
+          } else {
+            decision = { kind: 'back' };
+            decidedBy = 'model';
+            reason = proposal.reason;
+          }
+          break;
+        case 'stop':
+          // The model ending the walk is a distinct outcome: the budget was
+          // not spent and the screen was not exhausted.
+          stoppedBy = 'model';
+          break;
+        case 'refusal':
+          refusal = proposal.detail;
+          break;
+      }
+
+      if (proposals !== undefined) {
+        if (decision !== undefined) proposals.used += 1;
+        if (refusal !== undefined) {
+          proposals.refused += 1;
+          proposals.refusals.push({ step: steps.length, detail: refusal });
+        }
+      }
+      if (stoppedBy === 'model') break;
+    }
+
+    if (decision === undefined) {
+      const first = ordered[0];
+      if (first !== undefined) {
+        decision = { kind: 'tap', nodeId: first.identity, bounds: first.node.bounds };
+      } else if (canScroll) {
+        decision = { kind: 'scroll', bounds: target!.bounds, direction: 'up' };
+      } else if (canBack) {
+        decision = { kind: 'back' };
+      }
     }
     if (decision === undefined) {
       stoppedBy = isOutsideApp(tree, options.app) ? 'left_app' : 'exhausted';
@@ -469,6 +640,8 @@ export async function explore(
       before: hash,
       after,
       outcome,
+      decidedBy,
+      ...(reason === undefined ? {} : { reason }),
     });
 
     // The trail is the path of pages, not a log of gestures: a back that lands
@@ -498,6 +671,7 @@ export async function explore(
     backs: steps.filter((step) => step.kind === 'back').length,
     stoppedBy,
     exhausted: stoppedBy === 'exhausted',
+    ...(proposals === undefined ? {} : { proposals }),
   };
 }
 

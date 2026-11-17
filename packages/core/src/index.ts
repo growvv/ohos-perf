@@ -173,10 +173,13 @@ export type {
 export { CoverageAnalyzer, parseCoverageReport } from './analyze/coverage';
 export type { CoverageCounts, CoverageFile, CoverageRatio, CoverageReport } from './analyze/coverage';
 export { executeAction } from './scenario/actions';
-export { explore, deviceExplorationHost, explorationDevice, hashTree, planNextAction } from './scenario/explore';
+export {
+  explore, deviceExplorationHost, explorationDevice, hashPageShape, hashTree, planNextAction,
+} from './scenario/explore';
 export type {
-  ExplorationAction, ExplorationClock, ExplorationDevice, ExplorationDeviceOptions,
-  ExplorationHost, ExplorationOptions, ExplorationOutcome, ExplorationResult,
+  ExplorationAction, ExplorationCandidate, ExplorationChoiceContext, ExplorationChooser,
+  ExplorationClock, ExplorationDevice, ExplorationDeviceOptions, ExplorationHost,
+  ExplorationOptions, ExplorationOutcome, ExplorationProposal, ExplorationResult,
   ExplorationState, ExplorationStep, ExplorationStepKind, ExplorationStrategy,
   ExplorationTargetDevice, ScrollDirection,
 } from './scenario/explore';

@@ -6,6 +6,7 @@ import {
   hashPageShape,
   hashTree,
   planNextAction,
+  type ExplorationChoiceContext,
   type ExplorationDevice,
   type ExplorationHost,
   type ExplorationState,
@@ -484,6 +485,143 @@ describe('explore', () => {
       app: 'com.ours',
     });
     expect(result.stoppedBy).toBe('left_app');
+  });
+
+  it('records a model-chosen tap as decided by the model, with its reason', async () => {
+    const start = root([
+      node({ id: 'a', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),
+      node({ id: 'b', clickable: true, type: 'Button', bounds: '[2,2][3,3]' }),
+    ]);
+    let seen: ExplorationChoiceContext | undefined;
+    const result = await explore(navDevice({ start }), {
+      maxSteps: 1,
+      strategy: 'depth_first',
+      choose: async (context) => {
+        seen = context;
+        return { kind: 'tap', identity: 'b', reason: 'opens a detail page' };
+      },
+    });
+    expect(result.steps[0]).toMatchObject({
+      kind: 'tap',
+      nodeId: 'b',
+      decidedBy: 'model',
+      reason: 'opens a detail page',
+    });
+    expect(result.proposals).toEqual({ used: 1, refused: 0, refusals: [] });
+    expect(seen).toMatchObject({ step: 0, maxSteps: 1, canScroll: false, canBack: false });
+  });
+
+  it('refuses a choice that names an element it was not offered', async () => {
+    const start = root([
+      node({ id: 'a', clickable: true, bounds: '[0,0][1,1]' }),
+      node({ id: 'b', clickable: true, bounds: '[2,2][3,3]' }),
+    ]);
+    const result = await explore(navDevice({ start }), {
+      maxSteps: 1,
+      strategy: 'depth_first',
+      choose: async () => ({ kind: 'tap', identity: 'not-here', reason: 'invented' }),
+    });
+    // The deterministic order still decides, and the refusal is evidence.
+    expect(result.steps[0]).toMatchObject({ nodeId: 'a', decidedBy: 'strategy' });
+    expect(result.proposals?.refused).toBe(1);
+    expect(result.proposals?.refusals[0]?.detail).toMatch(/"not-here"/);
+    expect(result.proposals?.refusals[0]?.detail).toMatch(/2 offered/);
+  });
+
+  it('refuses scroll and back when the screen cannot do them', async () => {
+    const start = root([
+      node({ id: 'a', clickable: true, bounds: '[0,0][1,1]' }),
+      node({ id: 'b', clickable: true, bounds: '[2,2][3,3]' }),
+    ]);
+    const answers = [
+      { kind: 'scroll', direction: 'up', reason: 'look further' } as const,
+      { kind: 'back', reason: 'leave' } as const,
+    ];
+    const result = await explore(navDevice({ start }), {
+      maxSteps: 2,
+      strategy: 'depth_first',
+      choose: async () => answers.shift() ?? { kind: 'stop', reason: 'done' },
+    });
+    expect(result.proposals?.refused).toBe(2);
+    expect(result.proposals?.refusals.map((entry) => entry.detail).join(' ')).toMatch(/scroll/);
+    expect(result.proposals?.refusals.map((entry) => entry.detail).join(' ')).toMatch(/back/);
+  });
+
+  it('ends the walk with stoppedBy model when the model says stop', async () => {
+    const start = root([node({ id: 'a', clickable: true, bounds: '[0,0][1,1]' })]);
+    const result = await explore(navDevice({ start }), {
+      maxSteps: 5,
+      strategy: 'depth_first',
+      choose: async () => ({ kind: 'stop', reason: 'covered enough' }),
+    });
+    expect(result.steps).toHaveLength(0);
+    expect(result.stoppedBy).toBe('model');
+    expect(result.exhausted).toBe(false);
+  });
+
+  it('never offers an irreversible target to a model', async () => {
+    const start = root([
+      node({ id: 'del', text: 'Delete account', clickable: true, bounds: '[0,0][1,1]' }),
+      node({ id: 'ok', text: 'Open', clickable: true, bounds: '[2,2][3,3]' }),
+    ]);
+    let offered: string[] = [];
+    await explore(navDevice({ start }), {
+      maxSteps: 1,
+      strategy: 'depth_first',
+      choose: async (context) => {
+        offered = context.candidates.map((candidate) => candidate.identity);
+        return { kind: 'stop', reason: 'done' };
+      },
+    });
+    expect(offered).toEqual(['ok']);
+    // Without a chooser the deterministic walk still taps it: coverage of a
+    // test build is the point of `explore`.
+    const plain = await explore(navDevice({ start }), { maxSteps: 1, strategy: 'depth_first' });
+    expect(plain.steps[0]?.nodeId).toBe('del');
+  });
+
+  it('gives the chooser the step, the history and what the screen allows', async () => {
+    const start = root([
+      node({ id: 'a', clickable: true, bounds: '[0,0][1,1]' }),
+      node({ id: 'b', clickable: true, bounds: '[2,2][3,3]' }),
+      node({ id: 'list', type: 'List', scrollable: true, bounds: '[0,0][100,100]' }),
+    ]);
+    const seen: ExplorationChoiceContext[] = [];
+    await explore(navDevice({ start }), {
+      maxSteps: 2,
+      strategy: 'depth_first',
+      app: 'com.demo',
+      choose: async (context) => {
+        seen.push(context);
+        return seen.length === 1
+          ? { kind: 'tap', identity: 'a', reason: 'first' }
+          : { kind: 'stop', reason: 'done' };
+      },
+    });
+    expect(seen[0]).toMatchObject({
+      app: 'com.demo',
+      step: 0,
+      maxSteps: 2,
+      canScroll: true,
+      canBack: false,
+      history: [],
+    });
+    expect(seen[0]?.candidates.map((candidate) => candidate.identity)).toEqual(['a', 'b']);
+    expect(seen[1]?.step).toBe(1);
+    expect(seen[1]?.history.map((step) => step.kind)).toEqual(['tap']);
+  });
+
+  it('aborts the walk when the chooser itself fails', async () => {
+    const start = root([node({ id: 'a', clickable: true, bounds: '[0,0][1,1]' })]);
+    await expect(
+      explore(navDevice({ start }), {
+        maxSteps: 1,
+        strategy: 'depth_first',
+        choose: async () => {
+          throw new Error('the endpoint is down');
+        },
+      }),
+    ).rejects.toThrow(/endpoint is down/);
   });
 
   it('refuses a non-positive maxSteps rather than exploring forever', async () => {

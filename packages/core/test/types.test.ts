@@ -80,7 +80,7 @@ const VALUE_EXPORTS = [
   'EmulatorClient', 'EmulatorCommandError', 'EmulatorImageMissingError',
   'EmulatorLifecycle', 'EmulatorNotFoundError',
   'PARITY_ROWS', 'paritySummary', 'parseRedundantFile', 'RedundantFileAnalyzer', 'JsheapCollector', 'readJsheapSnapshot', 'buildDepGraph', 'compareScenes', 'renderScenesComparison', 'sortSteps', 'buildTrend', 'renderTrendHtml', 'renderTrendJson', 'trendRunFromReport', 'BUNDLE_RENDERED_FILES', 'renderBundle', 'CoverageAnalyzer', 'parseCoverageReport', 'evaluateExpectation', 'explore', 'deviceExplorationHost',
-  'recoverSymbols', 'symbolIndex', 'functionAt', 'addressOfOffset', 'measureNaming', 'normaliseName', 'explorationDevice', 'hashTree', 'planNextAction', 'runAgent', 'replayAgent', 'agentPrompt', 'parseDecision', 'renderTree',
+  'recoverSymbols', 'symbolIndex', 'functionAt', 'addressOfOffset', 'measureNaming', 'normaliseName', 'explorationDevice', 'hashPageShape', 'hashTree', 'planNextAction', 'runAgent', 'replayAgent', 'agentPrompt', 'parseDecision', 'renderTree',
   'describeDecision', 'irreversibleReason', 'IRREVERSIBLE_PATTERNS', 'GUI_TURN', 'httpAgentModel', 'readAgentConfig',
   'readElf', 'classifyInstruction', 'countInstructions', 'EM_AARCH64',
   'analyzeBinaries', 'classifyOptimization', 'extractBinaries', 'inspectBinary', 'optimizationSection',
