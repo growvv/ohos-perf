@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.17.1 — 2026-11-17
+
+One fix to what 0.17.0 shipped.
+
+- **`render` now carries the bundle's screenshot across.** The page links
+  `assets/screenshot.png` whenever the model says one was captured, but that
+  file is a copy rather than a value, so a re-render reproduced the `<img>`
+  and not the file — a page pointing at an image that was not there. The
+  source bundle's copy is carried across when the model names one; a bundle
+  without a screenshot renders the page it always did, with no `<img>`.
+- 1795 tests (1784 unit, 11 device), two typechecks, two builds.
+
 ## 0.17.0 — 2026-11-17
 
 Parity row 33 is fully ported: a saved bundle can be re-rendered from its own
