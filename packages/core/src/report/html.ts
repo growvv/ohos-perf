@@ -1,6 +1,7 @@
 import type { Metric } from './metric';
 import type { ReportModel, ReportSection } from './model';
 import { escapeHtml } from './escape';
+import { windowText } from './window';
 
 /** Fixed key order so a render is byte-identical across runs. */
 function signalText(signals: Record<string, number | string | readonly string[]>): string {
@@ -36,7 +37,7 @@ function metricNote(metric: Metric): string {
     return `degraded: ${metric.degraded.reason} (${metric.degraded.fallback})`;
   }
   if (metric.window !== undefined) {
-    return `window ${metric.window.startNs}–${metric.window.endNs} ns`;
+    return `window ${windowText(metric.window)}`;
   }
   return '';
 }
@@ -238,7 +239,7 @@ export function renderReportHtml(model: ReportModel): string {
     '<header>',
     '<h1>ohos-perf report</h1>',
     `<p class="subtitle">${escapeHtml(scenario.app.packageName)} · ` +
-      `${escapeHtml(scenario.device)} · window ${scenario.window.startNs}–${scenario.window.endNs} ns</p>`,
+      `${escapeHtml(scenario.device)} · window ${windowText(scenario.window)}</p>`,
     `<p class="meta">schema ${model.schemaVersion} · ${escapeHtml(generator.name)} ` +
       `${escapeHtml(generator.version)} · ${model.sections.length} sections · ` +
       `${totals.metrics} metrics · ${totals.evidence} evidence</p>`,

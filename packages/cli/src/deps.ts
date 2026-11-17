@@ -393,8 +393,8 @@ function analyzeContext(opened: OpenedScene) {
  * The window the report describes.
  *
  * `trace_range` is the trace's own claim about its span. When the table is
- * absent (a hand-built fixture), the report says "whole database" rather than
- * inventing a span; the renderer recognizes `MAX_SAFE_INTEGER` for that.
+ * absent (a hand-built fixture), the report says "the whole capture" rather
+ * than inventing a span; the renderers recognize `MAX_SAFE_INTEGER` for that.
  */
 function sceneWindow(opened: OpenedScene): TimeRange {
   try {

@@ -169,6 +169,22 @@ describe('renderFlamegraphHtml', () => {
     expect(html).not.toContain('Symbols were resolved');
   });
 
+  it('says the window is the whole capture when the trace records no span', () => {
+    // A hand-built or truncated scene has no `trace_range`; `report` passes
+    // `0 … MAX_SAFE_INTEGER` as its marker for that. Printed as numbers the
+    // header would claim a 285-year window, which no reader should have to
+    // decode.
+    const html = renderFlamegraphHtml({
+      stacks: [stack('a', 1)],
+      app: 'com.demo',
+      window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
+      unresolvedShare: 0,
+      symbolized: true,
+    });
+    expect(html).toContain('whole capture');
+    expect(html).not.toContain(String(Number.MAX_SAFE_INTEGER));
+  });
+
   it('embeds the SVG inline and escapes the app name', () => {
     const html = renderFlamegraphHtml({
       stacks: [stack('a', 1)],

@@ -1,4 +1,5 @@
 import { escapeHtml } from './escape';
+import { windowText } from './window';
 import { renderFlamegraphSvg } from './flamegraph-svg';
 import type { FoldedStack } from '../query/perf';
 import type { TimeRange } from '../types';
@@ -92,7 +93,7 @@ export function renderFlamegraphHtml(input: FlamegraphPageInput): string {
     '<section class="card">',
     '<dl>',
     `<dt>App</dt><dd>${escapeHtml(input.app)}</dd>`,
-    `<dt>Window</dt><dd>${input.window.startNs} – ${input.window.endNs} ns</dd>`,
+    `<dt>Window</dt><dd>${windowText(input.window)}</dd>`,
     `<dt>Stacks</dt><dd>${input.stacks.length}</dd>`,
     `<dt>Total weight</dt><dd>${total} samples</dd>`,
     `<dt>Unresolved leaf weight</dt><dd>${share}</dd>`,

@@ -85,6 +85,38 @@ describe('renderReportHtml', () => {
     expect(html).toMatch(/degraded banner/i);
   });
 
+  it('says a metric covers the whole capture when the scene records no span', () => {
+    // `analyze` over a scene with no `trace_range` windows the analyzers over
+    // `0 … MAX_SAFE_INTEGER`. Printed as numbers that is a 285-year window in
+    // every row of the table.
+    const model = buildReport({
+      generator: { name: '@ohos-perf/core', version: '0.4.0' },
+      app,
+      device: 'emu',
+      window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
+      sections: [
+        {
+          analyzerId: 'frames',
+          status: 'measured',
+          result: {
+            metrics: [metric({
+              id: 'frame.fps',
+              value: 60,
+              unit: 'count',
+              fidelity: 'exact',
+              provenance: { collector: 'test', device: 'emu' },
+              window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
+            })],
+            evidence: [],
+          },
+        },
+      ],
+    });
+    const html = renderReportHtml(model);
+    expect(html).toContain('whole capture');
+    expect(html).not.toContain(String(Number.MAX_SAFE_INTEGER));
+  });
+
   it('escapes every interpolated value', () => {
     const html = renderReportHtml(
       build([
