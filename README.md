@@ -858,7 +858,7 @@ TypeScript 编写。它把设备能力探测、hitrace 采集、trace_streamer �
 2. **确定性输出**：同一输入两次运行字节一致，CI diff 有意义。
 3. **零原生依赖**：只用 Node 内置 `node:sqlite`，无编译、无 Python。
 
-当前 P0–P15 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
+当前 P0–P16 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
 hidumper / uitest / screenshot 采集、trace_streamer 入库（含 perf.data → perf.db）、类型化查询、
 帧 / 故障树 / binder / 线程 / 内存 / 内存测量 / 启动 / 渲染 / GC 压力 / VSync 异常 /
 空帧 / RenderService 跳过 / 火焰图 / 符号统计 / 组件复用 / UI 树与截图共十九个分析器、降级指标引擎、证据图与
