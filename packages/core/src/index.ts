@@ -155,7 +155,8 @@ export type {
 export type { ActionContext, ActionDevice } from './scenario/actions';
 export type { Selector, SelectorRect } from './scenario/selector';
 export type {
-  ActionOutcome, RunResult, RunStepResult, RunnerCollectOptions, RunnerDevice, RunOptions,
+  ActionOutcome, ExpectationOutcome, RunResult, RunStepResult, RunnerCollectOptions,
+  RunnerDevice, RunOptions,
 } from './scenario/runner';
 export type { SceneMetadata, SceneStepRef } from './ingest/metadata';
 

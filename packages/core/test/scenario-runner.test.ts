@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseBounds, type UiNode } from '../src/query/ui';
 import { parseScenario, type Scenario } from '../src/scenario/schema';
 import {
   ScenarioRunner,
@@ -388,5 +389,166 @@ describe('writeRunFiles', () => {
       expect(text.endsWith('\n'), name).toBe(true);
       expect(text, name).toContain('\n  ');
     }
+  });
+});
+
+/*
+ * P17: assertions.
+ *
+ * A step's `expect` block is the difference between "the device accepted my
+ * tap" and "the screen showed what I expected". The tests below are about the
+ * verdict and its explanation, not about which helper computed it.
+ */
+
+/** A flattened UI node; `boundsRect` follows `bounds` the way a real dump's does. */
+function uiNode(over: Partial<UiNode> = {}): UiNode {
+  const bounds = over.bounds ?? '[0,0][100,100]';
+  return {
+    depth: 0,
+    type: 'Button',
+    bundleName: 'com.example.app',
+    abilityName: 'EntryAbility',
+    text: '',
+    id: '',
+    bounds,
+    clickable: false,
+    enabled: true,
+    scrollable: false,
+    children: 0,
+    boundsRect: parseBounds(bounds),
+    ...over,
+  };
+}
+
+/** A one-step scenario carrying `expect` on its only step. */
+function scenarioWithExpect(expect: unknown): Scenario {
+  return parseScenario(JSON.stringify({
+    version: 1,
+    name: 'asserted',
+    app: 'com.example.app',
+    rounds: 1,
+    steps: [{
+      id: 'check',
+      actions: [{ kind: 'click', x: 1, y: 2 }],
+      cleanup: [{ kind: 'forceStop' }],
+      expect,
+      capture: { durationMs: 1000, collectors: ['hitrace'] },
+    }],
+  }));
+}
+
+describe('ScenarioRunner — expectations', () => {
+  it('fails a step whose assertion does not hold, and still names its scene', async () => {
+    const out = outDir();
+    const device = fakeDevice();
+    device.uiTree = async () => [uiNode({ id: 'other' })];
+    const result = await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({ present: [{ selector: { kind: 'text', text: 'Done' } }] }),
+    );
+    const step = result.steps[0]!;
+    expect(step.status).toBe('failed');
+    expect(step.sceneDir).toBeDefined();
+    expect(step.error).toContain('Done');
+    expect(step.expectations?.[0]).toMatchObject({ ok: false, actual: 0 });
+  });
+
+  it('passes a step whose assertions hold', async () => {
+    const out = outDir();
+    const device = fakeDevice();
+    device.uiTree = async () => [uiNode({ text: 'Done' })];
+    const result = await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({
+        present: [{ selector: { kind: 'text', text: 'Done' } }],
+        absent: [{ kind: 'id', id: 'spinner' }],
+      }),
+    );
+    expect(result.steps[0]!.status).toBe('ok');
+    expect(result.steps[0]!.expectations?.every((e) => e.ok)).toBe(true);
+  });
+
+  it('enforces min and max on present', async () => {
+    const out = outDir();
+    const device = fakeDevice();
+    device.uiTree = async () => [uiNode({ text: 'row' }), uiNode({ text: 'row' })];
+    const result = await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({
+        present: [{ selector: { kind: 'text', text: 'row' }, min: 1, max: 1 }],
+      }),
+    );
+    expect(result.steps[0]!.status).toBe('failed');
+    expect(result.steps[0]!.error).toContain('2');
+  });
+
+  it('fails a step whose app is no longer in the foreground', async () => {
+    const out = outDir();
+    const device = fakeDevice();
+    device.uiTree = async () => [uiNode({ bundleName: 'com.ohos.sceneboard' })];
+    const result = await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({ foreground: true }),
+    );
+    expect(result.steps[0]!.status).toBe('failed');
+    expect(result.steps[0]!.error).toContain('com.example.app');
+    expect(result.steps[0]!.expectations?.[0]).toMatchObject({ label: 'foreground', ok: false });
+  });
+
+  it('accepts a backgrounded app when foreground is false', async () => {
+    const out = outDir();
+    const device = fakeDevice();
+    device.uiTree = async () => [uiNode({ bundleName: 'com.ohos.sceneboard' })];
+    const result = await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({ foreground: false }),
+    );
+    expect(result.steps[0]!.status).toBe('ok');
+  });
+
+  it('checks the screen after the actions, not before them', async () => {
+    const out = outDir();
+    const order: string[] = [];
+    const device = fakeDevice();
+    device.uiTree = async () => { order.push('dump'); return [uiNode({ text: 'Done' })]; };
+    const gesture = device.gesture.bind(device);
+    device.gesture = async (g) => { order.push(`gesture:${g.action}`); return gesture(g); };
+    const shell = device.shell.bind(device);
+    device.shell = async (cmd) => {
+      if (cmd.startsWith('aa force-stop')) order.push('cleanup');
+      return shell(cmd);
+    };
+    await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({ present: [{ selector: { kind: 'text', text: 'Done' } }] }),
+    );
+    expect(order).toEqual(['gesture:click', 'dump', 'cleanup']);
+  });
+
+  it('keeps the first failure when an action and an assertion both fail', async () => {
+    const out = outDir();
+    const device = fakeDevice();
+    device.uiTree = async () => [uiNode({ id: 'nothing' })];
+    device.gesture = async () => { throw new Error('uitest refused'); };
+    const result = await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({ present: [{ selector: { kind: 'text', text: 'Done' } }] }),
+    );
+    expect(result.steps[0]!.error).toMatch(/uitest refused/);
+    expect(result.steps[0]!.expectations?.[0]).toMatchObject({ ok: false });
+  });
+
+  it('records the outcomes in steps.json', async () => {
+    const out = outDir();
+    const device = fakeDevice();
+    device.uiTree = async () => [uiNode({ text: 'Done' })];
+    await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({ present: [{ selector: { kind: 'text', text: 'Done' } }] }),
+    );
+    const steps = JSON.parse(readFileSync(join(out, 'steps.json'), 'utf8'));
+    expect(steps.steps[0].expectations).toHaveLength(1);
+    expect(steps.steps[0].expectations[0]).toMatchObject({ ok: true, actual: 1 });
+  });
+
+  it('refuses an assertion on a device that cannot dump the screen', async () => {
+    const out = outDir();
+    const result = await new ScenarioRunner(fakeDevice(), { outDir: out }).run(
+      scenarioWithExpect({ present: [{ selector: { kind: 'text', text: 'Done' } }] }),
+    );
+    expect(result.steps[0]!.status).toBe('failed');
+    expect(result.steps[0]!.error).toMatch(/screen|dump/i);
   });
 });

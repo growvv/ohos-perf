@@ -17,8 +17,10 @@ import type { Gesture, GestureResult } from '../device/gesture';
 import type { HiprofilerPluginName } from '../device/device';
 import { OhosPerfError } from '../errors';
 import type { SceneStepRef } from '../ingest/metadata';
-import { executeAction } from './actions';
-import type { Scenario, ScenarioAction, ScenarioStep } from './schema';
+import { executeAction, type ActionContext } from './actions';
+import { matchSelector, describe } from './selector';
+import type { Scenario, ScenarioAction, ScenarioStep, StepExpectation } from './schema';
+import type { UiNode } from '../query/ui';
 
 /** One action's outcome, as `steps.json` records it. */
 export interface ActionOutcome {
@@ -32,6 +34,17 @@ export interface ActionOutcome {
   readonly error?: string;
 }
 
+/** One assertion's outcome, as `steps.json` records it. */
+export interface ExpectationOutcome {
+  /** What was asserted, in the author's terms — `present: text containing "Done"`. */
+  readonly label: string;
+  readonly ok: boolean;
+  /** Nodes matched, or for `foreground`, the nodes belonging to the app. */
+  readonly actual: number;
+  /** Why it failed, and what the screen held; absent when it held. */
+  readonly detail?: string;
+}
+
 export interface RunStepResult {
   readonly round: number;
   readonly index: number;
@@ -43,6 +56,8 @@ export interface RunStepResult {
   readonly startedAtMs: number;
   readonly durationMs: number;
   readonly actions: readonly ActionOutcome[];
+  /** Present only when the step declared `expect`. */
+  readonly expectations?: readonly ExpectationOutcome[];
   readonly error?: string;
 }
 
@@ -81,6 +96,14 @@ export interface RunnerDevice {
   shell(cmd: string): Promise<{ stdout: string; stderr: string; code: number }>;
   gesture(g: Gesture): Promise<GestureResult>;
   collect(opts: RunnerCollectOptions): Promise<{ ingest(): Promise<{ close(): void }> }>;
+  /**
+   * Flattened on-screen UI tree, for `expect` and selector actions.
+   *
+   * Optional because a coordinate-only scenario never needs a screen, and a
+   * test that does not assert should not have to fake one. A step that does
+   * assert on a device without it is a named refusal, not a crash.
+   */
+  uiTree?(): Promise<readonly UiNode[]>;
 }
 
 export interface RunOptions {
@@ -151,6 +174,81 @@ async function resolveAppVersion(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Evaluate a step's `expect` block against one dump.
+ *
+ * Every clause is evaluated even after one fails: a reader looking at a
+ * failed step wants to know that the screen also lost the toolbar, not just
+ * that it lost the first thing checked. `foreground` comes last so the
+ * clauses an author wrote in order appear in that order, and a screenshot
+ * showing the launcher explains the `present` misses above it.
+ *
+ * `foreground` means the app owns at least one node. A system dialog drawn
+ * over the app is still the app's screen — the title bar and the window frame
+ * belong to it — so requiring the app to own *every* node would fail on the
+ * one case an author most wants to assert.
+ */
+function evaluate(
+  expect: StepExpectation,
+  nodes: readonly UiNode[],
+  app: string,
+): ExpectationOutcome[] {
+  const outcomes: ExpectationOutcome[] = [];
+  for (const clause of expect.present ?? []) {
+    const matched = matchSelector(nodes, clause.selector);
+    const min = clause.min ?? 1;
+    const max = clause.max ?? Number.POSITIVE_INFINITY;
+    const ok = matched.length >= min && matched.length <= max;
+    outcomes.push({
+      label: `present: ${describe(clause.selector)}`,
+      ok,
+      actual: matched.length,
+      ...(ok
+        ? {}
+        : {
+            detail: matched.length < min
+              ? `expected at least ${min}, found ${matched.length} of ${nodes.length} nodes`
+              : `expected at most ${max}, found ${matched.length} of ${nodes.length} nodes`,
+          }),
+    });
+  }
+  for (const selector of expect.absent ?? []) {
+    const matched = matchSelector(nodes, selector);
+    outcomes.push({
+      label: `absent: ${describe(selector)}`,
+      ok: matched.length === 0,
+      actual: matched.length,
+      ...(matched.length === 0
+        ? {}
+        : { detail: `expected none, found ${matched.length} of ${nodes.length} nodes` }),
+    });
+  }
+  if (expect.foreground !== undefined) {
+    const owned = nodes.filter((node) => node.bundleName === app).length;
+    const ok = expect.foreground ? owned > 0 : owned === 0;
+    outcomes.push({
+      label: 'foreground',
+      ok,
+      actual: owned,
+      ...(ok
+        ? {}
+        : {
+            detail: expect.foreground
+              ? `${app} owned no node of ${nodes.length} on screen`
+              : `${app} still owned ${owned} of ${nodes.length} nodes on screen`,
+          }),
+    });
+  }
+  return outcomes;
+}
+
+/** The sentence a failed expectation contributes to the step's error. */
+function failureOf(outcomes: readonly ExpectationOutcome[]): string | undefined {
+  const failed = outcomes.find((outcome) => !outcome.ok);
+  if (failed === undefined) return undefined;
+  return `expectation failed — ${failed.label}: ${failed.detail ?? 'did not hold'}`;
 }
 
 /** The `Device.collect` request one step describes. */
@@ -275,6 +373,7 @@ export class ScenarioRunner {
     const actions: ActionOutcome[] = [];
     let failure: string | undefined;
     let sceneDir: string | undefined;
+    let expectations: readonly ExpectationOutcome[] | undefined;
 
     // Setup runs before the capture: a failure here means no capture starts,
     // so there is no scene and none is named.
@@ -317,6 +416,30 @@ export class ScenarioRunner {
       }
     }
 
+    // The assertions are about the state the actions produced, so they run
+    // after the window closes and before cleanup changes the screen again. A
+    // failed capture still asserts: the scene is a record of what was on
+    // screen, and a reader wants to know the step's intent even when the
+    // trace is unusable.
+    if (step.expect !== undefined) {
+      try {
+        if (this.device.uiTree === undefined) {
+          throw new OhosPerfError(
+            'the step asserts its screen, but this device cannot dump the UI tree',
+            { code: 'SCENARIO_SELECTOR_NO_TREE' },
+          );
+        }
+        const nodes = await this.device.uiTree();
+        expectations = evaluate(step.expect, nodes, scenario.app);
+        failure ??= failureOf(expectations);
+      } catch (err) {
+        // An assertion that cannot be evaluated is a step failure: a run that
+        // reported "ok" without checking would be the defect this phase exists
+        // to fix.
+        failure ??= `expectation could not be evaluated: ${message(err)}`;
+      }
+    }
+
     // Cleanup runs always — a failed action can leave the app in a state the
     // next step should not inherit. Its failure marks the step failed only
     // when nothing else already did, so it never masks the first error.
@@ -336,6 +459,7 @@ export class ScenarioRunner {
       startedAtMs,
       durationMs: this.now() - startedAtMs,
       actions,
+      ...(expectations === undefined ? {} : { expectations }),
       ...(failure === undefined ? {} : { error: failure }),
     };
   }
@@ -360,7 +484,13 @@ export class ScenarioRunner {
       };
     }
     try {
-      const result = await executeAction(this.device, app, action);
+      // Selector actions read the screen through the same device method the
+      // assertions use. A device without one is a typed refusal inside the
+      // action, recorded like any other failed action.
+      const context: ActionContext | undefined = this.device.uiTree === undefined
+        ? undefined
+        : { dump: () => this.device.uiTree!() };
+      const result = await executeAction(this.device, app, action, context);
       return {
         action,
         ...(atNs === undefined ? {} : { atNs }),

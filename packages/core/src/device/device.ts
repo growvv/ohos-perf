@@ -9,8 +9,11 @@
  */
 
 import {
-  existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, unlinkSync,
+  writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { HitraceCollector } from '../collectors/hitrace';
 import { HiprofilerCollector } from '../collectors/hiprofiler';
 import { MIN_BUFFER_PAGES, type HiprofilerPlugin } from '../collectors/hiprofiler/config';
@@ -212,6 +215,39 @@ export class Device {
     }
     const hdc = this.requireHdc();
     return (this.deps.gesture ?? new GestureDriver()).perform(hdc, this.id, request);
+  }
+
+  /**
+   * Flattened on-screen UI tree, for selector actions and step assertions.
+   *
+   * A fresh `uitest dumpLayout` each call, written into a temporary directory
+   * that is removed afterwards: a step may dump several times (once per
+   * scroll, once per assertion), and none of those are scene artifacts — the
+   * capture's own `ui.json` is written by the collector inside its window.
+   * Requires the `ui.tree` capability, like every other screen read.
+   */
+  async uiTree(): Promise<UiNode[]> {
+    const caps = await this.capabilities();
+    if (!caps.has('ui.tree')) {
+      const reason = caps.get('ui.tree')?.reason;
+      throw new OhosPerfError(
+        'reading the UI tree requires ui.tree capability' + (reason ? ` (${reason})` : ''),
+        { code: 'MISSING_CAPABILITY' },
+      );
+    }
+    const hdc = this.requireHdc();
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-ui-'));
+    try {
+      const layout = createSceneLayout(root);
+      return await (this.deps.uitest ?? new UitestCollector()).collect(
+        hdc,
+        this.id,
+        {},
+        layout,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   }
 
   /**
