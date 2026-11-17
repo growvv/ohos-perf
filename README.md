@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P29 are complete**: 2144 tests (2133 unit, 11 in the device
+**P1 through P30 are complete**: 2187 tests (2176 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2105 passed, 28
+attached device are absent — `npm run test:unit` reports **2148 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2105 passed, 39 skipped**. With both fixtures present and a
+checkout is **2148 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -134,6 +134,20 @@ Implemented today:
   so a step's status says the screen held what the author asserted, not just
   that the device accepted a gesture. `run --cases <dir>` runs a directory of
   scenarios as one suite and indexes the verdicts in `cases.json`.
+- thermal capture: `collect --thermal` samples the device's thermal service
+  (`hidumper -s ThermalService -a '-t'`) for the capture window into
+  `thermal.jsonl`, one record per sample (`{elapsedMs, readings}`), and
+  `analyze` reports start, end, peak, mean and rise per sensor plus the sample
+  count and median interval. The sensor list is whatever the device prints,
+  never a list compiled in here. The unit rule is HapRay's and applies per
+  reading: a value at or above 1000 in magnitude is millidegrees, anything
+  smaller is plain Celsius — measured devices do both, sometimes on the same
+  dump. The raw value and the unit inferred for it travel with the normalized
+  Celsius value, so the inference is visible rather than baked in.
+  `--thermal-interval <seconds>` overrides the 5 s default; a scenario step
+  can list `thermal` in `capture.collectors`. A scene with no thermal capture
+  gets a `no_data` item naming `--thermal`, where HapRay's analyzer returns
+  `None` and the section silently disappears.
 - coverage ingestion: `analyze` reads a scene's `coverageReport.json` — the
   document an instrumented build plus the external `bjc` toolchain writes — and
   reports line, function and branch percentages as `approximate`, naming the
@@ -321,6 +335,7 @@ The HapRay parity series (one release per major item, so far):
 | P27 | row 28 completion | `symbols recover <lib.so> <address...>` names unresolved `libfoo.so+0xoffset` references from the ELF's own `st_value`/`st_size` — a lookup, not radare2's boundary heuristic — and `--measure` reports the model's naming accuracy over names the file records, which HapRay never states | shipped in `0.22.0` |
 | P28 | row 36 | `root-cause <scene-dir\|report.json>` ranks the measured evidence by our own severities, states a verdict from the highest finding, and optionally asks a model for suspects — which must cite evidence ids and name only what the run measured, or the claim is marked ungrounded. `--offline` writes the report with no endpoint; a missing endpoint falls back to it and says so | shipped in `0.23.0` |
 | P29 | row 38 completion | `explore --model` lets a model choose each step among the elements the dump offered: an answer naming an unoffered element, scroll or back when unavailable, or a non-JSON reply is a recorded refusal and the deterministic order takes that step. Page identity is a structural digest, not a second model call, so `navigated`/`updated`/`no change` are measured; the walk scrolls and goes back within per-screen caps, and irreversible targets are never offered to a model | shipped in `0.24.0` |
+| P30 | row 39 completion | `collect --thermal` samples `hidumper -s ThermalService -a '-t'` into `thermal.jsonl` with each reading's raw value, inferred unit and normalized Celsius value; `analyze` reports start/end/peak/mean/rise per sensor, sample count, duration and median interval, with a missing capture a `no_data` naming `--thermal` instead of HapRay's silent `None`. Sensors come from the device, and a scenario step can request the capture | shipped in `0.25.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
@@ -335,9 +350,9 @@ outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 37 |
+| ported | 38 |
 | partial | 0 |
-| missing | 1 |
+| missing | 0 |
 | out, with a measured reason | 1 |
 
 Row 37 (`build`) is the one row this project refuses. It wraps `deveco-cli` to
@@ -354,10 +369,15 @@ zero, and the state comparator's yes/no decides whether the step counted.
 `explore --model` keeps the first question with its answer verified against
 the offer, and replaces the second with `hashPageShape`, a digest of the
 screen's structure. The model never supplies coordinates, and irreversible
-targets are not offered at all. Row 39 (thermal analysis) is the one `missing`
-row left: a collector plus an analyzer, and the collector is the part that has
-to be measured on a device first — a sensor list that is assumed rather than
-read would produce a thermal curve for a sensor the device does not have.
+targets are not offered at all.
+
+Row 39 (thermal analysis) left that list in `0.25.0`, closing the missing
+column. HapRay's analyzer returns `None` when a step has no
+`thermal_data.jsonl`, so "not measured" and "the device stayed cool" look the
+same in its output; here a scene without a capture emits a `no_data` item
+naming `--thermal`. The sensor set is read from the device, and each reading
+keeps the raw number and the unit inferred from it beside the normalized
+Celsius value.
 
 Row 5 (the LLM GUI agent) left that list in `0.21.0`. HapRay's blocker was
 the external `phone_agent` dependency, and the three things that made its

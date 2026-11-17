@@ -296,14 +296,9 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 39,
     name: 'Thermal analysis (`hidumper -s ThermalService`)',
-    status: 'missing',
-    reason:
-      'a collector plus an analyzer, so it is a capability of its own rather'
-      + ' than part of the root-cause narrative: HapRay samples each sensor'
-      + ' through hidumper and reports start/end/peak/mean and the rise. Not'
-      + ' ported yet; the collector is the part that has to be measured on a'
-      + ' device first, because a sensor list that is assumed rather than read'
-      + ' would produce a thermal curve for a sensor the device lacks.',
+    status: 'ported',
+    reason: '',
+    analyzer: 'ThermalAnalyzer',
   },
 ];
 

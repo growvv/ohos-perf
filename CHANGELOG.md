@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.25.0 — 2026-11-18
+
+**Thermal capture and analysis close the parity ledger's last missing row.**
+HapRay samples `hidumper -s ThermalService -a '-t'` in a background thread per
+step and returns `None` from its analyzer when a step produced no
+`thermal_data.jsonl` — so "never measured" and "the device stayed cool" read
+the same. This release samples the same service, keeps the raw evidence, and
+names the absence.
+
+- **Capture.** `collect --thermal` writes `thermal.jsonl` for the capture
+  window: one record per sample (`{elapsedMs, readings}`), sampled at 0 ms and
+  then once per interval. `--thermal-interval <seconds>` overrides the 5 s
+  default (0.1–3600, whole milliseconds). A capture shorter than the interval
+  gets exactly one sample rather than waiting past its own window, and a dump
+  with no sensor readings fails the capture (`THERMAL_NO_OUTPUT`) instead of
+  writing an empty artifact that would analyze as a cold device.
+- **Readings keep their provenance.** HapRay normalizes by magnitude (≥ 1000
+  is millidegrees) and discards the original number. Each reading here carries
+  `raw`, the inferred `unit`, and the normalized `celsius` value, so the
+  inference is visible. The rule is applied per reading, not per device:
+  measured devices report all sensors in millidegrees, and one reports `modem`
+  in plain Celsius. The sensor set is whatever the device printed.
+- **Analysis.** The `thermal` analyzer emits `thermal.samples.count`,
+  `thermal.sensors.count`, `thermal.duration.ms`, `thermal.interval.median.ms`
+  (with at least two samples) and `thermal.records.invalid`, plus start, end,
+  peak, mean and rise per sensor (`thermal.<sensor>.*.celsius`) with one
+  `thermal` evidence item per sensor. A sensor absent from a sample
+  contributes no value — never a zero or a carried-forward reading. A scene
+  with no capture emits `thermal.degraded` and a `no_data` item naming
+  `--thermal`.
+- **Scenarios.** A step may list `thermal` in `capture.collectors`, so a run
+  gets one thermal curve per step, like HapRay's per-step worker.
+- **Output.** The `collect` text summary prints `hilog <n>` and
+  `thermal <n>` in its samples line.
+
+Parity row 39 is `ported`: 38 ported, 0 partial, 0 missing, 1 out (37,
+`build`). 2176 unit tests; the device suite is unchanged.
+
 ## 0.24.0 — 2026-11-18
 
 **`explore --model` lets a model choose the walk, and checks every choice

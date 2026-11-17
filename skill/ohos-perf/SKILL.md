@@ -220,6 +220,36 @@ ohos-perf query <dir> hilog.rules --args '{}' --json
 ohos-perf query <dir> hilog.around --args '{"startNs":0,"endNs":1000000000}' --json
 ```
 
+## Thermal
+
+`thermal.*` answers "how hot did each sensor get, and how fast" — HapRay's
+per-sensor start/end/peak/mean/rise, read from the device's own thermal
+service. Capture it with `collect --thermal` (device-wide, no `--app`);
+`--thermal-interval <seconds>` sets the sampling interval (default 5). A
+scenario step can list `thermal` in `capture.collectors`.
+
+- The sensor list is whatever the device printed. Never assume a sensor
+  exists: query the metric ids, and if a sensor you expected is absent, say
+  the device did not report it — **never report it as 0 °C**. The same rule
+  applies inside the capture: a sensor missing from one sample contributes
+  nothing, so its `samples` in the evidence is smaller than
+  `thermal.samples.count`.
+- `thermal.degraded` means the scene captured no thermal data. That is **not
+  measured**, not "the device is cool". The paired `no_data` item names
+  `--thermal`; report the gap and do not draw a thermal conclusion.
+- Each reading's `raw` value and inferred `unit` live in `thermal.jsonl`
+  beside the normalized `celsius` value. The rule is per reading: a magnitude
+  of at least 1000 is millidegrees, anything smaller is plain Celsius — do not
+  re-derive it from one sensor and apply it to another.
+- `thermal.records.invalid` counts artifact lines that were not valid records.
+  A non-zero value means part of the curve is missing; say so next to any
+  conclusion drawn from it.
+- Per-sensor metrics are `thermal.<sensor>.start|end|peak|mean|rise.celsius`.
+  Sensor names are lowercased with runs outside `[a-z0-9]` collapsed to `_`
+  (`system_h`, `shell_back`); two names that collide get `_2`, `_3` in
+  sensor-name order. Evidence signals carry the original sensor name, so use
+  those when quoting one.
+
 ## Scenarios
 
 `ohos-perf run` answers "what happens when the user does this" — a sequence
@@ -296,9 +326,9 @@ The document is versioned JSON (`version: 1`, `name`, `app`, optional
   allows `cat /proc/uptime`; both measured devices refuse it, and the field
   is then absent (never a zero).
 - Collectors per step: `hitrace` (default), `hiprofiler` (with `plugins`),
-  `procfs`, `hiperf`, `hidumper`, `uitest`, `hilog`. A collector the device
-  lacks fails that step with the capability matrix's reason, and the message
-  names the step.
+  `procfs`, `hiperf`, `hidumper`, `uitest`, `hilog`, `thermal`. A collector
+  the device lacks fails that step with the capability matrix's reason, and the
+  message names the step.
 
 Each step directory is an ordinary scene, so the analysis loop is unchanged:
 
