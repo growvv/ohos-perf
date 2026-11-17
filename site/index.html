@@ -60,7 +60,7 @@
     <div class="hero-copy">
       <p class="eyebrow reveal">
         <span class="dot"></span>
-        <span data-en="P1–P18 are complete — twenty analyzers, nine collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, a scenario runner with selectors and assertions, UI capture and diff, offline HAP inspection, symbol statistics and an offline flamegraph and a machine-checked parity ledger, 1711 tests" data-zh="P1–P18 全部完成 —— 二十个分析器、九个采集器、命名下钻查询、基线对比、模拟器生命周期、手势注入、报告产物、带选择器与断言的场景运行器、UI 采集与 diff、离线 HAP 检查、符号统计与离线火焰图与可机器校验的对齐清单，1711 个测试">P1–P18 are complete — twenty analyzers, nine collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, a scenario runner with selectors and assertions, UI capture and diff, offline HAP inspection, symbol statistics and an offline flamegraph and a machine-checked parity ledger, 1711 tests</span>
+        <span data-en="P1–P18 are complete — twenty analyzers, nine collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, a scenario runner with selectors and assertions, UI capture and diff, offline HAP inspection, symbol statistics and an offline flamegraph and a machine-checked parity ledger, 1714 tests" data-zh="P1–P18 全部完成 —— 二十个分析器、九个采集器、命名下钻查询、基线对比、模拟器生命周期、手势注入、报告产物、带选择器与断言的场景运行器、UI 采集与 diff、离线 HAP 检查、符号统计与离线火焰图与可机器校验的对齐清单，1714 个测试">P1–P18 are complete — twenty analyzers, nine collectors, drill-down queries, baseline comparison, emulator lifecycle, gesture injection, report artifacts, a scenario runner with selectors and assertions, UI capture and diff, offline HAP inspection, symbol statistics and an offline flamegraph and a machine-checked parity ledger, 1714 tests</span>
       </p>
       <h1 class="reveal">
         <span data-en="HarmonyOS performance," data-zh="鸿蒙性能，">HarmonyOS performance,</span><br>
@@ -95,7 +95,7 @@
         </div>
         <pre class="term"><code><span class="p">$</span> <span class="c">ohos-perf analyze ./scene --json</span>
 {
-  <span class="k">"metrics"</span>: [   <span class="cm">/* 77 metrics from the analyzers */</span>
+  <span class="k">"metrics"</span>: [   <span class="cm">/* 80 metrics from the analyzers */</span>
     { <span class="k">"id"</span>: <span class="s">"frame.jank.rate"</span>, <span class="k">"value"</span>: <span class="n">37.267080745341616</span>,
       <span class="k">"unit"</span>: <span class="s">"%"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
@@ -109,14 +109,14 @@
       <span class="k">"unit"</span>: <span class="s">"count"</span>, <span class="k">"fidelity"</span>: <span class="s">"exact"</span>,
       <span class="k">"provenance"</span>: { <span class="k">"collector"</span>: <span class="s">"hitrace+streamer"</span>,
                       <span class="k">"table"</span>: <span class="s">"callstack"</span>, <span class="k">"rows"</span>: <span class="n">372</span> } },
-    <span class="cm">/* … 73 more, including binder.latency.avg, thread.*, mem.*, gc.*, */</span>
+    <span class="cm">/* … 76 more, including binder.latency.avg, thread.*, mem.*, gc.*, */</span>
     <span class="cm">/* vsync.*, empty_frame.*, components.*, degraded proxies */</span>
   ],
-  <span class="k">"evidence"</span>: [ <span class="cm">/* 97 items: 60 jank, 7 vsync periods, 6 empty frames, */</span>
-                 <span class="cm">/* 6 fault patterns, 5 binder hotspots, 1 gc, 1 startup, 5 */</span>
+  <span class="k">"evidence"</span>: [ <span class="cm">/* 98 items: 60 jank, 7 vsync periods, 6 empty frames, */</span>
+                 <span class="cm">/* 6 fault patterns, 5 binder hotspots, 1 gc, 1 startup, 6 */</span>
                  <span class="cm">/* no_data and 6 degraded-capability notices */</span> ]
 }</code></pre>
-        <p class="terminal-note reveal" data-en="Real output from the recorded emulator trace: 77 metrics, 97 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的真实 trace 的实际输出：77 个指标、97 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from the recorded emulator trace: 77 metrics, 97 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
+        <p class="terminal-note reveal" data-en="Real output from the recorded emulator trace: 80 metrics, 98 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device." data-zh="摘自一台鸿蒙模拟器上录制的真实 trace 的实际输出：80 个指标、98 条证据，跨次运行字节一致。每个指标都带 provenance：采集器、表、行数、设备。">Real output from the recorded emulator trace: 80 metrics, 98 evidence items, byte-identical across runs. Every metric carries provenance — collector, table, rows, device.</p>
       </div>
     </div>
   </div>
@@ -125,7 +125,7 @@
     <div class="stats reveal">
       <div class="stat"><b>23</b><span data-en="capabilities probed" data-zh="项能力被探测">capabilities probed</span></div>
       <div class="stat"><b>19</b><span data-en="analyzers over 8 layers" data-zh="个分析器，8 层架构">analyzers over 8 layers</span></div>
-      <div class="stat"><b>1700</b><span data-en="unit tests, plus 11 against a real device; 1675 + 36 skipped on a clean checkout" data-zh="个单元测试，另有 11 个真机测试；干净检出为 1675 通过 + 36 跳过">unit tests, plus 11 against a real device; 1675 + 36 skipped on a clean checkout</span></div>
+      <div class="stat"><b>1703</b><span data-en="unit tests, plus 11 against a real device; 1675 + 39 skipped on a clean checkout" data-zh="个单元测试，另有 11 个真机测试；干净检出为 1675 通过 + 39 跳过">unit tests, plus 11 against a real device; 1675 + 39 skipped on a clean checkout</span></div>
       <div class="stat"><b>0</b><span data-en="native dependencies" data-zh="个原生依赖">native dependencies</span></div>
     </div>
   </div>
@@ -188,8 +188,8 @@
   <div class="wrap">
     <p class="eyebrow reveal" data-en="Analyzers" data-zh="分析器">Analyzers</p>
     <h2 class="reveal" data-en="Nineteen analyzers over one trace. Every finding carries its evidence." data-zh="一条 trace，十九个分析器。每个结论都带证据。">Nineteen analyzers over one trace. Every finding carries its evidence.</h2>
-    <p class="section-lead reveal" data-en="`analyze` runs all nineteen against a scene and merges the result into one report: 77 metrics and 97 evidence items on the recorded emulator trace — memory measure finds no `mem.rss` rows, the flamegraph and the symbols analyzer no `perf_sample` rows, frame load no samples at all and native memory no `native_hook` rows on a plain hitrace capture, so each reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部十九个分析器，合并成一份报告：在录制的模拟器 trace 上产出 77 个指标与 97 条证据（纯 hitrace 采集里“内存测量”找不到 `mem.rss` 行、“火焰图”与“符号统计”找不到 `perf_sample` 行、帧负载完全没有采样、native 内存没有 `native_hook` 行，因此各自给出带原因的降级代理值），跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
-      <code>analyze</code> runs all nineteen against a scene and merges the result into one report: 77 metrics and 97 evidence items on the recorded emulator trace — memory measure finds no <code>mem.rss</code> rows, the flamegraph and the symbols analyzer no <code>perf_sample</code> rows, frame load no samples at all and native memory no <code>native_hook</code> rows on a plain hitrace capture, so each reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
+    <p class="section-lead reveal" data-en="`analyze` runs all twenty against a scene and merges the result into one report: 80 metrics and 98 evidence items on the recorded emulator trace — memory measure finds no `mem.rss` rows, the flamegraph and the symbols analyzer no `perf_sample` rows, frame load no samples at all and native memory no `native_hook` rows on a plain hitrace capture, so each reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero." data-zh="`analyze` 会对一个场景运行全部二十个分析器，合并成一份报告：在录制的模拟器 trace 上产出 80 个指标与 98 条证据（纯 hitrace 采集里“内存测量”找不到 `mem.rss` 行、“火焰图”与“符号统计”找不到 `perf_sample` 行、帧负载完全没有采样、native 内存没有 `native_hook` 行，因此各自给出带原因的降级代理值），跨次运行字节一致。每个分析器都声明自己需要的能力；trace 不支持时，它给出带原因的降级代理值，而不是 0。">
+      <code>analyze</code> runs all twenty against a scene and merges the result into one report: 80 metrics and 98 evidence items on the recorded emulator trace — memory measure finds no <code>mem.rss</code> rows, the flamegraph and the symbols analyzer no <code>perf_sample</code> rows, frame load no samples at all and native memory no <code>native_hook</code> rows on a plain hitrace capture, so each reports a degraded proxy with the reason — byte-identical across runs. Each analyzer declares the capabilities it needs; when the trace cannot support one, it reports a degraded proxy with the reason instead of a zero.
     </p>
 
     <div class="table-wrap reveal">

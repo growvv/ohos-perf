@@ -35,18 +35,19 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P18 are complete**: 1711 tests (1700 unit, 11 in the device
+**P1 through P18 are complete**: 1714 tests (1703 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1675 passed, 25
-skipped (2 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1675 passed, 36 skipped**. With both fixtures present and a
+attached device are absent — `npm run test:unit` reports **1675 passed, 28
+skipped (3 files)**, and all eleven device tests skip, so the combined clean
+checkout is **1675 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
-`query-callstack-perf`, `query-sched-state` and the CLI `index` end-to-end
-tests. The eleven tests in the device project are
+`query-callstack-perf`, `query-sched-state`, the CLI `index` end-to-end
+tests and the CLI `doc-measured` suite (which re-runs the quoted `analyze`
+counts against the same two traces). The eleven tests in the device project are
 `collect-hiprofiler.device.test.ts`, `collect-capture.device.test.ts`,
 `analyze-capture.device.test.ts`, `collect-memory.device.test.ts`,
 `gesture.device.test.ts`, `scenario-run.device.test.ts` and
@@ -182,8 +183,8 @@ their tests pin the parser, aggregation and marker fallback instead, and no
 parity is claimed for them.
 
 Measured on the two recorded traces with `analyze <scene> --app <pkg> --json`,
-`analyze` reports 77 metrics and 97 evidence items on `emu_big` (20.8 MB,
-`pbench.baseline`) and 76 metrics and 183 evidence items on `real_device`
+`analyze` reports 80 metrics and 98 evidence items on `emu_big` (20.8 MB,
+`pbench.baseline`) and 77 metrics and 184 evidence items on `real_device`
 (13.1 MB, `erviceAbility:1`). Four of the older analyzers report real numbers
 there: `vsync.signals.count` 60 with `vsync.periods.count` 7 and
 `vsync.anomaly.rate` 101.67 on `emu_big` (160 / 0 / 0 on `real_device`),

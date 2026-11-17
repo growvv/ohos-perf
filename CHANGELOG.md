@@ -54,7 +54,7 @@ parity claim checkable.
 The five `out` rows keep their measured reasons: HapTest exploration, the LLM
 GUI agent, coverage, the TensorFlow opt-detector and radare2 symbol recovery.
 
-- 1711 tests (1700 unit, 11 device), two typechecks, two builds.
+- 1714 tests (1703 unit, 11 device), two typechecks, two builds.
 
 ## 0.12.1 — 2026-11-17
 
