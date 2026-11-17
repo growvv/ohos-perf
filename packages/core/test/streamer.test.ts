@@ -291,6 +291,33 @@ describe('Streamer.convert', () => {
     expect(err).toMatchObject({ code: 'STREAMER_EXIT_3', stderr: 'parse failed' });
   });
 
+  it('names --So_dir when a symbolized conversion fails', async () => {
+    // A streamer that does not know the flag exits non-zero with its own
+    // "unknown option" text on stderr, which the human line drops. Without
+    // this the reader is told only that the conversion failed, after a
+    // capture that succeeded — the one thing they changed is unsaid.
+    const s = new StubStreamer();
+    s.exitCode = 1;
+    s.stderr = 'Unknown option: --So_dir';
+    const err = await s
+      .convert(join(dir, 'in.htrace'), output, '/no/such/so')
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(IngestError);
+    expect(err).toMatchObject({ code: 'STREAMER_EXIT_1' });
+    expect((err as IngestError).message).toContain('--So_dir');
+    expect((err as IngestError).message).toContain('/no/such/so');
+    // The converter's own words still travel on the error for a caller that
+    // wants them.
+    expect((err as IngestError).stderr).toContain('Unknown option');
+  });
+
+  it('leaves the failure message alone when no symbol directory was used', async () => {
+    const s = new StubStreamer();
+    s.exitCode = 1;
+    const err = await s.convert(join(dir, 'in.htrace'), output).catch((e: unknown) => e);
+    expect((err as IngestError).message).not.toContain('--So_dir');
+  });
+
   it('throws when exit is 0 but no database was produced', async () => {
     const s = new StubStreamer();
     s.writeOutput = false;

@@ -154,13 +154,23 @@ export class Streamer {
     const tempPath = `${outputDbPath}.tmp-${process.pid}-${this.tempCounter++}`;
     const tempSidecar = tempPath + SIDECAR_SUFFIX;
     const spec = this.spawnSpecFor(buildConvertArgv(inputPath, tempPath, soDir));
+    // A failure caused by `--So_dir` has to say so: the human line prints
+    // `err.message` alone, so the converter's own "unknown option" text never
+    // reaches the reader. Without this the one thing the caller changed is
+    // the one thing the message leaves out.
+    const soDirNote = soDir === undefined ? '' : ` with --So_dir ${soDir}`;
+    const soDirHint = soDir === undefined
+      ? ''
+      : '; if this trace_streamer does not accept --So_dir, capture without it ' +
+        'or upgrade the toolchain';
     let committed = false;
     try {
       const result = await this.spawnProcess(spec.command, spec.args);
 
       if (result.signal) {
         throw new IngestError(
-          `trace_streamer was killed by signal ${result.signal} while converting ${inputPath}`,
+          `trace_streamer was killed by signal ${result.signal} while converting ` +
+            `${inputPath}${soDirNote}`,
           result.stderr,
           `STREAMER_KILLED_${result.signal}`,
         );
@@ -168,14 +178,15 @@ export class Streamer {
       // code === null without a signal name still means "not a normal exit".
       if (result.code === null) {
         throw new IngestError(
-          `trace_streamer did not exit normally while converting ${inputPath}`,
+          `trace_streamer did not exit normally while converting ${inputPath}${soDirNote}`,
           result.stderr,
           'STREAMER_KILLED_UNKNOWN',
         );
       }
       if (result.code !== 0) {
         throw new IngestError(
-          `trace_streamer failed converting ${inputPath} (exit code ${result.code})`,
+          `trace_streamer failed converting ${inputPath} (exit code ${result.code})` +
+            soDirNote + soDirHint,
           result.stderr,
           `STREAMER_EXIT_${result.code}`,
         );

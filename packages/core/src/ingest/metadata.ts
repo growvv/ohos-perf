@@ -41,9 +41,10 @@ export interface SceneMetadata {
       samples: number;
       /**
        * Present only when the capture passed a symbol directory. `true` means
-       * the frames were symbolized while converting, so a frame's name is a
-       * symbol; absent means the scene did not record the attempt, which is
-       * not the same as "no".
+       * symbolization was *requested* — the converter was given `--So_dir` —
+       * not that every frame came back named; a directory missing the app's
+       * libraries still leaves addresses. Absent means the scene did not
+       * record the attempt, which is not the same as "no".
        */
       symbolized?: boolean;
     };

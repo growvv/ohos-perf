@@ -137,11 +137,28 @@ describe('renderFlamegraphHtml', () => {
       app: 'com.demo',
       window,
       unresolvedShare: 9.43,
-      symbolized: true,
+      symbolizationRequested: true,
     });
     expect(html).toContain('com.demo');
     expect(html).toContain('9.43%');
-    expect(html).toContain('Symbols were resolved from the capture');
+    expect(html).toContain('Symbolization was requested');
+  });
+
+  it('says symbolization was requested, not that every frame resolved', () => {
+    // `scene.json` records that `--so-dir` was passed, not that the symbolizer
+    // found every symbol. A capture whose symbol directory lacked the app's
+    // libraries is symbolized *and* mostly unresolved; a page that said
+    // "symbols were resolved" would contradict its own unresolved share.
+    const html = renderFlamegraphHtml({
+      stacks: [stack('a;b', 3)],
+      app: 'com.demo',
+      window,
+      unresolvedShare: 62.5,
+      symbolizationRequested: true,
+    });
+    expect(html).toContain('Symbolization was requested');
+    expect(html).toContain('62.5%');
+    expect(html).not.toContain('Symbols were resolved');
   });
 
   it('says symbolization was not requested rather than implying it happened', () => {
@@ -150,7 +167,7 @@ describe('renderFlamegraphHtml', () => {
       app: 'com.demo',
       window,
       unresolvedShare: null,
-      symbolized: false,
+      symbolizationRequested: false,
     });
     expect(html).toContain('Symbolization was not requested');
     expect(html).not.toContain('Symbols were resolved');
@@ -162,7 +179,7 @@ describe('renderFlamegraphHtml', () => {
       app: 'com.demo',
       window,
       unresolvedShare: 0,
-      symbolized: null,
+      symbolizationRequested: null,
     });
     expect(html).toContain('unknown');
     expect(html).not.toContain('Symbolization was not requested');
@@ -179,7 +196,7 @@ describe('renderFlamegraphHtml', () => {
       app: 'com.demo',
       window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
       unresolvedShare: 0,
-      symbolized: true,
+      symbolizationRequested: true,
     });
     expect(html).toContain('whole capture');
     expect(html).not.toContain(String(Number.MAX_SAFE_INTEGER));
@@ -191,7 +208,7 @@ describe('renderFlamegraphHtml', () => {
       app: '<b>&</b>',
       window,
       unresolvedShare: 0,
-      symbolized: true,
+      symbolizationRequested: true,
     });
     expect(html).toContain('<svg');
     expect(html).toContain('&lt;b&gt;&amp;&lt;/b&gt;');
@@ -204,7 +221,7 @@ describe('renderFlamegraphHtml', () => {
       app: 'com.demo',
       window,
       unresolvedShare: 40,
-      symbolized: true,
+      symbolizationRequested: true,
     };
     expect(renderFlamegraphHtml(input)).toBe(renderFlamegraphHtml(input));
   });

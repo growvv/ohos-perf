@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P16 are complete**: 1567 tests (1556 unit, 11 in the device
+**P1 through P16 are complete**: 1570 tests (1559 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1531 passed, 25
+attached device are absent — `npm run test:unit` reports **1534 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-ten device-gated skips, so the combined clean checkout is **1532 passed, 35
+ten device-gated skips, so the combined clean checkout is **1535 passed, 35
 skipped**. With both fixtures present and a device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -293,7 +293,8 @@ ohos-perf collect \
   --app com.example.app --duration 10s --out ./full-scene \
   --procfs --hiperf --hidumper --uitest --screenshot --hilog --json
 
-# symbolize the perf capture as it converts: frames come out named, not file+0xoffset
+# hand the converter a symbol directory: frames it can name come out named,
+# the rest stay file+0xoffset and are reported as unresolved
 ohos-perf collect   --app com.example.app --duration 10s --out ./perf-scene   --hiperf --so-dir /path/to/symbols
 
 # device-wide memory sampling needs no app

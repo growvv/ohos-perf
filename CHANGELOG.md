@@ -41,7 +41,8 @@ the defect stayed invisible. Unresolved leaves (2,295 frames, 994 M,
   per leaf over a nanosecond range, sorted by weight, with `share` totalling
   100% over the window's app-thread weight.
 - **`collect --so-dir <dir>`** passes a host directory of shared objects to the
-  perf conversion as `--So_dir`, so frames come out named at capture time.
+  perf conversion as `--So_dir`, so the frames it can name come out named at
+  capture time; the rest stay `file+0xoffset` and are reported as unresolved.
   Refused before any device call when the flag cannot mean anything
   (`COLLECT_SO_DIR_WITHOUT_HIPERF`) or the path is not a directory here
   (`COLLECT_BAD_SO_DIR`). `scene.json` records
@@ -69,6 +70,20 @@ the defect stayed invisible. Unresolved leaves (2,295 frames, 994 M,
   unwind, but `eventCount` counts the weight. Those rows are now part of the
   unresolved `('', '')` row as well, so `symbol.stats` shares sum to 100%
   over any capture, not only one whose chains are all present.
+
+### Fixes — honest claims
+
+- **The flamegraph says symbolization was requested, not that it worked.**
+  `scene.json` records that `--so-dir` was passed, and nothing records how many
+  frames the symbolizer named; the page said "Symbols were resolved from the
+  capture", which a capture whose symbol directory lacked the app's libraries
+  would print directly above its own non-zero unresolved share. The field is
+  now `symbolizationRequested` and the sentence says what it means.
+- **A `--So_dir` conversion failure names the flag.** The human error line
+  prints the error's message alone, so the converter's own "unknown option"
+  text never reached the reader: a toolchain that rejects `--So_dir` reported
+  only that the conversion failed, after a capture that had succeeded. The
+  message now names the flag and the directory, and says what to do.
 
 ### Fixes — report windows
 

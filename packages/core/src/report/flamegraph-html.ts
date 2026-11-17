@@ -24,22 +24,31 @@ export interface FlamegraphPageInput {
    */
   readonly unresolvedShare: number | null;
   /**
-   * Whether symbolization was requested for the capture: `true`, `false`, or
-   * `null` when the scene did not record it.
+   * Whether the capture *asked* for symbolization: `true`, `false`, or `null`
+   * when the scene did not record it.
+   *
+   * Requested, not achieved: `scene.json` records that `--so-dir` was passed,
+   * and nothing records how many frames the symbolizer actually named. A page
+   * that claimed the frames were resolved would contradict the unresolved
+   * share printed directly above it.
    */
-  readonly symbolized: boolean | null;
+  readonly symbolizationRequested: boolean | null;
 }
 
 /**
- * The sentence that says where the names came from.
+ * The sentence that says what the capture did about names.
  *
- * A reader must be able to tell "these frames are named" from "these frames
- * were never symbolized", because the second view looks the same but means
- * something different. An unrecorded state says so instead of guessing.
+ * A reader must be able to tell "these frames were symbolized" from "these
+ * frames were never offered to a symbolizer", because the second view looks
+ * the same but means something different. An unrecorded state says so instead
+ * of guessing.
  */
-function symbolSentence(symbolized: boolean | null): string {
-  if (symbolized === true) return 'Symbols were resolved from the capture.';
-  if (symbolized === false) {
+function symbolSentence(requested: boolean | null): string {
+  if (requested === true) {
+    return 'Symbolization was requested for this capture; frames the symbolizer ' +
+      'could not name stay as addresses.';
+  }
+  if (requested === false) {
     return 'Symbolization was not requested, so frames show addresses only.';
   }
   return 'The capture does not record whether symbolization ran; frame names are unknown.';
@@ -98,7 +107,7 @@ export function renderFlamegraphHtml(input: FlamegraphPageInput): string {
     `<dt>Total weight</dt><dd>${total} samples</dd>`,
     `<dt>Unresolved leaf weight</dt><dd>${share}</dd>`,
     '</dl>',
-    `<p>${symbolSentence(input.symbolized)}</p>`,
+    `<p>${symbolSentence(input.symbolizationRequested)}</p>`,
     '</section>',
     `<section class="card">${svg}</section>`,
     '</main>',

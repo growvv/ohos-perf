@@ -420,13 +420,14 @@ function sceneWindow(opened: OpenedScene): TimeRange {
  * The inputs the flamegraph page needs that are not part of an analysis.
  *
  * Read while the scene is open, because the perf database is closed with it:
- * the folded stacks are the drawing's whole data set, and `symbolized` is the
- * scene's own statement about whether those stacks were ever named.
+ * the folded stacks are the drawing's whole data set, and
+ * `symbolizationRequested` is the scene's own statement about whether a
+ * symbolizer was ever offered them.
  */
 interface FlamegraphInputs {
   readonly stacks: FoldedStack[];
-  /** `null` when the scene did not record whether symbolization ran. */
-  readonly symbolized: boolean | null;
+  /** `null` when the scene did not record whether symbolization was asked for. */
+  readonly symbolizationRequested: boolean | null;
 }
 
 /** A section-aware analysis plus the scenario fields a report needs. */
@@ -462,8 +463,9 @@ function flamegraphInputs(opened: OpenedScene): FlamegraphInputs {
   // captured before that field existed has no answer, which is not a "no".
   const hiperf = (opened.metadata?.capture as { hiperf?: { symbolized?: unknown } } | undefined)
     ?.hiperf;
-  const symbolized = typeof hiperf?.symbolized === 'boolean' ? hiperf.symbolized : null;
-  return { stacks, symbolized };
+  const symbolizationRequested =
+    typeof hiperf?.symbolized === 'boolean' ? hiperf.symbolized : null;
+  return { stacks, symbolizationRequested };
 }
 
 /**
@@ -882,7 +884,7 @@ export function realDeps(
             app: detailed.app.packageName,
             window: detailed.window,
             unresolvedShare: typeof share === 'number' ? share : null,
-            symbolized: flamegraph.symbolized,
+            symbolizationRequested: flamegraph.symbolizationRequested,
           })],
         );
       }
