@@ -7,7 +7,7 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
 
 A TypeScript toolkit for HarmonyOS performance analysis. It turns an attached device
-into structured, evidence-backed data: capability probing, seven collectors,
+into structured, evidence-backed data: capability probing, eight collectors,
 `trace_streamer` ingest, typed queries over the resulting SQLite
 databases, metrics with provenance, an evidence graph, baseline comparison, and
 a CLI designed to be called by agents.
@@ -35,29 +35,29 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P13 are complete**: 1326 tests (1316 unit, 10 in the device
+**P1 through P14 are complete**: 1395 tests (1385 unit, 10 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1291 passed, 25
+attached device are absent — `npm run test:unit` reports **1370 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-nine device-gated skips, so the combined clean checkout is **1292 passed, 34
+ten device-gated skips, so the combined clean checkout is **1371 passed, 35
 skipped**. With both fixtures present and a device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
 `query-callstack-perf`, `query-sched-state` and the CLI `index` end-to-end
-tests. The ten tests in the device project are
+tests. The eleven tests in the device project are
 `collect-hiprofiler.device.test.ts`, `collect-capture.device.test.ts`,
 `analyze-capture.device.test.ts`, `collect-memory.device.test.ts`,
-`gesture.device.test.ts` and `scenario-run.device.test.ts`. Nine of them need
-a device and run serially (`npm run test:device`) because they share one
-device and its fixed capture paths; the recorded Mate 60 hiprofiler probe runs
-from a committed fixture.
+`gesture.device.test.ts`, `scenario-run.device.test.ts` and
+`ui-capture.device.test.ts`. Ten of them need a device and run serially
+(`npm run test:device`) because they share one device and its fixed capture
+paths; the recorded Mate 60 hiprofiler probe runs from a committed fixture.
 
 Implemented today:
 
 - `hdc` transport: shell, port forwarding, file send/recv, target listing
-- one-shot capability probe → 22 verdicts with evidence
+- one-shot capability probe → 23 verdicts with evidence
 - collectors: hitrace (marker checks, stale-file protection, stop-on-failure),
   procfs (`/proc` memory/thread sampling with `pidof` resolution), hiprofiler
   (`hiprofiler_cmd` sessions with the ftrace, nativehook, gpu and xpower
@@ -65,9 +65,11 @@ Implemented today:
   `process_measure`; the `.htrace` converts through the same `trace_streamer`
   path), hiperf (`perf.data` for a debuggable app, converted into a second
   `perf.db`), hidumper (RenderService fps and hitch counters), uitest (the
-  on-screen UI tree) and hilog (the raw device log stream); every requested
+  on-screen UI tree), screenshot (`uitest screenCap` pulled into
+  `screenshot.png`) and hilog (the raw device log stream); every requested
   collector runs concurrently in one `collect`. `--app` is required only by the
-  modes that resolve a pid — `--hidumper`, `--uitest`, `--hilog` and
+  modes that resolve a pid — `--hidumper`, `--uitest`, `--screenshot`,
+  `--hilog` and
   `--hiprofiler --plugins memory` capture device-wide without it
 - UI gesture injection: `GestureDriver` drives `uitest uiInput` over the plain
   shell — click, swipe (with an optional velocity), key events, text into a
@@ -98,13 +100,13 @@ Implemented today:
   (`render.*`), GC pressure (`gc.*`), VSync anomalies (`vsync.*`), empty
   frames with HapRay's false-positive filters and exact load share
   (`empty_frame.*`), RenderService skips reverse-traced through NativeWindow
-  (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`) and ArkUI component
-  reuse (`components.*`), driven by an offline capability matrix derived from
-  table presence
+  (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`), ArkUI component
+  reuse (`components.*`) and the UI tree and screenshot (`ui.*`), driven by an
+  offline capability matrix derived from table presence
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
-  `compare`, `gesture {click,swipe,key,input,text}`,
+  `compare`, `ui-compare`, `gesture {click,swipe,key,input,text}`,
   `emulator {list,start,stop,create}`, `run <scenario.json>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
@@ -115,6 +117,11 @@ Implemented today:
   after it, always — writing one scene per (round, step) plus `steps.json`,
   `testInfo.json` and `pids.json`. A failed action fails the step and keeps
   its scene; `--keep-going` continues, and the exit code is 1 either way.
+- UI capture and diff: `collect --screenshot` pulls a PNG beside the tree;
+  `ui-compare <a> <b> --out <dir>` reports structural tree changes by node
+  identity and pixel changes by dHash and a bounded diff, with two marked PNGs
+  and an offline HTML page. A pure-TypeScript PNG codec does the decoding, so
+  no OpenCV, Pillow or native build is involved.
 
 Metric ids emitted by the analyzers:
 
@@ -136,6 +143,7 @@ Metric ids emitted by the analyzers:
 | `rs_skip.*` | RenderService skips | `rs_skip.frames.count`, `rs_skip.trace.accuracy` |
 | `flamegraph.*` | folded stacks | `flamegraph.app.share`, `flamegraph.stacks.count` |
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
+| `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` |
 
 The recorded traces pin field-level output for the binder, threads and
 fault-tree analyzers against golden outputs from ArkAnalyzer-HapRay revision
@@ -169,15 +177,12 @@ count is real and zero. `frame-load`, the empty-frame load metrics and
 `native-memory` degrade the same way on these traces, with a reason naming
 `--hiperf` or `--plugins nativehook`, rather than reporting zeros.
 
-Not implemented yet: `coverage`, plus HapRay's UI animation diff. Coverage was
+Not implemented yet: `coverage`. It was
 measured, not assumed: `bjc_cov` is absent from the Mate 60 (`which` finds
 nothing and `aa` prints nothing over plain shell), and even a device that has it
 would not make the capability usable — no collector in this package consumes
 its output, so the matrix reports that reason instead of claiming the data
-exists. The animation diff needs `ui/<step>/pages.json`, two element-tree dumps
-and two screenshots per step, which HapRay's CaptureUI produces and no collector
-here does; the trace-side component signal (`H:CustomNode:Build*`) is ported
-instead. `js.heap` stays unavailable even on a device whose hiprofiler can run
+exists. `js.heap` stays unavailable even on a device whose hiprofiler can run
 the memory plugin: nothing in this package consumes the `js_heap_*` tables, and
 the measured `hidumper --mem-jsheap` route needs a debug-signed or profilerable
 app, which the release apps on the Mate 60 are not.
@@ -199,22 +204,27 @@ The HapRay parity series (one release per major item, so far):
 | P11 | W3 native memory | `native_hook` alloc/free pairing, peak and unreleased by callchain, category evidence, timeline | shipped in `0.6.0` |
 | P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | shipped in `0.7.0` |
 | P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | shipped in `0.8.0` |
-| P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | planned |
+| P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | shipped in `0.9.0` |
 | P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | planned |
 | P16 | W8 symbols | symbol statistics, `--so-dir` device symbolization, offline flamegraph artifact, unresolved-symbol evidence | planned |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
-(rev `9386e4e`): 35 user-facing capabilities, of which 11 are now ported, 10
-partial and 14 missing. The inventory read 6 / 9 / 20 at `0.3.0`; `0.6.0`
+(rev `9386e4e`): 35 user-facing capabilities, of which 13 are now ported, 10
+partial and 12 missing. The inventory read 6 / 9 / 20 at `0.3.0`; `0.6.0`
 reported 9 / 9 / 17 after the XLSX suite (row 34), frame load (row 9) and
-native memory (row 19) moved to ported; `0.7.0` moved hilog (row 30) to ported,
-and `0.8.0` moves run-only preparation (row 2) to ported — the runner is
+native memory (row 19) moved to ported; `0.7.0` moved hilog (row 30) to ported;
+`0.8.0` moves run-only preparation (row 2) to ported — the runner is
 collect-only by construction — and lifts the step DSL (row 3) from missing to
 partial, because a scenario is a validated action list with no selectors and no
-loops. Items deliberately not ported (Hypium/xdevice test execution, the LLM
-GUI agent, TensorFlow opt-detector, radare2 symbol recovery, bjc coverage) keep
-their measured reasons instead of a claim; the scenario runner replaces the
-first of them rather than porting it. The rendered
+loops. `0.9.0` moves UI capture per step (row 7) and UI comparison (row 32) to
+ported, and lifts animation analysis (row 31) from missing to partial: a
+start/end capture pair is compared by the same tree and image comparators, but
+the animation label itself is not emitted — HapRay's dHash thresholds are
+unvalidated and resolution dependent, and "this region animated" is not a
+performance measurement. Items deliberately not ported (Hypium/xdevice test
+execution, the LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery,
+bjc coverage) keep their measured reasons instead of a claim; the scenario
+runner replaces the first of them rather than porting it. The rendered
 roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).
 
@@ -252,10 +262,10 @@ ohos-perf collect \
   --app com.example.app --duration 10s --out ./hipro-scene \
   --hiprofiler --plugins gpu,xpower,nativehook --json
 
-# everything at once: perf samples, render counters, the UI tree and the log
+# everything at once: perf samples, render counters, the screen, the tree and the log
 ohos-perf collect \
   --app com.example.app --duration 10s --out ./full-scene \
-  --procfs --hiperf --hidumper --uitest --hilog --json
+  --procfs --hiperf --hidumper --uitest --screenshot --hilog --json
 
 # device-wide memory sampling needs no app
 ohos-perf collect \
@@ -295,6 +305,13 @@ Compare two captures — each argument is a scene directory or a saved
 
 ```bash
 ohos-perf compare ./before ./after --json
+```
+
+Compare the same two captures by what was on screen — tree structure and
+pixels, with two marked images:
+
+```bash
+ohos-perf ui-compare ./before ./after --out ./ui-diff --json
 ```
 
 Analyze it offline — no device or toolchain needed:
@@ -427,6 +444,89 @@ step 2 must say what step 1 produced. `--keep-going` continues after a failure;
 the exit code is still 1. A collector the device lacks fails that step with the
 capability matrix's reason and the message names the step.
 
+## UI capture and diff
+
+A trace says how fast a frame was drawn. It does not say what was on the
+screen. `collect --screenshot` adds the screen itself, and `ui-compare` answers
+"what changed between these two captures" both structurally and by pixel:
+
+```bash
+ohos-perf collect --duration 5 --out ./before --uitest --screenshot
+# drive the app, then capture the state you want to compare
+ohos-perf collect --duration 5 --out ./after --uitest --screenshot
+
+ohos-perf ui-compare ./before ./after --out ./diff --json
+```
+
+`--screenshot` runs `uitest screenCap` and pulls the result into
+`screenshot.png` beside `ui.json`. It is independent of `--uitest`: a
+screenshot without a tree is a valid capture, and the analyzer reports the half
+that is missing instead of zeros for both. Success is the device tool's own
+`ScreenCap saved to` marker, because `hdc` exits 0 even when the device
+refuses; the pulled bytes must start with the PNG signature, so a truncated
+transfer is a typed error rather than a scene artifact. `scene.json` records
+`capture.screenshot: { width, height, bytes }`, and `collect` prints
+`screenshot 1260x2720` in its samples line.
+
+The `ui` analyzer reads both artifacts and emits `ui.nodes.count`,
+`ui.nodes.clickable`, `ui.nodes.text`, `ui.tree.depth.max`,
+`ui.screenshot.width`, `ui.screenshot.height` and `ui.screenshot.dhash`, so a
+UI section appears in `report` with the screenshot embedded from
+`assets/screenshot.png` — one offline HTML page, no scripts, no network. The
+dHash is a 16-character hex string with `unit: 'hash'`, not a measurement.
+
+`ui-compare` writes four files and exits 0 whenever the comparison could be
+made — including when the screens are identical — and 1 when it could not (a
+missing artifact on one side, or two different screen sizes, which is
+`UI_SIZE_MISMATCH`: `bounds` and pixels would be in different spaces, and a
+rescaled diff would report layout differences as pixel differences):
+
+| File | What it is |
+| --- | --- |
+| `ui-diff.json` | the typed diff: both sides' sizes and timestamps, per-node `added`/`removed`/`changed`/`unchanged`, image numbers, changed regions |
+| `ui-diff.html` | the same as one self-contained page, with both marked images |
+| `ui-diff-marked-a.png` / `-b.png` | each screen with the changed regions boxed, written by the package's own PNG encoder |
+
+Two comparators answer two different questions:
+
+- **Structure.** Nodes are matched by a computed identity —
+  `bundleName|type|id|text`, with `id` and `text` used only when non-empty — not
+  by child index. Siblings sharing an identity are paired in document order, so
+  an inserted node is one `added` rather than a shift that rewrites every later
+  comparison (HapRay's index matching does the latter). Attribute diffs ignore
+  HapRay's renderer-state list (`id`, `accessibilityId`, `rsNode`, `frameProxy`,
+  `frameRecord`, `contentConstraint`, `parentLayoutConstraint`,
+  `user defined constraint`) and suppress a `bounds` change under 5 px; every
+  difference records which rule decided it.
+- **Pixels.** A 64-bit dHash over a 9×8 box-averaged greyscale (similarity is
+  `1 - hamming/64`) plus a bounded pixel diff: both images are downscaled to at
+  most 256 px wide and compared channel-wise at a tolerance of 8 of 255, and
+  the changed-pixel ratio is reported. Both numbers are in the output with the
+  tolerance, because they answer different questions.
+
+Everything is integer arithmetic over a fixed downscale, so identical inputs
+produce byte-identical `ui-diff.json` and marked PNGs. The two scenes' own
+`capture.startedAtMs` are copied in as inputs; the diff carries no clock of its
+own.
+
+The PNG codec is pure TypeScript over Node's `zlib`: it decodes the 8-bit,
+non-interlaced colour types the device produces (0 grey, 2 RGB, 4 grey+alpha,
+6 RGBA) and encodes RGBA. Palette, 16-bit and interlaced images are refused with
+a typed error naming which, never silently mis-decoded. There is no OpenCV, no
+Pillow and no native build.
+
+`ui.tree` is the one new query: the raw tree with every attribute the diff
+compares, in document order. There is no `ui.diff` query — a comparison is a
+file `ui-compare` writes, and no query in this package reads outside the scene
+it is given.
+
+What is deliberately not here: a separate `ui_animate.json` artifact (an
+animation is a start/end pair of scenes, so it is `ui-compare a b` — the same
+computation, one code path), HapRay's animation labels (its dHash thresholds
+are unvalidated and resolution dependent, and "this region animated" is not a
+performance measurement), and `inspector_page_<i>.json` (Hypium's own tree dump;
+`ui.json` is the single tree source).
+
 ## Emulators
 
 `ohos-perf emulator` drives the `Emulator.exe` that DevEco Studio installs, so a
@@ -489,7 +589,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 1326 tests; 1292 pass + 34 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1395 tests; 1371 pass + 35 skip on a clean checkout (no device, spike/out/ absent)
 npm run typecheck -w @ohos-perf/core   # src + tests, the same check CI runs
 npm run typecheck -w @ohos-perf/cli
 ```
@@ -526,12 +626,13 @@ scene.close();
 
 ## Capability matrix
 
-Measured on 2026-11-16 (Mate 60) and 2026-11-17 (emulator):
+Measured on 2026-11-16/17 (Mate 60) and 2026-11-17 (emulator), re-run for
+`0.9.0` with the new `ui.capture` row:
 
 | Device | Available | Notes |
 | --- | --- | --- |
-| HUAWEI Mate 60, OpenHarmony 7.0.0.111, arm64-v8a | **20 / 22** | hardware PMU, hiprofiler (including `memory-plugin`), uitest, `hilog`, `ui.gesture` (driven through `uitest uiInput`) and Ark-runtime trace events present; `coverage` unavailable — no `bjc_cov` on the device and no collector in this package consumes its output; `js.heap` unavailable — no analyzer consumes `js_heap_*` tables, and `hidumper --mem-jsheap` needs a debug-signed or profilerable app |
-| HarmonyOS emulator 6.1.1.125, x86_64 | **13 / 22** | no hiprofiler, so `mem.native_hook`, `mem.gpu`, `power.xpower`, `net.io`, `disk.io` and `startup.app_startup` are out; `perf.pmu` has no hardware events; `render.fps_live` is a `proxy`. `trace.ark` is available because `hitrace` records the `ark` and `ace` categories, and `hilog.stream` because the image ships the `hilog` binary. `ui.tree` and `ui.gesture` are measured by a live `caps` run; a matrix built from the committed probe snapshot reports 12 / 22 instead, because that snapshot predates both the `hilog` row and the separate `uitest dumpLayout` measurement |
+| HUAWEI Mate 60, OpenHarmony 7.0.0.111, arm64-v8a | **21 / 23** | hardware PMU, hiprofiler (including `memory-plugin`), uitest, `ui.capture` (a real `screenCap` PNG), `hilog`, `ui.gesture` (driven through `uitest uiInput`) and Ark-runtime trace events present; `coverage` unavailable — no `bjc_cov` on the device and no collector in this package consumes its output; `js.heap` unavailable — no analyzer consumes `js_heap_*` tables, and `hidumper --mem-jsheap` needs a debug-signed or profilerable app |
+| HarmonyOS emulator 6.1.1.125, x86_64 | **14 / 23** | no hiprofiler, so `mem.native_hook`, `mem.gpu`, `power.xpower`, `net.io`, `disk.io` and `startup.app_startup` are out; `perf.pmu` has no hardware events; `render.fps_live` is a `proxy`. `trace.ark` is available because `hitrace` records the `ark` and `ace` categories, `hilog.stream` because the image ships the `hilog` binary, and `ui.capture` because its `uitest screenCap` produces a decodable PNG. `ui.tree`, `ui.gesture` and `ui.capture` are measured by a live `caps` run; a matrix built from the committed probe snapshot reports 12 / 23 instead, because that snapshot predates the `hilog` row, the separate `uitest dumpLayout` measurement and `ui.capture` |
 
 A missing capability is a value with a `reason` — never a silent zero. See
 [`packages/core/src/device/capability.ts`](packages/core/src/device/capability.ts)
@@ -554,10 +655,10 @@ crash: a crash is not the documented answer to missing input.
 ```
 L7  API / CLI / Skill      programmatic API · ohos-perf CLI · agent skill (skill/ohos-perf/)
 L6  Report                 Metric · Evidence · provenance · fidelity
-L5  Analyze                frames · frame load · fault tree · binder · threads · memory · memory measure · native memory · hilog · startup · render · gc · vsync · empty frame · rs skip · flamegraph · components
+L5  Analyze                frames · frame load · fault tree · binder · threads · memory · memory measure · native memory · hilog · startup · render · gc · vsync · empty frame · rs skip · flamegraph · components · ui
 L4  Query                  typed accessors over 88 trace tables
 L3  Ingest                 trace_streamer wrapper · scene layout · scene.json · db handles
-L2  Collectors             hitrace · procfs · hiprofiler · hiperf · hidumper · uitest · hilog
+L2  Collectors             hitrace · procfs · hiprofiler · hiperf · hidumper · uitest · screenshot · hilog
 L1  Device                 device model · capability probe · matrix · emulator lifecycle
 L0  Transport              hdc client
 ```
@@ -587,13 +688,14 @@ TypeScript 编写。它把设备能力探测、hitrace 采集、trace_streamer �
 2. **确定性输出**：同一输入两次运行字节一致，CI diff 有意义。
 3. **零原生依赖**：只用 Node 内置 `node:sqlite`，无编译、无 Python。
 
-当前 P0–P8 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
-hidumper / uitest 采集、trace_streamer 入库（含 perf.data → perf.db）、类型化查询、
+当前 P0–P14 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
+hidumper / uitest / screenshot 采集、trace_streamer 入库（含 perf.data → perf.db）、类型化查询、
 帧 / 故障树 / binder / 线程 / 内存 / 内存测量 / 启动 / 渲染 / GC 压力 / VSync 异常 /
-空帧 / RenderService 跳过 / 火焰图 / 组件复用共十四个分析器、降级指标引擎、证据图与
+空帧 / RenderService 跳过 / 火焰图 / 组件复用 / UI 树与截图共十八个分析器、降级指标引擎、证据图与
 命名下钻查询、基线对比、通过 `uitest uiInput` 注入点击 / 滑动 / 按键 / 文本的
 `gesture` 命令，以及 `doctor` / `caps` / `collect` / `analyze` / `query` / `tools` /
-`compare` 七个命令、`emulator` 生命周期命令和 `skill/ohos-perf/` 中的 agent skill
+`compare` / `ui-compare` 命令、`emulator` 生命周期命令、`run` 场景运行器和
+`skill/ohos-perf/` 中的 agent skill
 适配器。内存测量
 （`mem.measure.*`）来自 hiprofiler memory-plugin 记录的 `process_measure` 表，
 以 ipid 归属进程、把 KiB 换算成字节后报告 exact 的 RSS 峰值与均值；无应用采集时
@@ -609,8 +711,19 @@ HapRay 实现，不声称对齐。`ui.gesture` 以设备工具打印的 `No Erro
 没有 `bjc_cov`，且本包没有采集器消费它的输出，能力矩阵会据实给出该原因；`js.heap`
 即使在能运行 hiprofiler 的真机上也不可用，因为本包没有任何分析器消费 `js_heap_*`
 表，且实测 `hidumper --mem-jsheap` 需要 debug 签名或可被 profile 的应用。`--app`
-仅对需要解析 pid 的采集器必填；`--hidumper`、`--uitest`
+仅对需要解析 pid 的采集器必填；`--hidumper`、`--uitest`、`--screenshot`
 与 `--hiprofiler --plugins memory` 可以无应用采集。
+
+UI 采集与对比：`collect --screenshot` 通过 `uitest screenCap` 把整屏 PNG 拉回场景，
+以设备工具自己打印的 `ScreenCap saved to` 为成功标志，并校验 PNG 签名，因此被截断的
+传输是类型化错误而不是场景产物。`ui-compare <a> <b> --out <dir>` 按节点身份
+（`bundleName|type|id|text`）匹配树节点，而不是按子节点下标——插入一个节点只产生一条
+`added`，不会让后面每个节点都错位——同时报告 64 位 dHash 相似度与有界像素差异（两侧
+缩放到最多 256 px 宽，通道容差 8/255），并写出 `ui-diff.json`、`ui-diff.html` 与两张
+标注后的 PNG。PNG 编解码是纯 TypeScript（基于 Node 内置 `zlib`），没有 OpenCV、
+Pillow 或原生编译；不同分辨率的两张截图会被 `UI_SIZE_MISMATCH` 拒绝，而不是悄悄缩放。
+HapRay 的动画分级（dHash 阈值）刻意不移植：阈值未经验证且与分辨率相关，而“这块区域
+在动”不是性能指标。
 
 `--hiperf` 需要可调试应用，空闲应用产生 `samples: 0` 也是一次有效采集，CLI 会明确
 打印 `hiperf 0` 而不是省略。`compare` 把每个指标标为 improved / regressed /

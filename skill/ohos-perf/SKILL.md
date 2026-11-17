@@ -290,6 +290,60 @@ default: the first failed step stops the run, and `steps.json` /
 measurement of what the device did, so analyze it rather than discard it.
 `run` never analyzes.
 
+## UI capture and diff
+
+Use this when the question is about what the user *saw*, not how fast it was
+drawn: a layout regression, a missing or extra control, a screen that looks
+different after a change.
+
+```bash
+ohos-perf collect --duration 5 --out <dir> --uitest --screenshot --json
+ohos-perf ui-compare <sceneA> <sceneB> --out <dir> --json
+```
+
+- `--screenshot` adds `screenshot.png` beside `ui.json`. It needs no `--app`
+  (the whole screen is captured) and is independent of `--uitest`; a
+  screenshot with no tree is a valid capture. `--json` reports
+  `screenshot: { width, height }`; the human line prints
+  `screenshot 1260x2720`.
+- Success is the device tool's `ScreenCap saved to` marker, never the host exit
+  code. The pulled bytes must carry the PNG signature, so a truncated transfer
+  fails loudly instead of becoming a scene artifact.
+- `ui-compare` exits **0 whenever the comparison was made**, including when the
+  screens are identical — identical is a result, not a failure. Exit 1 means it
+  could not be made: an artifact missing on one side (`UI_MISSING_ARTIFACT`), or
+  two different screen sizes (`UI_SIZE_MISMATCH`, which is refused rather than
+  rescaled).
+- Output, in `--json` and on disk:
+
+  ```
+  tree   { added, removed, changed, unchanged }     // or null when no tree on either side
+  image  { hamming, similarity, changedRatio, tolerance }  // or null when no screenshot
+  regions  <count of changed regions>
+  degraded [...]   // artifacts neither side carried
+  files   ui-diff.json, ui-diff.html, ui-diff-marked-a.png, ui-diff-marked-b.png
+  ```
+
+- **Tree matching is by identity, not index**: `bundleName|type|id|text`, with
+  `id`/`text` used only when non-empty. Inserting one node is one `added`, not a
+  cascade. Do not describe `changed` as "moved" — it means an attribute
+  differed after the ignore list and the 5 px geometry tolerance.
+- **Image numbers answer different questions.** `similarity` is structural
+  (`1 - hamming/64` over an 8×8 greyscale gradient); `changedRatio` is literal
+  pixels over a ≤256 px-wide downscale at `tolerance` 8 of 255. Quote both with
+  the tolerance, and never convert either into "the layout is broken".
+- **The analyzer's UI section is the same data**: `analyze` emits
+  `ui.nodes.count`, `ui.nodes.clickable`, `ui.nodes.text`, `ui.tree.depth.max`,
+  `ui.screenshot.width`/`height` and `ui.screenshot.dhash`; `report` embeds the
+  screenshot from `assets/screenshot.png`. A scene with only one of the two
+  artifacts reports the present half as exact and the missing half as degraded
+  with a reason — never zeros for both.
+- An animation is a start/end pair of scenes; compare them with `ui-compare`.
+  There is no `ui_animate.json`, and HapRay's "animated / major / minor" labels
+  are deliberately not emitted.
+- Drill into the tree with `ohos-perf query <scene> ui.tree --json`; it returns
+  every attribute the diff compares, in document order.
+
 ## Drilling down
 
 List the available queries and their argument schemas once per session:
@@ -318,7 +372,9 @@ Rules:
 Not every query reads the trace database. `ui.get` reads the scene's captured
 UI tree (`ui.json`) and returns nodes by `bundleName` and `maxDepth`; a scene
 captured without `--uitest` has no rows, and that is not a failure. Use it to
-name what was on screen when a frame was slow.
+name what was on screen when a frame was slow. `ui.tree` returns the same
+captured tree whole — every attribute the UI diff compares, in document order —
+so a difference from `ui-compare` can be read back attribute by attribute.
 
 The frame-load handles take a nanosecond range and return `[]` — not an
 error — when the capture has no perf tables:

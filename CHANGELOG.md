@@ -1,5 +1,91 @@
 # Changelog
 
+## 0.9.0 — 2026-11-17
+
+P14 (HapRay parity W6): the screen itself, captured, analyzed and compared.
+
+### Features
+
+- **`collect --screenshot`** runs `uitest screenCap`, pulls the PNG into
+  `screenshot.png` beside `ui.json`, and records
+  `capture.screenshot: { width, height, bytes }` in `scene.json`. It needs no
+  `--app` (the whole screen is captured) and is independent of `--uitest`: a
+  screenshot without a tree is a valid capture. `--json` reports
+  `screenshot: { width, height }`; the human line prints
+  `screenshot 1260x2720`. Success is the device tool's `ScreenCap saved to`
+  marker — `hdc` exits 0 even when the device refuses — and the pulled bytes
+  must carry the PNG signature, so a truncated transfer is
+  `SCREENSHOT_BAD_PNG` rather than a scene artifact.
+- **New capability row `ui.capture`** (23 rows total), gated on the `uitest`
+  binary and the measured marker, so an agent can ask "can this device
+  screenshot?" before asking for one.
+- **A pure-TypeScript PNG codec** (`decodePng`, `encodePng`) over Node's
+  `zlib`: decodes the 8-bit, non-interlaced colour types the device produces
+  (0 grey, 2 RGB, 4 grey+alpha, 6 RGBA) and encodes RGBA. Palette, 16-bit and
+  interlaced images are refused with a typed error naming which, never
+  silently mis-decoded. No OpenCV, no Pillow, no native build.
+- **`UiAnalyzer`** (`ui` section) emits `ui.nodes.count`, `ui.nodes.clickable`,
+  `ui.nodes.text`, `ui.tree.depth.max`, `ui.screenshot.width`,
+  `ui.screenshot.height` and `ui.screenshot.dhash` (16 hex chars,
+  `unit: 'hash'`, `fidelity: 'exact'` — a computed value, not a measurement),
+  plus one `ui_tree` evidence item with a `ui.tree` drill-down. It requires no
+  capability and decides from the artifacts it is given: tree only or
+  screenshot only reports the present half exact and the missing half degraded
+  with a reason, never zeros for both; neither emits `ui.degraded` and a
+  `no_data` evidence item.
+- **`ohos-perf ui-compare <a> <b> --out <dir> [--json]`** writes
+  `ui-diff.json`, `ui-diff.html`, `ui-diff-marked-a.png` and
+  `ui-diff-marked-b.png`. Exit 0 whenever the comparison was made — including
+  identical screens — and 1 when it could not be: `UI_MISSING_ARTIFACT` names
+  the artifact and the side, `UI_SIZE_MISMATCH` names both sizes and refuses
+  rather than rescaling.
+- **Identity-based tree comparison** (`diffTrees`, `nodeIdentity`): nodes are
+  matched by `bundleName|type|id|text` (`id` and `text` only when non-empty),
+  siblings sharing an identity paired in document order. An inserted node is
+  one `added` instead of shifting every later comparison — the defect HapRay's
+  index matching has. Attribute diffs apply HapRay's renderer-state ignore
+  list and a 5 px geometry tolerance; every difference records which rule
+  decided it.
+- **Two image comparators** (`diffImages`, `dHash64`): a 64-bit dHash over a
+  9×8 box-averaged greyscale (similarity `1 - hamming/64`) and a bounded pixel
+  diff over a ≤256 px-wide downscale at per-channel tolerance 8. Both numbers
+  and the tolerance are in the output, because they answer different
+  questions.
+- **`ui.tree` query** returns the captured tree whole — every attribute the
+  diff compares, in document order — so a difference is drillable. `ui.get` is
+  unchanged.
+- **The report's `ui` section** embeds the screenshot: `report` copies it to
+  `<out>/assets/screenshot.png` and the HTML shows it with
+  `<img src="assets/screenshot.png">`. A scene without one renders the
+  degraded reason and no `<img>`; the page stays script-free and offline.
+- **Public surface:** `decodePng`, `encodePng`, `diffTrees`, `nodeIdentity`,
+  `IGNORED_ATTRIBUTES`, `GEOMETRY_TOLERANCE_PX`, `compareSceneDirs`,
+  `UI_DIFF_FILES`, `renderUiDiffHtml`, `UiAnalyzer`, `ScreenshotCollector`,
+  and the `UiNode` / `RgbaImage` / `UiDiff` / `UiDiffSide` / `UiCompareOptions`
+  types.
+
+### Semantics worth naming
+
+- **Everything is a function of the captured bytes.** `ui-diff.json` and the
+  marked PNGs are byte-identical for identical inputs: the encoder writes no
+  `tEXt`/`tIME` chunk, dHash and the pixel diff are integer arithmetic over a
+  fixed downscale, and the diff carries no clock of its own — the two scenes'
+  `capture.startedAtMs` are copied in as inputs.
+- **A missing screen is not an unchanged screen.** The comparison fails with a
+  typed error naming the artifact and the side rather than reporting an empty
+  diff.
+- **Fixed a positional-unpacking bug found only on a real device.**
+  `Device.collect` reads collector results positionally; the screenshot was
+  pushed before hidumper/uitest and unpacked after them, which put the UI
+  tree's node count under `capture.screenshot` in `scene.json`. The push now
+  happens after the uitest block, and a unit test pins both keys.
+- **Not ported, deliberately:** HapRay's `ui_animate.json` artifact (an
+  animation is a start/end pair of scenes, so it is `ui-compare a b` — one
+  code path, not two), its animation labels (dHash thresholds are unvalidated
+  and resolution dependent, and "this region animated" is not a performance
+  measurement), `inspector_page_<i>.json` (Hypium's own tree dump; `ui.json`
+  stays the single tree source), and cross-resolution rescaling.
+
 ## 0.8.0 — 2026-11-17
 
 P13 (HapRay parity W5): declarative scenarios, measured from the inside.
