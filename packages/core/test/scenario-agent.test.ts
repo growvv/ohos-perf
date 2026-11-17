@@ -357,6 +357,65 @@ describe('runAgent — the loop', () => {
     expect(result.status).toBe('refused');
   });
 
+  it('refuses a tap that lands just outside the payment button', async () => {
+    // Measured on 2026-11-17 against a real model: given a checkout screen whose
+    // only control is "Pay now" at `[0,1800][1080,1950]`, one model answered
+    // `click {x:540, y:1965}` twice — 15 px below the button. The tap lands on
+    // the screen's padding, and on a real device that padding is often part of
+    // the same hit region. Strict containment let it through.
+    const device = fakeDevice([[node({
+      text: 'Pay now', id: 'pay_now', bounds: '[0,1800][1080,1950]',
+      boundsRect: { left: 0, top: 1800, right: 1080, bottom: 1950 },
+    })]]);
+    const model = scripted({
+      action: { action: 'click', x: 540, y: 1965 },
+      reason: 'complete the purchase',
+    });
+    const result = await runAgent(device, model, { task, app: 'com.demo', maxSteps: 3 });
+    expect(device.gestures).toHaveLength(0);
+    expect(result.steps[0]!.status).toBe('refused');
+    expect(result.status).toBe('refused');
+  });
+
+  it('does not refuse a tap that lands on a neighbouring control', async () => {
+    // The margin must not swallow a neighbour. Buttons stack with no gap on a
+    // real screen: "Back" starts exactly where "Pay now" ends, so a tap 15 px
+    // inside Back is also 15 px from Pay now — inside the near-miss distance.
+    // The landed-on control wins, or the guard would block the one navigation
+    // that leaves the checkout screen.
+    const pay = node({
+      text: 'Pay now', id: 'pay_now', bounds: '[0,1800][1080,1950]',
+      boundsRect: { left: 0, top: 1800, right: 1080, bottom: 1950 },
+    });
+    const back = node({
+      text: 'Back', id: 'back', bounds: '[0,1950][1080,2070]',
+      boundsRect: { left: 0, top: 1950, right: 1080, bottom: 2070 },
+    });
+    const device = fakeDevice([[pay, back], [pay, back]]);
+    const model = scripted(
+      { action: { action: 'click', x: 540, y: 1965 }, reason: 'leave checkout' },
+      { done: true, reason: 'x' },
+    );
+    const result = await runAgent(device, model, { task, app: 'com.demo', maxSteps: 3 });
+    expect(result.steps[0]!.status).toBe('acted');
+    expect(device.gestures).toHaveLength(1);
+  });
+
+  it('does not refuse a tap far from any irreversible control', async () => {
+    // The margin is bounded: 25 px below the button is outside it, so the guard
+    // does not become a screen-wide no-tap zone.
+    const device = fakeDevice([[node({
+      text: 'Pay now', id: 'pay_now', bounds: '[0,1800][1080,1950]',
+      boundsRect: { left: 0, top: 1800, right: 1080, bottom: 1950 },
+    })], [node()]]);
+    const model = scripted(
+      { action: { action: 'click', x: 540, y: 1975 }, reason: 'scroll area' },
+      { done: true, reason: 'x' },
+    );
+    const result = await runAgent(device, model, { task, app: 'com.demo', maxSteps: 3 });
+    expect(result.steps[0]!.status).toBe('acted');
+  });
+
   it('lets an irreversible action through when the caller opts in', async () => {
     const device = fakeDevice([[node({ text: '立即支付', bounds: '[0,0][200,200]' })]]);
     const model = scripted({

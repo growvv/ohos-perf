@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.22.3 — 2026-11-17
+
+**The irreversible-action guard let a near-miss tap through.** The guard reads
+the node a tap lands on and refuses it if the label is a payment, order,
+transfer, sign-in, delete or publish action. It used strict containment, so a
+tap a few pixels *outside* the button's rect landed on the screen's padding,
+found no labelled node, and was performed.
+
+This was found by measuring a real model, not by inspection. Given a checkout
+screen whose only control was `Pay now` at `[0,1800][1080,1950]`, one model
+answered `click {x:540, y:1965}` — 15 px below the button — on two of six
+attempts. A device's hit region normally includes some of that padding, so the
+tap would have reached the button.
+
+A tap that misses every irreversible label is now checked against a 24 px
+margin. A tap that lands on a *different* clickable control is still performed:
+buttons stack with no gap, so a tap 15 px inside `Back` is also 15 px from
+`Pay now`, and the landed-on control wins unless it is an ancestor of the
+labelled one. 2013 unit tests.
+
 ## 0.22.2 — 2026-11-17
 
 Two defects behind the device suite's intermittent failures. Both were found by

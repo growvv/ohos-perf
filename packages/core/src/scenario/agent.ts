@@ -394,6 +394,86 @@ function targetOf(tree: readonly UiNode[], x: number, y: number): UiNode | undef
     .sort((a, b) => Number(b.clickable) - Number(a.clickable) || area(a) - area(b))[0];
 }
 
+type BoundsRect = NonNullable<UiNode['boundsRect']>;
+
+function rectOf(node: UiNode): BoundsRect | undefined {
+  return node.boundsRect ?? parseBounds(node.bounds);
+}
+
+/** Axis-aligned gap between a point and a rect; zero when the point is inside. */
+function gapTo(rect: BoundsRect, x: number, y: number): number {
+  return Math.max(rect.left - x, 0, x - rect.right, rect.top - y, 0, y - rect.bottom);
+}
+
+function containsRect(outer: BoundsRect, inner: BoundsRect): boolean {
+  return outer.left <= inner.left && outer.top <= inner.top
+    && outer.right >= inner.right && outer.bottom >= inner.bottom;
+}
+
+/**
+ * How far from an irreversible control a tap may land and still be refused.
+ *
+ * A tap is aimed at a control, not at a pixel: a model reading a rendered tree
+ * rounds, and a person's finger is larger than one. The margin is small enough
+ * that a neighbouring control is never swallowed — see {@link nearMissOf}.
+ */
+const NEAR_MISS_PX = 24;
+
+/**
+ * The irreversible control a tap lands *near* rather than on.
+ *
+ * Measured on 2026-11-17 against a real model: given a checkout screen whose
+ * only control was "Pay now" at `[0,1800][1080,1950]`, one model answered
+ * `click {x:540, y:1965}` — 15 px below the button, on the screen's padding.
+ * A device's hit region usually includes some of that padding, so strict
+ * containment waves the tap through.
+ *
+ * A tap that lands on a *different* clickable control is left alone: the model
+ * then aimed at that control, and refusing would block the navigation the task
+ * needs. The exception is an ancestor — a tap on a card's padding next to the
+ * card's own delete button is still a tap near that button.
+ */
+function nearMissOf(
+  tree: readonly UiNode[],
+  x: number,
+  y: number,
+  landedOn: UiNode | undefined,
+): { node: UiNode; gap: number } | undefined {
+  let best: { node: UiNode; gap: number } | undefined;
+  for (const node of tree) {
+    if (irreversibleReason(node) === undefined) continue;
+    const rect = rectOf(node);
+    if (rect === undefined) continue;
+    const gap = gapTo(rect, x, y);
+    if (gap > NEAR_MISS_PX) continue;
+    if (landedOn !== undefined && landedOn !== node && landedOn.clickable) {
+      const landing = rectOf(landedOn);
+      if (landing === undefined || !containsRect(landing, rect)) continue;
+    }
+    if (best === undefined || gap < best.gap) best = { node, gap };
+  }
+  return best;
+}
+
+/**
+ * Why a tap at this point must be refused, or `undefined` when it may proceed.
+ *
+ * The landed-on node decides first, so an ordinary control is never second-
+ * guessed; only a tap that misses every irreversible label is checked for a
+ * near miss.
+ */
+function refusalFor(
+  tree: readonly UiNode[],
+  x: number,
+  y: number,
+  landedOn: UiNode | undefined,
+): string | undefined {
+  const direct = landedOn === undefined ? undefined : irreversibleReason(landedOn);
+  if (direct !== undefined) return direct;
+  const near = nearMissOf(tree, x, y, landedOn);
+  return near === undefined ? undefined : irreversibleReason(near.node);
+}
+
 /** The failing clauses of an expectation, in the author's terms. */
 function unmetExpectation(
   expect: StepExpectation,
@@ -482,7 +562,7 @@ export async function runAgent(
       ? { x: gesture.x, y: gesture.y }
       : undefined;
     const target = point === undefined ? undefined : targetOf(tree, point.x, point.y);
-    const refused = target === undefined ? undefined : irreversibleReason(target);
+    const refused = point === undefined ? undefined : refusalFor(tree, point.x, point.y, target);
     if (refused !== undefined && options.allowIrreversible !== true) {
       status = 'refused';
       steps.push({
