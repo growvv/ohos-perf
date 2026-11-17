@@ -30,6 +30,7 @@ import { HiperfCollector, hiperfEventsFor, type HiperfCapture } from '../collect
 import { ProcfsCollector, type ProcfsSample } from '../collectors/procfs';
 import { UitestCollector } from '../collectors/uitest';
 import { ScreenshotCollector, type ScreenshotCapture } from '../collectors/screenshot';
+import { JsheapCollector, type JsheapCapture } from '../collectors/jsheap';
 import type { UiNode } from '../query/ui';
 import type { TraceCollectOptions } from '../collectors/types';
 import { frameDelta } from '../analyze/render';
@@ -125,6 +126,14 @@ export interface CollectOptions extends TraceCollectOptions {
    */
   hilog?: boolean;
   /**
+   * Also pull a JS heap snapshot.
+   *
+   * Capture only — the snapshot is opaque to this package and exists for
+   * DevEco Studio to open. Requires `app` and a debug-signed or profilerable
+   * app; the collector names the device's own refusal when it is not.
+   */
+  jsheap?: boolean;
+  /**
    * Record this capture as one step of a scenario run. Written into
    * `scene.json`, so the scene names its own step after being copied out of
    * the run directory.
@@ -148,6 +157,7 @@ export interface DeviceDeps {
   hidumper?: HidumperCollector;
   uitest?: UitestCollector;
   screenshot?: ScreenshotCollector;
+  jsheap?: JsheapCollector;
   hilog?: HilogCollector;
   gesture?: GestureDriver;
 }
@@ -396,6 +406,7 @@ export class Device {
         const wantsUitest = opts.uitest === true;
         const wantsScreenshot = opts.screenshot === true;
         const wantsHilog = opts.hilog === true;
+        const wantsJsheap = opts.jsheap === true;
         // Only hiperf needs a pid. hidumper and uitest read the whole screen,
         // so they work with no app at all.
         const hiperfApp = wantsHiperf ? requireApp('hiperf', ' to profile') : undefined;
@@ -442,6 +453,7 @@ export class Device {
         if (wantsHidumper) remember(layout.hidumperFile);
         if (wantsUitest) remember(layout.uiFile);
         if (wantsScreenshot) remember(layout.screenshotFile);
+        if (wantsJsheap) remember(layout.jsheapFile);
         if (wantsHilog) {
           remember(layout.hilogFile);
           remember(layout.hilogJsonlFile);
@@ -530,6 +542,7 @@ export class Device {
         let uiNodes: UiNode[] | undefined;
         let screenshotCapture: ScreenshotCapture | undefined;
         let hilogLines: number | undefined;
+        let jsheapCapture: JsheapCapture | undefined;
         try {
           // Every requested collector starts in the same tick with the same
           // duration, and `Promise.all` rejects with the first failure: a
@@ -585,6 +598,12 @@ export class Device {
             const hilog = this.deps.hilog ?? new HilogCollector();
             runs.push(hilog.collect(hdc, this.id, { durationMs: opts.durationMs }, layout));
           }
+          if (wantsJsheap) {
+            const jsheap = this.deps.jsheap ?? new JsheapCollector();
+            runs.push(
+              jsheap.collect(hdc, this.id, { app: opts.app ?? '' }, layout),
+            );
+          }
 
           // `allSettled`, not `all`: a rejection must not return while the
           // sibling collectors are still running, because they would write
@@ -613,7 +632,8 @@ export class Device {
           if (wantsHidumper) hidumperCapture = results[index++] as HidumperCapture;
           if (wantsUitest) uiNodes = results[index++] as UiNode[];
           if (wantsScreenshot) screenshotCapture = results[index++] as ScreenshotCapture;
-          if (wantsHilog) hilogLines = (results[index] as { lines: number }).lines;
+          if (wantsHilog) hilogLines = (results[index++] as { lines: number }).lines;
+          if (wantsJsheap) jsheapCapture = results[index++] as JsheapCapture;
         } catch (err) {
           // Every collector has settled, so nothing can overwrite the restored
           // bytes afterwards. The old scene must stay coherent, so put every

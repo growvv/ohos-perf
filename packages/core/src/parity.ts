@@ -173,10 +173,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 20,
     name: 'JS heap snapshot capture',
-    status: 'missing',
-    reason:
-      'No collector runs `hidumper --mem-jsheap` or pulls the snapshot; the capability ' +
-      'reports why it is unavailable and nothing consumes `js_heap_*`.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 21,

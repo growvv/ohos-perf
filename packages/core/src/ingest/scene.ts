@@ -31,6 +31,11 @@ export interface SceneLayout {
    * carries one. Nothing here produces it yet; it is read when present.
    */
   redundantFile: string;
+  /**
+   * `jsheap.heapsnapshot`: the raw heap snapshot a `--mem-jsheap` capture
+   * pulled. Opaque to this package; it exists for DevEco Studio to open.
+   */
+  jsheapFile: string;
   metadataFile: string;
 }
 
@@ -48,6 +53,7 @@ export function createSceneLayout(root: string): SceneLayout {
     hilogFile: join(root, 'hilog.log'),
     hilogJsonlFile: join(root, 'hilog.jsonl'),
     redundantFile: join(root, 'redundant_file.txt'),
+    jsheapFile: join(root, 'jsheap.heapsnapshot'),
     metadataFile: join(root, 'scene.json'),
   };
 }
