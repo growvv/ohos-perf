@@ -521,6 +521,10 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--allow-irreversible', "let the guard's refusals through (payment, ordering, ...)")
     .option('--target <id>', 'drive this hdc target instead of the first connected one')
     .option('--json', 'print the transcript as JSON')
+    .addHelpText('after', `
+A model chooses every gesture, so this acts on whatever account is signed in.
+Irreversible targets are refused by label, but a label is not intent: review the
+walk, and prefer a test account or a disposable build.`)
     .action(async (app: string, task: string, opts: {
       maxSteps: string;
       model?: string;
