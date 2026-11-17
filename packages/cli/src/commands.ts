@@ -1047,6 +1047,22 @@ export async function runExplore(
 }
 
 /**
+ * The warning printed whenever a model is allowed to drive the device.
+ *
+ * The guard refuses a tap whose label is irreversible, but it reads labels,
+ * not intent: a model can still reach a screen a human would not have chosen,
+ * and an app's own wording is not something this package controls. The warning
+ * names the two things a user has to do themselves — watch the walk, and
+ * decide whether the account it ran against is one they can afford to change.
+ * It goes to stderr so `--json` stdout stays parseable.
+ */
+const AGENT_RISK_WARNING =
+  'warning: risk — a model chooses every gesture in this run, so it acts on a\n' +
+  '         real account with whatever is already signed in. Irreversible\n' +
+  '         targets are refused by label, but a label is not intent — review\n' +
+  '         the walk below, and prefer a test account or a disposable build.\n';
+
+/**
  * Drive an app toward a task with a model, and report the walk.
  *
  * The exit code is the point of the command. HapRay records the model's
@@ -1054,6 +1070,9 @@ export async function runExplore(
  * never reached is a green run. Here only a verified claim exits 0; a claim
  * the screen contradicted, a run the guard stopped, and a budget that ran out
  * are all failures, each naming the step that ended it.
+ *
+ * Every run also prints {@link AGENT_RISK_WARNING} to stderr: a model chooses
+ * the gestures, so the user is told to watch the walk rather than trust it.
  */
 export async function runAgentCommand(
   deps: CliDeps,
@@ -1070,7 +1089,9 @@ export async function runAgentCommand(
 
   try {
     const result = await deps.agent(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) {
+      return { stdout: json(result), stderr: AGENT_RISK_WARNING, exitCode: 0 };
+    }
 
     const { transcript, device } = result;
     const outcome = transcript.status === 'completed'
@@ -1095,7 +1116,7 @@ export async function runAgentCommand(
         `result ${outcome}\n` +
         `walk   ${transcript.steps.length} steps, ${transcript.statesReached} states reached\n` +
         lines.map((line) => `${line}\n`).join(''),
-      stderr: '',
+      stderr: AGENT_RISK_WARNING,
       exitCode: transcript.status === 'completed' ? 0 : 1,
     };
   } catch (err) {

@@ -145,4 +145,31 @@ describe('runAgentCommand', () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('no model configured');
   });
+
+  it('warns about the risk of letting a model drive the device', async () => {
+    // A model chooses the gestures, so a run acts on a real account. The guard
+    // refuses labelled irreversible targets, but it reads labels, not intent —
+    // the warning is what tells a user to review the transcript before trusting
+    // a run. It goes to stderr so `--json` stdout stays machine-parseable.
+    const result = await runAgentCommand(
+      cliDeps({ agent: async () => ({ transcript, device: { id: 'emu-1', kind: 'emulator' } }) }),
+      { app: 'com.demo', task: 'open the settings page', maxSteps: 10 },
+      {},
+    );
+    expect(result.stderr).toMatch(/risk/i);
+    expect(result.stderr).toMatch(/model/i);
+    expect(result.stderr).toMatch(/irreversible/i);
+    // The stdout contract is unchanged: the warning must not leak into it.
+    expect(result.stdout).not.toMatch(/risk/i);
+  });
+
+  it('keeps the warning out of --json stdout', async () => {
+    const result = await runAgentCommand(
+      cliDeps({ agent: async () => ({ transcript, device: { id: 'emu-1', kind: 'emulator' } }) }),
+      { app: 'com.demo', task: 't', maxSteps: 5 },
+      { json: true },
+    );
+    expect(() => JSON.parse(result.stdout)).not.toThrow();
+    expect(result.stderr).toMatch(/risk/i);
+  });
 });
