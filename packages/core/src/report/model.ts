@@ -20,6 +20,12 @@ export interface ReportScenario {
   window: TimeRange;
   /** Capture start from `scene.json`; absent when the scene did not record one. */
   startedAtNs?: number;
+  /**
+   * The screenshot the bundle carries at `assets/screenshot.png`. Present only
+   * when the scene had one, so a renderer can tell "no image" from "an image
+   * whose size it was not told".
+   */
+  screenshot?: { width: number; height: number };
 }
 
 /** One analyzer's contribution, ready for rendering. */
@@ -63,6 +69,14 @@ export interface ReportInput {
   startedAtNs?: number;
   sections: readonly AnalyzerSection[];
   comparison?: BaselineComparison;
+  /**
+   * The scene's screenshot dimensions, when one was captured. The report copies
+   * the file to `assets/screenshot.png` and renders it in the `ui` section; the
+   * dimensions are here so the page can state them without decoding the PNG
+   * again. Absent means no image was captured, and the page says so instead of
+   * pointing at a file that does not exist.
+   */
+  screenshot?: { width: number; height: number };
 }
 
 /** The compact roll-up written to `summary.json`. */
@@ -171,6 +185,7 @@ export function buildReport(input: ReportInput): ReportModel {
       device: input.device,
       window: { ...input.window },
       ...(input.startedAtNs === undefined ? {} : { startedAtNs: input.startedAtNs }),
+      ...(input.screenshot === undefined ? {} : { screenshot: { ...input.screenshot } }),
     },
     sections,
     totals: {

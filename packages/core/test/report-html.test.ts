@@ -165,6 +165,40 @@ describe('renderReportHtml', () => {
     expect(without).not.toContain('id="comparison"');
   });
 
+  it('embeds the scene screenshot inside the ui section', () => {
+    const model = buildReport({
+      generator: { name: '@ohos-perf/core', version: '0.9.0' },
+      app,
+      device: 'emu',
+      window: { startNs: 1000, endNs: 2000 },
+      sections: [{
+        analyzerId: 'ui',
+        status: 'measured',
+        result: { metrics: [metricOf('ui.screenshot.width', 1080)], evidence: [] },
+      }],
+      screenshot: { width: 1080, height: 2340 },
+    });
+    const html = renderReportHtml(model);
+
+    expect(html).toContain('<section id="ui"');
+    expect(html).toContain('<img src="assets/screenshot.png"');
+    expect(html).toContain('1080×2340');
+    // No screenshot: the metrics carry the degraded reason, and no <img> is
+    // emitted, so the page never shows a broken image.
+    const without = renderReportHtml(buildReport({
+      generator: { name: '@ohos-perf/core', version: '0.9.0' },
+      app,
+      device: 'emu',
+      window: { startNs: 1000, endNs: 2000 },
+      sections: [{
+        analyzerId: 'ui',
+        status: 'measured',
+        result: { metrics: [metricOf('ui.screenshot.width', 0)], evidence: [] },
+      }],
+    }));
+    expect(without).not.toContain('<img');
+  });
+
   it('is deterministic', () => {
     const model = build([{ analyzerId: 'frames', status: 'measured', result: { metrics: [metricOf('a', 1)], evidence: [jank] } }]);
     expect(renderReportHtml(model)).toBe(renderReportHtml(model));
