@@ -181,6 +181,7 @@ export type {
   NativeHookFrame,
   NativeHookStatistic,
 } from './query/native-hook';
+export { isUnresolvedSymbol } from './query/perf';
 export type {
   FoldedStack,
   PerfCallchain,
@@ -188,6 +189,7 @@ export type {
   PerfLeafAttribution,
   PerfSampleRow,
   PerfThread,
+  SymbolStat,
 } from './query/perf';
 export { BinderQuery } from './query/binder';
 export type { BinderEvent } from './query/binder';

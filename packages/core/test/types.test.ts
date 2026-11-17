@@ -92,7 +92,7 @@ const VALUE_EXPORTS = [
   'HitraceCollector', 'HiprofilerCollector',
   'IngestError', 'InstantQuery', 'MAX_QUERY_LIMIT', 'MIN_BUFFER_PAGES', 'MemoryAnalyzer',
   'MemoryMeasureAnalyzer', 'NativeHookQuery', 'NativeMemoryAnalyzer',
-  'OhosPerfError', 'PLANE_A_PLUGINS', 'PerfQuery',
+  'OhosPerfError', 'PLANE_A_PLUGINS', 'PerfQuery', 'isUnresolvedSymbol',
   'ProcessQuery', 'RenderAnalyzer', 'Scene', 'UitestCollector',
   'ProcfsCollector', 'parseFpsCounts', 'parseHitches', 'parseProcfsStatus',
   'parseSmapsRollup', 'readHidumperCapture', 'readHilogText', 'readProcfsSamples', 'readUiTree',

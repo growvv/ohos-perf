@@ -173,7 +173,9 @@ describe('FlamegraphAnalyzer', () => {
     d.exec(PERF_CALLCHAIN_DDL);
     d.exec(PERF_FILES_DDL);
     for (let i = 0; i < 25; i++) {
-      d.exec(`INSERT INTO perf_files VALUES (${i}, ${1000 + i}, 1, 'Fn${i}()', '/lib/lib.so')`);
+      // `symbol_id` must be the file's `serial_id` for an exact hit; a
+      // neighbour's serial is a different symbol, not a fallback.
+      d.exec(`INSERT INTO perf_files VALUES (${i}, ${1000 + i}, ${i}, 'Fn${i}()', '/lib/lib.so')`);
       d.exec(`INSERT INTO perf_callchain VALUES (${i}, ${100 + i}, 0, 0, 0, 0, ${1000 + i}, ${i}, 'raw', 0, 0)`);
       d.exec(`INSERT INTO perf_sample VALUES (${i}, ${100 + i}, ${1000 + i}, 500, ${25 - i}, 1, ${1000 + i}, 0, 'S')`);
     }

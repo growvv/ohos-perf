@@ -86,13 +86,13 @@ beforeAll(() => {
     (1, 10, 0, 0, 0, 0, 100, 7, 'raw0', 0, 0),
     (4, 10, 3, 0, 0, 0, 102, NULL, 'raw3', 0, 0),
     (3, 10, 2, 0, 0, 0, NULL, NULL, 'raw2', 0, 0),
-    (5, 11, 0, 0, 0, 0, 101, 2, NULL, 0, 0),
+    (5, 11, 0, 0, 0, 0, 103, 2, NULL, 0, 0),
     (6, 13, 0, 0, 0, 0, NULL, NULL, NULL, 0, 0)`);
   pd.exec(PERF_FILES_DDL);
   pd.exec(`INSERT INTO perf_files VALUES
     (0, 100, 7, 'Foo()', '/lib/libfoo.so'),
     (1, 101, 1, 'Bar()', '/lib/libbar.so'),
-    (2, 101, 2, 'Other()', '/lib/libbar2.so')`);
+    (2, 103, 2, 'Other()', '/lib/libbar2.so')`);
   pd.close();
   perfDb = openDb(pp);
 });
@@ -289,11 +289,14 @@ describe('PerfQuery', () => {
     ]);
     expect(chains[0].functions).toEqual([
       { symbol: 'Foo()', name: 'Foo()', filePath: '/lib/libfoo.so' },
-      { symbol: 'Bar()', name: 'Bar()', filePath: '/lib/libbar.so' },
+      // No exact `(file_id, serial_id)` row for file 101 / symbol 99, and no
+      // `data_dict` in this fixture, so the raw `name` column survives. The
+      // shipped file-only fallback called this `Bar()`, which is the defect.
+      { symbol: 'raw1', name: 'raw1', filePath: '/lib/libbar.so' },
       { symbol: 'raw2', name: 'raw2', filePath: '' },
       { symbol: 'raw3', name: 'raw3', filePath: '' },
     ]);
-    // Exact (file_id, serial_id) lookup beats the file-only fallback.
+    // The exact (file_id, serial_id) row decides the symbol.
     expect(chains[2].functions).toEqual([
       { symbol: 'Other()', name: 'Other()', filePath: '/lib/libbar2.so' },
     ]);
@@ -356,7 +359,7 @@ describe('PerfQuery', () => {
   it('folds callchains into semicolon-joined stacks weighted by event_count', () => {
     const stacks = new PerfQuery(perfDb).foldedStacks([100], { startNs: 0, endNs: 2000 }, 10);
     expect(stacks[0]).toEqual({
-      stack: 'Foo();Bar();raw2;raw3', leaf: 'raw3', samples: 12,
+      stack: 'Foo();raw1;raw2;raw3', leaf: 'raw3', samples: 12,
     });
   });
 
@@ -393,13 +396,15 @@ describe('PerfQuery', () => {
     // Chain 10 weighs 12 and its depth-3 frame is `raw3` with no resolved file.
     // Chain 13 also belongs to thread 100 but its only symbol resolves to '',
     // so it contributes nothing rather than an unattributable row.
-    expect(rows).toEqual([{ symbol: 'raw3', filePath: '', samples: 12 }]);
+    expect(rows).toEqual([{ symbol: 'raw3', filePath: '', samples: 12, unresolved: false }]);
   });
 
-  it('resolves the leaf through perf_files exact and file-only matches', () => {
+  it('resolves the leaf through the exact perf_files row', () => {
     const rows = new PerfQuery(perfDb).leafAttribution([101], { startNs: 0, endNs: 2000 });
     // Chain 11's only frame is file 101 / serial 2 => Other() /lib/libbar2.so.
-    expect(rows).toEqual([{ symbol: 'Other()', filePath: '/lib/libbar2.so', samples: 3 }]);
+    expect(rows).toEqual([{
+      symbol: 'Other()', filePath: '/lib/libbar2.so', samples: 3, unresolved: false,
+    }]);
   });
 
   it('orders leaf rows by samples desc, then symbol, then filePath', () => {

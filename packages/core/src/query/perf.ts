@@ -58,6 +58,37 @@ export interface PerfLeafAttribution {
   symbol: string;
   filePath: string;
   samples: number;
+  /** True when `symbol` is a `file+0xoffset` reference, not a name. */
+  unresolved: boolean;
+}
+
+/**
+ * One row of summed sample weight per `(symbol, filePath, unresolved)`.
+ *
+ * This is the population {@link PerfQuery.leafAttribution} returns, plus the
+ * frames no symbol resolves at all, so the rows sum to the window's weight.
+ * `unresolved` separates "the recorder had no symbol" from "the lookup
+ * missed": a `libfoo.so+0x1cce24` symbol is honest, and counting it as
+ * resolved would make the numbers read better than the capture is.
+ */
+export interface SymbolStat {
+  symbol: string;
+  filePath: string;
+  samples: number;
+  unresolved: boolean;
+}
+
+/**
+ * True when a resolved symbol is a `file+0xoffset` reference or empty.
+ *
+ * The converter writes `libfoo.so+0x1cce24` when it has no symbol for an
+ * address, so the text is honest but unnamed. A space means the text is a
+ * sentence or a demangled signature, never that form. The file path is never
+ * part of the test: an unresolved frame still names the library it ran in,
+ * which is what makes the evidence actionable.
+ */
+export function isUnresolvedSymbol(symbol: string): boolean {
+  return symbol === '' || /^[^ ]+\+0x[0-9a-f]+$/.test(symbol);
 }
 
 /**
@@ -102,7 +133,11 @@ interface PerfFrameRow {
   depth: number | null;
   file_id: number | null;
   symbol_id: number | null;
-  name: string | null;
+  /**
+   * A `data_dict` id in a real capture; text in a hand-built database. SQLite
+   * does not enforce the declared type, so both shapes arrive here.
+   */
+  name: number | string | null;
 }
 
 interface PerfFileRow {
@@ -150,6 +185,17 @@ function toPerfSample(row: PerfSampleRowDb): PerfSampleRow {
 
 function placeholders(count: number): string {
   return Array.from({ length: count }, () => '?').join(', ');
+}
+
+/**
+ * `perf_callchain.name` as text.
+ *
+ * The column holds a `data_dict` id in a real capture and text in a
+ * hand-built database, and SQLite enforces neither, so this is `String(...)`
+ * with the project's "absent is empty" rule.
+ */
+function frameName(value: number | string | null): string {
+  return value == null ? '' : String(value).trim();
 }
 
 /**
@@ -392,11 +438,14 @@ ORDER BY thread_id, callchain_id`,
       const functions = functionsByChain.get(callchainId);
       const leaf = functions?.[functions.length - 1];
       if (leaf === undefined || leaf.symbol === '') continue;
-      const key = `${leaf.filePath}\u0000${leaf.symbol}`;
+      const unresolved = isUnresolvedSymbol(leaf.symbol);
+      // The unresolved flag is part of the identity: two frames can share a
+      // symbol text and a file and still differ in whether it is a name.
+      const key = `${leaf.filePath}\u0000${leaf.symbol}\u0000${unresolved ? '1' : '0'}`;
       const existing = folded.get(key);
       const weight = weights.get(callchainId) ?? 0;
       if (existing === undefined) {
-        folded.set(key, { symbol: leaf.symbol, filePath: leaf.filePath, samples: weight });
+        folded.set(key, { symbol: leaf.symbol, filePath: leaf.filePath, samples: weight, unresolved });
       } else {
         existing.samples += weight;
       }
@@ -408,6 +457,63 @@ ORDER BY thread_id, callchain_id`,
         (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0) ||
         (a.filePath < b.filePath ? -1 : a.filePath > b.filePath ? 1 : 0),
     );
+  }
+
+  /**
+   * Summed weight per `(symbol, filePath, unresolved)` over the window.
+   *
+   * This is the typed form of HapRay's `symbol_statistics` table, and the same
+   * population {@link leafAttribution} reports — plus the frames no symbol
+   * resolves at all, which `leafAttribution` drops. Keeping them here is what
+   * makes the rows sum to {@link eventCount} exactly, so a caller can check
+   * that no weight went missing.
+   */
+  symbolStats(threadIds: readonly number[], range: TimeRange): SymbolStat[] {
+    if (threadIds.length === 0 || !this.hasTable('perf_sample')) return [];
+    const uniqueThreadIds = [...new Set(threadIds)];
+
+    const weights = this.chainWeights(uniqueThreadIds, range);
+    const chainIds = [...weights.keys()].sort((a, b) => a - b);
+    if (chainIds.length === 0) return [];
+
+    const functionsByChain = this.chainFunctions(chainIds);
+    const folded = new Map<string, SymbolStat>();
+    for (const callchainId of chainIds) {
+      const functions = functionsByChain.get(callchainId);
+      const leaf = functions?.[functions.length - 1];
+      // A chain with no frames names nothing and cannot be attributed to a
+      // symbol; the weight is still counted by `eventCount`, which is why the
+      // identity is stated over chains that have a leaf.
+      if (leaf === undefined) continue;
+      const unresolved = isUnresolvedSymbol(leaf.symbol);
+      const key = `${leaf.filePath}\u0000${leaf.symbol}\u0000${unresolved ? '1' : '0'}`;
+      const existing = folded.get(key);
+      const weight = weights.get(callchainId) ?? 0;
+      if (existing === undefined) {
+        folded.set(key, { symbol: leaf.symbol, filePath: leaf.filePath, samples: weight, unresolved });
+      } else {
+        existing.samples += weight;
+      }
+    }
+
+    return [...folded.values()].sort(
+      (a, b) =>
+        b.samples - a.samples ||
+        (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0) ||
+        (a.filePath < b.filePath ? -1 : a.filePath > b.filePath ? 1 : 0) ||
+        (a.unresolved === b.unresolved ? 0 : a.unresolved ? 1 : -1),
+    );
+  }
+
+  /**
+   * The unresolved subset of {@link symbolStats}: frames the recorder could
+   * not name.
+   *
+   * A subset, not an addition — the weights are already inside
+   * `symbolStats`, so a caller must not add the two populations together.
+   */
+  unresolvedSymbols(threadIds: readonly number[], range: TimeRange): SymbolStat[] {
+    return this.symbolStats(threadIds, range).filter((row) => row.unresolved);
   }
 
   /**
@@ -482,39 +588,91 @@ ORDER BY id`,
       : [];
 
     const exactSymbols = new Map<string, PerfFunction>();
-    const fileSymbols = new Map<number, PerfFunction>();
+    const paths = new Map<number, string>();
     for (const file of files) {
-      const symbol: PerfFunction = {
-        symbol: str(file.symbol).trim(),
-        name: str(file.symbol).trim(),
-        filePath: str(file.path).trim(),
-      };
+      const symbol = str(file.symbol).trim();
+      const path = str(file.path).trim();
       const fileId = num(file.file_id);
-      if (!fileSymbols.has(fileId)) fileSymbols.set(fileId, symbol);
+      // A path is a property of the file: a real capture has exactly one path
+      // per `file_id` (measured: 0 of 215 file_ids carry more than one), so
+      // resolving it from `file_id` alone invents nothing.
+      if (!paths.has(fileId) && path !== '') paths.set(fileId, path);
+      // Only an exact row that names something can decide a symbol. A row
+      // whose symbol is empty falls through to `data_dict` like a miss.
+      if (symbol === '') continue;
       const key = `${fileId}:${num(file.serial_id)}`;
-      if (!exactSymbols.has(key)) exactSymbols.set(key, symbol);
+      if (!exactSymbols.has(key)) {
+        exactSymbols.set(key, { symbol, name: symbol, filePath: path });
+      }
     }
+
+    // `perf_callchain.name` is a `data_dict` id, not a symbol (measured: every
+    // one of 484,630 frames in a real capture resolves through `data_dict`).
+    // The dictionary is the honest answer for an address with no symbol —
+    // `libfoo.so+0x1cce24` — where the previous file-only fallback attributed
+    // the frame to whichever symbol sorted first in its file, fabricating
+    // 7.14% of the capture's leaf weight.
+    //
+    // Three shapes have to keep working: a numeric `name` that the dictionary
+    // knows (the normal case); a numeric `name` that it does not (a dangling
+    // id — the frame has no symbol, and repeating the number as one would
+    // claim a name); and text in that column (a hand-built fixture, or a
+    // future converter, where the text is the symbol).
+    const dictPresent = this.hasTable('data_dict');
+    const dataDict = this.loadDataDict(frames);
 
     for (const [callchainId, chainFrames] of framesByChain) {
       const functions: PerfFunction[] = [];
       for (const frame of chainFrames) {
-        const rawSymbol = str(frame.name).trim();
-        let functionName = rawSymbol;
-        let filePath = '';
-        if (frame.file_id != null && frame.symbol_id != null) {
-          const match =
-            exactSymbols.get(`${num(frame.file_id)}:${num(frame.symbol_id)}`) ??
-            fileSymbols.get(num(frame.file_id));
-          if (match) {
-            functionName = match.symbol;
-            filePath = match.filePath;
-          }
-        }
+        const rawSymbol = frameName(frame.name);
+        const exact = frame.file_id != null && frame.symbol_id != null
+          ? exactSymbols.get(`${num(frame.file_id)}:${num(frame.symbol_id)}`)
+          : undefined;
+        const isId = /^\d+$/.test(rawSymbol);
+        const fromDict = isId ? dataDict.get(Number(rawSymbol)) : undefined;
+        const functionName = exact !== undefined
+          ? exact.symbol
+          : fromDict !== undefined
+            ? fromDict
+            : isId && dictPresent ? '' : rawSymbol;
+        const filePath = frame.file_id == null ? '' : paths.get(num(frame.file_id)) ?? '';
         functions.push({ symbol: functionName, name: functionName, filePath });
       }
       resolved.set(callchainId, functions);
     }
     return resolved;
+  }
+
+  /**
+   * The `data_dict` text for the `name` ids these frames carry.
+   *
+   * Optional table: a hand-built database may omit it, and then every frame
+   * keeps its raw `name` column. Loaded once per call, ordered by id so the
+   * query itself is deterministic.
+   */
+  private loadDataDict(frames: readonly PerfFrameRow[]): Map<number, string> {
+    const dict = new Map<number, string>();
+    if (!this.hasTable('data_dict')) return dict;
+    const ids = [...new Set(
+      frames
+        .map((frame) => frameName(frame.name))
+        .filter((text) => /^\d+$/.test(text))
+        .map((text) => Number(text)),
+    )]
+      .filter((id) => id !== 0)
+      .sort((a, b) => a - b);
+    if (ids.length === 0) return dict;
+    const rows = this.db.query<{ id: number | null; data: string | null }>(
+      `SELECT id, data FROM data_dict
+WHERE id IN (${placeholders(ids.length)})
+ORDER BY id`,
+      ids,
+    );
+    for (const row of rows) {
+      const text = str(row.data).trim();
+      if (text !== '') dict.set(num(row.id), text);
+    }
+    return dict;
   }
 
   private hasTable(name: string): boolean {

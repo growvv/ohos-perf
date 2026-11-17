@@ -108,8 +108,8 @@ describe('frame load named queries', () => {
     expect(
       runNamedQuery(ctx(db), 'frame.load.symbols', { startNs: 1000, endNs: 2000 }).rows,
     ).toEqual([
-      { symbol: 'leafB()', filePath: '/lib/libb.so', samples: 12, share: 80 },
-      { symbol: 'leafA()', filePath: '/lib/liba.so', samples: 3, share: 20 },
+      { symbol: 'leafB()', filePath: '/lib/libb.so', samples: 12, unresolved: false, share: 80 },
+      { symbol: 'leafA()', filePath: '/lib/liba.so', samples: 3, unresolved: false, share: 20 },
     ]);
     expect(
       runNamedQuery(ctx(db), 'frame.load.files', { startNs: 1000, endNs: 2000 }).rows,
