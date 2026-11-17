@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { OhosPerfError } from '../errors';
 import { compareImages, markRegions, type ImageComparison, type Rect } from '../image/diff';
+import { analyseAnimations, type AnimationAnalysis } from './animation';
 import { decodePng, encodePng, type RgbaImage } from '../image/png';
 import { createSceneLayout } from '../ingest/scene';
 import { readSceneMetadata } from '../ingest/metadata';
@@ -33,6 +34,19 @@ export interface UiDiff {
   readonly image: ImageComparison | null;
   readonly tree: UiTreeDiff | null;
   readonly regions: Rect[];
+  /**
+   * Regions both the pixels and the tree agree moved between the two captures
+   * (HapRay parity row 31). Empty for a tree-only comparison, which has no
+   * pixels to compare.
+   */
+  readonly animations: AnimationAnalysis['animations'];
+  /**
+   * Regions whose pixels moved while the tree did not: a cursor blink, a video
+   * frame, a system clock. Reported, never labelled an animation.
+   */
+  readonly pixelOnly: AnimationAnalysis['pixelOnly'];
+  /** Regions too small for the dHash grid to say anything about. */
+  readonly unmeasuredRegions: AnimationAnalysis['unmeasured'];
   readonly degraded: string[];
 }
 
@@ -89,6 +103,21 @@ function collectRegions(tree: UiTreeDiff | null): Rect[] {
       x.top - y.top || x.left - y.left || x.bottom - y.bottom || x.right - y.right,
   );
   return regions;
+}
+
+/** The same regions, with how many tree differences each one holds. */
+function regionCounts(tree: UiTreeDiff): Array<{ bounds: Rect; changes: number }> {
+  const counts = new Map<string, { bounds: Rect; changes: number }>();
+  const all: UiTreeDifference[] = [...tree.added, ...tree.removed, ...tree.changed];
+  for (const difference of all) {
+    if (difference.bounds === undefined) continue;
+    const rect = difference.bounds;
+    const key = `${rect.left},${rect.top},${rect.right},${rect.bottom}`;
+    const found = counts.get(key);
+    if (found === undefined) counts.set(key, { bounds: rect, changes: 1 });
+    else found.changes += 1;
+  }
+  return [...counts.values()];
 }
 
 /** Read one side's screenshot and tree, enforcing the one-sided-missing rule. */
@@ -164,6 +193,19 @@ export async function compareSceneDirs(
   };
 
   const regions = collectRegions(tree);
+  // Animation labelling needs both halves: pixels to say the screen moved and
+  // a tree diff to say the app rendered it. A tree-only comparison reports
+  // nothing rather than labelling from a diff alone.
+  const animations: AnimationAnalysis =
+    left.image === undefined || right.image === undefined || tree === null
+      ? { animations: [], pixelOnly: [], unmeasured: [] }
+      : analyseAnimations(
+          left.image,
+          right.image,
+          regionCounts(tree),
+          { left: 0, top: 0, right: left.image.width, bottom: left.image.height },
+          opts.tolerance ?? 8,
+        );
   const diff: UiDiff = {
     schemaVersion: 1,
     a: side(dirA, left.image, left.nodes),
@@ -171,6 +213,9 @@ export async function compareSceneDirs(
     image,
     tree,
     regions,
+    animations: animations.animations,
+    pixelOnly: animations.pixelOnly,
+    unmeasuredRegions: animations.unmeasured,
     degraded,
   };
 

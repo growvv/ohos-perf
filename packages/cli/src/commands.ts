@@ -232,6 +232,15 @@ export interface UiCompareOutput {
     tolerance: number;
   } | null;
   regions: number;
+  /**
+   * Animation labels: regions whose pixels *and* tree both changed between the
+   * two captures. Empty for a tree-only comparison, which has no pixels.
+   */
+  animations: number;
+  /** Regions whose pixels moved while the tree did not: listed, not labelled. */
+  pixelOnly: number;
+  /** Regions too small for the dHash grid to say anything about. */
+  unmeasuredRegions: number;
   /** Artifacts neither side carried; the comparison is partial when non-empty. */
   degraded: string[];
 }
@@ -679,6 +688,14 @@ export async function runUiCompare(
       );
     }
     lines.push(`regions  ${result.regions}\n`);
+    if (result.image === null) {
+      lines.push('animations  not measured (no screenshots on either side)\n');
+    } else {
+      lines.push(
+        `animations  ${result.animations} labelled, ${result.pixelOnly} pixel-only,` +
+          ` ${result.unmeasuredRegions} unmeasured\n`,
+      );
+    }
     for (const line of result.degraded) lines.push(`degraded  ${line}\n`);
     lines.push(`wrote  ${result.files.join(', ')} in ${result.outDir}\n`);
     return { stdout: lines.join(''), stderr: '', exitCode: 0 };

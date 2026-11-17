@@ -38,6 +38,9 @@ const made: UiCompareOutput = {
   tree: { added: 1, removed: 0, changed: 2, unchanged: 7 },
   image: { hamming: 4, similarity: 0.9375, changedRatio: 0.0125, tolerance: 8 },
   regions: 3,
+  animations: 1,
+  pixelOnly: 2,
+  unmeasuredRegions: 0,
   degraded: [],
 };
 
@@ -53,6 +56,7 @@ describe('runUiCompare', () => {
     expect(r.stdout).toContain('similarity 0.9375');
     expect(r.stdout).toContain('tolerance 8');
     expect(r.stdout).toContain('regions  3');
+    expect(r.stdout).toContain('animations  1 labelled, 2 pixel-only, 0 unmeasured');
     expect(r.stdout).toContain('ui-diff.html');
   });
 
@@ -77,6 +81,9 @@ describe('runUiCompare', () => {
 
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain('image  not compared');
+    // No pixels means no animation claim, and the line says so rather than
+    // reporting three zeros.
+    expect(r.stdout).toContain('animations  not measured');
     expect(r.stdout).toContain('degraded  no screenshot.png on either side');
   });
 

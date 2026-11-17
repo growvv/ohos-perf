@@ -843,6 +843,9 @@ export function realDeps(
               tolerance: diff.image.tolerance,
             },
         regions: diff.regions.length,
+        animations: diff.animations.length,
+        pixelOnly: diff.pixelOnly.length,
+        unmeasuredRegions: diff.unmeasuredRegions.length,
         degraded: [...diff.degraded],
       };
     },

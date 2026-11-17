@@ -135,6 +135,14 @@ export { diffTrees, nodeIdentity, IGNORED_ATTRIBUTES, GEOMETRY_TOLERANCE_PX } fr
 export type { UiTreeDiff, UiTreeDifference } from './ui/diff';
 export { compareSceneDirs, UI_DIFF_FILES } from './ui/compare';
 export type { UiDiff, UiDiffSide, UiCompareOptions } from './ui/compare';
+export {
+  ANIMATION_BANDS, MIN_HASH_PIXELS, analyseAnimations, animationSeverity, compareRegion,
+  cropRegion,
+} from './ui/animation';
+export type {
+  AnimationAnalysis, AnimationLabel, AnimationSeverity, PixelOnlyChange, RegionPixelChange,
+  UnmeasuredRegion,
+} from './ui/animation';
 export { renderUiDiffHtml } from './report/ui-html';
 export type { Collector, TraceCollectOptions } from './collectors/types';
 

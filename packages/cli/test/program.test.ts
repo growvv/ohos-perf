@@ -118,7 +118,7 @@ describe('command wiring', () => {
     const calls: Array<{ a: string; b: string; outDir: string }> = [];
     const result = {
       outDir: '/out', files: ['ui-diff.json'], tree: null, image: null,
-      regions: 0, degraded: [],
+      regions: 0, animations: 0, pixelOnly: 0, unmeasuredRegions: 0, degraded: [],
     };
     const { emitted } = await parse(['ui-compare', 'a', 'b', '--out', '/out', '--json'], {
       uiCompare: async (req) => { calls.push(req); return result; },

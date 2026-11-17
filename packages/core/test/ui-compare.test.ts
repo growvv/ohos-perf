@@ -210,3 +210,158 @@ describe('compareSceneDirs', () => {
     expect(html).toContain('8');
   });
 });
+
+describe('animation labels (parity row 31)', () => {
+  /*
+   * HapRay's `UIAnalyzer` labels a UI region as animating when the start and
+   * end captures of that region differ: it crops the region from both
+   * screenshots, compares dHashes, and calls anything under 85% similar an
+   * animation (`major_change` < 50, `moderate_change` < 70, `minor_change`
+   * < 85).
+   *
+   * This package had the tree diff and the image diff but emitted no label,
+   * because a bare dHash threshold on a whole region is a claim the pixels
+   * often do not support: two captures of the same static screen with a
+   * blinking caret read as an animation. So the label here requires both
+   * halves to agree — the region's pixels changed *and* the tree reports a
+   * change inside it — and it names the agreement in the result. A region the
+   * pixels moved in but the tree did not is reported separately rather than
+   * silently promoted to an animation.
+   *
+   * The fixture is 16×12 with two 6-row leaves. The lower leaf's texture
+   * changes from flat grey to a checkerboard, which the dHash reads as a 66%
+   * match — inside HapRay's `moderate_change` band. A gradient fixture was
+   * tried first and is wrong for two reasons worth recording: a dHash reads a
+   * *horizontal* gradient, so horizontal bands are uniform along the axis it
+   * samples and every band hashes identically; and a four-column stripe moves
+   * only 8 of 64 bits, an 87.5% match that is above HapRay's 85% threshold, so
+   * it is correctly not an animation. A region also has to be at least the 9×8
+   * hash grid (72 px), which is why the leaves are 6 rows and not 4.
+   */
+
+  const W = 16;
+  const H = 12;
+
+  /** Flat grey, or grey with a checkerboard over the lower half. */
+  function texture(checker: boolean): RgbaImage {
+    const data = new Uint8Array(W * H * 4).fill(150);
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        if (!checker || y < H / 2) continue;
+        if (((x >> 1) + (y >> 1)) % 2 !== 0) continue;
+        const at = (y * W + x) * 4;
+        data[at] = 0; data[at + 1] = 0; data[at + 2] = 0; data[at + 3] = 255;
+      }
+    }
+    return { width: W, height: H, data };
+  }
+
+  /** A 16×12 tree whose leaves are two 6-row halves. */
+  function halfTree(labels: string[]): unknown {
+    return {
+      attributes: { type: 'root', bundleName: 'com.demo', bounds: `[0,0][${W},${H}]` },
+      children: labels.map((text, index) => ({
+        attributes: {
+          type: 'Text', bundleName: 'com.demo', text, id: `id-${index}`,
+          bounds: `[0,${index * 6}][${W},${(index + 1) * 6}]`, clickable: 'false',
+          enabled: 'true', scrollable: 'false',
+        },
+        children: [],
+      })),
+    };
+  }
+
+  /** A 16×12 scene: a texture, two labels, and the screenshot's dimensions. */
+  function halfScene(
+    name: string,
+    opts: { checker: boolean; labels: string[]; screenshot?: boolean },
+  ): string {
+    const dir = join(parent, name);
+    mkdirSync(dir, { recursive: true });
+    const image = texture(opts.checker);
+    if (opts.screenshot !== false) {
+      writeFileSync(join(dir, 'screenshot.png'), encodePng(image));
+    }
+    writeFileSync(join(dir, 'ui.json'), JSON.stringify(halfTree(opts.labels)));
+    writeFileSync(join(dir, 'scene.json'), JSON.stringify({
+      version: 1,
+      app: { packageName: 'com.demo', processNames: ['com.demo'] },
+      pids: [], deviceId: 't1',
+      capture: {
+        startedAtMs: 1000, durationMs: 10,
+        collectors: ['hitrace', 'screenshot', 'uitest'],
+        screenshot: { width: W, height: H, bytes: 1 },
+        uitest: { nodes: opts.labels.length + 1 },
+      },
+    }));
+    return dir;
+  }
+
+  /** The lower half's bounds: the leaf both fixtures change. */
+  const LOWER = { left: 0, top: 6, right: W, bottom: 12 };
+
+  it('labels a region whose pixels and tree both changed as an animation', async () => {
+    // The lower half's text changed (a tree difference with those bounds) and
+    // its pixels moved (a checkerboard appeared).
+    const a = halfScene('a', { checker: false, labels: ['one', 'two'] });
+    const b = halfScene('b', { checker: true, labels: ['one', 'TWO'] });
+    const diff = await compareSceneDirs(a, b, { outDir: out() });
+
+    expect(diff.animations).toHaveLength(1);
+    expect(diff.animations[0].bounds).toEqual(LOWER);
+    expect(diff.animations[0].label).toBe('animation');
+    expect(diff.animations[0].treeChanges).toBeGreaterThan(0);
+    expect(diff.animations[0].similarity).toBeLessThan(1);
+  });
+
+  it('classifies the animation severity from the pixel similarity', async () => {
+    const a = halfScene('a', { checker: false, labels: ['one', 'two'] });
+    const b = halfScene('b', { checker: true, labels: ['one', 'TWO'] });
+    const diff = await compareSceneDirs(a, b, { outDir: out() });
+    expect(['major_change', 'moderate_change', 'minor_change']).toContain(
+      diff.animations[0].severity,
+    );
+  });
+
+  it('does not label a pixel change the tree did not see', async () => {
+    // The pixels moved but the tree is identical: a cursor blink, a video
+    // frame, a system clock. Calling that an animation would be a claim about
+    // the app's rendering that the tree contradicts.
+    const a = halfScene('a', { checker: false, labels: ['one', 'two'] });
+    const b = halfScene('b', { checker: true, labels: ['one', 'two'] });
+    const diff = await compareSceneDirs(a, b, { outDir: out() });
+
+    expect(diff.animations).toEqual([]);
+    expect(diff.pixelOnly).toHaveLength(1);
+    expect(diff.pixelOnly[0].bounds).toEqual({ left: 0, top: 0, right: W, bottom: H });
+    expect(diff.pixelOnly[0].note).toContain('not labelled');
+  });
+
+  it('does not label a tree change the pixels did not see', async () => {
+    // Identical screenshots, a node's text changed: the tree changed but the
+    // screen did not, which is a rendering defect rather than an animation.
+    const a = halfScene('a', { checker: false, labels: ['one', 'two'] });
+    const b = halfScene('b', { checker: false, labels: ['one', 'TWO'] });
+    const diff = await compareSceneDirs(a, b, { outDir: out() });
+
+    expect(diff.animations).toEqual([]);
+    expect(diff.pixelOnly).toEqual([]);
+  });
+
+  it('reports no animations when the two captures are identical', async () => {
+    const a = halfScene('a', { checker: true, labels: ['one', 'two'] });
+    const b = halfScene('b', { checker: true, labels: ['one', 'two'] });
+    const diff = await compareSceneDirs(a, b, { outDir: out() });
+    expect(diff.animations).toEqual([]);
+    expect(diff.pixelOnly).toEqual([]);
+  });
+
+  it('reports no animations when there are no screenshots to compare', async () => {
+    // A tree-only comparison has no pixels, so it cannot claim an animation.
+    const a = halfScene('a', { checker: false, labels: ['one', 'two'], screenshot: false });
+    const b = halfScene('b', { checker: false, labels: ['one', 'TWO'], screenshot: false });
+    const diff = await compareSceneDirs(a, b, { outDir: out() });
+    expect(diff.animations).toEqual([]);
+    expect(diff.pixelOnly).toEqual([]);
+  });
+});

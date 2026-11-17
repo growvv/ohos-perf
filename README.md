@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P18 are complete**: 1734 tests (1723 unit, 11 in the device
+**P1 through P20 are complete**: 1741 tests (1730 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1696 passed, 28
+attached device are absent — `npm run test:unit` reports **1702 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1696 passed, 39 skipped**. With both fixtures present and a
+checkout is **1702 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -167,7 +167,7 @@ Metric ids emitted by the analyzers:
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
 | `hilog.*` | hilog | `hilog.lines.count`, `hilog.rules.matched.count`, `hilog.rule.<name>.count` |
 | `redundant_file.*` | redundant-file I/O | `redundant_file.reads.count`, `redundant_file.files.used`, `redundant_file.files.unused` |
-| `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` |
+| `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` (animation labels live in `ui-diff.json`, not as metrics) |
 | `hap.*` | static HAP inspection | `hap.files.count`, `hap.size.bytes`, `hap.techstack.count`, `hap.duplicates.wasted.bytes`, `hap.oversized.count`, `hap.category.images.bytes` |
 
 The recorded traces pin field-level output for the binder, threads and
@@ -237,6 +237,7 @@ The HapRay parity series (one release per major item, so far):
 | P17 | W5 step DSL | selector language over the UI tree, `tap`/`tapText`/`swipeArea`/`inputInto` with scroll-to-find, step assertions that actually run, `run --cases` | shipped in `0.12.0` |
 | P18 | parity completion | a machine-checked 35-row parity ledger, fault-tree `ipc_binder`, `collect --jsheap`, redundant-file I/O, the file-to-HAR dependency graph, `rs_skip.cpu_waste.ms`, per-step comparison | shipped in `0.13.0` |
 | P19 | row 12 completion | the system-API `UnMarsh` wakeup-chain backtracking, `rs_skip.cpu_waste.instructions`, per-method trace counts | shipped in `0.14.0` |
+| P20 | row 31 completion | animation labels that require the pixels and the tree to agree, HapRay's severity bands, pixel-only regions reported separately, unmeasurable regions named | shipped in `0.15.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities. The status of every row is
@@ -247,8 +248,8 @@ the engine actually registers, so a claim cannot outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 27 |
-| partial | 3 |
+| ported | 28 |
+| partial | 2 |
 | missing | 0 |
 | out, with a measured reason | 5 |
 
@@ -647,7 +648,7 @@ rescaled diff would report layout differences as pixel differences):
 
 | File | What it is |
 | --- | --- |
-| `ui-diff.json` | the typed diff: both sides' sizes and timestamps, per-node `added`/`removed`/`changed`/`unchanged`, image numbers, changed regions |
+| `ui-diff.json` | the typed diff: both sides' sizes and timestamps, per-node `added`/`removed`/`changed`/`unchanged`, image numbers, changed regions, animation labels and pixel-only regions |
 | `ui-diff.html` | the same as one self-contained page, with both marked images |
 | `ui-diff-marked-a.png` / `-b.png` | each screen with the changed regions boxed, written by the package's own PNG encoder |
 
@@ -684,12 +685,24 @@ compares, in document order. There is no `ui.diff` query — a comparison is a
 file `ui-compare` writes, and no query in this package reads outside the scene
 it is given.
 
+**Animation labels.** A region is labelled an animation only when *both* halves
+moved inside it: its pixels changed and the tree reports a change there.
+HapRay labels on pixels alone, which also fires on a blinking cursor, a video
+frame or a system clock — the app never re-rendered those. So `ui-diff.json`
+carries three lists, and the difference between the first two is the whole
+point: `animations` (both halves agree, with HapRay's severity bands — major
+under 50% similar, moderate under 70%, minor under 85%), `pixelOnly` (the
+screen moved, the tree did not — reported, never labelled), and
+`unmeasuredRegions` (smaller than the 9×8 hash grid, so their detail cannot
+survive the hash). A tree change the pixels did not show is a rendering
+defect, not an animation, and is left to the tree diff.
+
 What is deliberately not here: a separate `ui_animate.json` artifact (an
 animation is a start/end pair of scenes, so it is `ui-compare a b` — the same
-computation, one code path), HapRay's animation labels (its dHash thresholds
-are unvalidated and resolution dependent, and "this region animated" is not a
-performance measurement), and `inspector_page_<i>.json` (Hypium's own tree dump;
-`ui.json` is the single tree source).
+computation, one code path), HapRay's animated-region red/blue overlays (its
+labels are the part with meaning; a second marked PNG would only restate them),
+and `inspector_page_<i>.json` (Hypium's own tree dump; `ui.json` is the single
+tree source).
 
 ## Static HAP inspection
 

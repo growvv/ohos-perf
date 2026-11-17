@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.15.0 — 2026-11-17
+
+Parity row 31 is fully ported: a start/end capture pair now produces animation
+labels, not only a tree diff and a pixel diff.
+
+- **A label needs both halves to agree.** A region is an animation when its
+  pixels moved *and* the tree reports a change inside it. HapRay labels on
+  pixels alone, which also fires on a blinking cursor, a video frame or a
+  system clock — the app never re-rendered those. `ui-diff.json` therefore
+  carries three lists: `animations`, `pixelOnly` and `unmeasuredRegions`.
+- **HapRay's severity bands**, kept so its numbers read the same here: major
+  under 50% similar, moderate under 70%, minor under 85%, and no label at or
+  above 85%.
+- **A region smaller than the 9×8 dHash grid is named, not guessed.** Two
+  three-pixel regions hash identically whatever they contain, so those regions
+  are reported as unmeasured with the reason.
+- **The HTML report and `ui-compare` say which of the three happened.** The
+  human line reads `animations  1 labelled, 2 pixel-only, 0 unmeasured`, and
+  a tree-only comparison says the labels were not measured rather than
+  printing three zeros.
+- New public API: `analyseAnimations`, `compareRegion`, `cropRegion`,
+  `animationSeverity`, `ANIMATION_BANDS`, `MIN_HASH_PIXELS` and their types.
+- The ledger moves to **28 ported / 2 partial / 0 missing / 5 out**.
+- 1741 tests (1730 unit, 11 device), two typechecks, two builds.
+
 ## 0.14.0 — 2026-11-17
 
 Parity row 12 is fully ported: RenderService skip reverse tracing now runs

@@ -242,11 +242,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 31,
     name: 'UI animation analysis',
-    status: 'partial',
-    reason:
-      'A start/end capture pair is compared by the same tree and image comparators, but ' +
-      'the animation label itself is not emitted: dHash thresholds are unvalidated and ' +
-      'resolution dependent.',
+    status: 'ported',
+    reason: '',
     analyzer: 'UiAnalyzer',
   },
   {

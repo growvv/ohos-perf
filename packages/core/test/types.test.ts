@@ -73,6 +73,8 @@ const KNOWN_INTERNAL_TYPES = ['HdcArgvParams', 'HdcOp', 'SpawnResult', 'SpawnSpe
 
 /** The runtime value exports of `@ohos-perf/core`; `index.test.ts` exercises them at runtime. */
 const VALUE_EXPORTS = [
+  'ANIMATION_BANDS', 'MIN_HASH_PIXELS', 'analyseAnimations', 'animationSeverity',
+  'compareRegion', 'cropRegion',
   'BinderAnalyzer', 'BinderQuery', 'CapabilityMatrix', 'CallstackQuery', 'Device',
   'ComponentReuseAnalyzer', 'computeComponentReuse', 'round2HalfEven',
   'EmulatorClient', 'EmulatorCommandError', 'EmulatorImageMissingError',
