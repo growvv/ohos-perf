@@ -229,6 +229,36 @@ describe('explore', () => {
     };
   }
 
+  /** A device that can also scroll and go back, keyed by the screen it is on. */
+  function navDevice(
+    screens: Record<string, UiNode[]>,
+    opts: {
+      scrolls?: Record<string, UiNode[]>;
+      backs?: Record<string, UiNode[]>;
+    } = {},
+  ): ExplorationDevice {
+    let current = screens.start ?? [];
+    let at = hashTree(current);
+    return {
+      dump: async () => {
+        at = hashTree(current);
+        return current;
+      },
+      tap: async (bounds) => {
+        const next = screens[bounds];
+        if (next !== undefined) current = next;
+      },
+      swipe: async () => {
+        const next = opts.scrolls?.[at];
+        if (next !== undefined) current = next;
+      },
+      back: async () => {
+        const next = opts.backs?.[at];
+        if (next !== undefined) current = next;
+      },
+    };
+  }
+
   /** A chain of `count` screens, each with one clickable that leads to the next. */
   function chain(count: number): Record<string, UiNode[]> {
     const screens: Record<string, UiNode[]> = {};
@@ -349,6 +379,113 @@ describe('explore', () => {
     expect(first.seed).toBe(second.seed);
   });
 
+  it('scrolls a screen whose unvisited elements are gone, and taps what it reveals', async () => {
+    const scroll = (id: string, text: string, bounds: string): UiNode[] =>
+      root([
+        node({ id: 'list', type: 'List', scrollable: true, bounds: '[0,0][100,100]' }),
+        node({ id, clickable: true, type: 'Button', text, bounds }),
+      ]);
+    const start = scroll('a', 'One', '[0,0][10,10]');
+    const after = scroll('b', 'Two', '[0,1][10,11]');
+    const dev = navDevice({ start }, { scrolls: { [hashTree(start)]: after } });
+
+    const result = await explore(dev, { maxSteps: 3, strategy: 'depth_first' });
+
+    expect(result.steps.map((step) => step.kind)).toEqual(['tap', 'scroll', 'tap']);
+    expect(result.steps[1]!.outcome).toBe('updated');
+    expect(result.statesReached).toBe(2);
+    expect(result.pagesReached).toBe(1);
+  });
+
+  it('goes back when nothing is left to tap, scroll or return from', async () => {
+    const a = root([
+      node({ id: 'b1', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),
+      node({ id: 'b2', clickable: true, type: 'Button', bounds: '[2,2][3,3]' }),
+    ]);
+    const b = root([]);
+    const dev = navDevice(
+      { start: a, '[0,0][1,1]': b },
+      { backs: { [hashTree(b)]: a } },
+    );
+
+    const result = await explore(dev, { maxSteps: 10, strategy: 'depth_first' });
+
+    expect(result.steps.map((step) => step.kind)).toEqual(['tap', 'back', 'tap']);
+    expect(result.steps.map((step) => step.outcome)).toEqual(['navigated', 'navigated', 'no_change']);
+    expect(result.backs).toBe(1);
+    expect(result.stoppedBy).toBe('exhausted');
+  });
+
+  it('bounds scroll attempts on a screen that does not move', async () => {
+    const a = root([
+      node({ id: 'list', type: 'List', scrollable: true, bounds: '[0,0][100,100]' }),
+      node({ id: 'b1', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),
+    ]);
+    const result = await explore(
+      navDevice({ start: a }, { scrolls: { [hashTree(a)]: a } }),
+      { maxSteps: 30, strategy: 'depth_first' },
+    );
+    expect(result.steps.filter((step) => step.kind === 'scroll')).toHaveLength(3);
+    expect(result.scrolls).toBe(3);
+    expect(result.stoppedBy).toBe('exhausted');
+  });
+
+  it('tries back once per screen that does not move and then stops', async () => {
+    const a = root([node({ id: 'b1', clickable: true, type: 'Button', bounds: '[0,0][1,1]' })]);
+    const b = root([]);
+    const result = await explore(
+      navDevice({ start: a, '[0,0][1,1]': b }, { backs: { [hashTree(b)]: b } }),
+      { maxSteps: 30, strategy: 'depth_first' },
+    );
+    expect(result.steps.filter((step) => step.kind === 'back')).toHaveLength(1);
+    expect(result.stoppedBy).toBe('exhausted');
+  });
+
+  it('rewinds the trail when a tap lands on an earlier page', async () => {
+    const a = root([
+      node({ id: 'b1', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),
+      node({ id: 'b2', clickable: true, type: 'Button', bounds: '[2,2][3,3]' }),
+    ]);
+    const b = root([node({ id: 'ret', clickable: true, type: 'Button', bounds: '[4,4][5,5]' })]);
+    const result = await explore(
+      navDevice({ start: a, '[0,0][1,1]': b, '[4,4][5,5]': a }),
+      { maxSteps: 10, strategy: 'depth_first' },
+    );
+    // Back on the first page by navigation, not by the back key; its second
+    // element is still unvisited, and no back step is spent finding that out.
+    expect(result.steps.map((step) => step.kind)).toEqual(['tap', 'tap', 'tap']);
+    expect(result.backs).toBe(0);
+  });
+
+  it('never taps a node from outside the requested app', async () => {
+    const start = root([
+      node({ id: 'ours', bundleName: 'com.ours', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),
+      node({ id: 'theirs', bundleName: 'com.other', clickable: true, type: 'Button', bounds: '[2,2][3,3]' }),
+    ]);
+    const result = await explore(navDevice({ start }), {
+      maxSteps: 5,
+      strategy: 'depth_first',
+      app: 'com.ours',
+    });
+    expect(result.steps.map((step) => step.bounds)).toEqual(['[0,0][1,1]']);
+  });
+
+  it('stops with left_app when the walk cannot return to the app', async () => {
+    const start = root([
+      node({ id: 'go', bundleName: 'com.ours', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),
+    ]);
+    const other = root([
+      node({ id: 'x', bundleName: 'com.other', clickable: true, type: 'Button', bounds: '[2,2][3,3]' }),
+    ]);
+    // The plain fixture has no back gesture, so there is no way to return.
+    const result = await explore(device({ start, '[0,0][1,1]': other }), {
+      maxSteps: 5,
+      strategy: 'depth_first',
+      app: 'com.ours',
+    });
+    expect(result.stoppedBy).toBe('left_app');
+  });
+
   it('refuses a non-positive maxSteps rather than exploring forever', async () => {
     await expect(
       explore(device({ start: [] }), { maxSteps: 0, strategy: 'depth_first' }),
@@ -381,6 +518,12 @@ describe('explorationDevice', () => {
         return screens[screen]!;
       },
       tap: async () => {
+        polls = 1;
+      },
+      swipe: async () => {
+        polls = 1;
+      },
+      back: async () => {
         polls = 1;
       },
     };
@@ -435,6 +578,30 @@ describe('explorationDevice', () => {
       settleMs: 100,
       pollMs: 0,
     })).toThrow(/pollMs/);
+  });
+
+  it('settles a swipe and a back the same way it settles a tap', async () => {
+    const bySwipe = host([tree('a'), tree('bb')], { changeAfterPolls: 2 });
+    const swiped = explorationDevice(bySwipe, { settleMs: 5000, pollMs: 100 });
+    await swiped.swipe!('[0,0][1,1]', 'up');
+    expect(await swiped.dump()).toEqual(tree('bb'));
+
+    const byBack = host([tree('a'), tree('bb')], { changeAfterPolls: 2 });
+    const backed = explorationDevice(byBack, { settleMs: 5000, pollMs: 100 });
+    await backed.back!();
+    expect(await backed.dump()).toEqual(tree('bb'));
+  });
+
+  it('does not expose swipe or back when the host cannot perform them', () => {
+    const bare: ExplorationHost = {
+      now: () => 0,
+      sleep: async () => {},
+      dump: async () => [],
+      tap: async () => {},
+    };
+    const dev = explorationDevice(bare);
+    expect(dev.swipe).toBeUndefined();
+    expect(dev.back).toBeUndefined();
   });
 });
 
@@ -501,5 +668,31 @@ describe('deviceExplorationHost', () => {
     };
     const host = deviceExplorationHost(dev, { settleMs: 0, pollMs: 100 });
     await expect(host.tap('[0,0][10,10]')).rejects.toThrow(/No Error/);
+  });
+
+  it('swipes inside the scrollable node, from its lower edge to its upper edge', async () => {
+    const list = node({ id: 'list', type: 'List', scrollable: true, bounds: '[10,20][30,60]' });
+    const dev = fakeDevice(root([list]));
+    const host = deviceExplorationHost(dev, { settleMs: 0, pollMs: 100 });
+    await host.swipe!('[10,20][30,60]', 'up');
+    // x is the rect's centre; y runs from 80% down (52) to 20% down (28).
+    expect(dev.sent).toEqual([
+      { action: 'swipe', fromX: 20, fromY: 52, toX: 20, toY: 28 },
+    ]);
+  });
+
+  it('refuses to swipe a node the screen no longer carries or that cannot scroll', async () => {
+    const dev = fakeDevice(root([node({ id: 'b', bounds: '[0,0][10,10]' })]));
+    const host = deviceExplorationHost(dev, { settleMs: 0, pollMs: 100 });
+    await expect(host.swipe!('[5,5][15,15]', 'up')).rejects.toThrow(/not on the screen/);
+    await expect(host.swipe!('[0,0][10,10]', 'up')).rejects.toThrow(/scrollable/);
+    expect(dev.sent).toEqual([]);
+  });
+
+  it('sends the Back key for a back step and checks the acceptance marker', async () => {
+    const dev = fakeDevice(root([]));
+    const host = deviceExplorationHost(dev, { settleMs: 0, pollMs: 100 });
+    await host.back!();
+    expect(dev.sent).toEqual([{ action: 'key', key: 'Back' }]);
   });
 });

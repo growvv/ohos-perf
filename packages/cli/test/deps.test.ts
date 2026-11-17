@@ -1592,8 +1592,9 @@ describe('realDeps().explore', () => {
   ];
 
   it('reports states reached, not taps spent', async () => {
-    // Two screens, one tap each, then the walk is exhausted. HapRay would
-    // report three steps; the interesting number is two screens.
+    // Two screens, one tap each, then the walk is exhausted. The back it tries
+    // from the dead end moves nothing, so it is recorded as no change rather
+    // than as progress toward a third screen.
     let current = screen('[0,0][10,10]');
     const deps = realDeps('0.0.0', {
       exploreClock: clock(),
@@ -1609,9 +1610,10 @@ describe('realDeps().explore', () => {
     });
     const result = await deps.explore({ app: 'com.demo', maxSteps: 10, strategy: 'depth_first' });
     expect(result.device).toEqual({ id: 'emu-1', kind: 'emulator' });
-    expect(result.steps).toBe(1);
+    expect(result.steps).toBe(2);
     expect(result.navigated).toBe(1);
-    expect(result.noChange).toBe(0);
+    expect(result.noChange).toBe(1);
+    expect(result.backs).toBe(1);
     expect(result.statesReached).toBe(2);
     expect(result.exhausted).toBe(true);
   });

@@ -1386,6 +1386,7 @@ export function realDeps(
         maxSteps: req.maxSteps,
         strategy: req.strategy,
         ...(req.seed === undefined ? {} : { seed: req.seed }),
+        app: req.app,
       });
       return {
         app: req.app,
@@ -1394,8 +1395,14 @@ export function realDeps(
         ...(result.seed === undefined ? {} : { seed: result.seed }),
         steps: result.steps.length,
         navigated: result.steps.filter((step) => step.outcome === 'navigated').length,
+        updated: result.steps.filter((step) => step.outcome === 'updated').length,
         noChange: result.steps.filter((step) => step.outcome === 'no_change').length,
+        scrolls: result.scrolls,
+        backs: result.backs,
         statesReached: result.statesReached,
+        pagesReached: result.pagesReached,
+        pages: [...result.pages],
+        stoppedBy: result.stoppedBy,
         exhausted: result.exhausted,
         // First-reach order: the sequence of hashes as the walk saw them, which
         // is what a reader follows to see where it went.

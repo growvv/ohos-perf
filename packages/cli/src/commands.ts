@@ -186,13 +186,25 @@ export interface ExploreOutput {
   /** Present for `random`: the seed the walk actually used. */
   seed?: number;
   steps: number;
-  /** Taps whose resulting screen hash differed from the one before. */
+  /** Steps whose resulting page differed from the one before. */
   navigated: number;
-  /** Taps that changed nothing. HapRay counts these as progress. */
+  /** Steps that changed the screen without changing the page. */
+  updated: number;
+  /** Steps that changed nothing. HapRay counts these as progress. */
   noChange: number;
+  /** Scroll steps spent. */
+  scrolls: number;
+  /** Back steps spent. */
+  backs: number;
   /** Distinct screen hashes reached, including the start. */
   statesReached: number;
-  /** True when it stopped because the screen had no unvisited clickable. */
+  /** Distinct page templates reached, including the start. */
+  pagesReached: number;
+  /** The page hashes in the order they were first reached. */
+  pages: string[];
+  /** Why the walk ended. */
+  stoppedBy: 'budget' | 'exhausted' | 'model' | 'left_app';
+  /** True when it stopped because nothing was left to tap, scroll or return to. */
   exhausted: boolean;
   /** The hashes in the order they were first reached. */
   screens: string[];

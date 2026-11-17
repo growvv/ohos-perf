@@ -34,12 +34,19 @@ import { parseBounds, type UiNode } from '../query/ui';
 /** The three orders HapRay offers, kept under their names. */
 export type ExplorationStrategy = 'depth_first' | 'breadth_first' | 'random';
 
+/** Which way a scroll gesture's content moves. */
+export type ScrollDirection = 'up' | 'down';
+
 /** What exploration needs from a device. `Device` satisfies it structurally. */
 export interface ExplorationDevice {
   /** The flattened on-screen tree, as `flattenUiTree` returns it. */
   dump(): Promise<readonly UiNode[]>;
   /** Tap the centre of `bounds`. Throws when the device refuses the gesture. */
   tap(bounds: string): Promise<void>;
+  /** Swipe inside a scrollable node. Absent when the device cannot scroll. */
+  swipe?(bounds: string, direction: ScrollDirection): Promise<void>;
+  /** Press the system back button. Absent when the device cannot go back. */
+  back?(): Promise<void>;
 }
 
 export interface ExplorationState {
@@ -49,6 +56,12 @@ export interface ExplorationState {
   readonly strategy: ExplorationStrategy;
   /** Required by `random`; ignored by the ordered strategies. */
   readonly seed?: number;
+  /**
+   * The bundle the walk must stay inside. Nodes from another bundle are not
+   * offered and not tapped; a screen with none of this app's nodes means the
+   * walk has left the app.
+   */
+  readonly app?: string;
 }
 
 /** The next tap, or `undefined` when this screen has nothing left to offer. */
@@ -67,12 +80,18 @@ export interface ExplorationAction {
  */
 export type ExplorationOutcome = 'navigated' | 'updated' | 'no_change';
 
-/** One tap, with the state hash either side of it. */
+/** What a step performed. */
+export type ExplorationStepKind = 'tap' | 'scroll' | 'back';
+
+/** One step, with the state hash either side of it. */
 export interface ExplorationStep {
   readonly index: number;
-  readonly nodeId: string;
-  readonly bounds: string;
-  /** The screen hash before the tap. */
+  readonly kind: ExplorationStepKind;
+  /** Present for a tap: the identity of the node that was tapped. */
+  readonly nodeId?: string;
+  /** Present for a tap or a scroll: the bounds the gesture was aimed at. */
+  readonly bounds?: string;
+  /** The screen hash before the step. */
   readonly before: string;
   /** The screen hash after it; equal to `before` means `no_change`. */
   readonly after: string;
@@ -90,17 +109,34 @@ export interface ExplorationResult {
   readonly pagesReached: number;
   /** The page hashes in first-reach order, the way a reader follows the walk. */
   readonly pages: readonly string[];
-  /** True when it stopped because this screen had no unvisited clickable. */
+  /** How many scroll steps were spent. */
+  readonly scrolls: number;
+  /** How many back steps were spent. */
+  readonly backs: number;
+  /**
+   * Why the walk ended: the step cap, nothing left to try, the model asked to
+   * stop, or the walk left the target app and could not return.
+   */
+  readonly stoppedBy: 'budget' | 'exhausted' | 'model' | 'left_app';
+  /** True when it stopped because nothing was left to tap, scroll or return to. */
   readonly exhausted: boolean;
 }
 
 export interface ExplorationOptions {
-  /** Hard cap on taps. HapRay's default is 30. */
+  /** Hard cap on steps. HapRay's default is 30. */
   readonly maxSteps: number;
   readonly strategy: ExplorationStrategy;
   /** Makes `random` reproducible. Defaults to 0, never to the clock. */
   readonly seed?: number;
+  /** The bundle the walk must stay inside. */
+  readonly app?: string;
 }
+
+/** How many scrolls one exact screen gets before the walk calls it exhausted. */
+const SCROLLS_PER_SCREEN = 3;
+
+/** How many backs one exact screen gets; a dead back key must not eat the budget. */
+const BACKS_PER_SCREEN = 1;
 
 /** The seed `random` falls back to; a fixed value, so an unseeded walk repeats. */
 const DEFAULT_SEED = 0;
@@ -240,17 +276,10 @@ function rectOf(node: UiNode): UiNode['boundsRect'] {
  * here — the signal that this screen is done, not that the walk is over.
  */
 export function planNextAction(state: ExplorationState): ExplorationAction | undefined {
-  const ids = identities(state.tree);
-  const candidates = state.tree.filter(
-    (node) =>
-      node.clickable &&
-      node.enabled &&
-      rectOf(node) !== undefined &&
-      !state.visited.has(ids.get(node)!),
-  );
+  const candidates = candidatesOf(state);
   if (candidates.length === 0) return undefined;
 
-  let ordered: readonly UiNode[];
+  let ordered: readonly Candidate[];
   switch (state.strategy) {
     case 'depth_first':
       // Document order is the dump's pre-order: parents before children, and
@@ -260,25 +289,91 @@ export function planNextAction(state: ExplorationState): ExplorationAction | und
     case 'breadth_first':
       // Shallow before deep, and document order within a depth. Sorting is
       // stable, so equal depths keep the dump's order.
-      ordered = [...candidates].sort((a, b) => a.depth - b.depth);
+      ordered = [...candidates].sort((a, b) => a.node.depth - b.node.depth);
       break;
     case 'random':
       ordered = shuffled(candidates, state.seed ?? DEFAULT_SEED);
       break;
   }
 
-  const node = ordered[0]!;
-  return { kind: 'tap', nodeId: ids.get(node)!, bounds: node.bounds };
+  const first = ordered[0]!;
+  return { kind: 'tap', nodeId: first.identity, bounds: first.node.bounds };
+}
+
+/** A node a walk may act on, with the identity it is visited under. */
+interface Candidate {
+  readonly node: UiNode;
+  readonly identity: string;
 }
 
 /**
- * Walk the app until the step budget runs out or the screen is exhausted.
+ * Every enabled, parseable clickable nobody has tapped on this screen, in
+ * document order, restricted to the app the walk was asked to stay inside.
  *
- * `statesReached` counts distinct hashes rather than taps, so a walk that
+ * `bundleName === ''` is accepted: a dump that does not attribute a node to a
+ * bundle cannot prove it belongs to another app, and treating it as foreign
+ * would make exploration impossible on such a device.
+ */
+function candidatesOf(state: ExplorationState): Candidate[] {
+  const ids = identities(state.tree);
+  const out: Candidate[] = [];
+  for (const node of state.tree) {
+    if (!node.clickable || !node.enabled) continue;
+    if (rectOf(node) === undefined) continue;
+    if (state.app !== undefined && node.bundleName !== '' && node.bundleName !== state.app) continue;
+    const identity = ids.get(node)!;
+    if (state.visited.has(identity)) continue;
+    out.push({ node, identity });
+  }
+  return out;
+}
+
+/** The first node on the screen a scroll can target, if any. */
+function scrollableNode(tree: readonly UiNode[]): UiNode | undefined {
+  return tree.find(
+    (node) => node.scrollable && node.enabled && rectOf(node) !== undefined,
+  );
+}
+
+/** True when the tree belongs entirely to apps other than the one named. */
+function isOutsideApp(tree: readonly UiNode[], app: string | undefined): boolean {
+  if (app === undefined) return false;
+  const bundles = tree
+    .map((node) => node.bundleName)
+    .filter((bundle) => bundle !== '');
+  return bundles.length > 0 && !bundles.includes(app);
+}
+
+/** What one walk step will do, before it is performed. */
+type Decision =
+  | { readonly kind: 'tap'; readonly nodeId: string; readonly bounds: string }
+  | { readonly kind: 'scroll'; readonly bounds: string; readonly direction: ScrollDirection }
+  | { readonly kind: 'back' };
+
+/** The last trail entry with this page, or -1. */
+function trailIndexFor(trail: ReadonlyArray<{ page: string }>, page: string): number {
+  for (let index = trail.length - 1; index >= 0; index -= 1) {
+    if (trail[index]!.page === page) return index;
+  }
+  return -1;
+}
+
+/**
+ * Walk the app until the step budget runs out or nothing is left to try.
+ *
+ * `statesReached` counts distinct hashes rather than steps, so a walk that
  * bounced between two screens reports two states however many steps it spent.
- * The returned steps carry the hash either side of each tap: a saved run can be
- * re-read without the device, and two runs that disagree can be compared by
+ * The returned steps carry the hash either side of each action: a saved run can
+ * be re-read without the device, and two runs that disagree can be compared by
  * hash instead of by prose.
+ *
+ * Navigation is measured, not assumed. A scroll is spent only when a
+ * scrollable node is on screen and this exact screen has had fewer than
+ * {@link SCROLLS_PER_SCREEN}; a back only when the trail has a parent and this
+ * screen has had fewer than {@link BACKS_PER_SCREEN}. The trail itself is
+ * updated from the page the screen actually became, so a tap that lands on an
+ * earlier page rewinds it exactly as a back would — HapRay's state stack does
+ * the same thing, but asks a model whether the page matches.
  */
 export async function explore(
   device: ExplorationDevice,
@@ -295,45 +390,99 @@ export async function explore(
   const states = new Set<string>();
   const pages = new Set<string>();
   const visitedByScreen = new Map<string, Set<string>>();
+  const scrollsByScreen = new Map<string, number>();
+  const backsByScreen = new Map<string, number>();
 
   let tree = await device.dump();
   let hash = hashTree(tree);
   let page = hashPageShape(tree);
   states.add(hash);
   pages.add(page);
-  let exhausted = false;
+  const trail: Array<{ hash: string; page: string }> = [{ hash, page }];
+  let stoppedBy: ExplorationResult['stoppedBy'] = 'budget';
 
   while (steps.length < options.maxSteps) {
-    const visited = visitedByScreen.get(hash) ?? new Set<string>();
-    const action = planNextAction({
+    const state: ExplorationState = {
       tree,
-      visited,
+      visited: visitedByScreen.get(hash) ?? new Set<string>(),
       strategy: options.strategy,
       ...(seed === undefined ? {} : { seed }),
-    });
-    if (action === undefined) {
-      exhausted = true;
+      ...(options.app === undefined ? {} : { app: options.app }),
+    };
+    const target = scrollableNode(tree);
+    const canScroll =
+      device.swipe !== undefined &&
+      target !== undefined &&
+      (scrollsByScreen.get(hash) ?? 0) < SCROLLS_PER_SCREEN;
+    const canBack =
+      device.back !== undefined &&
+      trail.length > 1 &&
+      (backsByScreen.get(hash) ?? 0) < BACKS_PER_SCREEN;
+
+    let decision: Decision | undefined;
+    const action = planNextAction(state);
+    if (action !== undefined) {
+      decision = { kind: 'tap', nodeId: action.nodeId, bounds: action.bounds };
+    } else if (canScroll) {
+      decision = { kind: 'scroll', bounds: target!.bounds, direction: 'up' };
+    } else if (canBack) {
+      decision = { kind: 'back' };
+    }
+    if (decision === undefined) {
+      stoppedBy = isOutsideApp(tree, options.app) ? 'left_app' : 'exhausted';
       break;
     }
-    visited.add(action.nodeId);
-    visitedByScreen.set(hash, visited);
 
-    await device.tap(action.bounds);
+    switch (decision.kind) {
+      case 'tap': {
+        const visited = visitedByScreen.get(hash) ?? new Set<string>();
+        visited.add(decision.nodeId);
+        visitedByScreen.set(hash, visited);
+        await device.tap(decision.bounds);
+        break;
+      }
+      case 'scroll':
+        scrollsByScreen.set(hash, (scrollsByScreen.get(hash) ?? 0) + 1);
+        await device.swipe!(decision.bounds, decision.direction);
+        break;
+      case 'back':
+        backsByScreen.set(hash, (backsByScreen.get(hash) ?? 0) + 1);
+        await device.back!();
+        break;
+    }
 
     tree = await device.dump();
     const after = hashTree(tree);
     const afterPage = hashPageShape(tree);
     states.add(after);
     pages.add(afterPage);
+    const outcome =
+      after === hash ? 'no_change' : afterPage === page ? 'updated' : 'navigated';
     steps.push({
       index: steps.length,
-      nodeId: action.nodeId,
-      bounds: action.bounds,
+      kind: decision.kind,
+      ...(decision.kind === 'tap'
+        ? { nodeId: decision.nodeId, bounds: decision.bounds }
+        : decision.kind === 'scroll'
+          ? { bounds: decision.bounds }
+          : {}),
       before: hash,
       after,
-      outcome:
-        after === hash ? 'no_change' : afterPage === page ? 'updated' : 'navigated',
+      outcome,
     });
+
+    // The trail is the path of pages, not a log of gestures: a back that lands
+    // on the parent and a tap that lands on an earlier page are the same event
+    // to it, and both are measured rather than assumed.
+    const match = trailIndexFor(trail, afterPage);
+    if (match !== -1) {
+      trail.length = match + 1;
+      trail[match] = { hash: after, page: afterPage };
+    } else if (afterPage !== page) {
+      trail.push({ hash: after, page: afterPage });
+    } else {
+      trail[trail.length - 1] = { hash: after, page: afterPage };
+    }
     hash = after;
     page = afterPage;
   }
@@ -345,7 +494,10 @@ export async function explore(
     statesReached: states.size,
     pagesReached: pages.size,
     pages: [...pages],
-    exhausted,
+    scrolls: steps.filter((step) => step.kind === 'scroll').length,
+    backs: steps.filter((step) => step.kind === 'back').length,
+    stoppedBy,
+    exhausted: stoppedBy === 'exhausted',
   };
 }
 
@@ -362,6 +514,10 @@ export interface ExplorationHost {
   dump(): Promise<readonly UiNode[]>;
   /** One tap at the centre of `bounds`. */
   tap(bounds: string): Promise<void>;
+  /** One swipe inside `bounds`. Absent when the host cannot scroll. */
+  swipe?(bounds: string, direction: ScrollDirection): Promise<void>;
+  /** One system back. Absent when the host cannot go back. */
+  back?(): Promise<void>;
   now(): number;
   sleep(ms: number): Promise<void>;
 }
@@ -416,28 +572,39 @@ export function explorationDevice(
     return settled;
   };
 
+  /**
+   * Perform one action and wait for the screen it produced.
+   *
+   * The screen it was just on cannot be the answer, so the first look is the
+   * earliest possible change; each further look waits one poll. Every action
+   * settles the same way: a tap, a scroll and a back all move a screen.
+   */
+  const act = async (perform: () => Promise<void>): Promise<void> => {
+    const before = hashTree(await read());
+    await perform();
+    const deadline = host.now() + settleMs;
+    for (;;) {
+      const next = await host.dump();
+      if (hashTree(next) !== before) {
+        settled = next;
+        return;
+      }
+      const remaining = deadline - host.now();
+      if (remaining <= 0) {
+        settled = next;
+        return;
+      }
+      await host.sleep(Math.min(pollMs, remaining));
+    }
+  };
+
   return {
     dump: read,
-    async tap(bounds) {
-      const before = hashTree(await read());
-      await host.tap(bounds);
-      // The screen it was just on cannot be the answer, so the first look is
-      // the earliest possible change; each further look waits one poll.
-      const deadline = host.now() + settleMs;
-      for (;;) {
-        const next = await host.dump();
-        if (hashTree(next) !== before) {
-          settled = next;
-          return;
-        }
-        const remaining = deadline - host.now();
-        if (remaining <= 0) {
-          settled = next;
-          return;
-        }
-        await host.sleep(Math.min(pollMs, remaining));
-      }
-    },
+    tap: (bounds) => act(() => host.tap(bounds)),
+    ...(host.swipe === undefined
+      ? {}
+      : { swipe: (bounds: string, direction: ScrollDirection) => act(() => host.swipe!(bounds, direction)) }),
+    ...(host.back === undefined ? {} : { back: () => act(() => host.back!()) }),
   };
 }
 
@@ -486,6 +653,17 @@ export function deviceExplorationHost(
     ...(options.settleMs === undefined ? {} : { settleMs: options.settleMs }),
     ...(options.pollMs === undefined ? {} : { pollMs: options.pollMs }),
   };
+  const perform = async (gesture: Gesture, label: string): Promise<void> => {
+    const result = await device.gesture(gesture);
+    if (!result.output.includes(ACCEPTED_MARKER)) {
+      throw new OhosPerfError(
+        `exploration: uitest uiInput ${label} did not report "${ACCEPTED_MARKER}":` +
+          ` ${result.output === '' ? '(no output)' : result.output}`,
+        { code: 'SCENARIO_ACTION_FAILED' },
+      );
+    }
+  };
+
   return explorationDevice(
     {
       dump: () => device.uiTree(),
@@ -499,20 +677,76 @@ export function deviceExplorationHost(
             { code: 'SCENARIO_EXPLORE_STALE' },
           );
         }
-        const result = await device.gesture({ action: 'click', x: point.x, y: point.y });
-        if (!result.output.includes(ACCEPTED_MARKER)) {
+        await perform({ action: 'click', x: point.x, y: point.y }, 'click');
+      },
+      swipe: async (bounds, direction) => {
+        const rect = rectOfBounds(bounds);
+        const tree = await device.uiTree();
+        const target = tree.find((candidate) => candidate.bounds === bounds);
+        if (target === undefined) {
           throw new OhosPerfError(
-            `exploration: uitest uiInput click did not report "${ACCEPTED_MARKER}":` +
-              ` ${result.output === '' ? '(no output)' : result.output}`,
-            { code: 'SCENARIO_ACTION_FAILED' },
+            `exploration: no node on the current screen carries these bounds` +
+              ` ${JSON.stringify(bounds)}; the target is not on the screen any more`,
+            { code: 'SCENARIO_EXPLORE_STALE' },
           );
         }
+        if (!target.scrollable) {
+          throw new OhosPerfError(
+            `exploration: the node at ${JSON.stringify(bounds)} is not scrollable,` +
+              ' so a swipe on it would drag whatever happens to be under that rect',
+            { code: 'SCENARIO_EXPLORE_STALE' },
+          );
+        }
+        const { from, to } = swipePoints(rect, direction);
+        await perform(
+          { action: 'swipe', fromX: from.x, fromY: from.y, toX: to.x, toY: to.y },
+          `swipe ${direction}`,
+        );
       },
+      back: () => perform({ action: 'key', key: 'Back' }, 'key Back'),
       now: () => clock.now(),
       sleep: (ms) => clock.sleep(ms),
     },
     settleOptions,
   );
+}
+
+/** The rect a `bounds` string names, or a refusal naming the string. */
+function rectOfBounds(bounds: string): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+} {
+  const rect = parseBounds(bounds);
+  if (rect === undefined) {
+    throw new OhosPerfError(
+      `exploration: ${JSON.stringify(bounds)} is not a "[l,t][r,b]" bounds string;` +
+        ' it has no swipe path',
+      { code: 'SCENARIO_EXPLORE_STALE' },
+    );
+  }
+  return rect;
+}
+
+/**
+ * The two points of a scroll inside a rect.
+ *
+ * HapRay's `swipes_up` is a finger moving up the screen, which reveals content
+ * below; `up` keeps that meaning. Both points stay inside the rect, so the
+ * gesture lands on the scrollable node rather than on a neighbour.
+ */
+function swipePoints(
+  rect: { left: number; top: number; right: number; bottom: number },
+  direction: ScrollDirection,
+): { from: { x: number; y: number }; to: { x: number; y: number } } {
+  const x = Math.round((rect.left + rect.right) / 2);
+  const height = rect.bottom - rect.top;
+  const upper = Math.round(rect.top + height * 0.2);
+  const lower = Math.round(rect.top + height * 0.8);
+  return direction === 'up'
+    ? { from: { x, y: lower }, to: { x, y: upper } }
+    : { from: { x, y: upper }, to: { x, y: lower } };
 }
 
 /** The centre of a `bounds` string, or a refusal naming the string. */

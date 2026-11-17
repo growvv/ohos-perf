@@ -177,7 +177,8 @@ export { explore, deviceExplorationHost, explorationDevice, hashTree, planNextAc
 export type {
   ExplorationAction, ExplorationClock, ExplorationDevice, ExplorationDeviceOptions,
   ExplorationHost, ExplorationOptions, ExplorationOutcome, ExplorationResult,
-  ExplorationState, ExplorationStep, ExplorationStrategy, ExplorationTargetDevice,
+  ExplorationState, ExplorationStep, ExplorationStepKind, ExplorationStrategy,
+  ExplorationTargetDevice, ScrollDirection,
 } from './scenario/explore';
 export { ScenarioRunner, writeRunFiles, evaluateExpectation } from './scenario/runner';
 export {
