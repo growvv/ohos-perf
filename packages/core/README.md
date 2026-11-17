@@ -1,6 +1,6 @@
 # @ohos-perf/core
 
-HarmonyOS performance analysis as a typed library: capability probing, six
+HarmonyOS performance analysis as a typed library: capability probing, eight
 collectors, `trace_streamer` ingest, typed queries over the resulting SQLite
 databases, and analyzers that emit metrics with provenance and fidelity.
 
