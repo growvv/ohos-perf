@@ -61,8 +61,8 @@ the interface; every command speaks stable JSON with `--json`.
    - `--so-dir <dir>` symbolizes the perf capture while it converts: a host
      directory of shared objects, passed to `trace_streamer` as `--So_dir`.
      It requires `--hiperf` (`COLLECT_SO_DIR_WITHOUT_HIPERF`) and an existing
-     directory here (`COLLECT_BAD_SO_DIR`); both are refused before any device
-     call. `scene.json` records `capture.hiperf.symbolized: true`.
+     directory here (`COLLECT_BAD_SO_DIR`); both are refused before the capture
+     starts. `scene.json` records `capture.hiperf.symbolized: true`.
    - `--hidumper` also samples the RenderService fps and hitch counters.
    - `--uitest` also dumps the on-screen UI tree (device-wide, not app-filtered).
    - `--hilog` also streams the device log for the capture window into

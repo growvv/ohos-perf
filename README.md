@@ -681,10 +681,11 @@ which library was running. On the measured capture it was **9.43%** (2,295
 leaves, 994 M).
 
 **Fixing the capture.** `collect --hiperf --so-dir <dir>` passes a host
-directory of shared objects to the perf conversion as `--So_dir`, so frames
-come out named at capture time. The request is refused before any device call
-when it cannot mean anything (`COLLECT_SO_DIR_WITHOUT_HIPERF`) or names a path
-that is not a directory here (`COLLECT_BAD_SO_DIR`). `scene.json` records
+directory of shared objects to the perf conversion as `--So_dir`, so the
+frames it can name come out named at capture time. The request is refused
+before the capture starts when it cannot mean anything
+(`COLLECT_SO_DIR_WITHOUT_HIPERF`) or names a path that is not a directory here
+(`COLLECT_BAD_SO_DIR`). `scene.json` records
 `capture.hiperf.symbolized: true`, and the flamegraph header states it, so a
 symbolized capture is distinguishable from one that never was.
 

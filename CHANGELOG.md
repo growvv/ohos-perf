@@ -43,7 +43,7 @@ the defect stayed invisible. Unresolved leaves (2,295 frames, 994 M,
 - **`collect --so-dir <dir>`** passes a host directory of shared objects to the
   perf conversion as `--So_dir`, so the frames it can name come out named at
   capture time; the rest stay `file+0xoffset` and are reported as unresolved.
-  Refused before any device call when the flag cannot mean anything
+  Refused before the capture starts when the flag cannot mean anything
   (`COLLECT_SO_DIR_WITHOUT_HIPERF`) or the path is not a directory here
   (`COLLECT_BAD_SO_DIR`). `scene.json` records
   `capture.hiperf.symbolized: true`.
