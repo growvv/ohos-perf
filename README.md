@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P14 are complete**: 1395 tests (1385 unit, 10 in the device
+**P1 through P15 are complete**: 1483 tests (1472 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1370 passed, 25
+attached device are absent — `npm run test:unit` reports **1447 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-ten device-gated skips, so the combined clean checkout is **1371 passed, 35
+ten device-gated skips, so the combined clean checkout is **1448 passed, 35
 skipped**. With both fixtures present and a device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -106,7 +106,7 @@ Implemented today:
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
-  `compare`, `ui-compare`, `gesture {click,swipe,key,input,text}`,
+  `compare`, `ui-compare`, `hap`, `gesture {click,swipe,key,input,text}`,
   `emulator {list,start,stop,create}`, `run <scenario.json>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
@@ -117,6 +117,13 @@ Implemented today:
   after it, always — writing one scene per (round, step) plus `steps.json`,
   `testInfo.json` and `pids.json`. A failed action fails the step and keeps
   its scene; `--keep-going` continues, and the exit code is 1 either way.
+- static HAP inspection: `ohos-perf hap <package.hap>` reads the archive in
+  memory through a pure-TypeScript ZIP reader, inventories every file by
+  HapRay's own category table, detects the technology stack from a typed port
+  of its `techstack-config.yaml`, and reports duplicate assets (grouped by
+  `(size, crc32)`, confirmed by SHA-256) and files above their category's
+  size threshold. `--out` writes `hap.json` and an offline `hap.html`; nothing
+  touches a device, and no archive is extracted to disk
 - UI capture and diff: `collect --screenshot` pulls a PNG beside the tree;
   `ui-compare <a> <b> --out <dir>` reports structural tree changes by node
   identity and pixel changes by dHash and a bounded diff, with two marked PNGs
@@ -144,6 +151,7 @@ Metric ids emitted by the analyzers:
 | `flamegraph.*` | folded stacks | `flamegraph.app.share`, `flamegraph.stacks.count` |
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
 | `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` |
+| `hap.*` | static HAP inspection | `hap.files.count`, `hap.size.bytes`, `hap.techstack.count`, `hap.duplicates.wasted.bytes`, `hap.oversized.count`, `hap.category.images.bytes` |
 
 The recorded traces pin field-level output for the binder, threads and
 fault-tree analyzers against golden outputs from ArkAnalyzer-HapRay revision
@@ -205,12 +213,12 @@ The HapRay parity series (one release per major item, so far):
 | P12 | W4 hilog | plaintext log capture, deterministic pattern rules, per-window evidence, JSON/CSV | shipped in `0.7.0` |
 | P13 | W5 scenario runner | declarative JSON steps and rounds, per-step capture windows, `steps.json`/`testInfo.json` | shipped in `0.8.0` |
 | P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | shipped in `0.9.0` |
-| P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | planned |
+| P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | shipped in `0.10.0` |
 | P16 | W8 symbols | symbol statistics, `--so-dir` device symbolization, offline flamegraph artifact, unresolved-symbol evidence | planned |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
-(rev `9386e4e`): 35 user-facing capabilities, of which 13 are now ported, 10
-partial and 12 missing. The inventory read 6 / 9 / 20 at `0.3.0`; `0.6.0`
+(rev `9386e4e`): 35 user-facing capabilities, of which 16 are now ported, 10
+partial and 9 missing. The inventory read 6 / 9 / 20 at `0.3.0`; `0.6.0`
 reported 9 / 9 / 17 after the XLSX suite (row 34), frame load (row 9) and
 native memory (row 19) moved to ported; `0.7.0` moved hilog (row 30) to ported;
 `0.8.0` moves run-only preparation (row 2) to ported — the runner is
@@ -221,7 +229,12 @@ ported, and lifts animation analysis (row 31) from missing to partial: a
 start/end capture pair is compared by the same tree and image comparators, but
 the animation label itself is not emitted — HapRay's dHash thresholds are
 unvalidated and resolution dependent, and "this region animated" is not a
-performance measurement. Items deliberately not ported (Hypium/xdevice test
+performance measurement. `0.10.0` moves static HAP tech-stack analysis (row
+25), the HapSize file inventory (row 26) and static report artifacts (row 27)
+to ported: the archive is read in memory, the rules are HapRay's own table as
+typed data, and the report section renders through the existing model. Its
+business metrics — ROI, UX scores, "estimated savings" — are not ported,
+because none of them is a measurement. Items deliberately not ported (Hypium/xdevice test
 execution, the LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery,
 bjc coverage) keep their measured reasons instead of a claim; the scenario
 runner replaces the first of them rather than porting it. The rendered
@@ -314,7 +327,13 @@ pixels, with two marked images:
 ohos-perf ui-compare ./before ./after --out ./ui-diff --json
 ```
 
-Analyze it offline — no device or toolchain needed:
+Inspect a package on disk, with no device at all:
+
+```bash
+ohos-perf hap app.hap --out ./hap-report
+```
+
+Analyze a captured scene offline — no device or toolchain needed:
 
 ```bash
 ohos-perf analyze ./scene --app com.example.app --json
@@ -527,6 +546,79 @@ are unvalidated and resolution dependent, and "this region animated" is not a
 performance measurement), and `inspector_page_<i>.json` (Hypium's own tree dump;
 `ui.json` is the single tree source).
 
+## Static HAP inspection
+
+Every other command starts from a device. A package on disk answers questions
+no capture can: what native libraries it ships, which cross-platform framework
+it embeds, which assets are byte-identical copies, and which files are larger
+than they should be. `hap` reads the archive itself, with no device, no `hdc`
+and no extraction to disk:
+
+```bash
+ohos-perf hap app.hap
+ohos-perf hap app.hap --out ./hap-report     # hap.json + hap.html
+ohos-perf hap app.hap --json                 # the typed document
+```
+
+The human output names the app, the file count and both sizes, one line per
+detected technology with the rule that decided it, the duplicate groups and
+wasted bytes, the oversized count, and the ten largest files. On a 72 MB
+package with four native libraries it reports `SO (rule SO_Files)`, five
+oversized files and the five largest paths in under a second.
+
+The ZIP reader is pure TypeScript over Node's `zlib.inflateRawSync` — stored
+and deflated entries, CRC-checked on every read. It refuses, by name, what it
+cannot read honestly: `HAP_NOT_ZIP`, `HAP_ZIP64_UNSUPPORTED`,
+`HAP_ENCRYPTED_ENTRY`, `HAP_UNSUPPORTED_METHOD`, `HAP_UNSAFE_PATH` (an
+absolute name or a `..` segment) and `HAP_CRC_MISMATCH` (a corrupt stream is
+never padded into a plausible wrong file). Directory entries are counted in
+neither the file count nor the size.
+
+Three reports come out of one pass, all deterministic functions of the
+archive's bytes:
+
+| Report | What it says |
+| --- | --- |
+| Inventory | every file's path, uncompressed and compressed size, CRC32, lowercase extension and a category from HapRay's own table (images, videos, audio, fonts, scripts, styles, binaries, bytecode, data, other), sorted by path |
+| Technology stack | one match per rule that hit, with the rule id, type, confidence, matching files and their summed bytes — Flutter, React Native, Hermes, KMP, Compose Multiplatform, Lynx, Qt, Unity, Taro, Weex, Cangjie and the third-party library rules (logan, leveldb, libpag, mmkv, ijkplayer, …), ported from HapRay's `techstack-config.yaml` as typed data |
+| Assets | duplicate groups and oversized files |
+
+Duplicates are found without inflating the whole archive: entries are grouped
+by `(size, crc32)` — a pair only equal content can share — and only groups with
+two or more members are inflated and hashed with SHA-256. Two files of equal
+size and different content never reach the hash; a CRC collision does, and the
+hash then separates them. An oversized file is one strictly above its
+category's threshold from HapRay's table (images 1 MiB, videos 10 MiB, audio
+5 MiB, fonts 2 MiB, scripts 0.5 MiB, styles 0.2 MiB, binaries 5 MiB, bytecode
+2 MiB, data and other 1 MiB).
+
+A rule with `requireMetadata` matches only when its own matched file yields the
+metadata — Flutter is a `libflutter.so` that also carries a Dart version
+string — so a match never arrives with an empty explanation. An invalid regex
+or an unknown rule kind is a `HAP_BAD_RULE` error naming the rule at load time,
+not a pattern silently skipped.
+
+The metrics (`static-hap` section, all `exact`, provenance `collector:
+'offline'`, `table: 'hap'`) are `hap.files.count`, `hap.size.bytes`,
+`hap.size.compressed.bytes`, `hap.techstack.count`,
+`hap.techstack.<type>.files`, `hap.duplicates.groups`,
+`hap.duplicates.wasted.bytes`, `hap.oversized.count` and
+`hap.category.<name>.bytes`. Evidence items carry the rule, the SHA-256 group
+or the file path as a key, so two items never collide on one id. `static.hap`
+is a capability id with no device rule: a device cannot make a file on disk
+readable, so the device matrix keeps its 23 rows.
+
+What is deliberately not here: HapSize's business metrics (ROI, UX scores,
+"estimated savings" — none is a measurement), ELF symbol extraction (P16's
+work; the rules still detect those libraries by filename and the metadata
+fields those extractors fill are absent rather than guessed), `arkanalyzer`,
+`bjc` and `sql.js` (none is needed to read a ZIP and match names), resource
+index label resolution (a `$string:` label stays empty; a wrong label is worse
+than none), extraction to disk (the archive is read in memory, so a hostile
+entry name cannot escape anywhere) and nested archives (a HAP inside a HAP is
+not a package the device would install; the inner file is inventoried as a
+file).
+
 ## Emulators
 
 `ohos-perf emulator` drives the `Emulator.exe` that DevEco Studio installs, so a
@@ -589,7 +681,7 @@ git clone https://github.com/growvv/ohos-perf.git
 cd ohos-perf
 npm install
 
-npm test        # 1395 tests; 1371 pass + 35 skip on a clean checkout (no device, spike/out/ absent)
+npm test        # 1483 tests; 1448 pass + 35 skip on a clean checkout (no device, spike/out/ absent)
 npm run typecheck -w @ohos-perf/core   # src + tests, the same check CI runs
 npm run typecheck -w @ohos-perf/cli
 ```
@@ -633,6 +725,10 @@ Measured on 2026-11-16/17 (Mate 60) and 2026-11-17 (emulator), re-run for
 | --- | --- | --- |
 | HUAWEI Mate 60, OpenHarmony 7.0.0.111, arm64-v8a | **21 / 23** | hardware PMU, hiprofiler (including `memory-plugin`), uitest, `ui.capture` (a real `screenCap` PNG), `hilog`, `ui.gesture` (driven through `uitest uiInput`) and Ark-runtime trace events present; `coverage` unavailable — no `bjc_cov` on the device and no collector in this package consumes its output; `js.heap` unavailable — no analyzer consumes `js_heap_*` tables, and `hidumper --mem-jsheap` needs a debug-signed or profilerable app |
 | HarmonyOS emulator 6.1.1.125, x86_64 | **14 / 23** | no hiprofiler, so `mem.native_hook`, `mem.gpu`, `power.xpower`, `net.io`, `disk.io` and `startup.app_startup` are out; `perf.pmu` has no hardware events; `render.fps_live` is a `proxy`. `trace.ark` is available because `hitrace` records the `ark` and `ace` categories, `hilog.stream` because the image ships the `hilog` binary, and `ui.capture` because its `uitest screenCap` produces a decodable PNG. `ui.tree`, `ui.gesture` and `ui.capture` are measured by a live `caps` run; a matrix built from the committed probe snapshot reports 12 / 23 instead, because that snapshot predates the `hilog` row, the separate `uitest dumpLayout` measurement and `ui.capture` |
+
+`0.10.0` adds `static.hap` to the capability ids but not to this matrix: a
+device cannot make a package on disk readable, so it has no probe rule and the
+23 device rows are unchanged.
 
 A missing capability is a value with a `reason` — never a silent zero. See
 [`packages/core/src/device/capability.ts`](packages/core/src/device/capability.ts)
@@ -688,13 +784,13 @@ TypeScript 编写。它把设备能力探测、hitrace 采集、trace_streamer �
 2. **确定性输出**：同一输入两次运行字节一致，CI diff 有意义。
 3. **零原生依赖**：只用 Node 内置 `node:sqlite`，无编译、无 Python。
 
-当前 P0–P14 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
+当前 P0–P15 均已实现：hdc 传输、能力矩阵、hitrace / procfs / hiprofiler / hiperf /
 hidumper / uitest / screenshot 采集、trace_streamer 入库（含 perf.data → perf.db）、类型化查询、
 帧 / 故障树 / binder / 线程 / 内存 / 内存测量 / 启动 / 渲染 / GC 压力 / VSync 异常 /
 空帧 / RenderService 跳过 / 火焰图 / 组件复用 / UI 树与截图共十八个分析器、降级指标引擎、证据图与
 命名下钻查询、基线对比、通过 `uitest uiInput` 注入点击 / 滑动 / 按键 / 文本的
 `gesture` 命令，以及 `doctor` / `caps` / `collect` / `analyze` / `query` / `tools` /
-`compare` / `ui-compare` 命令、`emulator` 生命周期命令、`run` 场景运行器和
+`compare` / `ui-compare` / `hap` 命令、`emulator` 生命周期命令、`run` 场景运行器和
 `skill/ohos-perf/` 中的 agent skill
 适配器。内存测量
 （`mem.measure.*`）来自 hiprofiler memory-plugin 记录的 `process_measure` 表，
@@ -724,6 +820,16 @@ UI 采集与对比：`collect --screenshot` 通过 `uitest screenCap` 把整屏 
 Pillow 或原生编译；不同分辨率的两张截图会被 `UI_SIZE_MISMATCH` 拒绝，而不是悄悄缩放。
 HapRay 的动画分级（dHash 阈值）刻意不移植：阈值未经验证且与分辨率相关，而“这块区域
 在动”不是性能指标。
+
+静态 HAP 检查：`ohos-perf hap <package.hap>` 用纯 TypeScript 的 ZIP 读取器（基于
+Node 内置 `zlib`）把安装包读进内存，按 HapRay 自己的扩展名分类表清点每个文件，用
+`techstack-config.yaml` 的类型化移植识别技术栈，并报告重复资源（先按 `(size, crc32)`
+分组，只对成员不少于两个的组做 SHA-256 确认）与超过分类阈值的文件。每个匹配都带上做出
+判断的规则 id；带 `requireMetadata` 的规则只有在被匹配文件本身能取到元数据时才算命中
+（Flutter 是同时带 Dart 版本串的 `libflutter.so`），绝不会给出空解释。`--out` 写出
+`hap.json` 与离线 `hap.html`，全程不接触设备、不落地解压。刻意不做：HapSize 的 ROI /
+UX 评分 / “预计节省”等商业指标（都不是测量值）、ELF 符号提取（P16）、`resources.index`
+标签解析（`$string:` 标签保持为空，错误的标签比没有更糟）、嵌套压缩包。
 
 `--hiperf` 需要可调试应用，空闲应用产生 `samples: 0` 也是一次有效采集，CLI 会明确
 打印 `hiperf 0` 而不是省略。`compare` 把每个指标标为 improved / regressed /

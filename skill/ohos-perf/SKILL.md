@@ -344,6 +344,45 @@ ohos-perf ui-compare <sceneA> <sceneB> --out <dir> --json
 - Drill into the tree with `ohos-perf query <scene> ui.tree --json`; it returns
   every attribute the diff compares, in document order.
 
+## Static HAP inspection
+
+Use this when the question is about the **package** rather than a capture:
+which native libraries it ships, which framework it embeds, which assets are
+byte-identical copies, which files are oversized. It needs no device, no `hdc`
+and no trace.
+
+```bash
+ohos-perf hap <package.hap> --json
+ohos-perf hap <package.hap> --out <dir>
+```
+
+- `--json` prints `{ package, totals, technologies, duplicates, oversized,
+  largest }`. `--out` additionally writes `hap.json` (the full analysis,
+  including every file's path, sizes, CRC32, extension and category) and an
+  offline `hap.html`.
+- The path is checked before any IO: a missing path, a directory, or a file
+  without `.hap`/`.hsp`/`.zip` exits 1 naming it and writes nothing.
+- **A technology match names its rule.** `technologies[]` carries
+  `{ ruleId, type, files, bytes }`; quote the rule id, and never upgrade a
+  detection into "the app is built with X" — a rule that matched one file is
+  one piece of evidence, not a verdict. `hap.techstack.count` 0 means nothing
+  matched; it does not mean "native app".
+- Flutter is detected from `libflutter.so`/`libapp.so` **plus** a Dart version
+  string in the file. A stripped binary with no version string is not a
+  Flutter match; do not infer it from the file name alone.
+- Duplicates are byte-identical files confirmed by SHA-256;
+  `duplicates.wastedBytes` is what one copy per group would save. An
+  `oversized` file is above its category's HapRay threshold (images 1 MiB,
+  videos 10 MiB, audio 5 MiB, fonts 2 MiB, scripts 0.5 MiB, styles 0.2 MiB,
+  binaries 5 MiB, bytecode 2 MiB, data and other 1 MiB) — "oversized" is a
+  filing threshold, not a defect.
+- The archive is read in memory and never extracted. A package the reader
+  cannot describe honestly fails by name: `HAP_NOT_ZIP`, `HAP_ZIP64_UNSUPPORTED`,
+  `HAP_ENCRYPTED_ENTRY`, `HAP_UNSUPPORTED_METHOD`, `HAP_UNSAFE_PATH`,
+  `HAP_CRC_MISMATCH`. Report the code, not a guess.
+- There is no query for the inventory: `hap.json` is where the per-file detail
+  lives, and every query in this package reads a captured scene.
+
 ## Drilling down
 
 List the available queries and their argument schemas once per session:
@@ -375,6 +414,8 @@ captured without `--uitest` has no rows, and that is not a failure. Use it to
 name what was on screen when a frame was slow. `ui.tree` returns the same
 captured tree whole — every attribute the UI diff compares, in document order —
 so a difference from `ui-compare` can be read back attribute by attribute.
+There is no query for a HAP's file inventory — `ohos-perf hap <package> --out`
+writes it to `hap.json`, and a query reads a captured scene, never a document.
 
 The frame-load handles take a nanosecond range and return `[]` — not an
 error — when the capture has no perf tables:

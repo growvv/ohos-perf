@@ -1,5 +1,86 @@
 # Changelog
 
+## 0.10.0 — 2026-11-17
+
+P15 (HapRay parity W7): the package on disk, read without a device.
+
+### Features
+
+- **`ohos-perf hap <package.hap> [--out <dir>] [--json]`** inspects a HAP, HSP
+  or ZIP package offline. `--json` prints the typed document; `--out` writes
+  `hap.json` (the same document, including every file) and an offline
+  `hap.html` rendered through the existing report model as one `static-hap`
+  section. The human line names the app, the file count and both sizes, one
+  line per detected technology with the rule that decided it, the duplicate
+  groups and wasted bytes, the oversized count and the ten largest files. A
+  missing path, a directory, or a file without `.hap`/`.hsp`/`.zip` exits 1
+  naming it before any IO, and nothing is written.
+- **A pure-TypeScript ZIP reader** (`openZip`, `isZip`) over Node's
+  `zlib.inflateRawSync`: stored and deflated entries, the central directory
+  read whole, and a CRC check on every read. It refuses by name what it cannot
+  describe honestly — `HAP_NOT_ZIP`, `HAP_ZIP64_UNSUPPORTED`,
+  `HAP_ENCRYPTED_ENTRY`, `HAP_UNSUPPORTED_METHOD`, `HAP_UNSAFE_PATH` (an
+  absolute name, a drive letter or a `..` segment) and `HAP_CRC_MISMATCH` (a
+  corrupt deflate stream is never padded into a plausible wrong file). Nothing
+  is extracted to disk; the archive is read in memory, so a hostile entry name
+  cannot escape anywhere.
+- **A deterministic inventory** (`buildInventory`): per file the path,
+  uncompressed and compressed size, CRC32 as 8 hex chars, the lowercase
+  extension and a category from HapRay's own `FILE_CATEGORIES` table (images,
+  videos, audio, fonts, scripts, styles, binaries, bytecode, data, other),
+  sorted by path. Directory entries are counted in neither the file count nor
+  the size. `CATEGORY_MAX_BYTES` carries HapRay's per-category thresholds.
+- **Technology-stack detection as data** (`TECH_RULES`, `matchHapRules`,
+  `validateRules`): HapRay's `techstack-config.yaml` ported to typed rules over
+  six kinds — `filename`, `path`, `extension`, `magic`, `content` and
+  `combined` (with `and`, `or` and `not`). Shipped detections are HapRay's own
+  ids: Flutter, Flutter Assets, React Native, Hermes, RN bundles, KMP, Compose
+  Multiplatform, Lynx, Qt, Unity, Taro, Weex, Cangjie and the third-party
+  library rules (logan, leveldb, libpag, mmkv, ijkplayer, …). A match records
+  the rule that decided it, every matching file and their summed bytes;
+  confidence is `rule.confidence × match confidence`. A `requireMetadata` rule
+  matches only when its own matched file yields the metadata, so Flutter is a
+  `libflutter.so` that also carries a Dart version string. An invalid regex or
+  an unknown kind is `HAP_BAD_RULE` naming the rule at load time.
+- **Duplicate and oversized assets**: duplicates are grouped by
+  `(size, crc32)` first and only groups with two or more members are inflated
+  and hashed with SHA-256, so equal-size-different-content pairs never reach
+  the hash and a CRC collision is separated by it. Oversized is strictly above
+  the category threshold. `Duplicates` reports `sha256`, `size`, `copies`,
+  `wastedBytes` and the sorted paths.
+- **`analyzeHap` / `hapSection`**: one `static-hap` section with `exact`
+  metrics (`hap.files.count`, `hap.size.bytes`, `hap.size.compressed.bytes`,
+  `hap.techstack.count`, `hap.techstack.<type>.files`,
+  `hap.duplicates.groups`, `hap.duplicates.wasted.bytes`,
+  `hap.oversized.count`, `hap.category.<name>.bytes`) and `tech_stack`,
+  `duplicate_asset` and `oversized_asset` evidence items keyed by rule id,
+  SHA-256 and path so two items never collide on one id.
+- **New capability id `static.hap`** with no device rule: a device cannot make
+  a file on disk readable, so `buildMatrix` never emits it and the device
+  matrix keeps its 23 rows.
+- **Public surface**: `openZip`, `isZip`, `buildInventory`, `categorize`,
+  `CATEGORY_EXTENSIONS`, `CATEGORY_MAX_BYTES`, `EXCLUDE_PATTERNS`, `TECH_RULES`,
+  `matchHapRules`, `validateRules`, `analyzeHap`, `hapSection` and their types.
+
+### Semantics worth naming
+
+- **Determinism.** `hap.json` is a function of the archive's bytes: files by
+  path, categories by name, technologies by `(type, ruleId)`, duplicates by
+  hash, largest by `(-size, path)`. There is no clock and no absolute path —
+  the package is named by its basename — and two runs over the same package
+  produce byte-identical `hap.json` and `hap.html`.
+- **No verdict.** There is no "primary technology" and no score: a guess
+  printed beside measurements reads like one of them. `hap.techstack.count` 0
+  means nothing matched, not "native app".
+- **The name collision that was fixed before it shipped.** The hilog matcher
+  already exported `matchRules`; the HAP matcher is `matchHapRules`, so the
+  public surface has one meaning per name.
+- **HapRay's `excludes` is kept.** Entries under `resources/base/.*` are
+  invisible to every rule, so the same package yields the same detections here
+  as upstream. ELF-backed metadata (`soDependencies`, `soExports`, `Key`,
+  `openSourcePackages`) is not ported — P16's work — and those fields are
+  absent rather than guessed.
+
 ## 0.9.0 — 2026-11-17
 
 P14 (HapRay parity W6): the screen itself, captured, analyzed and compared.
