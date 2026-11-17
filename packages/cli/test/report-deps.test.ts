@@ -222,3 +222,55 @@ describe('realDeps().trend', () => {
     expect(existsSync(join(root, 'trend4'))).toBe(false);
   });
 });
+
+describe('realDeps().render', () => {
+  it('re-renders a saved bundle byte for byte, without the scene', async () => {
+    const { root, sceneDir } = scene();
+    const deps = realDeps('0.4.0');
+    const saved = join(root, 'saved');
+    await deps.report({ sceneDir, outDir: saved });
+
+    // Move the scene away: a re-render must not need it.
+    rmSync(sceneDir, { recursive: true, force: true });
+
+    const outDir = join(root, 'again');
+    const result = await deps.render({ report: saved, outDir });
+
+    expect(result.files).toEqual(FILES);
+    for (const file of ['report.html', 'report.json', 'summary.json', 'metrics.csv', 'evidence.csv']) {
+      expect(readFileSync(join(outDir, file))).toEqual(readFileSync(join(saved, file)));
+    }
+    expect(readFileSync(join(outDir, 'report.xlsx'))).toEqual(readFileSync(join(saved, 'report.xlsx')));
+  });
+
+  it('accepts the report.json path directly', async () => {
+    const { root, sceneDir } = scene();
+    const deps = realDeps('0.4.0');
+    const saved = join(root, 'saved2');
+    await deps.report({ sceneDir, outDir: saved });
+
+    const result = await deps.render({
+      report: join(saved, 'report.json'),
+      outDir: join(root, 'again2'),
+    });
+    expect(result.files).toEqual(FILES);
+  });
+
+  it('refuses a document that is not a report', async () => {
+    const { root } = scene();
+    const bogus = join(root, 'bogus.json');
+    writeFileSync(bogus, '{"metrics":[],"evidence":[]}');
+    await expect(
+      realDeps('0.4.0').render({ report: bogus, outDir: join(root, 'x') }),
+    ).rejects.toThrow(/not a report document/);
+    expect(existsSync(join(root, 'x'))).toBe(false);
+  });
+
+  it('refuses a missing report before writing anything', async () => {
+    const { root } = scene();
+    await expect(
+      realDeps('0.4.0').render({ report: join(root, 'absent'), outDir: join(root, 'y') }),
+    ).rejects.toThrow(/cannot read report/);
+    expect(existsSync(join(root, 'y'))).toBe(false);
+  });
+});

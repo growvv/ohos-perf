@@ -255,10 +255,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 33,
     name: 'Report bundle, dashboard and update',
-    status: 'partial',
-    reason:
-      'The typed report model, offline HTML, JSON/CSV/XLSX, baseline comparison and the ' +
-      'multi-run trend page are ported; re-rendering a bundle from its saved inputs is not.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 34,

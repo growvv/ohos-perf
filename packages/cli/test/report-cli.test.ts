@@ -35,6 +35,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => output,
     trend: async () => { throw new Error('trend not stubbed'); },
+    render: async () => { throw new Error('render not stubbed'); },
     hap: async () => { throw new Error('hap not stubbed'); },
     emulator: {
       list: async () => [],

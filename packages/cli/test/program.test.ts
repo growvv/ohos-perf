@@ -29,6 +29,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => { throw new Error('report not stubbed'); },
     trend: async () => { throw new Error('trend not stubbed'); },
+    render: async () => { throw new Error('render not stubbed'); },
     hap: async () => { throw new Error('hap not stubbed'); },
     emulator: {
       list: async () => [],
@@ -87,7 +88,7 @@ describe('--help', () => {
     const { out } = await parse(['--help']);
     const text = out.join('');
     for (const name of [
-      'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'trend',
+      'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'render', 'trend',
       'run', 'ui-compare',
     ]) {
       expect(text).toContain(name);
@@ -135,6 +136,27 @@ describe('command wiring', () => {
     });
     // Commander refuses the missing required option before the action runs.
     expect(error).toBeDefined();
+    expect(error?.code).toBe('commander.missingMandatoryOptionValue');
+    expect(calls).toEqual([]);
+  });
+
+  it('render forwards the report path and --out to runRender', async () => {
+    const calls: Array<{ report: string; outDir: string }> = [];
+    const result = {
+      outDir: '/out', files: ['report.html'], sections: 1, metrics: 2, evidence: 0,
+    };
+    const { emitted } = await parse(['render', '/saved', '--out', '/out', '--json'], {
+      render: async (req) => { calls.push(req); return result; },
+    });
+    expect(calls).toEqual([{ report: '/saved', outDir: '/out' }]);
+    expect(JSON.parse(emitted[0].stdout)).toEqual(result);
+  });
+
+  it('render requires --out before doing any work', async () => {
+    const calls: unknown[] = [];
+    const { error } = await parse(['render', '/saved'], {
+      render: async (req) => { calls.push(req); throw new Error('not reached'); },
+    });
     expect(error?.code).toBe('commander.missingMandatoryOptionValue');
     expect(calls).toEqual([]);
   });

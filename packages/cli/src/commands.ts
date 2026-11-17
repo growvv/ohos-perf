@@ -268,6 +268,23 @@ export interface ReportOutput {
   comparison?: Record<DeltaStatus, number>;
 }
 
+/** A `render` invocation: one saved report, one output directory. */
+export interface RenderRequest {
+  /** A `report.json` file, or the bundle directory that holds one. */
+  report: string;
+  outDir: string;
+}
+
+/** What a successful `render` wrote. */
+export interface RenderOutput {
+  outDir: string;
+  /** The artifact file names, in their fixed presentation order. */
+  files: string[];
+  sections: number;
+  metrics: number;
+  evidence: number;
+}
+
 /** A `trend` invocation: two or more saved reports and an output directory. */
 export interface TrendRequest {
   /**
@@ -378,6 +395,8 @@ export interface CliDeps {
   report(req: ReportRequest): Promise<ReportOutput>;
   /** Aggregate two or more saved reports into one trend page. */
   trend(req: TrendRequest): Promise<TrendOutput>;
+  /** Re-render a saved bundle from its `report.json`. */
+  render(req: RenderRequest): Promise<RenderOutput>;
   /**
    * Inspect a HAP on disk. Throws on any failure; the caller maps it to exit 1.
    *
@@ -840,6 +859,38 @@ export async function runTrend(
         `series  ${result.series} metrics · ${result.improved} improved,` +
         ` ${result.regressed} regressed, ${result.unchanged} unchanged,` +
         ` ${result.verdictless} without a known direction\n`,
+      stderr: '',
+      exitCode: 0,
+    };
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Re-render a saved bundle from its `report.json`.
+ *
+ * This is HapRay's `update` with the re-analysis removed. HapRay re-runs the
+ * whole pipeline, so an old report becomes a function of today's code; here
+ * the saved model is the input, so the page a reader saved is the page they
+ * get back. The source line says so explicitly — a reader who expected a
+ * fresh analysis should see that none happened.
+ */
+export async function runRender(
+  deps: CliDeps,
+  req: RenderRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.render(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    return {
+      stdout:
+        `report  ${result.outDir}/report.html\n` +
+        `artifacts  ${result.files.join(' ')}\n` +
+        `sections  ${result.sections} · ${result.metrics} metrics · ` +
+        `${result.evidence} evidence\n` +
+        `source  ${req.report} (re-rendered, not re-analyzed)\n`,
       stderr: '',
       exitCode: 0,
     };

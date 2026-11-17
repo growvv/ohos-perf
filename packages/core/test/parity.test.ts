@@ -97,16 +97,12 @@ describe('the parity ledger', () => {
     expect(rsSkip?.status).toBe('ported');
   });
 
-  it('leaves only the re-render clause of the report row open', () => {
-    // Row 33's remaining gap is a command, not an artifact: every bundle
-    // `report` writes is complete, and what HapRay's `update` adds is the
-    // ability to rebuild one from its saved inputs. The reason must name
-    // exactly that, so a reader can tell the row is one command from done.
+  it('has no partial row left', () => {
+    // Row 33's last clause was re-rendering a bundle from its saved inputs,
+    // which `render` now does. Every row is ported or refused with a named
+    // prerequisite; a `partial` would mean a capability with an unnamed gap.
+    expect(paritySummary().partial).toBe(0);
     const bundle = PARITY_ROWS.find((row) => row.row === 33);
-    expect(bundle?.status).toBe('partial');
-    expect(bundle?.reason).toMatch(/re-rendering/i);
-    // The trend page is ported and named as ported; only the re-render clause
-    // may be the absence.
-    expect(bundle?.reason).toMatch(/trend page are ported/i);
+    expect(bundle?.status).toBe('ported');
   });
 });

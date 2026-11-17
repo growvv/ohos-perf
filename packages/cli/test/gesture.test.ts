@@ -22,6 +22,7 @@ function deps(result?: { gesture: Gesture; output: string }): CliDeps {
     uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => { throw new Error('report not stubbed'); },
     trend: async () => { throw new Error('trend not stubbed'); },
+    render: async () => { throw new Error('render not stubbed'); },
     hap: async () => { throw new Error('hap not stubbed'); },
     emulator: {
       list: async () => [],

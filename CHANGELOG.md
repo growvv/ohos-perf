@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.17.0 — 2026-11-17
+
+Parity row 33 is fully ported: a saved bundle can be re-rendered from its own
+`report.json`. This is the last `partial` row — the ledger is now 30 ported,
+0 partial, 0 missing and 5 refused with a named prerequisite.
+
+- **`ohos-perf render <report.json> --out <dir>`.** HapRay's `update` re-runs
+  the whole pipeline from the scene directory, so an old report becomes a
+  function of today's code: two people opening the same saved run on different
+  versions see different numbers. Here `report.json` is a typed model, and
+  every artifact except the flamegraph is a pure function of it. The re-render
+  reads no scene, no device and no analyzer, and reproduces `report.html`,
+  `report.json`, `summary.json`, `metrics.csv`, `evidence.csv` and
+  `report.xlsx` byte for byte — verified against a bundle whose source scene
+  was deleted first.
+- **No flamegraph, deliberately.** The drawing comes from folded stacks that
+  live in `perf_sample`, not in the model. A re-render writes no flamegraph
+  rather than an empty canvas, which would be a picture of a capture in which
+  nothing ran. The screenshot is the same: `assets/screenshot.png` is a copied
+  file, so it is the caller's to place beside the page.
+- **The output says which it was.** `render` prints
+  `source  <path> (re-rendered, not re-analyzed)` so a reader who expected a
+  fresh analysis is told none happened.
+- New public API: `renderBundle` and `BUNDLE_RENDERED_FILES`.
+- The ledger moves to **30 ported / 0 partial / 0 missing / 5 out**.
+- 1794 tests (1783 unit, 11 device), two typechecks, two builds.
+
 ## 0.16.0 — 2026-11-17
 
 Parity row 35 is fully ported: `trend` aggregates any number of saved reports

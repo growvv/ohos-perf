@@ -93,6 +93,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => { throw new Error('report not stubbed'); },
     trend: async () => { throw new Error('trend not stubbed'); },
+    render: async () => { throw new Error('render not stubbed'); },
     hap: async () => output,
     emulator: {
       list: async () => [],

@@ -165,6 +165,8 @@ export type {
 } from './report/scenes';
 export { compareScenes, renderScenesComparison, sortSteps } from './report/scenes';
 export { buildTrend, renderTrendHtml, renderTrendJson, trendRunFromReport } from './report/trend';
+export { BUNDLE_RENDERED_FILES, renderBundle } from './report/rerender';
+export type { BundleRerenderInput } from './report/rerender';
 export type {
   Trend, TrendOrder, TrendPoint, TrendRun, TrendSeries,
 } from './report/trend';

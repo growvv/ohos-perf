@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P21 are complete**: 1779 tests (1768 unit, 11 in the device
+**P1 through P22 are complete**: 1794 tests (1783 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1740 passed, 28
+attached device are absent — `npm run test:unit` reports **1755 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1740 passed, 39 skipped**. With both fixtures present and a
+checkout is **1755 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -114,7 +114,7 @@ Implemented today:
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
-  `compare`, `ui-compare`, `report`, `trend`, `hap`,
+  `compare`, `ui-compare`, `report`, `render`, `trend`, `hap`,
   `gesture {click,swipe,key,input,text}`,
   `emulator {list,start,stop,create}`, `run <scenario.json> | --cases <dir>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
@@ -248,6 +248,7 @@ The HapRay parity series (one release per major item, so far):
 | P19 | row 12 completion | the system-API `UnMarsh` wakeup-chain backtracking, `rs_skip.cpu_waste.instructions`, per-method trace counts | shipped in `0.14.0` |
 | P20 | row 31 completion | animation labels that require the pixels and the tree to agree, HapRay's severity bands, pixel-only regions reported separately, unmeasurable regions named | shipped in `0.15.0` |
 | P21 | row 35 completion | `trend` aggregates any number of saved report bundles into one page: per-metric points, gaps for what a run did not measure, deltas across the runs that did, and a stated ordering | shipped in `0.16.0` |
+| P22 | row 33 completion | `render` re-renders a saved bundle from its typed model with no scene, device or analyzer — every artifact byte-identical to the bundle it came from | shipped in `0.17.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities. The status of every row is
@@ -258,8 +259,8 @@ the engine actually registers, so a claim cannot outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 29 |
-| partial | 1 |
+| ported | 30 |
+| partial | 0 |
 | missing | 0 |
 | out, with a measured reason | 5 |
 
@@ -272,10 +273,11 @@ TensorFlow opt-detector (row 27, a ~2 GB stack and a probabilistic guess), and
 radare2 symbol recovery (row 28, heuristic disassembly plus LLM naming with no
 accuracy measurement).
 
-One `partial` row is left, and it names its missing subfeature: re-rendering a
-saved report bundle from its inputs (row 33). Everything the bundle *is* — the
-typed model, the offline page, JSON/CSV/XLSX, baseline comparison and the
-multi-run trend page — is ported.
+No row is `partial` any more. Row 33's last clause was re-rendering a bundle
+from its saved inputs, and `render <report.json> --out <dir>` now does it from
+the typed model alone — no scene, no device, no analyzer — reproducing every
+artifact byte for byte. That leaves 30 ported and the 5 refused rows, each with
+the prerequisite it names.
 
 `0.13.0` closed the last four `missing` rows. The fault tree now carries an
 `ipc_binder` section derived from the typed binder analysis rather than from a

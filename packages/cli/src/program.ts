@@ -14,6 +14,7 @@ import {
   runHap,
   runQuery,
   runReport,
+  runRender,
   runScenarioCommand,
   runTools,
   runTrend,
@@ -334,6 +335,16 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         );
       },
     );
+
+  program
+    .command('render')
+    .description('re-render a saved report bundle from its report.json, without re-analyzing')
+    .argument('<report>', 'report.json file or the bundle directory that holds one')
+    .requiredOption('--out <dir>', 'output directory for the re-rendered artifacts')
+    .option('--json', 'print the artifact manifest as JSON')
+    .action(async (report: string, opts: { out: string; json?: boolean }) => {
+      io.emit(await runRender(deps, { report, outDir: opts.out }, { json: opts.json }));
+    });
 
   program
     .command('trend')

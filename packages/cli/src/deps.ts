@@ -43,6 +43,7 @@ import {
   renderReportJson,
   renderReportXlsx,
   renderSummaryJson,
+  renderBundle,
   renderTrendHtml,
   renderTrendJson,
   trendRunFromReport,
@@ -939,6 +940,44 @@ export function realDeps(
         ...(model.comparison === undefined
           ? {}
           : { comparison: { ...model.comparison.totals } }),
+      };
+    },
+
+    async render(req) {
+      // A saved bundle is `report.json`; a directory is accepted because it is
+      // the path a caller has in their scrollback. The scene is never opened:
+      // the point of a re-render is that it does not depend on today's
+      // analyzers, or on the capture still being on disk.
+      const file = req.report.endsWith('.json') ? req.report : join(req.report, 'report.json');
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(readFileSync(file, 'utf8'));
+      } catch (err) {
+        throw new OhosPerfError(
+          `cannot read report ${file}: ${safeMessage(err)}`,
+          { code: 'RENDER_BAD_INPUT', cause: err },
+        );
+      }
+      const model = parsed as ReportModel;
+      if (!Array.isArray(model.sections) || model.scenario === undefined || model.totals === undefined) {
+        throw new OhosPerfError(
+          `${file} is not a report document (no sections, scenario or totals block)`,
+          { code: 'RENDER_BAD_INPUT' },
+        );
+      }
+
+      const outDir = resolve(req.outDir);
+      const artifacts = renderBundle({ model });
+      await mkdir(outDir, { recursive: true });
+      for (const [name, content] of artifacts) {
+        await writeFile(join(outDir, name), content);
+      }
+      return {
+        outDir,
+        files: artifacts.map(([name]) => name),
+        sections: model.sections.length,
+        metrics: model.totals.metrics,
+        evidence: model.totals.evidence,
       };
     },
 
