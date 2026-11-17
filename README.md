@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P18 are complete**: 1725 tests (1714 unit, 11 in the device
+**P1 through P18 are complete**: 1734 tests (1723 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1686 passed, 28
+attached device are absent — `npm run test:unit` reports **1696 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1686 passed, 39 skipped**. With both fixtures present and a
+checkout is **1696 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -104,7 +104,8 @@ Implemented today:
   hiprofiler's `native_hook`), startup (`startup.*`), render
   (`render.*`), GC pressure (`gc.*`), VSync anomalies (`vsync.*`), empty
   frames with HapRay's false-positive filters and exact load share
-  (`empty_frame.*`), RenderService skips reverse-traced through NativeWindow
+  (`empty_frame.*`), RenderService skips reverse-traced through both the
+  system-API `UnMarsh` wakeup chain and the NativeWindow buffer events
   (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`), symbol statistics
   with the unresolved share (`symbol.*`), ArkUI component reuse
   (`components.*`), the device log rules (`hilog.*`), cold-start redundant-file
@@ -160,7 +161,7 @@ Metric ids emitted by the analyzers:
 | `gc.*` | GC pressure | `gc.partial.count`, `gc.rate`, `gc.perf.share` |
 | `vsync.*` | VSync anomalies | `vsync.anomaly.rate`, `vsync.mismatch.count` |
 | `empty_frame.*` | empty frames | `empty_frame.count`, `empty_frame.rate`, `empty_frame.load.severity` |
-| `rs_skip.*` | RenderService skips | `rs_skip.frames.count`, `rs_skip.trace.accuracy` |
+| `rs_skip.*` | RenderService skips | `rs_skip.frames.count`, `rs_skip.trace.accuracy`, `rs_skip.cpu_waste.ms`, `rs_skip.cpu_waste.instructions`, `rs_skip.traced.rs_api.count` |
 | `flamegraph.*` | folded stacks | `flamegraph.app.share`, `flamegraph.stacks.count` |
 | `symbol.*` | symbols | `symbol.samples.count`, `symbol.unresolved.count`, `symbol.unresolved.share`, `symbol.files.count`, `symbol.top.symbol` |
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
@@ -184,7 +185,7 @@ parity is claimed for them.
 
 Measured on the two recorded traces with `analyze <scene> --app <pkg> --json`,
 `analyze` reports 80 metrics and 98 evidence items on `emu_big` (20.8 MB,
-`pbench.baseline`) and 77 metrics and 184 evidence items on `real_device`
+`pbench.baseline`) and 79 metrics and 184 evidence items on `real_device`
 (13.1 MB, `erviceAbility:1`). Four of the older analyzers report real numbers
 there: `vsync.signals.count` 60 with `vsync.periods.count` 7 and
 `vsync.anomaly.rate` 101.67 on `emu_big` (160 / 0 / 0 on `real_device`),
@@ -235,6 +236,7 @@ The HapRay parity series (one release per major item, so far):
 | P16 | W8 symbols | exact `(file_id, serial_id)` resolution, symbol statistics with the unresolved share, `--so-dir` device symbolization, offline flamegraph artifact | shipped in `0.11.0` |
 | P17 | W5 step DSL | selector language over the UI tree, `tap`/`tapText`/`swipeArea`/`inputInto` with scroll-to-find, step assertions that actually run, `run --cases` | shipped in `0.12.0` |
 | P18 | parity completion | a machine-checked 35-row parity ledger, fault-tree `ipc_binder`, `collect --jsheap`, redundant-file I/O, the file-to-HAR dependency graph, `rs_skip.cpu_waste.ms`, per-step comparison | shipped in `0.13.0` |
+| P19 | row 12 completion | the system-API `UnMarsh` wakeup-chain backtracking, `rs_skip.cpu_waste.instructions`, per-method trace counts | shipped in `0.14.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities. The status of every row is
@@ -245,8 +247,8 @@ the engine actually registers, so a claim cannot outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 26 |
-| partial | 4 |
+| ported | 27 |
+| partial | 3 |
 | missing | 0 |
 | out, with a measured reason | 5 |
 
@@ -272,9 +274,12 @@ pulls a heap snapshot, with every refusal typed (row 20); a
 its format documented rather than guessed (row 21); and `buildDepGraph` turns a
 file list and module declarations into the file-to-HAR graph, cross-module
 edge counts and timing cycles HapRay needs a Homecheck checkout and a 16 GiB
-heap to produce (row 29). `rs_skip.cpu_waste.ms` reports the CPU a skipped
-frame wasted (row 12), and `compareScenes` compares multi-step runs step by
-step instead of merging them (row 35).
+heap to produce (row 29). Row 12's reverse trace now runs both of HapRay's
+paths — the system-API `UnMarsh RSTransactionData` wakeup chain (up to five
+hops) and the NativeWindow buffer events — charges the wasted work in both
+milliseconds and sampled instruction weight, and reports how many frames each
+method traced. `compareScenes` compares multi-step runs step by step instead
+of merging them (row 35).
 
 The rendered roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).

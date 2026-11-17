@@ -8,6 +8,7 @@ import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import type { TimeRange } from '../types';
 import { resolveAppIpids } from './context';
+import { FrameLoadIndex } from './frame-load';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
 
 /**
@@ -61,6 +62,13 @@ const APP_LOOKAHEAD_NS = 10_000_000;
 const MAX_EVENTS = 5;
 /** HapRay keeps the ten app frames nearest each buffer event. */
 const MAX_APP_FRAMES = 10;
+/** How far either side of an `UnMarsh` event its `sched_wakeup` may sit. */
+const WAKEUP_WINDOW_NS = 10_000_000;
+/** How many wakeup hops HapRay walks looking for an app thread. */
+const MAX_CHAIN_DEPTH = 5;
+
+/** Which backtracking method produced a trace. */
+export type RsSkipTraceMethod = 'rs_api' | 'nativewindow';
 
 /** One RenderService frame that skipped, and what it traced back to. */
 export interface RsSkipFrame {
@@ -69,10 +77,11 @@ export interface RsSkipFrame {
   events: number;
   traced?: {
     frame: Frame;
-    /** The buffer event's timestamp. */
+    /** The buffer or `UnMarsh` event's timestamp. */
     eventNs: number;
     /** `|appFrame.ts - eventNs|`. */
     timeDiffNs: number;
+    method: RsSkipTraceMethod;
   };
 }
 
@@ -126,6 +135,146 @@ function renderServiceIpids(processes: { all(): Array<{ ipid: number; name: stri
     }
   }
   return ipids;
+}
+
+/** `callstack`/`instant`/`thread` are all the API path reads. */
+function hasTable(db: QueryHandle, name: string): boolean {
+  return (
+    db.query<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [name],
+    ).length > 0
+  );
+}
+
+/** `recv data from <pid>` in an `UnMarsh RSTransactionData` event name. */
+const UNMARSH_PID = /recv data from (\d+)/;
+
+/** The pid an `UnMarsh` event says the transaction came from. */
+export function parseUnmarshPid(name: string): number | undefined {
+  const match = UNMARSH_PID.exec(name);
+  return match === null ? undefined : Number(match[1]);
+}
+
+/** One `sched_wakeup` row, in the shape the chain walk needs. */
+interface WakeupRow {
+  ref: number | null;
+  wakeup_from: number | null;
+  ts: number | null;
+}
+
+/** Everything the API path needs, read once per analysis. */
+interface ApiCaches {
+  /** `itid` → `(waker itid, ts)`, newest first. */
+  wakeups: Map<number, Array<{ from: number; ts: number }>>;
+  /** `itid` → the pid of the process that owns it. */
+  threadPid: Map<number, number>;
+  /** app pid → the itid of its UI thread, when the trace names one. */
+  uiThread: Map<number, number>;
+  /** `UnMarsh` events on RenderService threads, by frame window. */
+  unmarsh: Array<{ ts: number; itid: number; pid: number }>;
+}
+
+/**
+ * Reads the tables the system-API backtracking needs.
+ *
+ * Returns `undefined` when the trace lacks `instant`: without it the API path
+ * cannot follow a wakeup, and claiming it ran would be a guess. `thread` and
+ * `process` are already required by `trace.ark`.
+ */
+function readApiCaches(db: QueryHandle, rsIpids: readonly number[]): ApiCaches | undefined {
+  if (!hasTable(db, 'instant')) return undefined;
+
+  const wakeups = new Map<number, Array<{ from: number; ts: number }>>();
+  const rows = db.query<WakeupRow>(
+    `SELECT ref, wakeup_from, ts FROM instant
+WHERE name = 'sched_wakeup' AND ref_type = 'itid'
+  AND ref IS NOT NULL AND wakeup_from IS NOT NULL AND ts IS NOT NULL
+ORDER BY ref, ts DESC`,
+  );
+  for (const row of rows) {
+    if (row.ref === null || row.wakeup_from === null || row.ts === null) continue;
+    const list = wakeups.get(row.ref);
+    if (list === undefined) wakeups.set(row.ref, [{ from: row.wakeup_from, ts: row.ts }]);
+    else list.push({ from: row.wakeup_from, ts: row.ts });
+  }
+
+  const threadPid = new Map<number, number>();
+  const uiThread = new Map<number, number>();
+  for (const row of db.query<{ id: number; name: string | null; pid: number; process: string | null }>(
+    `SELECT t.id, t.name, p.pid, p.name AS process
+FROM thread t JOIN process p ON t.ipid = p.ipid
+ORDER BY t.id`,
+  )) {
+    threadPid.set(row.id, row.pid);
+    // HapRay's UI-thread rule: the process-named thread first, then any name
+    // containing `UI`/`ui`. `ORDER BY t.id` makes the tie-break deterministic.
+    const named = row.name === row.process;
+    const uiLike = row.name !== null && (row.name.includes('UI') || row.name.includes('ui'));
+    if ((named || uiLike) && !uiThread.has(row.pid)) uiThread.set(row.pid, row.id);
+  }
+
+  const rsMarks = rsIpids.map(() => '?').join(', ');
+  const unmarsh: ApiCaches['unmarsh'] = [];
+  for (const row of db.query<{ ts: number | null; callid: number | null; name: string | null }>(
+    `SELECT c.ts, c.callid, c.name FROM callstack c
+JOIN thread t ON c.callid = t.id
+WHERE t.ipid IN (${rsMarks}) AND c.name LIKE '%UnMarsh RSTransactionData%'
+ORDER BY c.ts`,
+    [...rsIpids],
+  )) {
+    if (row.ts === null || row.callid === null || row.name === null) continue;
+    const pid = parseUnmarshPid(row.name);
+    // A `data size:` row names no pid; only `recv data from` can be traced.
+    if (pid === undefined) continue;
+    unmarsh.push({ ts: row.ts, itid: row.callid, pid });
+  }
+
+  return { wakeups, threadPid, uiThread, unmarsh };
+}
+
+/**
+ * The wakeup nearest `ts` on `itid`, searching `[ts - before, ts + after]`.
+ *
+ * HapRay's chain step searches only backwards; its first hop searches both
+ * ways. Both bounds are parameters so each caller can match its own window.
+ */
+function nearestWakeup(
+  caches: ApiCaches,
+  itid: number,
+  ts: number,
+  before: number,
+  after: number,
+): { from: number; ts: number } | undefined {
+  let best: { from: number; ts: number } | undefined;
+  let bestDiff = Infinity;
+  for (const wakeup of caches.wakeups.get(itid) ?? []) {
+    if (wakeup.ts < ts - before || wakeup.ts > ts + after) continue;
+    const diff = Math.abs(wakeup.ts - ts);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = wakeup;
+    }
+  }
+  return best;
+}
+
+/**
+ * The app thread an `UnMarsh` event can be attributed to, or `undefined`.
+ *
+ * HapRay tries the direct waker first (the RS IPC thread's `sched_wakeup`
+ * names an app thread), then walks up to {@link MAX_CHAIN_DEPTH} hops back
+ * looking for one. A waker belonging to another process is not the app: the
+ * walk keeps going rather than borrowing a stranger's frame.
+ */
+function appThreadFor(caches: ApiCaches, ipcItid: number, eventNs: number, appPid: number): number | undefined {
+  let current = nearestWakeup(caches, ipcItid, eventNs, WAKEUP_WINDOW_NS, WAKEUP_WINDOW_NS);
+  for (let depth = 0; depth < MAX_CHAIN_DEPTH && current !== undefined; depth += 1) {
+    if (caches.threadPid.get(current.from) === appPid) return current.from;
+    // The chain step searches backwards only, from the wakeup it just found.
+    current = nearestWakeup(caches, current.from, current.ts, EVENT_LOOKBACK_NS, 0);
+  }
+  return undefined;
 }
 
 /**
@@ -222,8 +371,53 @@ ORDER BY c.ts`,
   }
   const appTs = [...appByTs.keys()].sort((a, b) => a - b);
 
+  // The system-API path: an `UnMarsh` event on an RS IPC thread names the pid
+  // that sent the transaction, and the thread that woke that IPC thread (or a
+  // chain of wakeups behind it) is the app thread whose frame was submitted.
+  // HapRay tries this first and falls back to the buffer path.
+  const api = readApiCaches(db, opts.rsIpids);
+  const appPidSet = new Set<number>();
+  for (const ipid of opts.appIpids) {
+    // The pid a process row carries; `appIpids` is all this function receives.
+    const row = db.query<{ pid: number | null }>(
+      'SELECT pid FROM process WHERE ipid = ? ORDER BY id LIMIT 1',
+      [ipid],
+    )[0];
+    if (row?.pid !== null && row?.pid !== undefined) appPidSet.add(row.pid);
+  }
+
+  /** Nearest app frame to `eventNs`, from the app threads the event names. */
+  const apiTrace = (frame: Frame): RsSkipFrame['traced'] => {
+    if (api === undefined) return undefined;
+    const inWindow = api.unmarsh.filter(
+      (event) =>
+        event.ts >= frame.ts - EVENT_LOOKBACK_NS && event.ts <= frame.ts + frame.dur,
+    );
+    // HapRay keeps the five events nearest the frame start.
+    inWindow.sort((a, b) => Math.abs(a.ts - frame.ts) - Math.abs(b.ts - frame.ts) || a.ts - b.ts);
+    let best: RsSkipFrame['traced'];
+    for (const event of inWindow.slice(0, MAX_EVENTS)) {
+      // Only the app under analysis: another pid's transaction is not ours.
+      if (!appPidSet.has(event.pid)) continue;
+      const threadItid = appThreadFor(api, event.itid, event.ts, event.pid);
+      if (threadItid === undefined) continue;
+      const near = nearest(appTs, event.ts, EVENT_LOOKBACK_NS, APP_LOOKAHEAD_NS, MAX_APP_FRAMES);
+      for (const ts of near) {
+        const match = appByTs.get(ts);
+        if (match === undefined || match.itid !== threadItid) continue;
+        const timeDiffNs = Math.abs(ts - event.ts);
+        if (best !== undefined && timeDiffNs >= best.timeDiffNs) continue;
+        best = { frame: match, eventNs: event.ts, timeDiffNs, method: 'rs_api' };
+      }
+    }
+    return best;
+  };
+
   const traced = frames.map((entry) => {
     const frame = entry.frame;
+    const viaApi = apiTrace(frame);
+    if (viaApi !== undefined) return { ...entry, traced: viaApi };
+
     const candidates = nearest(bufferTs, frame.ts, EVENT_LOOKBACK_NS, frame.dur, MAX_EVENTS);
     let best: RsSkipFrame['traced'];
 
@@ -234,7 +428,7 @@ ORDER BY c.ts`,
         if (best !== undefined && timeDiffNs >= best.timeDiffNs) continue;
         const match = appByTs.get(ts);
         if (match === undefined) continue;
-        best = { frame: match, eventNs, timeDiffNs };
+        best = { frame: match, eventNs, timeDiffNs, method: 'nativewindow' };
       }
     }
     return { ...entry, ...(best === undefined ? {} : { traced: best }) };
@@ -246,6 +440,44 @@ ORDER BY c.ts`,
 /** Every complete frame in `window`, read through the typed accessor. */
 function allFrames(db: QueryHandle, window: TimeRange): Frame[] {
   return new FrameQuery(db).all(window);
+}
+
+/**
+ * Summed `perf_sample.event_count` inside every traced frame, or `undefined`.
+ *
+ * HapRay sums the app **process's** threads, not the frame's own thread: the
+ * work a skipped frame cost includes whatever its workers did for it. That is
+ * the same scope `frame-load` measures, so the index is reused rather than
+ * re-querying.
+ *
+ * `undefined` when there is nothing to measure — no perf capture, no app
+ * thread, or no sample inside any window. Zero instructions would be a
+ * measurement the capture never made.
+ */
+function instructionWaste(ctx: AnalyzeContext, frames: readonly RsSkipFrame[]): number | undefined {
+  if (ctx.perf === undefined || !ctx.perf.hasSamples()) return undefined;
+  if (ctx.app.pids.length === 0) return undefined;
+
+  const tracedFrames = frames
+    .map((entry) => entry.traced?.frame)
+    .filter((frame): frame is Frame => frame !== undefined);
+  if (tracedFrames.length === 0) return undefined;
+
+  const firstTs = tracedFrames.reduce((min, frame) => Math.min(min, frame.ts), tracedFrames[0].ts);
+  const lastEnd = tracedFrames.reduce(
+    (max, frame) => Math.max(max, frame.ts + Math.max(0, frame.dur)),
+    tracedFrames[0].ts + Math.max(0, tracedFrames[0].dur),
+  );
+  const index = FrameLoadIndex.build({
+    perf: ctx.perf,
+    pids: ctx.app.pids,
+    range: { startNs: firstTs, endNs: lastEnd },
+  });
+  if (index === undefined) return undefined;
+
+  let total = 0;
+  for (const frame of tracedFrames) total += index.load(frame);
+  return total > 0 ? total : undefined;
 }
 
 /** Plain lexicographic order; locale-independent so output is byte-stable. */
@@ -370,6 +602,45 @@ export class RsSkipAnalyzer implements Analyzer {
           }),
         );
       }
+
+      // HapRay charges the same waste in sampled instruction weight. Duration
+      // says how long the app spun; weight says how much work that was, and a
+      // thread that slept through its frame contributes to neither.
+      const instructions = instructionWaste(ctx, result.frames);
+      if (instructions !== undefined) {
+        metrics.push(
+          metric({
+            id: 'rs_skip.cpu_waste.instructions',
+            value: instructions,
+            unit: 'count',
+            provenance: { collector: 'hiperf', table: 'perf_sample', device: ctx.deviceId },
+            fidelity: 'exact',
+            window: ctx.window,
+          }),
+        );
+      }
+
+      // Which backtracking method produced each trace. A reader whose trace
+      // shows zero `rs_api` frames is on a NativeWindow framework, and one
+      // whose trace shows zero of both has no sampling to trace at all.
+      const byMethod: Record<RsSkipTraceMethod, number> = { rs_api: 0, nativewindow: 0 };
+      for (const entry of result.frames) {
+        if (entry.traced !== undefined) byMethod[entry.traced.method] += 1;
+      }
+      if (traced > 0) {
+        for (const method of ['rs_api', 'nativewindow'] as const) {
+          metrics.push(
+            metric({
+              id: `rs_skip.traced.${method}.count`,
+              value: byMethod[method],
+              unit: 'count',
+              provenance: prov,
+              fidelity: 'exact',
+              window: ctx.window,
+            }),
+          );
+        }
+      }
     } else {
       metrics.push(
         metric({
@@ -424,14 +695,16 @@ export class RsSkipAnalyzer implements Analyzer {
             appFrameId: match.frame.id,
             appFrameFlag: match.frame.flag,
             timeDiffMs: match.timeDiffNs / 1e6,
-            method: 'nativewindow',
+            method: match.method,
           },
         explain: match === undefined
           ? `render_service skipped ${entry.events} frame(s) at vsync ${frame.vsync}; ` +
             'no app frame could be traced back to it'
           : `render_service skipped the frame at vsync ${frame.vsync}; ` +
             `${appProcessName(ctx)} frame ${match.frame.id} fed it ` +
-            `(${(match.timeDiffNs / 1e6).toFixed(2)}ms from its buffer event)`,
+            (match.method === 'rs_api'
+              ? `(${(match.timeDiffNs / 1e6).toFixed(2)}ms from the UnMarsh transaction)`
+              : `(${(match.timeDiffNs / 1e6).toFixed(2)}ms from its buffer event)`),
         drillDown,
       });
     });

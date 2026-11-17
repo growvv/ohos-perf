@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.14.0 — 2026-11-17
+
+Parity row 12 is fully ported: RenderService skip reverse tracing now runs
+both of HapRay's backtracking paths, not only the NativeWindow one.
+
+- **The system-API path.** `frame_rs_skip_backtrack_api.py` is ported. An
+  `UnMarsh RSTransactionData` event on a RenderService IPC thread names the
+  pid that submitted the transaction (`recv data from <pid>`), and the thread
+  that woke that IPC thread — or one up to five wakeup hops behind it — is the
+  app thread whose frame was submitted. This is what makes ArkUI, RN and KMP
+  skips traceable; the buffer path alone could not see them. `rs-skip.ts` now
+  tries this path first and falls back to NativeWindow, as HapRay does.
+- **`rs_skip.cpu_waste.instructions`.** HapRay charges the waste in sampled
+  instruction weight, not only in frame duration. The weight is summed over
+  the app process's threads inside each traced frame, the same scope the
+  frame-load analyzer measures, so a busy worker thread counts.
+- **`rs_skip.traced.rs_api.count` and `rs_skip.traced.nativewindow.count`.**
+  Which method produced each trace. A reader whose run shows zero `rs_api`
+  frames is on a NativeWindow framework; one whose run shows neither has no
+  sampling to trace at all.
+- Every trace now records its method, and the evidence sentence names it.
+- **Absent, never zero.** The instruction metric and the method breakdown are
+  omitted when there is nothing to measure — no perf capture, no sample in a
+  traced window, or no traced frame. A `0` would claim a measurement the
+  capture never made.
+- The ledger moves to **27 ported / 3 partial / 0 missing / 5 out**, and
+  `parity.test.ts` now checks that no `ported` row carries a reason.
+- 1734 tests (1723 unit, 11 device), two typechecks, two builds.
+
 ## 0.13.3 — 2026-11-17
 
 Two correctness fixes to what 0.13.0 shipped, and the ledger's own prose.

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openDb, type QueryHandle } from '../src/db/driver';
 import { CapabilityMatrix } from '../src/device/capability';
 import { FrameQuery } from '../src/query/frames';
+import { PerfQuery } from '../src/query/perf';
 import { ProcessQuery } from '../src/query/process';
 import { RsSkipAnalyzer, computeRsSkip } from '../src/analyze/rs-skip';
 import type { AnalyzeContext, AnalyzeResult } from '../src/analyze/types';
@@ -51,6 +52,12 @@ interface EventRow {
 interface Fixture {
   frames?: FrameRow[];
   events?: EventRow[];
+  /** `sched_wakeup` rows: `[ref, wakeup_from, ts]`, all itids. */
+  wakeups?: Array<[number, number, number]>;
+  /** Omit `instant` entirely, as a trace captured without `trace.sched` has. */
+  noInstant?: true;
+  /** `perf_sample` rows for the app's threads; enables the instruction waste. */
+  perf?: Array<{ ts: number; threadId: number; count: number }>;
 }
 
 /** Writes a fixture into a fresh trace database and returns its handle. */
@@ -61,6 +68,10 @@ function dbWith(name: string, fixture: Fixture): QueryHandle {
   d.exec(CALLSTACK_DDL);
   d.exec(THREAD_DDL);
   d.exec(PROCESS_DDL);
+  if (fixture.noInstant !== true) {
+    d.exec(`CREATE TABLE instant(ts INT, name TEXT, ref INT, wakeup_from INT,
+      ref_type TEXT, value INT)`);
+  }
   d.exec(`INSERT INTO process VALUES (0, 4, 1528, 'render_service', 0, 0, 1, 0, 0),
     (1, 17, 6115, 'com.demo', 0, 0, 1, 0, 0),
     (2, 18, 6116, 'ohos.sceneboard', 0, 0, 1, 0, 0)`);
@@ -82,8 +93,33 @@ function dbWith(name: string, fixture: Fixture): QueryHandle {
   for (const e of fixture.events ?? []) {
     insertEvent.run(e.id, e.ts, e.callid, 'render_service', e.name);
   }
-  d.close();
-  return openDb(path);
+
+  if (fixture.perf !== undefined) {
+    d.exec(`CREATE TABLE perf_thread(id INT, thread_id INT, process_id INT, thread_name TEXT)`);
+    d.exec(`CREATE TABLE perf_sample(id INT, callchain_id INT, timeStamp INT, thread_id INT,
+      event_count INT, event_type_id INT, timestamp_trace INT, cpu_id INT, thread_state TEXT)`);
+    // `perf_thread.thread_id` is the *tid*, which `thread.tid` carries: the
+    // frame's `itid` is a different number space.
+    d.exec(`INSERT INTO perf_thread VALUES (0, 440, 6115, 'com.demo')`);
+    const insertSample = d.prepare(
+      'INSERT INTO perf_sample VALUES (?, 0, ?, ?, ?, 0, ?, 0, 0)',
+    );
+    let id = 0;
+    for (const sample of fixture.perf) {
+      insertSample.run(id, sample.ts, sample.threadId, sample.count, sample.ts);
+      id += 1;
+    }
+  }
+
+  if (fixture.noInstant !== true) {
+    const insertWakeup = d.prepare(
+      `INSERT INTO instant VALUES (?, 'sched_wakeup', ?, ?, 'itid', 0)`,
+    );
+    for (const [ref, from, ts] of fixture.wakeups ?? []) {
+      insertWakeup.run(ts, ref, from);
+    }
+  }
+  d.close();  return openDb(path);
 }
 
 function opts(overrides: Partial<{ appIpids: number[]; rsIpids: number[] }> = {}) {
@@ -108,6 +144,7 @@ function ctxWith(target: QueryHandle): AnalyzeContext {
     db: target,
     frames: new FrameQuery(target),
     processes: new ProcessQuery(target),
+    perf: new PerfQuery(target),
     app: { packageName: 'com.demo', pids: [6115], processNames: ['com.demo'] },
     window: WINDOW,
     caps: fullCaps(),
@@ -376,6 +413,246 @@ describe('rs-skip CPU waste (parity row 12)', () => {
     });
     const r = await new RsSkipAnalyzer().run(ctxWith(db));
     expect(r.metrics.map((m) => m.id)).not.toContain('rs_skip.cpu_waste.ms');
+    db.close();
+  });
+});
+
+describe('rs-skip system-API backtracking (parity row 12)', () => {
+  /*
+   * HapRay tries `frame_rs_skip_backtrack_api.py` first and only falls back to
+   * the NativeWindow path when it finds nothing. The API path is what makes
+   * ArkUI/RN/KMP skips traceable at all: those frameworks submit through
+   * `UnMarsh RSTransactionData`, which names the app's pid in its own event
+   * name, so no buffer event has to be guessed at.
+   *
+   *   UnMarsh on an RS IPC thread  →  its `sched_wakeup` names the waker itid
+   *   waker itid belongs to app pid  →  nearest app frame in [event-500ms, +10ms]
+   *
+   * When the wakeup does not name an app thread, HapRay walks the wakeup chain
+   * up to 5 hops before giving up. That path is ported too, because on a real
+   * trace the RS IPC thread is frequently woken by an OS thread rather than by
+   * the app directly.
+   */
+  /** RS frame with one skip; the app's ipid/pid are `APP` / 6115. */
+  const rsSkip = (extra: Partial<Fixture> = {}): Fixture => ({
+    frames: [{ id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 }],
+    events: [{ id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 }],
+    ...extra,
+  });
+
+  /** The unmarsh event the API path reads its pid from. */
+  const unmarsh = (ts: number, pid: number): EventRow => ({
+    id: 90, ts, callid: 4, name: `H:UnMarsh RSTransactionData: recv data from ${pid}|M0538`,
+  });
+
+  it('traces through the IPC wakeup when the waker is an app thread', async () => {
+    const db = dbWith('api-wakeup.db', rsSkip({
+      frames: [
+        { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 21, ts: 1e9 + 3.5e6, dur: 16e6, ipid: APP, itid: 44 },
+      ],
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        unmarsh(1e9 + 2e6, 6115),
+      ],
+      // The RS IPC thread (itid 4) was woken by the app thread (itid 44).
+      wakeups: [[4, 44, 1e9 + 1.5e6]],
+    }));
+    const r = computeRsSkip(db, opts());
+    expect(r.frames[0].traced?.frame.id).toBe(21);
+    expect(r.frames[0].traced?.method).toBe('rs_api');
+    db.close();
+  });
+
+  it('walks the wakeup chain when an OS thread woke the IPC thread', async () => {
+    // itid 45 belongs to ohos.sceneboard (ipid 18), not the app. The chain
+    // goes 4 ← 45 ← 44, so the app thread is two hops back.
+    const db = dbWith('api-chain.db', rsSkip({
+      frames: [
+        { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 21, ts: 1e9 + 3.5e6, dur: 16e6, ipid: APP, itid: 44 },
+      ],
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        unmarsh(1e9 + 2e6, 6115),
+      ],
+      wakeups: [
+        [4, 45, 1e9 + 1.5e6],
+        [45, 44, 1e9 + 1.4e6],
+      ],
+    }));
+    const r = computeRsSkip(db, opts());
+    expect(r.frames[0].traced?.frame.id).toBe(21);
+    expect(r.frames[0].traced?.method).toBe('rs_api');
+    db.close();
+  });
+
+  it('falls back to the NativeWindow path when the API path finds nothing', async () => {
+    // An UnMarsh event with no wakeup at all: the API path has no thread to
+    // follow, so the buffer path must still find the frame.
+    const db = dbWith('api-fallback.db', rsSkip({
+      frames: [
+        { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 21, ts: 1e9 + 3.5e6, dur: 16e6, ipid: APP, itid: 44 },
+      ],
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        { id: 2, ts: 1e9 + 3e6, name: 'H:AcquireBuffer', callid: 4 },
+        unmarsh(1e9 + 2e6, 6115),
+      ],
+    }));
+    const r = computeRsSkip(db, opts());
+    expect(r.frames[0].traced?.frame.id).toBe(21);
+    expect(r.frames[0].traced?.method).toBe('nativewindow');
+    db.close();
+  });
+
+  it('does not credit a pid that is not the analyzed app', async () => {
+    // The UnMarsh names pid 9999. The wakeup points at a thread of that
+    // process, but it is not the app under analysis, so the trace must fail
+    // rather than borrow another process's frame.
+    const db = dbWith('api-other-pid.db', rsSkip({
+      frames: [
+        { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 21, ts: 1e9 + 3.5e6, dur: 16e6, ipid: APP, itid: 44 },
+      ],
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        unmarsh(1e9 + 2e6, 9999),
+      ],
+      wakeups: [[4, 44, 1e9 + 1.5e6]],
+    }));
+    expect(computeRsSkip(db, opts()).frames[0].traced).toBeUndefined();
+    db.close();
+  });
+
+  it('names the method that produced the trace in the evidence', async () => {
+    const db = dbWith('api-evidence.db', rsSkip({
+      frames: [
+        { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 21, ts: 1e9 + 3.5e6, dur: 16e6, ipid: APP, itid: 44 },
+      ],
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        unmarsh(1e9 + 2e6, 6115),
+      ],
+      wakeups: [[4, 44, 1e9 + 1.5e6]],
+    }));
+    const r = await new RsSkipAnalyzer().run(ctxWith(db));
+    const item = r.evidence.find((e) => e.kind === 'rs_skip');
+    expect(item?.signals.method).toBe('rs_api');
+    expect(item?.explain).toContain('UnMarsh');
+    db.close();
+  });
+
+  it('degrades rather than guessing when the trace has no instant table', async () => {
+    // `trace.sched` is what supplies `instant`. Without it the API path is
+    // unavailable, and the NativeWindow path still answers — the metric must
+    // not claim the API path ran.
+    const db = dbWith('api-no-instant.db', rsSkip({
+      frames: [
+        { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 21, ts: 1e9 + 3.5e6, dur: 16e6, ipid: APP, itid: 44 },
+      ],
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        { id: 2, ts: 1e9 + 3e6, name: 'H:AcquireBuffer', callid: 4 },
+        unmarsh(1e9 + 2e6, 6115),
+      ],
+      noInstant: true,
+    }));
+    const r = computeRsSkip(db, opts());
+    expect(r.frames[0].traced?.method).toBe('nativewindow');
+    db.close();
+  });
+});
+
+describe('rs-skip instruction waste and detection breakdown (parity row 12)', () => {
+  /*
+   * HapRay charges the wasted work in sampled instruction weight, not only in
+   * milliseconds: `calculate_app_frame_cpu_waste` sums `perf_sample.event_count`
+   * for every app-process thread inside the traced frame's window. A duration
+   * says how long the app spun; the weight says how much work that was, and on
+   * a busy thread the two disagree by an order of magnitude.
+   *
+   * The detection breakdown is what tells a reader whether the port actually
+   * works on their trace: `rs_api` success means the framework submits through
+   * UnMarsh (ArkUI/RN/KMP), `nativewindow` means the buffer path. A port that
+   * silently reports only the total hides which half ran.
+   */
+  const tracedThroughApi = (perf?: Fixture['perf']): Fixture => ({
+    frames: [
+      { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+      { id: 21, ts: 1e9 + 3.5e6, dur: 12e6, ipid: APP, itid: 44 },
+    ],
+    events: [
+      { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+      { id: 90, ts: 1e9 + 2e6, callid: 4,
+        name: 'H:UnMarsh RSTransactionData: recv data from 6115|M0538' },
+    ],
+    wakeups: [[4, 44, 1e9 + 1.5e6]],
+    ...(perf === undefined ? {} : { perf }),
+  });
+
+  it('sums the app thread weight inside the traced frame as instruction waste', async () => {
+    // Samples at 1e9+4ms (weight 100) and 1e9+10ms (weight 250) fall inside
+    // the traced frame [1e9+3.5ms, 1e9+15.5ms]; the one at 1e9+20ms does not.
+    const db = dbWith('api-waste.db', tracedThroughApi([
+      { ts: 1e9 + 4e6, threadId: 440, count: 100 },
+      { ts: 1e9 + 10e6, threadId: 440, count: 250 },
+      { ts: 1e9 + 20e6, threadId: 440, count: 999 },
+    ]));
+    const r = await new RsSkipAnalyzer().run(ctxWith(db));
+    expect(metricOf(r, 'rs_skip.cpu_waste.instructions').value).toBe(350);
+    expect(metricOf(r, 'rs_skip.cpu_waste.instructions').unit).toBe('count');
+    db.close();
+  });
+
+  it('omits the instruction metric when the scene has no perf samples', async () => {
+    // Zero instructions would claim the app did no work; there was simply no
+    // sampling. Absence, not zero — the same rule as the millisecond metric.
+    const db = dbWith('api-waste-none.db', tracedThroughApi());
+    const r = await new RsSkipAnalyzer().run(ctxWith(db));
+    expect(r.metrics.map((m) => m.id)).not.toContain('rs_skip.cpu_waste.instructions');
+    // The millisecond waste still stands: it comes from the frame, not perf.
+    expect(metricOf(r, 'rs_skip.cpu_waste.ms').value).toBe(12);
+    db.close();
+  });
+
+  it('reports how many frames each backtracking method traced', async () => {
+    // One skip frame traced through the API path, one through the buffer path.
+    const db = dbWith('api-breakdown.db', {
+      frames: [
+        { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 11, ts: 1e9 + 2e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 21, ts: 1e9 + 3.5e6, dur: 12e6, ipid: APP, itid: 44 },
+        { id: 22, ts: 1e9 + 2e9 + 3.5e6, dur: 12e6, ipid: APP, itid: 44 },
+      ],
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        { id: 90, ts: 1e9 + 2e6, callid: 4,
+          name: 'H:UnMarsh RSTransactionData: recv data from 6115|M0538' },
+        // The second frame has no UnMarsh, only a buffer event.
+        { id: 3, ts: 1e9 + 2e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        { id: 4, ts: 1e9 + 2e9 + 3e6, name: 'H:AcquireBuffer', callid: 4 },
+      ],
+      wakeups: [[4, 44, 1e9 + 1.5e6]],
+    });
+    const r = await new RsSkipAnalyzer().run(ctxWith(db));
+    expect(metricOf(r, 'rs_skip.traced.rs_api.count').value).toBe(1);
+    expect(metricOf(r, 'rs_skip.traced.nativewindow.count').value).toBe(1);
+    db.close();
+  });
+
+  it('omits the breakdown when nothing traced, instead of two zeros', async () => {
+    const db = dbWith('api-breakdown-none.db', {
+      frames: [{ id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 }],
+      events: [{ id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 }],
+    });
+    const r = await new RsSkipAnalyzer().run(ctxWith(db));
+    const ids = r.metrics.map((m) => m.id);
+    expect(ids).not.toContain('rs_skip.traced.rs_api.count');
+    expect(ids).not.toContain('rs_skip.traced.nativewindow.count');
     db.close();
   });
 });

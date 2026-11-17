@@ -285,7 +285,7 @@ export type {
 export { EmptyFrameAnalyzer, filterEmptyFrames } from './analyze/empty-frame';
 export type { EmptyFrameFilter } from './analyze/empty-frame';
 export { RsSkipAnalyzer, computeRsSkip } from './analyze/rs-skip';
-export type { RsSkipFrame, RsSkipResult } from './analyze/rs-skip';
+export type { RsSkipFrame, RsSkipResult, RsSkipTraceMethod } from './analyze/rs-skip';
 export { FlamegraphAnalyzer } from './analyze/flamegraph';
 export { SymbolsAnalyzer } from './analyze/symbols';
 export {

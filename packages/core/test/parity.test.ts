@@ -85,9 +85,15 @@ describe('the parity ledger', () => {
     // the first is a claim of absence, so only the first is checked — matching
     // the whole string would fail on the fix that names the metric as ported,
     // which is how this test first went wrong.
+    // Row 12 is now `ported`: the system-API backtracking landed, so the row
+    // that used to carry the claim is empty. The guard generalises to every
+    // `ported` row — an `out` row carries a reason naming the prerequisite it
+    // refuses, which is not a claim of absence.
+    for (const row of PARITY_ROWS) {
+      if (row.status !== 'ported') continue;
+      expect(row.reason, `row ${row.row}`).toBe('');
+    }
     const rsSkip = PARITY_ROWS.find((row) => row.row === 12);
-    expect(rsSkip?.status).toBe('partial');
-    const missingClause = rsSkip!.reason.split(';')[0]!;
-    expect(missingClause).not.toMatch(/cpu.waste/i);
+    expect(rsSkip?.status).toBe('ported');
   });
 });
