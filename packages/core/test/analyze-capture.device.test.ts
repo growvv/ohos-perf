@@ -56,7 +56,7 @@ function attachedHdc(): string | undefined {
 
 const HDC = attachedHdc();
 const TARGET = process.env.OHOS_PERF_TARGET;
-const DEBUG_APP = process.env.OHOS_PERF_DEBUG_APP ?? 'com.example.image';
+const DEBUG_APP = process.env.OHOS_PERF_DEBUG_APP ?? 'com.harmonyresearch.mockweibo';
 
 describe.skipIf(HDC === undefined)('analyzing a scene captured on a device', () => {
   it('produces render metrics from the hidumper pair and never fabricates a zero', async () => {

@@ -53,7 +53,7 @@ describe.skipIf(HDC === undefined)('scenario runner on a real device', () => {
       const scenario = parseScenario(JSON.stringify({
         version: 1,
         name: 'device-two-step',
-        app: 'com.example.image',
+        app: process.env.OHOS_PERF_DEBUG_APP ?? 'com.harmonyresearch.mockweibo',
         steps: [
           {
             id: 'first',

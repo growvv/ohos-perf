@@ -44,7 +44,7 @@ function attachedHdc(): string | undefined {
 
 const HDC = attachedHdc();
 const TARGET = process.env.OHOS_PERF_TARGET;
-const DEBUG_APP = process.env.OHOS_PERF_DEBUG_APP ?? 'com.example.image';
+const DEBUG_APP = process.env.OHOS_PERF_DEBUG_APP ?? 'com.harmonyresearch.mockweibo';
 
 describe.skipIf(HDC === undefined)('UI capture on a real device', () => {
   it('captures a decodable screenshot and a tree that agree with scene.json', async () => {

@@ -20,12 +20,14 @@ import { Hdc } from '../src/transport/hdc';
  * match the shipped binaries.
  *
  * Measured facts these depend on (Mate 60, BRA-AL00, HarmonyOS 7.0.0.111):
- * `com.example.image` is a debuggable app, `com.huawei.hmos.settings` is a
+ * `com.harmonyresearch.mockweibo` is a debuggable app (measured 2026-11-18;
+ * the earlier default `com.example.image` was uninstalled from this device),
+ * `com.huawei.hmos.settings` is a
  * release app, and the release refusal reads
  * `--app option only support debug or profileable application`.
  */
 
-const DEBUG_APP = process.env.OHOS_PERF_DEBUG_APP ?? 'com.example.image';
+const DEBUG_APP = process.env.OHOS_PERF_DEBUG_APP ?? 'com.harmonyresearch.mockweibo';
 const RELEASE_APP = process.env.OHOS_PERF_RELEASE_APP ?? 'com.huawei.hmos.settings';
 
 /**
