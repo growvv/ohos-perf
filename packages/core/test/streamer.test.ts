@@ -20,6 +20,20 @@ describe('buildConvertArgv', () => {
   it('passes input, -e, output in that order', () => {
     expect(buildConvertArgv('a.htrace', 'b.db')).toEqual(['a.htrace', '-e', 'b.db']);
   });
+
+  it('appends --So_dir when a symbol directory is given', () => {
+    expect(buildConvertArgv('a.htrace', 'b.db', '/so')).toEqual(
+      ['a.htrace', '-e', 'b.db', '--So_dir', '/so'],
+    );
+  });
+
+  it('keeps the two-argument shape byte-identical when the directory is omitted', () => {
+    // `undefined` and an explicit absent argument must produce the same argv:
+    // the flag is an addition, not a rewrite of the existing call.
+    expect(buildConvertArgv('a.htrace', 'b.db', undefined)).toEqual(
+      buildConvertArgv('a.htrace', 'b.db'),
+    );
+  });
 });
 
 describe('parseVersion', () => {

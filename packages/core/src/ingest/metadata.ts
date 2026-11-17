@@ -37,7 +37,16 @@ export interface SceneMetadata {
      * Present only when a hiperf capture ran. `samples` may be 0: an idle app
      * yields no samples, which is a real capture, not a missing one.
      */
-    hiperf?: { samples: number };
+    hiperf?: {
+      samples: number;
+      /**
+       * Present only when the capture passed a symbol directory. `true` means
+       * the frames were symbolized while converting, so a frame's name is a
+       * symbol; absent means the scene did not record the attempt, which is
+       * not the same as "no".
+       */
+      symbolized?: boolean;
+    };
     /**
      * Present only when a hidumper capture ran. `frames` may be 0: a screen
      * that presented nothing is a measurement, not a missing capture.
@@ -95,6 +104,22 @@ function isCountRecord(
 }
 
 /**
+ * A hiperf descriptor is a non-negative sample count, plus an optional
+ * `symbolized` boolean. A present-but-non-boolean value makes the whole
+ * descriptor untrustworthy: the reader would otherwise have to guess whether
+ * a string `"true"` meant the capture was symbolized.
+ */
+function isHiperfRecord(
+  value: unknown,
+): value is { samples: number; symbolized?: boolean } {
+  return (
+    isCountRecord(value, 'samples') &&
+    ((value as { symbolized?: unknown }).symbolized === undefined ||
+      typeof (value as { symbolized?: unknown }).symbolized === 'boolean')
+  );
+}
+
+/**
  * A screenshot descriptor is three positive integers: an image with no pixels
  * or no bytes is not one the collector can produce, so it is untrustworthy.
  */
@@ -115,7 +140,7 @@ function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture'
     isFiniteNumber(value.startedAtMs) &&
     isFiniteNumber(value.durationMs) &&
     isStringArray(value.collectors) &&
-    (value.hiperf === undefined || isCountRecord(value.hiperf, 'samples')) &&
+    (value.hiperf === undefined || isHiperfRecord(value.hiperf)) &&
     (value.hidumper === undefined || isCountRecord(value.hidumper, 'frames')) &&
     (value.uitest === undefined || isCountRecord(value.uitest, 'nodes')) &&
     (value.screenshot === undefined || isScreenshotRecord(value.screenshot)) &&
@@ -201,7 +226,14 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
       collectors: [...parsed.capture.collectors],
       ...(parsed.capture.hiperf === undefined
         ? {}
-        : { hiperf: { samples: parsed.capture.hiperf.samples } }),
+        : {
+            hiperf: {
+              samples: parsed.capture.hiperf.samples,
+              ...(parsed.capture.hiperf.symbolized === undefined
+                ? {}
+                : { symbolized: parsed.capture.hiperf.symbolized }),
+            },
+          }),
       ...(parsed.capture.hidumper === undefined
         ? {}
         : { hidumper: { frames: parsed.capture.hidumper.frames } }),

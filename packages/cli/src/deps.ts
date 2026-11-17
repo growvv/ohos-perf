@@ -1003,6 +1003,7 @@ export function realDeps(
                   : { plugins: req.hiprofiler.plugins },
             }),
         ...(req.hiperf === undefined ? {} : { hiperf: req.hiperf }),
+        ...(req.soDir === undefined ? {} : { soDir: req.soDir }),
         ...(req.hidumper === true ? { hidumper: true } : {}),
         ...(req.uitest === true ? { uitest: true } : {}),
         ...(req.screenshot === true ? { screenshot: true } : {}),
@@ -1022,7 +1023,15 @@ export function realDeps(
           collectors: meta?.capture?.collectors ?? [],
           ...(meta?.capture?.hiperf === undefined
             ? {}
-            : { hiperf: { samples: meta.capture.hiperf.samples } }),
+            : {
+                hiperf: {
+                  samples: meta.capture.hiperf.samples,
+                  ...(meta.capture.hiperf.symbolized === undefined
+                    ? {}
+                    : { symbolized: meta.capture.hiperf.symbolized }),
+                },
+              }),
+          ...(req.soDir === undefined ? {} : { soDir: resolve(req.soDir) }),
           ...(meta?.capture?.hidumper === undefined
             ? {}
             : { hidumper: { frames: meta.capture.hidumper.frames } }),

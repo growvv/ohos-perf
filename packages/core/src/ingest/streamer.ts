@@ -40,9 +40,20 @@ const SIDECAR_SUFFIX = '.ohos.ts';
  * `trace_streamer.exe FILE -e sqlite_out.db` is the convert invocation printed
  * by the 4.3.7 binary itself. `-nm`, `-tn`, `-c` and `-D` exist but are not
  * used here; this builder only ever emits the plain conversion form.
+ *
+ * `--So_dir` names a host directory of shared objects the binary reads while
+ * converting a `perf.data`: with it, frames come out with symbol names; without
+ * it they stay `file+0xoffset`. It is appended only when a directory is given,
+ * so the trace conversion's argv is unchanged byte for byte.
  */
-export function buildConvertArgv(inputPath: string, outputDbPath: string): string[] {
-  return [inputPath, '-e', outputDbPath];
+export function buildConvertArgv(
+  inputPath: string,
+  outputDbPath: string,
+  soDir?: string,
+): string[] {
+  const argv = [inputPath, '-e', outputDbPath];
+  if (soDir !== undefined) argv.push('--So_dir', soDir);
+  return argv;
 }
 
 /** First `\d+.\d+.\d+` in a banner such as `version 4.3.7`. */
@@ -137,12 +148,12 @@ export class Streamer {
    * without a fresh file all fail. Every filesystem failure is surfaced as an
    * IngestError, never a raw fs error.
    */
-  async convert(inputPath: string, outputDbPath: string): Promise<void> {
+  async convert(inputPath: string, outputDbPath: string, soDir?: string): Promise<void> {
     await this.assertSupported();
 
     const tempPath = `${outputDbPath}.tmp-${process.pid}-${this.tempCounter++}`;
     const tempSidecar = tempPath + SIDECAR_SUFFIX;
-    const spec = this.spawnSpec(inputPath, tempPath);
+    const spec = this.spawnSpecFor(buildConvertArgv(inputPath, tempPath, soDir));
     let committed = false;
     try {
       const result = await this.spawnProcess(spec.command, spec.args);
@@ -214,8 +225,8 @@ export class Streamer {
    * `shell: false` is mandatory: the DevEco install path contains spaces, and
    * a shell would split `D:/Application/DevEco Studio/...` into pieces.
    */
-  spawnSpec(inputPath: string, outputDbPath: string): SpawnSpec {
-    return this.spawnSpecFor(buildConvertArgv(inputPath, outputDbPath));
+  spawnSpec(inputPath: string, outputDbPath: string, soDir?: string): SpawnSpec {
+    return this.spawnSpecFor(buildConvertArgv(inputPath, outputDbPath, soDir));
   }
 
   private spawnSpecFor(args: string[]): SpawnSpec {

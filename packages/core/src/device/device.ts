@@ -9,7 +9,7 @@
  */
 
 import {
-  existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { HitraceCollector } from '../collectors/hitrace';
 import { HiprofilerCollector } from '../collectors/hiprofiler';
@@ -93,6 +93,16 @@ export interface CollectOptions extends TraceCollectOptions {
    * **debuggable** app; a release app is rejected with `HIPERF_NOT_DEBUGGABLE`.
    */
   hiperf?: { frequency?: number; events?: readonly string[]; callStacks?: boolean };
+  /**
+   * A host directory of shared objects to symbolize the hiperf capture with.
+   *
+   * Passed to the perf conversion as `--So_dir`, so frames come out named
+   * instead of `file+0xoffset`. Requires `hiperf`: without a perf capture
+   * there is nothing to symbolize, and the request is refused before any
+   * device call rather than silently ignored. The directory must exist on
+   * this host, which is checked here too.
+   */
+  soDir?: string;
   /** Also sample the RenderService fps/hitch counters for `durationMs`. */
   hidumper?: boolean;
   /** Also dump the on-screen UI tree. */
@@ -283,6 +293,25 @@ export class Device {
               ` (got ${String(bufferPages)})`,
             { code: 'HIPROFILER_BAD_BUFFER' },
           );
+        }
+        // `soDir` only means something to the perf conversion, so it is
+        // refused without `hiperf` rather than accepted and dropped. Both
+        // checks run before the first device call: a capture that runs for
+        // ten seconds and then fails to symbolize is worse than a refusal.
+        const soDir = opts.soDir;
+        if (soDir !== undefined) {
+          if (opts.hiperf === undefined) {
+            throw new OhosPerfError(
+              'soDir requires hiperf: there is no perf capture to symbolize',
+              { code: 'COLLECT_SO_DIR_WITHOUT_HIPERF' },
+            );
+          }
+          if (!isDirectorySync(soDir)) {
+            throw new OhosPerfError(
+              `soDir is not a directory on this host: ${soDir}`,
+              { code: 'COLLECT_BAD_SO_DIR' },
+            );
+          }
         }
         // An app-less capture is valid for the device-wide collectors, so the
         // requirement lives with the modes that resolve a pid from it. Every
@@ -583,7 +612,7 @@ export class Device {
           // The perf capture converts the same way and must succeed before the
           // metadata is written: a scene.json that claims a hiperf capture
           // whose database never appeared would be a lie the analyzers act on.
-          if (wantsHiperf) await streamer.convert(layout.perfFile!, layout.perfDb!);
+          if (wantsHiperf) await streamer.convert(layout.perfFile!, layout.perfDb!, soDir);
         } catch (err) {
           // The collectors have already written this attempt's artifacts.
           // Restore the previous files byte-for-byte, or remove them when the
@@ -654,7 +683,12 @@ export class Device {
             // the CLI prints the number so neither can read as the other.
             ...(hiperfCapture === undefined
               ? {}
-              : { hiperf: { samples: hiperfCapture.samples } }),
+              : {
+                  hiperf: {
+                    samples: hiperfCapture.samples,
+                    ...(soDir === undefined ? {} : { symbolized: true }),
+                  },
+                }),
             ...(hidumperCapture === undefined
               ? {}
               : { hidumper: { frames: frameDelta(hidumperCapture).frames } }),
@@ -690,6 +724,15 @@ function removeIfPresent(path: string): void {
     unlinkSync(path);
   } catch (err) {
     if ((err as { code?: string }).code !== 'ENOENT') throw err;
+  }
+}
+
+/** True when `path` exists and is a directory; any stat failure means no. */
+function isDirectorySync(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
   }
 }
 

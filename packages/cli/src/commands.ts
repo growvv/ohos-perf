@@ -95,6 +95,11 @@ export interface CollectRequest {
   hiprofiler?: { plugins?: readonly HiprofilerPluginName[] };
   /** Also record a hiperf perf.data (requires a debuggable app). */
   hiperf?: { frequency?: number };
+  /**
+   * Host directory of shared objects the perf conversion symbolizes with.
+   * Requires `hiperf`; the core refuses the pair otherwise.
+   */
+  soDir?: string;
   /** Also sample the RenderService fps/hitch counters. */
   hidumper?: boolean;
   /** Also dump the on-screen UI tree. */
@@ -125,7 +130,9 @@ export interface CollectOutput {
   /** The collectors that ran, in fixed order, as recorded in scene.json. */
   collectors: string[];
   /** Present only when a hiperf capture ran; `samples: 0` is a valid idle app. */
-  hiperf?: { samples: number };
+  hiperf?: { samples: number; symbolized?: boolean };
+  /** The symbol directory the perf conversion used, when one was given. */
+  soDir?: string;
   /** Present only when a hidumper capture ran; `frames: 0` is a blank screen. */
   hidumper?: { frames: number };
   /** Present only when a uitest capture ran; `nodes: 0` is a blank screen. */
@@ -488,6 +495,9 @@ export async function runCollect(
         : [`screenshot ${result.screenshot.width}x${result.screenshot.height}`]),
     ];
     if (samples.length > 0) stdout += `samples  ${samples.join(', ')}\n`;
+    // A symbolized capture and an unsymbolized one look identical until the
+    // frames are read, so the run says which one it produced.
+    if (result.soDir !== undefined) stdout += `symbols  ${result.soDir}\n`;
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
     return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };

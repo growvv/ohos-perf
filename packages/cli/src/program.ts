@@ -139,6 +139,10 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       'hiprofiler plugins, comma-separated: ftrace, gpu, xpower, nativehook, memory',
     )
     .option('--hiperf', 'also capture a hiperf perf.data (debuggable app only)')
+    .option(
+      '--so-dir <dir>',
+      'host directory of shared objects to symbolize the hiperf capture with',
+    )
     .option('--hidumper', 'also sample the RenderService fps and hitch counters')
     .option('--uitest', 'also dump the on-screen UI tree')
     .option('--screenshot', 'also capture the whole screen into screenshot.png')
@@ -154,6 +158,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       hiprofiler?: boolean;
       plugins?: string;
       hiperf?: boolean;
+      soDir?: string;
       hidumper?: boolean;
       uitest?: boolean;
       screenshot?: boolean;
@@ -179,6 +184,17 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         io.emit({
           stdout: '',
           stderr: 'invalid --plugins: --hiprofiler is required\n',
+          exitCode: 1,
+        });
+        return;
+      }
+      // `--so-dir` names a host directory the device symbolizer reads. Without
+      // `--hiperf` there is no perf capture to symbolize, so accepting it would
+      // run a capture that quietly drops the user's request.
+      if (opts.soDir !== undefined && opts.hiperf !== true) {
+        io.emit({
+          stdout: '',
+          stderr: 'invalid --so-dir: --hiperf is required\n',
           exitCode: 1,
         });
         return;
@@ -222,6 +238,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         ...(opts.coldStart !== undefined ? { coldStart: opts.coldStart } : {}),
         ...(hiprofilerRequest === undefined ? {} : { hiprofiler: hiprofilerRequest }),
         ...(opts.hiperf === true ? { hiperf: {} } : {}),
+        ...(opts.soDir === undefined ? {} : { soDir: opts.soDir }),
         ...(opts.hidumper === true ? { hidumper: true } : {}),
         ...(opts.uitest === true ? { uitest: true } : {}),
         ...(opts.screenshot === true ? { screenshot: true } : {}),
