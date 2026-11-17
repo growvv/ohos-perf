@@ -56,11 +56,10 @@ describe('the parity ledger', () => {
     }
   });
 
-  it('keeps the structurally-out rows out, with the prerequisite named', () => {
-    // These three are the reason the project can claim parity without shipping
-    // an LLM client, a TensorFlow venv or a disassembler. Each reason must name
-    // the prerequisite it refuses, so a reader can tell "not worth it" from
-    // "not done".
+  it('has no refused row left, and each row that left says what replaced it', () => {
+    // Every row is ported as of 0.22.0. The history below is the record of
+    // what each refused row needed, kept because a future reader will ask why
+    // a row that once carried a reason no longer does.
     //
     // Row 4 (HapTest exploration) left this list when `explore` replaced it:
     // HapRay's version is nondeterministic and verifies nothing, which is a
@@ -82,14 +81,17 @@ describe('the parity ledger', () => {
     // here against an injected client, the endpoint is read from the same
     // variables HapRay reads, and completion is verified against the screen
     // instead of trusted.
+    //
+    // Row 28 (symbol recovery) left it in `0.22.0`. HapRay's tool shells out
+    // to radare2 for function boundaries and asks an LLM to name what it
+    // finds, and never measures whether the name is right — its own docs
+    // record the heuristic (a function over 100 KB is "unreasonable, skip",
+    // and a missed lookup gets 2000 bytes). An ELF records every function's
+    // start and size in `st_value`/`st_size`, so the boundary is a lookup;
+    // `symbols recover --measure` holds out names the file does record and
+    // states the model's accuracy over them.
     const out = PARITY_ROWS.filter((row) => row.status === 'out');
-    expect(out.map((row) => row.row).sort((a, b) => a - b)).toEqual([28]);
-    const prerequisites: Record<number, RegExp> = {
-      28: /disassembl/i,
-    };
-    for (const row of out) {
-      expect(row.reason, `row ${row.row}`).toMatch(prerequisites[row.row]!);
-    }
+    expect(out).toEqual([]);
   });
 
   it('does not name a subfeature as missing once the code emits it', () => {

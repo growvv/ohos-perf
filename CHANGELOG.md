@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.22.0 — 2026-11-17
+
+Parity row 28 is ported: symbol recovery. Every HapRay row is now ported —
+35 ported, 0 partial, 0 missing, 0 out.
+
+HapRay's `symbol_recovery` answers "which function is `libquick.so+0xc8a7c`?"
+by shelling out to radare2 (`aflj`, `afij`, `pdfj`, a decompiler plugin) and
+asking an LLM to name what it finds. Its own documentation records the
+heuristic it rests on — a function over 100 KB is "unreasonable, skip", and a
+lookup it misses gets a default size of 2000 bytes — and nothing measures
+whether the name it prints is right.
+
+- **The boundary is a lookup, not a heuristic.** Every `STT_FUNC` symbol in an
+  ELF records `st_value` and `st_size`, so the containing function is found
+  over sorted symbols. The recorded size is authoritative: a function followed
+  by padding is not extended to the next symbol, and an offset past every
+  function is `unresolved` rather than attributed to the nearest preceding one.
+- **A stripped file says so.** With no symbol table there are no boundaries to
+  read, and `recoverSymbols` reports that per address instead of guessing.
+- **`symbols recover <lib.so> <address...>`** reports each address with its
+  name and range, and names the ones it could not place. `--json` prints the
+  document.
+- **`--measure` reports the accuracy HapRay never states.** The names the file
+  records are held out, the model is asked to infer them from the function's
+  instruction mix and bytes — never its name — and the report says how many it
+  got right. Names are compared after absorbing the noise a model adds (a
+  `sym.` prefix, an argument list, a return annotation), so formatting does not
+  score as a mistake. A file with nothing to hold out reports an undefined
+  accuracy rather than 0%, which would read as a broken model.
+- **The ELF reader now exposes `st_value`**, which the optimization detector
+  did not need and symbol recovery does.
+- 32 new unit tests (24 for recovery, 8 for the command), two typechecks, two
+  builds. All 16 mutations of the recovery module were killed.
+
 ## 0.21.0 — 2026-11-17
 
 Parity row 5 is ported: the LLM GUI agent. The ledger drops to one refused row.

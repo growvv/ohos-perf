@@ -53,6 +53,11 @@ export interface ElfSymbol {
   readonly bind: 'local' | 'global' | 'weak' | 'other';
   readonly type: 'notype' | 'func' | 'object' | 'section' | 'file' | 'other';
   readonly size: number;
+  /**
+   * `st_value`: the symbol's address. In a shared object this is the file
+   * offset of the code, which is what a `libfoo.so+0xoffset` reference names.
+   */
+  readonly value: number;
   /** Section index the symbol belongs to; 0 for undefined, 0xfff1 for absolute. */
   readonly sectionIndex: number;
 }
@@ -149,9 +154,10 @@ function symbolTableOf(
     const nameOffset = field(dv, base, 4, 'st_name');
     const info = field(dv, base + 4, 1, 'st_info');
     const sectionIndex = field(dv, base + 6, 2, 'st_shndx');
+    const value = field(dv, base + 8, 8, 'st_value');
     const size = field(dv, base + 16, 8, 'st_size');
     const name = readString(strings, nameOffset);
-    symbols.push({ name, bind: bindOf(info), type: typeOf(info), size, sectionIndex });
+    symbols.push({ name, bind: bindOf(info), type: typeOf(info), size, value, sectionIndex });
   }
   return symbols;
 }

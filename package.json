@@ -19,7 +19,7 @@
     "tsup": "^8.3.0",
     "@types/node": "^24.0.0"
   },
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "**HarmonyOS performance, made measurable.**",
   "main": "index.js",
   "directories": {

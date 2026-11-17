@@ -58,6 +58,8 @@ import {
   httpAgentModel,
   readAgentConfig,
   runAgent,
+  recoverSymbols,
+  measureNaming,
   readSceneMetadata,
   readUiTree,
   resolveAppIdentity,
@@ -167,6 +169,21 @@ export interface RealDepsOverrides {
     uiTree(): Promise<readonly UiNode[]>;
     gesture(g: Gesture): Promise<GestureResult>;
   }>;
+}
+
+/** At most this many bytes are shown to a model; a long body is truncated. */
+const HEX_DUMP_LIMIT = 512;
+
+/** A function body as hex words, one instruction per line, for a model prompt. */
+function hexDump(bytes: Uint8Array): string {
+  if (bytes.length === 0) return '(the symbol points outside .text, so no bytes are available)';
+  const lines: string[] = [];
+  for (let at = 0; at + 4 <= Math.min(bytes.length, HEX_DUMP_LIMIT); at += 4) {
+    const word = new DataView(bytes.buffer, bytes.byteOffset + at, 4).getUint32(0, true);
+    lines.push(`+${at.toString(16).padStart(4, '0')}  ${word.toString(16).padStart(8, '0')}`);
+  }
+  if (bytes.length > HEX_DUMP_LIMIT) lines.push(`(${bytes.length - HEX_DUMP_LIMIT} more bytes)`);
+  return lines.join('\n');
 }
 
 /** The empty probe an offline capability state carries (no device was asked). */
@@ -1241,6 +1258,47 @@ export function realDeps(
         ...(req.allowIrreversible === true ? { allowIrreversible: true } : {}),
       });
       return { transcript, device: { id: device.id, kind: device.kind } };
+    },
+
+    async symbols(req) {
+      const bytes = readFileSync(req.library);
+      const library = basename(req.library);
+      let result;
+      try {
+        result = recoverSymbols(bytes, req.addresses);
+      } catch (err) {
+        // A refusal names the file: the caller passed a path, and "not an ELF"
+        // alone does not say which one they have to look at.
+        throw new OhosPerfError(`${library}: ${(err as Error).message}`, { cause: err });
+      }
+      if (req.measure !== true) return { library, ...result };
+      // The model is resolved only when asked for: naming is the optional
+      // half, and a caller recovering recorded names needs no endpoint.
+      const model = agentModel(req.model);
+      const naming = await measureNaming(bytes, async (question) => {
+        const counts = Object.entries(question.counts)
+          .filter(([name, value]) => name !== 'total' && value > 0)
+          .map(([name, value]) => `${name}=${String(value)}`)
+          .join(' ');
+        // The body's bytes are the evidence: the model is naming a function
+        // from its instruction mix, which is what the ELF can offer without a
+        // disassembler. It is never shown the name it is being scored against.
+        const request = {
+          task:
+            `Name the function at 0x${question.start.toString(16)} in ${library}` +
+            ` (${question.size} bytes; instruction mix: ${counts || 'none'}).`,
+          app: library,
+          step: 0,
+          maxSteps: 1,
+          screen: hexDump(question.body),
+          history: [],
+        };
+        const decision = await model.decide(request);
+        // The answer is the name; a model that answers with an action has not
+        // named anything, and its reason is the closest thing to a name.
+        return 'done' in decision ? decision.reason : decision.reason;
+      });
+      return { library, ...result, naming };
     },
 
     async run(req) {

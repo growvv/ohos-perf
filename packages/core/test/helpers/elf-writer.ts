@@ -44,6 +44,8 @@ export interface TestSymbol {
   /** `STT_*` type. */
   type: number;
   size?: number;
+  /** `st_value`: the symbol's address, which for a `.so` is its file offset. */
+  value?: number;
   /** Index of the section the symbol belongs to; 1 is the first real section. */
   shndx?: number;
 }
@@ -137,7 +139,7 @@ export function makeElf64(sections: TestSection[], opts: ElfOptions = {}): Uint8
         sv.setUint32(base, encoded[at]!, true);
         sv.setUint8(base + 4, (symbol.bind << 4) | symbol.type);
         sv.setUint16(base + 6, symbol.shndx ?? index + 1, true);
-        u64(sv, base + 8, 0);
+        u64(sv, base + 8, symbol.value ?? 0);
         u64(sv, base + 16, symbol.size ?? 0);
       });
       // The string table goes immediately before the symbol table so the

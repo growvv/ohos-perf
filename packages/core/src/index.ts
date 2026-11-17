@@ -184,6 +184,13 @@ export {
   agentPrompt, describeDecision, IRREVERSIBLE_PATTERNS, irreversibleReason,
   parseDecision, renderTree, replayAgent, runAgent,
 } from './scenario/agent';
+export {
+  addressOfOffset, functionAt, measureNaming, normaliseName, recoverSymbols, symbolIndex,
+} from './hap/symbols-recovery';
+export type {
+  AddressRef, FunctionRange, NamingAnswer, NamingCase, NamingQuestion, NamingReport,
+  RecoveredSymbol, RecoveryResult, UnresolvedAddress,
+} from './hap/symbols-recovery';
 export { httpAgentModel, readAgentConfig } from './scenario/agent-client';
 export type { AgentConfig, AgentFetch, HttpAgentModelOptions } from './scenario/agent-client';
 export type {

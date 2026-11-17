@@ -18,6 +18,7 @@ import {
   runRender,
   runExplore,
   runAgentCommand,
+  runSymbolRecovery,
   runScenarioCommand,
   runTools,
   runTrend,
@@ -546,6 +547,35 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
             ...(opts.model === undefined ? {} : { model: opts.model }),
             ...(opts.allowIrreversible === true ? { allowIrreversible: true } : {}),
             ...(opts.target === undefined ? {} : { target: opts.target }),
+          },
+          { json: opts.json },
+        ),
+      );
+    });
+
+  program
+    .command('symbols')
+    .description('name the addresses a capture could not, from the libraries it ran')
+    .command('recover')
+    .description("name unresolved addresses from a library's own symbol table")
+    .argument('<library>', 'shared object to read, e.g. libs/arm64/libapp.so')
+    .argument('[addresses...]', 'libfoo.so+0xoffset references, as a capture writes them')
+    .option('--measure', 'ask the model to name held-out functions and report its accuracy')
+    .option('--model <name>', 'model name to send when --measure is used')
+    .option('--json', 'print the recovery as JSON')
+    .action(async (library: string, addresses: string[], opts: {
+      measure?: boolean;
+      model?: string;
+      json?: boolean;
+    }) => {
+      io.emit(
+        await runSymbolRecovery(
+          deps,
+          {
+            library,
+            addresses,
+            ...(opts.measure === true ? { measure: true } : {}),
+            ...(opts.model === undefined ? {} : { model: opts.model }),
           },
           { json: opts.json },
         ),

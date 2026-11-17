@@ -39,6 +39,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     },
     run: async () => { throw new Error('run not stubbed'); },
     agent: async () => { throw new Error('agent not stubbed'); },
+    symbols: async () => { throw new Error('symbols not stubbed'); },
     ...overrides,
   };
 }
@@ -90,7 +91,7 @@ describe('--help', () => {
     const text = out.join('');
     for (const name of [
       'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'render', 'trend',
-      'run', 'ui-compare', 'explore', 'agent', 'opt',
+      'run', 'ui-compare', 'explore', 'agent', 'opt', 'symbols',
     ]) {
       expect(text).toContain(name);
     }

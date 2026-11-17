@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   discoverCases,
   describeDecision,
+  addressOfOffset,
   loadCases,
   OhosPerfError,
   parseScenario,
@@ -14,6 +15,8 @@ import {
   type HapAnalysis,
   type OptimizationAnalysis,
   type AgentTranscript,
+  type NamingReport,
+  type RecoveryResult,
   type HiprofilerPluginName, type NamedQueryInfo, type NamedQueryResult,
   type RunResult, type Scenario,
 } from '@ohos-perf/core';
@@ -220,6 +223,32 @@ export interface AgentRequest {
 export interface AgentOutput {
   transcript: AgentTranscript;
   device: { id: string; kind: string };
+}
+
+/**
+ * A `symbols recover` invocation: name the addresses a capture could not.
+ *
+ * The library is read directly rather than through a `perf.db`, so the same
+ * command works on any file and any address list. `measure` additionally asks
+ * the model to name the functions the file *does* record, and reports how many
+ * it got right — the accuracy HapRay's tool never states.
+ */
+export interface SymbolsRequest {
+  /** The shared object whose addresses are being named. */
+  library: string;
+  /** `libfoo.so+0xoffset` references, as a capture writes them. */
+  addresses: string[];
+  /** Ask the model to name held-out functions and report its accuracy. */
+  measure?: boolean;
+  /** Which model client to use; the seam decides what names it knows. */
+  model?: string;
+}
+
+/** What `symbols recover` produced. */
+export interface SymbolsOutput extends RecoveryResult {
+  readonly library: string;
+  /** Present only when `measure` was asked for. */
+  readonly naming?: NamingReport;
 }
 
 /** A `run` invocation, with the scenario already read and validated. */export interface RunRequest {
@@ -492,6 +521,11 @@ export interface CliDeps {
    * Throws on any failure; the caller maps it to exit 1.
    */
   agent(req: AgentRequest): Promise<AgentOutput>;
+  /**
+   * Name the addresses a capture could not. Throws on any failure; the caller
+   * maps it to exit 1.
+   */
+  symbols(req: SymbolsRequest): Promise<SymbolsOutput>;
   /**
    * Inspect a HAP on disk. Throws on any failure; the caller maps it to exit 1.
    *
@@ -1073,6 +1107,59 @@ export async function runAgentCommand(
 function describeStep(step: AgentTranscript['steps'][number]): string {
   if (step.action === undefined) return step.status;
   return describeDecision({ action: step.action, reason: step.reason });
+}
+
+/**
+ * Name the addresses a capture could not, and optionally measure the model.
+ *
+ * HapRay's `symbol_recovery` prints names and says nothing about whether they
+ * are right, so a reader cannot tell a good model from a bad one, or either
+ * from a run where the model invented everything. Here `--measure` holds out
+ * the names the file records, asks the model to infer them from the same
+ * evidence it would have on a stripped file, and states how many it got right.
+ */
+export async function runSymbolRecovery(
+  deps: CliDeps,
+  req: SymbolsRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  if (!existsSync(req.library)) {
+    return { stdout: '', stderr: `symbols: no such library: ${req.library}\n`, exitCode: 1 };
+  }
+
+  try {
+    const result = await deps.symbols(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+
+    const lines = [
+      `library  ${result.library}`,
+      `result   ${result.recovered.length} recovered, ${result.unresolved.length} unresolved`,
+    ];
+
+    for (const entry of result.recovered) {
+      lines.push(`  ${entry.address}  ${entry.name}  (0x${entry.start.toString(16)}..0x${entry.end.toString(16)})`);
+    }
+    for (const entry of result.unresolved) {
+      lines.push(`  ${entry.address}  ${entry.reason}`);
+    }
+
+    if (result.naming !== undefined) {
+      const naming = result.naming;
+      if (naming.accuracy === undefined) {
+        lines.push('naming   no nameable function in this file to hold out');
+      } else {
+        const percent = (naming.accuracy * 100).toFixed(1);
+        lines.push(`naming   ${naming.correct} of ${naming.heldOut} named correctly (${percent}%)`);
+        for (const entry of naming.cases.filter((item) => !item.correct)) {
+          lines.push(`  ${entry.truth}  answered ${JSON.stringify(entry.answer)}`);
+        }
+      }
+    }
+
+    return { stdout: `${lines.join('\n')}\n`, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+  }
 }
 
 /**

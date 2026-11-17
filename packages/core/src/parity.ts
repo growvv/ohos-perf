@@ -213,10 +213,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 28,
     name: 'Symbol recovery',
-    status: 'out',
-    reason:
-      'Heuristic disassembly (radare2/capstone) plus LLM naming, with no accuracy ' +
-      'measurement; device `--so-dir` symbolization covers the resolved symbols.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 29,
