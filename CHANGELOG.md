@@ -55,6 +55,15 @@ the defect stayed invisible. Unresolved leaves (2,295 frames, 994 M,
   is byte-identical across runs, and a scene with no samples writes neither
   file and does not fail.
 
+### Fixes — report windows
+
+- **A whole-capture window is stated as words.** `analyze` over a scene with
+  no `trace_range` windows the analyzers over `0 … MAX_SAFE_INTEGER`, and the
+  report HTML printed that sentinel as a span — 23 times on a hand-built
+  scene, reading as 285 years. `flamegraph.html` printed it too. One
+  formatter now serves both pages: a measured span stays `1000 – 2000 ns`, and
+  the marker reads `the whole capture`.
+
 ### Fixes — static HAP inspection
 
 Corrections to the static HAP inspection released in 0.10.0. Each was found
