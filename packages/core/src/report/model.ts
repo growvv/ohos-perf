@@ -120,6 +120,7 @@ export const SECTION_TITLES: Readonly<Record<string, string>> = {
   'rs-skip': 'RenderService skips',
   'static-hap': 'Static HAP inspection',
   startup: 'Startup',
+  symbols: 'Symbols',
   threads: 'Threads',
   ui: 'UI',
   vsync: 'VSync',

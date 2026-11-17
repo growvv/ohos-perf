@@ -806,6 +806,33 @@ const DEFINITIONS: NamedQueryDefinition[] = [
     },
   },
   {
+    name: 'symbol.stats',
+    description:
+      'Sampled-event weight per (symbol, filePath) for the app threads in a time ' +
+      'range, including the frames the recorder could not name. `unresolved` ' +
+      'marks a `file+0xoffset` reference; the rows sum to the window\'s app-thread ' +
+      'weight, so `share` over them totals 100%.',
+    args: [
+      { name: 'startNs', type: 'number', required: true, description: 'range start (ns)' },
+      { name: 'endNs', type: 'number', required: true, description: 'range end (ns)' },
+    ],
+    returns: 'Array<{ symbol, filePath, samples, share, unresolved }>',
+    parseArgs(args) {
+      rejectUnknownArgs('symbol.stats', args, ['startNs', 'endNs']);
+      requiredRange('symbol.stats', args);
+    },
+    run(ctx, args) {
+      const range = requiredRange('symbol.stats', args);
+      const threadIds = perfThreadIds(ctx);
+      if (threadIds.length === 0) return [];
+      const perf = perfQuery(ctx);
+      const total = perf.eventCount(threadIds, range);
+      return perf
+        .symbolStats(threadIds, range)
+        .map((row) => ({ ...row, share: shareOf(row.samples, total) }));
+    },
+  },
+  {
     name: 'threads.pattern',
     description:
       'Redundant-thread patterns matching a display name, a variant name, or a `name_*` label.',

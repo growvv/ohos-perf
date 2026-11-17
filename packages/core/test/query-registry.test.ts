@@ -105,7 +105,7 @@ afterAll(() => {
 });
 
 describe('queryDefinitions', () => {
-  it('lists the twenty registered names in sorted order', () => {
+  it('lists the twenty-one registered names in sorted order', () => {
     expect(queryDefinitions().map((d) => d.name)).toEqual([
       'binder.processStats', 'callstack.matching', 'callstack.range', 'caps.get',
       'frame.load.files', 'frame.load.symbols', 'frame.load.threads',
@@ -113,7 +113,7 @@ describe('queryDefinitions', () => {
       'hilog.around', 'hilog.matches', 'hilog.rules',
       'mem.native.callchain', 'mem.native.categories', 'mem.native.timeline',
       'mem.native.unreleased',
-      'threads.pattern', 'ui.get', 'ui.tree',
+      'symbol.stats', 'threads.pattern', 'ui.get', 'ui.tree',
     ]);
   });
 

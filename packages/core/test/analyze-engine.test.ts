@@ -18,6 +18,7 @@ import { FrameLoadAnalyzer } from '../src/analyze/frame-load';
 import { FrameAnalyzer } from '../src/analyze/frames';
 import { ComponentReuseAnalyzer } from '../src/analyze/components';
 import { FlamegraphAnalyzer } from '../src/analyze/flamegraph';
+import { SymbolsAnalyzer } from '../src/analyze/symbols';
 import { GcAnalyzer } from '../src/analyze/gc';
 import { MemoryAnalyzer } from '../src/analyze/memory';
 import { MemoryMeasureAnalyzer } from '../src/analyze/mem-measure';
@@ -366,6 +367,7 @@ describe('defaultAnalyzers', () => {
       'vsync',
       'empty-frame',
       'rs-skip',
+      'symbols',
       'flamegraph',
       'components',
       'hilog',
@@ -385,10 +387,11 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[11]).toBeInstanceOf(VsyncAnalyzer);
     expect(analyzers[12]).toBeInstanceOf(EmptyFrameAnalyzer);
     expect(analyzers[13]).toBeInstanceOf(RsSkipAnalyzer);
-    expect(analyzers[14]).toBeInstanceOf(FlamegraphAnalyzer);
-    expect(analyzers[15]).toBeInstanceOf(ComponentReuseAnalyzer);
-    expect(analyzers[16]).toBeInstanceOf(HilogAnalyzer);
-    expect(analyzers[17]).toBeInstanceOf(UiAnalyzer);
+    expect(analyzers[14]).toBeInstanceOf(SymbolsAnalyzer);
+    expect(analyzers[15]).toBeInstanceOf(FlamegraphAnalyzer);
+    expect(analyzers[16]).toBeInstanceOf(ComponentReuseAnalyzer);
+    expect(analyzers[17]).toBeInstanceOf(HilogAnalyzer);
+    expect(analyzers[18]).toBeInstanceOf(UiAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

@@ -1453,7 +1453,7 @@ describe('realDeps().query', () => {
       'hilog.around', 'hilog.matches', 'hilog.rules',
       'mem.native.callchain', 'mem.native.categories', 'mem.native.timeline',
       'mem.native.unreleased',
-      'threads.pattern', 'ui.get', 'ui.tree',
+      'symbol.stats', 'threads.pattern', 'ui.get', 'ui.tree',
     ]);
   });
 });

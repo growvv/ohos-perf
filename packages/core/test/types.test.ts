@@ -122,7 +122,7 @@ const VALUE_EXPORTS = [
   'resolveAppIdentity', 'resolveAppIpids', 'resolveQueryLimit',
   'ScenarioRunner', 'parseScenario', 'executeAction', 'writeRunFiles', 'COLLECTOR_NAMES',
   'runAnalyzerSections', 'runAnalyzers', 'runDrillDown', 'runNamedQuery', 'runProbe',
-  'RsSkipAnalyzer', 'ScreenshotCollector', 'tableRowCounts',
+  'RsSkipAnalyzer', 'ScreenshotCollector', 'SymbolsAnalyzer', 'tableRowCounts',
   'unknownQueryError',
   'VsyncAnalyzer',
   'openZip', 'isZip', 'buildInventory', 'categorize', 'CATEGORY_EXTENSIONS',

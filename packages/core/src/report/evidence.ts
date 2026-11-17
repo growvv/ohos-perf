@@ -21,7 +21,9 @@ export type EvidenceKind =
   | 'ui_tree'
   | 'tech_stack'
   | 'duplicate_asset'
-  | 'oversized_asset';
+  | 'oversized_asset'
+  | 'symbol_stats'
+  | 'unresolved_symbol';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.

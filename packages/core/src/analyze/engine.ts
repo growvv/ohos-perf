@@ -17,6 +17,7 @@ import { NativeMemoryAnalyzer } from './native-memory';
 import { StartupAnalyzer } from './startup';
 import { RenderAnalyzer } from './render';
 import { RsSkipAnalyzer } from './rs-skip';
+import { SymbolsAnalyzer } from './symbols';
 import { ThreadAnalyzer } from './threads-score';
 import { UiAnalyzer } from './ui';
 import { VsyncAnalyzer } from './vsync';
@@ -239,6 +240,7 @@ export function defaultAnalyzers(): Analyzer[] {
     new VsyncAnalyzer(),
     new EmptyFrameAnalyzer(),
     new RsSkipAnalyzer(),
+    new SymbolsAnalyzer(),
     new FlamegraphAnalyzer(),
     new ComponentReuseAnalyzer(),
     new HilogAnalyzer(),
