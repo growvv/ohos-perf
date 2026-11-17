@@ -7,10 +7,10 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
 
 A TypeScript toolkit for HarmonyOS performance analysis. It turns an attached device
-into structured, evidence-backed data: capability probing, eight collectors,
+into structured, evidence-backed data: capability probing, nine collectors,
 `trace_streamer` ingest, typed queries over the resulting SQLite
-databases, metrics with provenance, an evidence graph, baseline comparison, and
-a CLI designed to be called by agents.
+databases, twenty analyzers, metrics with provenance, an evidence graph,
+baseline comparison, and a CLI designed to be called by agents.
 
 - Website: <https://growvv.github.io/ohos-perf/>
 - Design: [`design/2026-11-14-ohos-perf-core-design.md`](design/2026-11-14-ohos-perf-core-design.md)
@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P18 are complete**: 1698 tests (1687 unit, 11 in the device
+**P1 through P18 are complete**: 1711 tests (1700 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1662 passed, 25
+attached device are absent — `npm run test:unit` reports **1675 passed, 25
 skipped (2 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1662 passed, 36 skipped**. With both fixtures present and a
+checkout is **1675 passed, 36 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -66,11 +66,13 @@ Implemented today:
   path), hiperf (`perf.data` for a debuggable app, converted into a second
   `perf.db`), hidumper (RenderService fps and hitch counters), uitest (the
   on-screen UI tree), screenshot (`uitest screenCap` pulled into
-  `screenshot.png`) and hilog (the raw device log stream); every requested
-  collector runs concurrently in one `collect`. `--app` is required only by the
-  modes that resolve a pid — `--hidumper`, `--uitest`, `--screenshot`,
-  `--hilog` and
-  `--hiprofiler --plugins memory` capture device-wide without it
+  `screenshot.png`), hilog (the raw device log stream) and jsheap
+  (`hidumper --mem-jsheap`, pulled into `jsheap.heapsnapshot`); every
+  requested collector runs concurrently in one `collect`. `--app` is required
+  only by the modes that resolve a pid — `--hidumper`, `--uitest`,
+  `--screenshot`, `--hilog` and
+  `--hiprofiler --plugins memory` capture device-wide without it, while
+  `--jsheap` needs it because the dump targets one process
 - UI gesture injection: `GestureDriver` drives `uitest uiInput` over the plain
   shell — click, swipe (with an optional velocity), key events, text into a
   field and text into the focused field. Success is the device tool's
@@ -104,8 +106,9 @@ Implemented today:
   (`empty_frame.*`), RenderService skips reverse-traced through NativeWindow
   (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`), symbol statistics
   with the unresolved share (`symbol.*`), ArkUI component reuse
-  (`components.*`) and the UI tree and screenshot (`ui.*`), driven by an
-  offline capability matrix derived from table presence
+  (`components.*`), the device log rules (`hilog.*`), cold-start redundant-file
+  I/O (`redundant_file.*`) and the UI tree and screenshot (`ui.*`), driven by
+  an offline capability matrix derived from table presence
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
@@ -145,7 +148,7 @@ Metric ids emitted by the analyzers:
 | --- | --- | --- |
 | `frame.*` | frames | `frame.jank.rate`, `frame.fps`, `frame.stutter.level2.count`, `frame.fps.window.max` |
 | `frame.load.*` | frame load | `frame.load.total`, `frame.load.top10.share`, `frame.load.span.weight` |
-| `fault.*` | fault tree | `fault.arkui.HandleOnAreaChangeEvent`, `fault.RS.DisplayNodeSkipTimes` |
+| `fault.*` | fault tree | `fault.arkui.HandleOnAreaChangeEvent`, `fault.RS.DisplayNodeSkipTimes`, `fault.ipc_binder.latency.avg` |
 | `binder.*` | binder | `binder.transactions.count`, `binder.latency.avg` |
 | `thread.*` | threads | `thread.patterns.count`, `thread.redundant.count` |
 | `mem.*` | memory | `mem.rss.*`, `mem.pss.*` |
@@ -160,6 +163,8 @@ Metric ids emitted by the analyzers:
 | `flamegraph.*` | folded stacks | `flamegraph.app.share`, `flamegraph.stacks.count` |
 | `symbol.*` | symbols | `symbol.samples.count`, `symbol.unresolved.count`, `symbol.unresolved.share`, `symbol.files.count`, `symbol.top.symbol` |
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
+| `hilog.*` | hilog | `hilog.lines.count`, `hilog.rules.matched.count`, `hilog.rule.<name>.count` |
+| `redundant_file.*` | redundant-file I/O | `redundant_file.reads.count`, `redundant_file.files.used`, `redundant_file.files.unused` |
 | `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` |
 | `hap.*` | static HAP inspection | `hap.files.count`, `hap.size.bytes`, `hap.techstack.count`, `hap.duplicates.wasted.bytes`, `hap.oversized.count`, `hap.category.images.bytes` |
 

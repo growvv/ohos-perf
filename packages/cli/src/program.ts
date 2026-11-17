@@ -147,6 +147,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--uitest', 'also dump the on-screen UI tree')
     .option('--screenshot', 'also capture the whole screen into screenshot.png')
     .option('--hilog', 'also stream the device log (hilog) for the capture window')
+    .option('--jsheap', 'also dump a JS heap snapshot for the app (debuggable app only)')
     .option('--target <id>', 'capture from this hdc target instead of the first connected one')
     .option('--json', 'print the result as JSON')
     .action(async (opts: {
@@ -163,6 +164,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       uitest?: boolean;
       screenshot?: boolean;
       hilog?: boolean;
+      jsheap?: boolean;
       target?: string;
       json?: boolean;
     }) => {
@@ -219,12 +221,13 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         opts.procfs === true ||
         opts.coldStart !== undefined ||
         opts.hiperf === true ||
+        opts.jsheap === true ||
         (hiprofilerRequest?.plugins?.includes('nativehook') ?? false);
       if (needsApp && (opts.app === undefined || opts.app === '')) {
         io.emit({
           stdout: '',
-          stderr: 'missing --app: --procfs, --cold-start, --hiperf and the nativehook' +
-            ' plugin require an application package name\n',
+          stderr: 'missing --app: --procfs, --cold-start, --hiperf, --jsheap and the' +
+            ' nativehook plugin require an application package name\n',
           exitCode: 1,
         });
         return;
@@ -243,6 +246,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         ...(opts.uitest === true ? { uitest: true } : {}),
         ...(opts.screenshot === true ? { screenshot: true } : {}),
         ...(opts.hilog === true ? { hilog: true } : {}),
+        ...(opts.jsheap === true ? { jsheap: true } : {}),
         ...(opts.target === undefined ? {} : { target: opts.target }),
       }, { json: opts.json }));
     });

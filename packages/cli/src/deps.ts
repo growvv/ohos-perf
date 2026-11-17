@@ -1024,6 +1024,7 @@ export function realDeps(
         ...(req.uitest === true ? { uitest: true } : {}),
         ...(req.screenshot === true ? { screenshot: true } : {}),
         ...(req.hilog === true ? { hilog: true } : {}),
+        ...(req.jsheap === true ? { jsheap: true } : {}),
       });
       const scene = await session.ingest();
       try {

@@ -1,7 +1,7 @@
 {
   "name": "@ohos-perf/core",
   "version": "0.13.0",
-  "description": "HarmonyOS performance analysis: capability probing, eight collectors, trace ingest, typed queries, nineteen analyzers with provenance and fidelity, reports and a scenario runner",
+  "description": "HarmonyOS performance analysis: capability probing, nine collectors, trace ingest, typed queries, twenty analyzers with provenance and fidelity, reports and a scenario runner",
   "keywords": [
     "harmonyos",
     "openharmony",

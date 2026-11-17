@@ -119,6 +119,12 @@ export interface CollectRequest {
    */
   hilog?: boolean;
   /**
+   * Also dump a JS heap snapshot into `jsheap.heapsnapshot`. Requires `app`:
+   * the dump targets one process, so unlike `hilog` there is nothing
+   * device-wide to capture without it.
+   */
+  jsheap?: boolean;
+  /**
    * Explicit hdc target id. Without it the first connected target is used,
    * which is wrong on a host with both a phone and an emulator attached —
    * `emulator list --json` prints the id to pass here.

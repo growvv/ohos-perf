@@ -70,6 +70,14 @@ export interface SceneMetadata {
      * the field records the count the collector reported.
      */
     hilog?: { lines: number };
+    /**
+     * Present only when a JS heap snapshot was captured. `bytes` is the size
+     * of `jsheap.heapsnapshot`; a zero-byte file is a failed capture, so the
+     * value is always positive. The snapshot's own format is one only DevEco
+     * Studio reads, so this package records that it took one and never claims
+     * metrics from it.
+     */
+    jsheap?: { bytes: number };
   };
 }
 
@@ -102,6 +110,19 @@ function isCountRecord(
   key: 'samples' | 'frames' | 'nodes' | 'lines',
 ): value is Record<typeof key, number> {
   return isRecord(value) && Number.isSafeInteger(value[key]) && (value[key] as number) >= 0;
+}
+
+/**
+ * A JS heap snapshot is a positive byte count. Zero bytes is not an empty
+ * snapshot — the collector treats a zero-byte file as a failed capture — so a
+ * zero here describes nothing that can exist on disk.
+ */
+function isJsheapRecord(value: unknown): value is { bytes: number } {
+  return (
+    isRecord(value) &&
+    Number.isSafeInteger(value.bytes) &&
+    (value.bytes as number) > 0
+  );
 }
 
 /**
@@ -145,7 +166,8 @@ function isCapture(value: unknown): value is NonNullable<SceneMetadata['capture'
     (value.hidumper === undefined || isCountRecord(value.hidumper, 'frames')) &&
     (value.uitest === undefined || isCountRecord(value.uitest, 'nodes')) &&
     (value.screenshot === undefined || isScreenshotRecord(value.screenshot)) &&
-    (value.hilog === undefined || isCountRecord(value.hilog, 'lines'))
+    (value.hilog === undefined || isCountRecord(value.hilog, 'lines')) &&
+    (value.jsheap === undefined || isJsheapRecord(value.jsheap))
   );
 }
 
@@ -253,6 +275,9 @@ export function readSceneMetadata(layout: SceneLayout): SceneMetadata | undefine
       ...(parsed.capture.hilog === undefined
         ? {}
         : { hilog: { lines: parsed.capture.hilog.lines } }),
+      ...(parsed.capture.jsheap === undefined
+        ? {}
+        : { jsheap: { bytes: parsed.capture.jsheap.bytes } }),
     };
   }
   if (isFiniteNumber(parsed.startedAtNs) && parsed.startedAtNs > 0) {

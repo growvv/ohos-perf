@@ -407,6 +407,44 @@ describe('command wiring', () => {
     expect(emitted[0].exitCode).toBe(0);
   });
 
+  it('collect forwards a --jsheap request with the app it needs', async () => {
+    // The snapshot is dumped for one process, so unlike screenshot and hilog
+    // this flag needs `--app`; the action must reject it without one rather
+    // than capture through hitrace and quietly drop the request.
+    const seen: unknown[] = [];
+    const { emitted } = await parse(
+      ['collect', '--app', 'com.demo', '--duration', '10', '--out', 'scene1', '--jsheap'],
+      {
+        collect: async (req) => {
+          seen.push(req);
+          return {
+            sceneDir: '/abs/scene1', device: { id: 't1', kind: 'emulator' },
+            collectors: ['hitrace', 'jsheap'],
+          };
+        },
+      },
+    );
+    expect(seen).toEqual([{ app: 'com.demo', durationMs: 10_000, out: 'scene1', jsheap: true }]);
+    expect(emitted[0].exitCode).toBe(0);
+  });
+
+  it('collect rejects --jsheap without --app before any device work', async () => {
+    let called = false;
+    const { emitted } = await parse(
+      ['collect', '--duration', '10', '--out', 'scene1', '--jsheap'],
+      {
+        collect: async () => {
+          called = true;
+          return { sceneDir: '/scene1', device: { id: 't1', kind: 'emulator' }, collectors: [] };
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(emitted[0].exitCode).toBe(1);
+    expect(emitted[0].stdout).toBe('');
+    expect(emitted[0].stderr).toContain('--app');
+  });
+
   it('collect rejects --hiperf without --app before any device work', async () => {
     // `--app` is optional now, so the action owns this gate: a request that
     // cannot be served must fail before deps.collect connects to a device.

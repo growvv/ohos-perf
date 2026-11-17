@@ -15,7 +15,11 @@ parity claim checkable.
   rather than from a shared file HapRay's own ordering makes stale. Absent, not
   zero, when the trace has no binder data.
 - **`collect --jsheap` (row 20).** Pulls a heap snapshot; every refusal is
-  typed — no pid, not debuggable, nothing written before the deadline.
+  typed — no pid, not debuggable, nothing written before the deadline. The
+  flag needs `--app` (the dump targets one process), and the capture is
+  recorded in `scene.json` under `capture.jsheap` so a later analyze can
+  attribute the file to a capture. A re-capture without `--jsheap` removes a
+  stale snapshot rather than leaving it beside a new trace.
 - **Redundant-file I/O (row 21).** A `redundant_file.txt` in a scene is parsed
   into read/used/unused counts. The format is documented here because HapRay's
   producer is not in its pipeline; a line that does not fit is refused by line
@@ -32,7 +36,7 @@ parity claim checkable.
 The five `out` rows keep their measured reasons: HapTest exploration, the LLM
 GUI agent, coverage, the TensorFlow opt-detector and radare2 symbol recovery.
 
-- 1698 tests (1687 unit, 11 device), two typechecks, two builds.
+- 1711 tests (1700 unit, 11 device), two typechecks, two builds.
 
 ## 0.12.1 — 2026-11-17
 

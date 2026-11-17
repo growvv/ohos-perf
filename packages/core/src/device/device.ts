@@ -701,6 +701,7 @@ export class Device {
         if (!wantsHidumper) removeIfPresent(layout.hidumperFile);
         if (!wantsUitest) removeIfPresent(layout.uiFile);
         if (!wantsScreenshot) removeIfPresent(layout.screenshotFile);
+        if (!wantsJsheap) removeIfPresent(layout.jsheapFile);
         if (!wantsHilog) {
           removeIfPresent(layout.hilogFile);
           removeIfPresent(layout.hilogJsonlFile);
@@ -736,6 +737,7 @@ export class Device {
               ...(wantsUitest ? ['uitest'] : []),
               ...(wantsScreenshot ? ['screenshot'] : []),
               ...(wantsHilog ? ['hilog'] : []),
+              ...(wantsJsheap ? ['jsheap'] : []),
             ],
             // A zero-count capture is recorded explicitly: "the collector ran
             // and saw nothing" is a different fact from "it did not run", and
@@ -754,6 +756,9 @@ export class Device {
             ...(uiNodes === undefined ? {} : { uitest: { nodes: uiNodes.length } }),
             ...(screenshotCapture === undefined ? {} : { screenshot: screenshotCapture }),
             ...(hilogLines === undefined ? {} : { hilog: { lines: hilogLines } }),
+            ...(jsheapCapture === undefined
+              ? {}
+              : { jsheap: { bytes: jsheapCapture.bytes } }),
           },
         });
 

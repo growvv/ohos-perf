@@ -1006,6 +1006,7 @@ function extraCollectors(opts: {
   failUitest?: boolean;
   failScreenshot?: boolean;
   failHilog?: boolean;
+  failJsheap?: boolean;
 } = {}) {
   const started: string[] = [];
   const hdc = {
@@ -1091,6 +1092,18 @@ function extraCollectors(opts: {
       return { lines: 1 };
     },
   };
+  const jsheap = {
+    collect: async (_h: unknown, _t: string, _o: unknown, layout: SceneLayout) => {
+      started.push('jsheap');
+      if (opts.failJsheap === true) throw new Error('jsheap exploded');
+      const bytes = Buffer.from('{"snapshot":{}}');
+      writeFileSync(layout.jsheapFile, bytes);
+      return {
+        bytes: bytes.length,
+        devicePath: '/data/app/el2/100/base/com.demo/files/leak/heap.heapsnapshot',
+      };
+    },
+  };
   return {
     started,
     // The pieces a test needs when it substitutes one collector and keeps the
@@ -1102,7 +1115,7 @@ function extraCollectors(opts: {
       hdc: hdc as any, streamer: streamer as any, collector: hitrace as any,
       hiperf: hiperf as any, hidumper: hidumper as any, uitest: uitest as any,
       screenshot: screenshot as any,
-      hilog: hilog as any,
+      hilog: hilog as any, jsheap: jsheap as any,
     }),
   };
 }
@@ -1167,6 +1180,48 @@ describe('CollectSession.ingest with hiperf, hidumper and uitest', () => {
       const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
       expect(meta.capture.collectors).toEqual(['hitrace', 'hilog']);
       expect(meta.capture.hilog).toEqual({ lines: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('records a jsheap capture under its own key and in the collectors list', async () => {
+    // `scene.json` is the authority on what ran, so a snapshot with no entry
+    // here is a file a later analyze cannot attribute to any capture. The
+    // collector is also in the fixed-order list, not appended out of order.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-jsheap-'));
+    try {
+      const h = extraCollectors();
+      const scene = await h.device().collect({
+        durationMs: 1000, sceneRoot: root, app: 'com.demo', jsheap: true,
+      }).then((s) => s.ingest());
+      scene.close();
+
+      expect(h.started.sort()).toEqual(['hitrace', 'jsheap']);
+      expect(existsSync(join(root, 'jsheap.heapsnapshot'))).toBe(true);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.collectors).toEqual(['hitrace', 'jsheap']);
+      expect(meta.capture.jsheap).toEqual({ bytes: 15 });
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('removes a stale jsheap.heapsnapshot when a re-capture did not ask for one', async () => {
+    // A snapshot from a previous build sitting beside a new trace would be
+    // read as this capture's heap, so a collector that did not run has its
+    // file removed rather than left behind.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-jsheap-stale-'));
+    try {
+      writeFileSync(join(root, 'jsheap.heapsnapshot'), '{"snapshot":"stale"}');
+      const h = extraCollectors();
+      const scene = await h.device().collect({ durationMs: 1000, sceneRoot: root })
+        .then((s) => s.ingest());
+      scene.close();
+
+      expect(existsSync(join(root, 'jsheap.heapsnapshot'))).toBe(false);
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.capture.jsheap).toBeUndefined();
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
