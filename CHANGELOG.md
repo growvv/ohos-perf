@@ -64,6 +64,11 @@ the defect stayed invisible. Unresolved leaves (2,295 frames, 994 M,
   = the window's weight) was false and the unresolved share read better than
   the capture was. That weight names nothing, so it is now the unresolved
   `('', '')` row.
+- **A sample with no call chain at all is counted too.** The same gap existed
+  for `perf_sample` rows whose `callchain_id` is NULL — the recorder could not
+  unwind, but `eventCount` counts the weight. Those rows are now part of the
+  unresolved `('', '')` row as well, so `symbol.stats` shares sum to 100%
+  over any capture, not only one whose chains are all present.
 
 ### Fixes — report windows
 

@@ -323,6 +323,38 @@ describe('PerfQuery.symbolStats', () => {
     }
   });
 
+  it('keeps the weight of a sample that recorded no call chain at all', () => {
+    // A recorder that could not unwind still records the sample: the row
+    // exists with `callchain_id` NULL. `eventCount` counts its weight, so a
+    // table that skips it makes the documented identity false and every
+    // `symbol.stats` share sum to less than 100%.
+    const db = withDb('null-chain.db', (d) => {
+      d.exec(PERF_THREAD_DDL);
+      d.exec(`INSERT INTO perf_thread VALUES (0, 100, 500, 'main')`);
+      d.exec(PERF_SAMPLE_DDL);
+      d.exec(`INSERT INTO perf_sample VALUES
+        (0, 10, 1000, 100, 5, 1, 1000, 0, 'S'),
+        (1, NULL, 1100, 100, 5, 1, 1100, 0, 'S')`);
+      d.exec(PERF_CALLCHAIN_DDL);
+      d.exec(`INSERT INTO perf_callchain VALUES (0, 10, 0, 0, 0, 0, 1, 0, 900, 0, 0)`);
+      d.exec(PERF_FILES_DDL);
+      d.exec(`INSERT INTO perf_files VALUES (0, 1, 0, 'main', '/system/bin/app_process')`);
+      d.exec(DATA_DICT_DDL);
+      d.exec(`INSERT INTO data_dict VALUES (900, 'main')`);
+    });
+    try {
+      const q = new PerfQuery(db);
+      const rows = q.symbolStats([100], { startNs: 0, endNs: 2000 });
+      expect(rows.reduce((sum, row) => sum + row.samples, 0))
+        .toBe(q.eventCount([100], { startNs: 0, endNs: 2000 }));
+      // It names nothing, so it is unresolved weight.
+      expect(rows.find((row) => row.symbol === '' && row.filePath === '' && row.unresolved))
+        .toMatchObject({ samples: 5, unresolved: true });
+    } finally {
+      db.close();
+    }
+  });
+
   it('reports unresolvedSymbols as a subset of symbolStats, never additional', () => {
     const db = measuredDb('subset.db');
     try {

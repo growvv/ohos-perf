@@ -190,8 +190,8 @@ export class SymbolsAnalyzer implements Analyzer {
             ? `${row.samples} samples cannot be named: this database has no ` +
               '`perf_files` table, so no frame carries a symbol'
             : `${row.samples} samples have no callchain frames, so no symbol can ` +
-              'name them; the conversion truncated these chains or the recorder ' +
-              'dropped them',
+              'name them; the recorder did not unwind them or the conversion ' +
+              'dropped their frames',
         drillDown: [
           {
             label: 'the unresolved rows',

@@ -482,8 +482,9 @@ ORDER BY thread_id, callchain_id`,
    *
    * A chain with no frames still holds weight: a truncated conversion or a
    * dropped kernel chain leaves `perf_sample` rows whose `callchain_id` names
-   * nothing. That weight has no symbol and no file, so it lands in the
-   * unresolved `('', '')` row rather than vanishing from the identity.
+   * nothing. So does a sample the recorder could not unwind at all, whose
+   * `callchain_id` is NULL — `eventCount` counts that weight too. Both land in
+   * the unresolved `('', '')` row rather than vanishing from the identity.
    */
   symbolStats(threadIds: readonly number[], range: TimeRange): SymbolStat[] {
     if (threadIds.length === 0 || !this.hasTable('perf_sample')) return [];
@@ -491,7 +492,8 @@ ORDER BY thread_id, callchain_id`,
 
     const weights = this.chainWeights(uniqueThreadIds, range);
     const chainIds = [...weights.keys()].sort((a, b) => a - b);
-    if (chainIds.length === 0) return [];
+    const unstacked = this.nullChainWeight(uniqueThreadIds, range);
+    if (chainIds.length === 0 && unstacked === 0) return [];
 
     const functionsByChain = this.chainFunctions(chainIds);
     const folded = new Map<string, SymbolStat>();
@@ -517,6 +519,9 @@ ORDER BY thread_id, callchain_id`,
       }
       add(leaf.symbol, leaf.filePath, weight);
     }
+
+    // Samples the recorder never unwound: no chain to name, weight still real.
+    if (unstacked !== 0) add('', '', unstacked);
 
     return [...folded.values()].sort(
       (a, b) =>
@@ -563,6 +568,28 @@ ORDER BY callchain_id`,
     );
     for (const row of rows) weights.set(num(row.callchain_id), num(row.weight));
     return weights;
+  }
+
+  /**
+   * Weight of the samples in the window that recorded no call chain at all.
+   *
+   * `callchain_id` is NULL when the recorder could not unwind — the sample is
+   * still real, and {@link eventCount} counts it. {@link chainWeights} cannot
+   * carry it (there is no chain id to key on), so {@link symbolStats} adds it
+   * to the unresolved `('', '')` row explicitly; without that the documented
+   * identity would be false by exactly this weight.
+   */
+  private nullChainWeight(threadIds: readonly number[], range: TimeRange): number {
+    if (threadIds.length === 0) return 0;
+    const [row] = this.db.query<{ weight: number | null }>(
+      `SELECT COALESCE(SUM(event_count), 0) AS weight
+FROM perf_sample
+WHERE thread_id IN (${placeholders(threadIds.length)})
+  AND timestamp_trace >= ? AND timestamp_trace <= ?
+  AND callchain_id IS NULL`,
+      [...threadIds, range.startNs, range.endNs],
+    );
+    return row == null ? 0 : num(row.weight);
   }
 
   /**
