@@ -356,17 +356,19 @@ ohos-perf hap <package.hap> --json
 ohos-perf hap <package.hap> --out <dir>
 ```
 
-- `--json` prints `{ package, totals, technologies, duplicates, oversized,
-  largest }`. `--out` additionally writes `hap.json` (the full analysis,
-  including every file's path, sizes, CRC32, extension and category) and an
-  offline `hap.html`.
+- `--json` prints `{ analysis, capabilities }`: `analysis` is the same
+  `HapAnalysis` document `hap.json` writes — `package`, `totals`,
+  `categories`, `technologies`, `duplicates`, `oversized`, `largest`, and
+  `files` (every entry's path, sizes, CRC32, extension and category) — and
+  `capabilities` is the one-row `static.hap` matrix. `--out` additionally
+  writes `hap.json` (that document) and an offline `hap.html`.
 - The path is checked before any IO: a missing path, a directory, or a file
   without `.hap`/`.hsp`/`.zip` exits 1 naming it and writes nothing.
 - **A technology match names its rule.** `technologies[]` carries
-  `{ ruleId, type, files, bytes }`; quote the rule id, and never upgrade a
-  detection into "the app is built with X" — a rule that matched one file is
-  one piece of evidence, not a verdict. `hap.techstack.count` 0 means nothing
-  matched; it does not mean "native app".
+  `{ ruleId, type, files[], bytes, confidence }`; quote the rule id, and never
+  upgrade a detection into "the app is built with X" — a rule that matched one
+  file is one piece of evidence, not a verdict. `hap.techstack.count` 0 means
+  nothing matched; it does not mean "native app".
 - Flutter is detected from `libflutter.so`/`libapp.so` **plus** a Dart version
   string in the file. A stripped binary with no version string is not a
   Flutter match; do not infer it from the file name alone.
@@ -376,12 +378,16 @@ ohos-perf hap <package.hap> --out <dir>
   videos 10 MiB, audio 5 MiB, fonts 2 MiB, scripts 0.5 MiB, styles 0.2 MiB,
   binaries 5 MiB, bytecode 2 MiB, data and other 1 MiB) — "oversized" is a
   filing threshold, not a defect.
-- The archive is read in memory and never extracted. A package the reader
-  cannot describe honestly fails by name: `HAP_NOT_ZIP`, `HAP_ZIP64_UNSUPPORTED`,
+- The archive is read in memory and never extracted. Every entry is
+  CRC-checked, including the `resources/base/` entries no rule reads. A
+  package the reader cannot describe honestly fails by name: `HAP_NOT_ZIP`
+  (including a malformed header offset), `HAP_ZIP64_UNSUPPORTED`,
   `HAP_ENCRYPTED_ENTRY`, `HAP_UNSUPPORTED_METHOD`, `HAP_UNSAFE_PATH`,
-  `HAP_CRC_MISMATCH`. Report the code, not a guess.
-- There is no query for the inventory: `hap.json` is where the per-file detail
-  lives, and every query in this package reads a captured scene.
+  `HAP_CRC_MISMATCH`. The CLI prints `CODE: message`, so report the code, not
+  a guess.
+- There is no query for the inventory: `analysis.files` in `--json`, or
+  `hap.json`, is where the per-file detail lives, and every query in this
+  package reads a captured scene.
 
 ## Drilling down
 

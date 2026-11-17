@@ -176,6 +176,68 @@ describe('analyzeHap — oversized assets', () => {
   });
 });
 
+describe('analyzeHap — file inventory', () => {
+  it('carries every file with its size, hash, extension and category, sorted by path', () => {
+    const analysis = analyze([
+      { name: 'b.json', data: text('{}') },
+      { name: 'a.png', data: text('png bytes') },
+      { name: 'noext', data: text('x') },
+    ]);
+    expect(analysis.files.map((file) => file.path)).toEqual(['a.png', 'b.json', 'noext']);
+    expect(analysis.files[0]).toEqual({
+      path: 'a.png',
+      size: 9,
+      compressedSize: expect.any(Number),
+      crc32: expect.stringMatching(/^[0-9a-f]{8}$/),
+      extension: 'png',
+      category: 'images',
+    });
+    expect(analysis.files[2]).toMatchObject({ extension: '', category: 'other' });
+  });
+
+  it('is the population the totals and largest lists count', () => {
+    const entries: TestEntry[] = [];
+    for (let index = 0; index < 12; index++) {
+      entries.push({ name: `f${String(index).padStart(2, '0')}.bin`, data: new Uint8Array(index + 1) });
+    }
+    const analysis = analyze(entries);
+    expect(analysis.files).toHaveLength(analysis.totals.files);
+    expect(analysis.files.reduce((sum, file) => sum + file.size, 0)).toBe(analysis.totals.size);
+    for (const entry of analysis.largest) {
+      expect(analysis.files.map((file) => file.path)).toContain(entry.path);
+    }
+  });
+});
+
+describe('analyzeHap — integrity', () => {
+  it('refuses a corrupt entry under an excluded path, which no rule ever reads', () => {
+    // `resources/base/` is excluded from rule matching, so nothing in the
+    // rule pass touches it. The package's integrity promise covers it anyway:
+    // a HAP is either intact or it is a refusal.
+    const entries: TestEntry[] = [
+      { name: 'libs/libx.so', data: text('x') },
+      { name: 'resources/base/media/icon.png', data: text('corrupt me'), corrupt: true },
+    ];
+    expect(() => analyze(entries)).toThrow(expect.objectContaining({ code: 'HAP_CRC_MISMATCH' }));
+    expect(() => analyze(entries)).toThrow(/resources\/base\/media\/icon\.png/);
+  });
+
+  it('names the entry a corrupt read failed on, not the archive', () => {
+    const entries: TestEntry[] = [
+      { name: 'a.txt', data: text('fine') },
+      { name: 'b.txt', data: text('broken'), corrupt: true },
+    ];
+    let message = '';
+    try {
+      analyze(entries);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toContain('b.txt');
+    expect(message).not.toContain('"a.txt"');
+  });
+});
+
 describe('analyzeHap — metrics and evidence', () => {
   it('emits the spec metrics, sorted, with offline provenance', () => {
     const analysis = analyze([

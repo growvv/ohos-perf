@@ -499,7 +499,7 @@ describe('command wiring', () => {
     });
     expect(called).toBe(false);
     expect(emitted).toEqual([{
-      stdout: '', stderr: 'invalid --args: not valid JSON\n', exitCode: 1,
+      stdout: '', stderr: 'QUERY_BAD_ARGS: invalid --args: not valid JSON\n', exitCode: 1,
     }]);
   });
 
@@ -511,7 +511,7 @@ describe('command wiring', () => {
     expect(called).toBe(false);
     expect(emitted).toEqual([{
       stdout: '',
-      stderr: 'limit must be an integer between 1 and 1000, got "0"\n',
+      stderr: 'QUERY_BAD_LIMIT: limit must be an integer between 1 and 1000, got "0"\n',
       exitCode: 1,
     }]);
   });

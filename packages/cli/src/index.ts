@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { safeMessage, type CliResult } from './commands';
+import { failureLine, type CliResult } from './commands';
 import { realDeps } from './deps';
 import { buildProgram } from './program';
 
@@ -38,7 +38,7 @@ function ignoreEpipe(stream: NodeJS.WriteStream): void {
     // A non-EPIPE stream failure is a real problem. Throwing here would escape
     // `parseAsync(...).catch` and print a raw Node stack; report it in the
     // same one-line form as every other CLI error instead.
-    process.stderr.write(`${safeMessage(err)}\n`);
+    process.stderr.write(`${failureLine(err)}\n`);
     process.exitCode = 1;
   });
 }
@@ -53,6 +53,6 @@ const program = buildProgram(deps, {
 });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
-  process.stderr.write(`${safeMessage(err)}\n`);
+  process.stderr.write(`${failureLine(err)}\n`);
   process.exitCode = 1;
 });

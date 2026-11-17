@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CommanderError } from 'commander';
+import { OhosPerfError, type CapabilityState, type HapAnalysis } from '@ohos-perf/core';
 import type { CliDeps, HapOutput } from '../src/commands';
 import { runHap } from '../src/commands';
 import { buildProgram } from '../src/program';
@@ -11,7 +12,8 @@ import { writeHap, type HapEntry } from './helpers/hap-zip';
 
 const text = (value: string): Uint8Array => new TextEncoder().encode(value);
 
-const output: HapOutput = {
+const analysis: HapAnalysis = {
+  schemaVersion: 1,
   package: {
     name: 'demo.hap',
     bundleName: 'com.example.demo',
@@ -20,11 +22,42 @@ const output: HapOutput = {
     appName: 'Demo',
   },
   totals: { files: 2, size: 4096, compressedSize: 2048 },
-  technologies: [{ ruleId: 'Flutter', type: 'Flutter', files: 1, bytes: 3000 }],
-  duplicates: { groups: 1, wastedBytes: 1024 },
-  oversized: 0,
+  categories: [{ name: 'binaries', files: 1, size: 3000, compressedSize: 1500 }],
+  technologies: [{
+    ruleId: 'Flutter',
+    ruleName: 'Flutter',
+    type: 'Flutter',
+    confidence: 0.95,
+    files: [{
+      path: 'libs/libflutter.so', size: 3000, compressedSize: 1500,
+      crc32: '00000000', extension: 'so', category: 'binaries',
+    }],
+    bytes: 3000,
+    metadata: {},
+  }],
+  duplicates: [],
+  oversized: [],
   largest: [{ path: 'libs/libflutter.so', size: 3000 }],
+  files: [
+    {
+      path: 'libs/libflutter.so', size: 3000, compressedSize: 1500,
+      crc32: '00000000', extension: 'so', category: 'binaries',
+    },
+    { path: 'module.json', size: 1096, compressedSize: 548, crc32: '00000001', extension: 'json', category: 'data' },
+  ],
+  metrics: [],
+  evidence: [],
 };
+
+const STATIC_HAP_CAPABILITY: CapabilityState = {
+  id: 'static.hap',
+  available: true,
+  collector: 'offline',
+  fidelity: 'exact',
+  probe: { command: '', stdout: '', stderr: '', code: 0 },
+};
+
+const output: HapOutput = { analysis, capabilities: [STATIC_HAP_CAPABILITY] };
 
 const roots: string[] = [];
 
@@ -100,7 +133,7 @@ describe('runHap', () => {
         'package  demo.hap  com.example.demo 1.2.3 (42)  Demo\n' +
         'files    2, 4096 bytes (2048 compressed)\n' +
         'tech     Flutter (rule Flutter)  1 file(s), 3000 bytes\n' +
-        'duplicates  1 group(s), 1024 bytes wasted\n' +
+        'duplicates  0 group(s), 0 bytes wasted\n' +
         'oversized  0 file(s)\n' +
         'largest  libs/libflutter.so  3000 bytes\n',
       stderr: '',
@@ -110,7 +143,7 @@ describe('runHap', () => {
 
   it('says so when nothing matched a rule', async () => {
     const r = await runHap(
-      deps({ hap: async () => ({ ...output, technologies: [] }) }),
+      deps({ hap: async () => ({ ...output, analysis: { ...analysis, technologies: [] } }) }),
       { packagePath: packageFile() },
       {},
     );
@@ -128,10 +161,36 @@ describe('runHap', () => {
     expect(r.stdout).toContain('wrote    hap.json, hap.html in /out\n');
   });
 
-  it('prints the analysis as JSON', async () => {
+  it('prints the HapAnalysis document --out writes, with the inventory and capability row', async () => {
+    // The spec names the document `--json` prints, and `hap.json` is that
+    // document. Printing a terminal summary instead means an agent that pipes
+    // `--json` cannot see the per-file inventory the spec says to open.
     const r = await runHap(deps(), { packagePath: packageFile() }, { json: true });
-    expect(JSON.parse(r.stdout)).toEqual(output);
+    const printed = JSON.parse(r.stdout) as {
+      analysis: HapAnalysis;
+      capabilities: CapabilityState[];
+    };
+    expect(printed.analysis).toEqual(analysis);
+    expect(printed.analysis.files.map((file) => file.path))
+      .toEqual(['libs/libflutter.so', 'module.json']);
+    expect(printed.capabilities).toEqual([STATIC_HAP_CAPABILITY]);
     expect(r.exitCode).toBe(0);
+  });
+
+  it('keeps an absolute --out directory out of the document', async () => {
+    // `hap.json` is a function of the archive's bytes; the path the caller
+    // chose belongs to the invocation, not the package.
+    const r = await runHap(
+      deps({
+        hap: async () => ({
+          ...output, outDir: 'E:/abs/out', artifacts: ['hap.json', 'hap.html'],
+        }),
+      }),
+      { packagePath: packageFile(), outDir: 'E:/abs/out' },
+      { json: true },
+    );
+    expect(r.stdout).not.toContain('E:/abs/out');
+    expect(JSON.parse(r.stdout).analysis).toEqual(analysis);
   });
 
   it('exits 1 naming a missing path without calling the dependency', async () => {
@@ -169,6 +228,28 @@ describe('runHap', () => {
       {},
     );
     expect(r).toEqual({ stdout: '', stderr: 'HAP_CRC_MISMATCH: bad entry\n', exitCode: 1 });
+  });
+
+  it('names the refusal code a typed failure carries', async () => {
+    // The skill tells an agent to report the code ("HAP_CRC_MISMATCH"), and
+    // every error in core carries one. Printing only the message drops the
+    // one token a caller can branch on.
+    const r = await runHap(
+      deps({
+        hap: async () => {
+          throw new OhosPerfError('archive entry "a.txt" fails its CRC check', {
+            code: 'HAP_CRC_MISMATCH',
+          });
+        },
+      }),
+      { packagePath: packageFile() },
+      {},
+    );
+    expect(r).toEqual({
+      stdout: '',
+      stderr: 'HAP_CRC_MISMATCH: archive entry "a.txt" fails its CRC check\n',
+      exitCode: 1,
+    });
   });
 });
 
@@ -212,16 +293,29 @@ describe('realDeps().hap', () => {
     const result = await realDeps('0.10.0').hap({ packagePath: path, outDir });
 
     expect(result.artifacts).toEqual(['hap.json', 'hap.html']);
-    expect(result.package.bundleName).toBe('com.example.demo');
-    expect(result.technologies.map((entry) => entry.ruleId)).toContain('Flutter');
-    expect(result.duplicates).toEqual({ groups: 1, wastedBytes: 10 });
+    expect(result.analysis.package.bundleName).toBe('com.example.demo');
+    expect(result.analysis.technologies.map((entry) => entry.ruleId)).toContain('Flutter');
+    expect(result.analysis.duplicates).toHaveLength(1);
+    expect(result.analysis.duplicates[0]!.wastedBytes).toBe(10);
+    expect(result.capabilities).toEqual([{
+      id: 'static.hap',
+      available: true,
+      collector: 'offline',
+      fidelity: 'exact',
+      probe: { command: '', stdout: '', stderr: '', code: 0 },
+    }]);
 
     const document = JSON.parse(readFileSync(join(outDir, 'hap.json'), 'utf8')) as {
       schemaVersion: number;
       technologies: Array<{ ruleId: string }>;
+      files: Array<{ path: string }>;
     };
     expect(document.schemaVersion).toBe(1);
     expect(document.technologies.map((entry) => entry.ruleId)).toContain('Flutter');
+    // The inventory the spec says a caller opens is in the file.
+    expect(document.files.map((file) => file.path)).toEqual([
+      'a.png', 'b.png', 'libs/libflutter.so', 'module.json',
+    ]);
 
     const html = readFileSync(join(outDir, 'hap.html'), 'utf8');
     expect(html).not.toContain('<script');

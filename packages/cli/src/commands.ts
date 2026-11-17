@@ -6,10 +6,11 @@ import {
   type DeltaStatus,
   type EmulatorInstance, type EmulatorStartResult, type EmulatorStopResult, type Gesture,
   type GestureResult,
+  type HapAnalysis,
   type HiprofilerPluginName, type NamedQueryInfo, type NamedQueryResult,
   type RunResult, type Scenario,
 } from '@ohos-perf/core';
-import { doctorReport, safeMessage, type DoctorDeps } from './doctor';
+import { doctorReport, failureLine, safeMessage, type DoctorDeps } from './doctor';
 
 /**
  * The pure CLI layer.
@@ -21,7 +22,7 @@ import { doctorReport, safeMessage, type DoctorDeps } from './doctor';
  */
 
 /** Re-exported so `index.ts` gets its one error formatter from the CLI layer. */
-export { safeMessage };
+export { failureLine, safeMessage };
 
 /** Everything the CLI writes or exits with, so tests can assert without a subprocess. */
 export interface CliResult {
@@ -242,25 +243,16 @@ export interface HapRequest {
 /**
  * What a package inspection found.
  *
- * The full per-file inventory stays in `hap.json`; this is what a terminal
- * needs to answer "what is in here and what is large". `technologies` carries
- * the rule that decided each match, because a detection without its rule is
- * indistinguishable from a guess.
+ * `analysis` is the `HapAnalysis` document `hap.json` carries — the spec's
+ * contract for `--json` — so a terminal and a file see the same facts,
+ * including the per-file inventory. `capabilities` is the one-row matrix the
+ * spec requires: a package on disk needs no device probe, but a consumer that
+ * reads capabilities everywhere reads them here too.
  */
 export interface HapOutput {
-  package: {
-    name: string;
-    bundleName: string;
-    versionName: string;
-    versionCode: number;
-    appName: string;
-  };
-  totals: { files: number; size: number; compressedSize: number };
-  technologies: Array<{ ruleId: string; type: string; files: number; bytes: number }>;
-  duplicates: { groups: number; wastedBytes: number };
-  oversized: number;
-  largest: Array<{ path: string; size: number }>;
-  /** Present only when `--out` was given. */
+  analysis: HapAnalysis;
+  capabilities: CapabilityState[];
+  /** Present only when `--out` was given; the directory the caller named. */
   outDir?: string;
   /** Present only when `--out` was given; the artifact names, in order. */
   artifacts?: string[];
@@ -458,7 +450,7 @@ export async function runAnalyze(
     const summary = `evidence  ${result.evidence.length} items (jank: ${jank})\n`;
     return { stdout: metrics + summary, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -498,7 +490,7 @@ export async function runCollect(
     if (samples.length > 0) stdout += `samples  ${samples.join(', ')}\n`;
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -543,7 +535,7 @@ export async function runGesture(
     if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
     return { stdout: `${gestureSummary(req.gesture)} accepted\n`, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -568,7 +560,7 @@ export async function runQuery(
     const rows = result.rows.map((row) => JSON.stringify(row) + '\n').join('');
     return { stdout: summary + rows, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -612,7 +604,7 @@ export async function runCompare(
       .join(', ');
     return { stdout: rows.join('') + `totals  ${totals}\n`, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -661,7 +653,7 @@ export async function runUiCompare(
     lines.push(`wrote  ${result.files.join(', ')} in ${result.outDir}\n`);
     return { stdout: lines.join(''), stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -709,7 +701,7 @@ export async function runReport(
       exitCode: 0,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -732,9 +724,18 @@ export async function runHap(
 
   try {
     const result = await deps.hap(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) {
+      // The document `hap.json` writes, plus the capability row. The caller's
+      // `outDir` stays out: it belongs to the invocation, not the package.
+      return {
+        stdout: json({ analysis: result.analysis, capabilities: result.capabilities }),
+        stderr: '',
+        exitCode: 0,
+      };
+    }
 
-    const app = result.package;
+    const analysis = result.analysis;
+    const app = analysis.package;
     const identity = [app.bundleName === '' ? '' : app.bundleName, app.versionName]
       .filter((part) => part !== '')
       .join(' ');
@@ -742,30 +743,29 @@ export async function runHap(
     const label = app.appName === '' ? '' : `  ${app.appName}`;
     let stdout = `package  ${app.name}${identity === '' ? '' : `  ${identity}${version}`}${label}\n`;
     stdout +=
-      `files    ${result.totals.files}, ${result.totals.size} bytes ` +
-      `(${result.totals.compressedSize} compressed)\n`;
-    stdout += result.technologies.length === 0
+      `files    ${analysis.totals.files}, ${analysis.totals.size} bytes ` +
+      `(${analysis.totals.compressedSize} compressed)\n`;
+    stdout += analysis.technologies.length === 0
       ? 'tech     none detected\n'
-      : result.technologies
+      : analysis.technologies
           .map(
             (entry) =>
               `tech     ${entry.type} (rule ${entry.ruleId})  ` +
-              `${entry.files} file(s), ${entry.bytes} bytes\n`,
+              `${entry.files.length} file(s), ${entry.bytes} bytes\n`,
           )
           .join('');
-    stdout +=
-      `duplicates  ${result.duplicates.groups} group(s), ` +
-      `${result.duplicates.wastedBytes} bytes wasted\n`;
-    stdout += `oversized  ${result.oversized} file(s)\n`;
-    if (result.largest.length > 0) {
-      stdout += `largest  ${result.largest.map((file) => `${file.path}  ${file.size} bytes`).join('\n         ')}\n`;
+    const wasted = analysis.duplicates.reduce((sum, group) => sum + group.wastedBytes, 0);
+    stdout += `duplicates  ${analysis.duplicates.length} group(s), ${wasted} bytes wasted\n`;
+    stdout += `oversized  ${analysis.oversized.length} file(s)\n`;
+    if (analysis.largest.length > 0) {
+      stdout += `largest  ${analysis.largest.map((file) => `${file.path}  ${file.size} bytes`).join('\n         ')}\n`;
     }
     if (result.outDir !== undefined && result.artifacts !== undefined) {
       stdout += `wrote    ${result.artifacts.join(', ')} in ${result.outDir}\n`;
     }
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -816,7 +816,7 @@ export async function runScenarioCommand(
     }
     scenario = parseScenario(text);
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}
+    return { stdout: '', stderr: `${failureLine(err)}
 `, exitCode: 1 };
   }
 
@@ -857,7 +857,7 @@ export async function runScenarioCommand(
       exitCode: result.status === 'failed' ? 1 : 0,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}
+    return { stdout: '', stderr: `${failureLine(err)}
 `, exitCode: 1 };
   }
 }
@@ -882,7 +882,7 @@ export function runTools(deps: CliDeps, opts: { json?: boolean }): CliResult {
     });
     return { stdout: lines.join(''), stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -938,7 +938,7 @@ export async function runEmulatorList(
     const body = [header, ...rows].map((cells) => line(cells) + '\n').join('');
     return { stdout: body, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -966,7 +966,7 @@ export async function runEmulatorStart(
         ` (booted in ${Math.round(result.waitedMs / 1000)}s)\n`;
     return { stdout: line, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -990,7 +990,7 @@ export async function runEmulatorStop(
       : `${result.name} was not running\n`;
     return { stdout: line, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 
@@ -1013,7 +1013,7 @@ export async function runEmulatorCreate(
       ` at ${instance.instancePath}\n`;
     return { stdout: line, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
 }
 

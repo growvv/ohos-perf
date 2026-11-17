@@ -58,6 +58,12 @@ export interface HapAnalysis {
   readonly duplicates: DuplicateGroup[];
   readonly oversized: OversizedFile[];
   readonly largest: Array<{ path: string; size: number }>;
+  /**
+   * Every non-directory entry, measured: the population the totals, categories
+   * and largest lists are taken from. This is what a caller opens when an
+   * evidence item raises a question about one file.
+   */
+  readonly files: readonly InventoryFile[];
   readonly metrics: Metric[];
   readonly evidence: Evidence[];
 }
@@ -324,6 +330,10 @@ function buildEvidence(analysis: {
 export function analyzeHap(bytes: Uint8Array, packageName: string): HapAnalysis {
   const archive = openZip(bytes);
   const inventory = buildInventory(archive);
+  // Every entry is inflated once and CRC-checked, whatever the rules decide.
+  // Rule matching excludes `resources/base/`, so an integrity check that
+  // relied on the rules would leave the largest part of a package unverified.
+  for (const entry of archive.entries) archive.read(entry);
   const packageBlock = readPackage(archive);
   const technologies = matchHapRules(TECH_RULES, archive, inventory);
   const duplicates = findDuplicates(archive, inventory);
@@ -352,6 +362,7 @@ export function analyzeHap(bytes: Uint8Array, packageName: string): HapAnalysis 
 
   return {
     ...analysis,
+    files: inventory,
     metrics: buildMetrics(analysis),
     evidence: buildEvidence(analysis),
   };

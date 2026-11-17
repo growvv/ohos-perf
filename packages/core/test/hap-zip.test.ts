@@ -172,3 +172,61 @@ describe('openZip', () => {
     }
   });
 });
+
+/**
+ * A malformed archive must be refused with a `HAP_*` code, never a bare
+ * `RangeError` from a `DataView` read past the end. Each case below points a
+ * header field at the far side of the file, so a reader without bounds checks
+ * throws from inside `DataView` instead of naming the problem.
+ */
+describe('openZip — malformed offsets', () => {
+  const isTyped = (bytes: Uint8Array): unknown => {
+    try {
+      openZip(bytes);
+      return undefined;
+    } catch (err) {
+      return err;
+    }
+  };
+
+  it('refuses a central directory whose offset lies past the end', () => {
+    const bytes = buildZip([{ name: 'a.txt', data: encoder.encode('a') }]);
+    const eocd = bytes.length - 22;
+    new DataView(bytes.buffer, bytes.byteOffset).setUint32(eocd + 16, bytes.length + 10, true);
+    const err = isTyped(bytes);
+    expect(err).toMatchObject({ code: 'HAP_NOT_ZIP' });
+    expect((err as Error).message).toContain('central directory');
+  });
+
+  it('refuses a local header offset that lies past the end', () => {
+    const bytes = buildZip([{ name: 'a.txt', data: encoder.encode('a') }]);
+    const central = findCentralOffset(bytes);
+    new DataView(bytes.buffer, bytes.byteOffset).setUint32(central + 42, bytes.length + 10, true);
+    const err = isTyped(bytes);
+    expect(err).toMatchObject({ code: 'HAP_NOT_ZIP' });
+    expect((err as Error).message).toContain('local header');
+  });
+
+  it('refuses an entry whose declared name runs past the archive', () => {
+    const bytes = buildZip([{ name: 'a.txt', data: encoder.encode('a') }]);
+    const central = findCentralOffset(bytes);
+    new DataView(bytes.buffer, bytes.byteOffset).setUint16(central + 28, 0xffff, true);
+    const err = isTyped(bytes);
+    expect(err).toMatchObject({ code: 'HAP_NOT_ZIP' });
+  });
+
+  it('refuses an entry whose compressed data runs past the archive', () => {
+    const bytes = buildZip([{ name: 'a.txt', data: encoder.encode('a') }]);
+    const central = findCentralOffset(bytes);
+    new DataView(bytes.buffer, bytes.byteOffset).setUint32(central + 20, bytes.length, true);
+    const err = isTyped(bytes);
+    expect(err).toMatchObject({ code: 'HAP_NOT_ZIP' });
+    expect((err as Error).message).toContain('truncated');
+  });
+});
+
+/** The offset of the first central-directory header, found from the EOCD. */
+function findCentralOffset(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return view.getUint32(bytes.length - 22 + 16, true);
+}

@@ -49,6 +49,20 @@ function u32(bytes: Uint8Array, at: number): number {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(at, true);
 }
 
+/**
+ * Refuse a read that would run past `end`.
+ *
+ * A `DataView` read past the end throws a bare `RangeError`, which tells a
+ * caller nothing about the archive it came from. Every header field is read
+ * through this check first, so a malformed offset is a `HAP_NOT_ZIP` naming
+ * the block instead.
+ */
+function need(bytes: Uint8Array, at: number, length: number, end: number, what: string): void {
+  if (at < 0 || length < 0 || at + length > end) {
+    fail('HAP_NOT_ZIP', `${what} lies outside the archive`);
+  }
+}
+
 /** True when the bytes start with a local file header. */
 export function isZip(bytes: Uint8Array): boolean {
   return bytes.length >= 4 && u32(bytes, 0) === LOCAL_SIGNATURE;
@@ -97,6 +111,9 @@ export function openZip(bytes: Uint8Array): ZipArchive {
   const entries: ZipEntry[] = [];
   let at = centralOffset;
   for (let index = 0; index < count; index++) {
+    // The fixed header is 46 bytes; every field below is read only after the
+    // header and the name it declares are known to fit.
+    need(bytes, at, 46, bytes.length, `central directory entry ${index}`);
     if (u32(bytes, at) !== CENTRAL_SIGNATURE) {
       fail('HAP_NOT_ZIP', `central directory entry ${index} has no header`);
     }
@@ -109,6 +126,7 @@ export function openZip(bytes: Uint8Array): ZipArchive {
     const extraLength = u16(bytes, at + 30);
     const commentLength = u16(bytes, at + 32);
     const localOffset = u32(bytes, at + 42);
+    need(bytes, at + 46, nameLength, bytes.length, `central directory entry ${index} name`);
     const name = new TextDecoder('utf-8').decode(bytes.subarray(at + 46, at + 46 + nameLength));
     at += 46 + nameLength + extraLength + commentLength;
 
@@ -127,6 +145,7 @@ export function openZip(bytes: Uint8Array): ZipArchive {
     }
     if (name.endsWith('/')) continue; // A directory has nothing to measure.
 
+    need(bytes, localOffset, 30, bytes.length, `archive entry ${JSON.stringify(name)} local header`);
     if (u32(bytes, localOffset) !== LOCAL_SIGNATURE) {
       fail('HAP_NOT_ZIP', `archive entry ${JSON.stringify(name)} has no local header`);
     }

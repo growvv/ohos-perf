@@ -1,4 +1,4 @@
-import type { CapabilityState } from '@ohos-perf/core';
+import { OhosPerfError, type CapabilityState } from '@ohos-perf/core';
 
 /**
  * The narrow shape `doctor` needs from a connected device.
@@ -61,6 +61,10 @@ function byId(a: CapabilityState, b: CapabilityState): number {
 /**
  * `String(err)` can itself throw (a rejected non-Error whose `toString` is
  * hostile), and this report's contract is that it never throws.
+ *
+ * The message alone: a caller that wraps it in its own sentence
+ * (`invalid --timeout "0": …`) must not find a refusal code in the middle of
+ * that sentence. Use {@link failureLine} for the line the process prints.
  */
 export function safeMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -69,6 +73,20 @@ export function safeMessage(err: unknown): string {
   } catch {
     return '<unprintable error>';
   }
+}
+
+/**
+ * The one line a failing command prints: a typed error's `code`, then its
+ * message.
+ *
+ * The code is the token a caller branches on and the one the skill tells an
+ * agent to report, so a refusal that prints only its message loses it.
+ */
+export function failureLine(err: unknown): string {
+  if (err instanceof OhosPerfError && err.code !== undefined) {
+    return `${err.code}: ${safeMessage(err)}`;
+  }
+  return safeMessage(err);
 }
 
 function message(err: unknown): string {

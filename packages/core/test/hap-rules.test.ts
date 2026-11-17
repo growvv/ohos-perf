@@ -3,7 +3,7 @@ import {
   EXCLUDE_PATTERNS, TECH_RULES, matchHapRules, validateRules,
   type FileRule, type RuleMatch, type RuleMatchKind, type TechRule,
 } from '../src/hap/rules';
-import { openZip } from '../src/hap/zip';
+import { openZip, type ZipArchive } from '../src/hap/zip';
 import { buildInventory } from '../src/hap/inventory';
 import { makeZip, type TestEntry } from './helpers/hap-zip-writer';
 import { OhosPerfError } from '../src/errors';
@@ -276,6 +276,79 @@ describe('validateRules', () => {
 
   it('accepts the shipped rules', () => {
     expect(() => validateRules(TECH_RULES)).not.toThrow();
+  });
+
+  it('is run by the production matcher, so a bad rule cannot be silently skipped', () => {
+    // The spec says rules are validated when the module loads. A public
+    // `validateRules` that nothing calls lets a rule with an unknown kind —
+    // which `matchOne`'s default branch answers "no match" for — vanish from
+    // every detection without a word.
+    expect(() => run(
+      [{ ...rule({ id: 'typo', fileRules: [] }), fileRules: [{ kind: 'bogus' as RuleMatchKind }] }],
+      [{ name: 'a.txt', data: text('x') }],
+    )).toThrow(expect.objectContaining({ code: 'HAP_BAD_RULE' }));
+  });
+});
+
+describe('matchRules — cost', () => {
+  /** The archive, plus the names whose bytes were inflated, in order. */
+  function counted(entries: TestEntry[]): { archive: ZipArchive; reads: string[] } {
+    const inner = openZip(makeZip(entries));
+    const reads: string[] = [];
+    return {
+      reads,
+      archive: {
+        entries: inner.entries,
+        read(entry) {
+          reads.push(entry.name);
+          return inner.read(entry);
+        },
+      },
+    };
+  }
+
+  it('never inflates a file that no rule can match on its bytes', () => {
+    // HapRay's `RN bundles` carries a bare magic rule with no extension gate,
+    // so it is offered every entry in the archive and inflates all of them.
+    // A package of assets is then read end to end — and, because the reader
+    // keeps what it inflated, held in memory — to answer "is this Hermes
+    // bytecode?". Gating the magic on the extensions Hermes bytecode ships
+    // under keeps the detection and drops the cost.
+    const { archive, reads } = counted([
+      { name: 'a.png', data: new Uint8Array(2 * 1024 * 1024) },
+      { name: 'res/b.json', data: text('{}') },
+      { name: 'styles/c.css', data: text('body{}') },
+    ]);
+    matchHapRules(TECH_RULES, archive, buildInventory(archive));
+    expect(reads).toEqual([]);
+  });
+
+  it('reads a .so, because a content rule can only answer from its bytes', () => {
+    // The gate must not be "skip anything unproven": the KMP rule decides a
+    // `.so` by its strings, so that file is read. The cost fix is scoped to
+    // files no rule can match at all.
+    const { archive, reads } = counted([
+      { name: 'libs/libx.so', data: text('ELF-ish') },
+    ]);
+    matchHapRules(TECH_RULES, archive, buildInventory(archive));
+    expect(reads).toEqual(['libs/libx.so']);
+  });
+
+  it('still detects Hermes bytecode by its magic in a .jsbundle', () => {
+    const hermes = new Uint8Array([0xc2, 0x1f, 0xf0, 0x9f, 0x00, 0x01]);
+    const matches = run(TECH_RULES, [{ name: 'assets/index.jsbundle', data: hermes }]);
+    expect(matches.map((match) => match.ruleId)).toContain('RN bundles');
+  });
+
+  it('inflates a file at most once however many rules want its bytes', () => {
+    // Bytes are read once per file, while that file's rules run, and released
+    // before the next file: the reader never holds the whole archive.
+    const { archive, reads } = counted([
+      { name: 'libs/libflutter.so', data: text('Dart VM version: 3.4.1 (stable)') },
+      { name: 'libs/libknoi.so', data: text('KOTLIN_NATIVE_AVAILABLE_PROCESSORS') },
+    ]);
+    matchHapRules(TECH_RULES, archive, buildInventory(archive));
+    expect(reads).toEqual(['libs/libflutter.so', 'libs/libknoi.so']);
   });
 });
 

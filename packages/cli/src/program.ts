@@ -18,6 +18,7 @@ import {
   runTools,
   runUiCompare,
   safeMessage,
+  failureLine,
   type CliDeps,
   type CliResult,
   type EmulatorTargetOptions,
@@ -167,7 +168,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       try {
         durationMs = parseDurationSeconds(opts.duration);
       } catch (err) {
-        io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+        io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
         return;
       }
 
@@ -189,7 +190,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
             ? {}
             : { plugins: parsePluginList(opts.plugins) };
         } catch (err) {
-          io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+          io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
           return;
         }
       }
@@ -250,7 +251,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         args = opts.args === undefined ? undefined : parseQueryArgs(opts.args);
         limit = opts.limit === undefined ? undefined : parseLimit(opts.limit);
       } catch (err) {
-        io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+        io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
         return;
       }
       io.emit(await runQuery(deps, {
@@ -363,7 +364,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         }
         only = opts.only === undefined ? undefined : parseOnly(opts.only);
       } catch (err) {
-        io.emit({ stdout: '', stderr: `${safeMessage(err)}
+        io.emit({ stdout: '', stderr: `${failureLine(err)}
 `, exitCode: 1 });
         return;
       }
@@ -518,7 +519,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       memoryGb = number('--memory', opts.memory);
       storageGb = number('--storage', opts.storage);
     } catch (err) {
-      io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+      io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
       return;
     }
     io.emit(await runEmulatorCreate(deps, {
@@ -559,7 +560,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     try {
       gesture = build();
     } catch (err) {
-      io.emit({ stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 });
+      io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
       return;
     }
     io.emit(await runGesture(deps, {

@@ -851,23 +851,17 @@ export function realDeps(
       // The whole package is read into memory: the archive is a document, not
       // an extraction, so nothing is written outside `--out`.
       const analysis = analyzeHap(readFileSync(req.packagePath), basename(req.packagePath));
-      const output = {
-        package: analysis.package,
-        totals: analysis.totals,
-        technologies: analysis.technologies.map((match) => ({
-          ruleId: match.ruleId,
-          type: match.type,
-          files: match.files.length,
-          bytes: match.bytes,
-        })),
-        duplicates: {
-          groups: analysis.duplicates.length,
-          wastedBytes: analysis.duplicates.reduce((sum, group) => sum + group.wastedBytes, 0),
-        },
-        oversized: analysis.oversized.length,
-        largest: analysis.largest,
-      };
-      if (req.outDir === undefined) return output;
+      // One row, offline by construction: a package on disk needs no device
+      // probe, so this is the only place the `static.hap` capability is ever
+      // reported available.
+      const capabilities: CapabilityState[] = [{
+        id: 'static.hap',
+        available: true,
+        collector: 'offline',
+        fidelity: 'exact',
+        probe: { command: '', stdout: '', stderr: '', code: 0 },
+      }];
+      if (req.outDir === undefined) return { analysis, capabilities };
 
       // One section, rendered by the same report model as a captured scene, so
       // the page carries the same shape a reader already knows. The scenario
@@ -894,7 +888,7 @@ export function realDeps(
       for (const [name, content] of artifacts) {
         await writeFile(join(outDir, name), content);
       }
-      return { ...output, outDir, artifacts: artifacts.map(([name]) => name) };
+      return { analysis, capabilities, outDir, artifacts: artifacts.map(([name]) => name) };
     },
 
     tools() {

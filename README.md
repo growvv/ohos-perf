@@ -564,15 +564,21 @@ The human output names the app, the file count and both sizes, one line per
 detected technology with the rule that decided it, the duplicate groups and
 wasted bytes, the oversized count, and the ten largest files. On a 72 MB
 package with four native libraries it reports `SO (rule SO_Files)`, five
-oversized files and the five largest paths in under a second.
+oversized files and the five largest paths in under a second. `--json` prints
+the same `HapAnalysis` document `hap.json` writes — including the per-file
+inventory — beside the one-row `static.hap` capability matrix.
 
 The ZIP reader is pure TypeScript over Node's `zlib.inflateRawSync` — stored
-and deflated entries, CRC-checked on every read. It refuses, by name, what it
-cannot read honestly: `HAP_NOT_ZIP`, `HAP_ZIP64_UNSUPPORTED`,
-`HAP_ENCRYPTED_ENTRY`, `HAP_UNSUPPORTED_METHOD`, `HAP_UNSAFE_PATH` (an
-absolute name or a `..` segment) and `HAP_CRC_MISMATCH` (a corrupt stream is
-never padded into a plausible wrong file). Directory entries are counted in
-neither the file count nor the size.
+and deflated entries, CRC-checked on every read. Every entry is verified, not
+only the ones a rule happens to read, so `resources/base/` is covered too. It
+refuses, by name, what it cannot read honestly: `HAP_NOT_ZIP`,
+`HAP_ZIP64_UNSUPPORTED`, `HAP_ENCRYPTED_ENTRY`, `HAP_UNSUPPORTED_METHOD`,
+`HAP_UNSAFE_PATH` (an absolute name or a `..` segment) and `HAP_CRC_MISMATCH`
+(a corrupt stream is never padded into a plausible wrong file). A malformed
+offset is a `HAP_NOT_ZIP` naming the block, never a bare `RangeError`. The
+failing command prints `CODE: message`, so an agent can report the code the
+skill asks for. Directory entries are counted in neither the file count nor
+the size.
 
 Three reports come out of one pass, all deterministic functions of the
 archive's bytes:

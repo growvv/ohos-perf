@@ -101,15 +101,24 @@ interface FileVerdict {
 
 /**
  * Everything a match needs about one entry: its name and, when a magic or
- * content rule asks, its inflated bytes. Reads are cached because a package
- * commonly offers several rules the same `.so`.
+ * content rule asks, its inflated bytes.
+ *
+ * Bytes are held for the duration of one file's rules and released before the
+ * next file. Caching every entry instead would hold a whole package in memory
+ * — a 100 MB archive peaked near 500 MB — to answer questions that each need
+ * one entry at a time.
  */
 class EntryReader {
   private readonly byName: Map<string, ZipEntry>;
-  private readonly cache = new Map<string, Uint8Array | undefined>();
+  private cache = new Map<string, Uint8Array | undefined>();
 
   constructor(private readonly archive: ZipArchive) {
     this.byName = new Map(archive.entries.map((entry) => [entry.name, entry]));
+  }
+
+  /** Drop what was inflated for the previous file. */
+  release(): void {
+    this.cache = new Map();
   }
 
   bytes(path: string): Uint8Array | undefined {
@@ -179,14 +188,27 @@ function matchOne(ruleId: string, rule: FileRule, file: InventoryFile, reader: E
       return matchContent(ruleId, rule, reader.bytes(file.path));
     case 'combined': {
       const subRules = rule.rules ?? [];
+      if (rule.operator === 'and') {
+        // Evaluate in order and stop at the first failure: a cheap extension
+        // test that fails means a later magic or content rule never has to
+        // inflate the entry. Confidence is unchanged, since a failed `and`
+        // reports no match at all.
+        const verdicts: FileVerdict[] = [];
+        for (const sub of subRules) {
+          const verdict = matchOne(ruleId, sub, file, reader);
+          if (!verdict.matched) return { matched: false };
+          verdicts.push(verdict);
+        }
+        const carried = verdicts.filter((verdict) => verdict.confidence !== undefined)
+          .map((verdict) => verdict.confidence!);
+        const confidence = rule.confidence ?? (carried.length === 0 ? undefined : Math.max(...carried));
+        return confidence === undefined ? { matched: true } : { matched: true, confidence };
+      }
       const verdicts = subRules.map((sub) => matchOne(ruleId, sub, file, reader));
       const matched = rule.operator === 'or'
         ? verdicts.some((verdict) => verdict.matched)
-        : rule.operator === 'not'
-          ? verdicts.length > 0 && verdicts[0]!.matched && !verdicts.slice(1).some((verdict) => verdict.matched)
-          : verdicts.every((verdict) => verdict.matched);
-      if (!matched) return { matched: false };
-      const carried = verdicts.filter((verdict) => verdict.matched && verdict.confidence !== undefined)
+        : verdicts.length > 0 && verdicts[0]!.matched && !verdicts.slice(1).some((verdict) => verdict.matched);
+      if (!matched) return { matched: false };      const carried = verdicts.filter((verdict) => verdict.matched && verdict.confidence !== undefined)
         .map((verdict) => verdict.confidence!);
       const confidence = rule.confidence ?? (carried.length === 0 ? undefined : Math.max(...carried));
       return confidence === undefined ? { matched: true } : { matched: true, confidence };
@@ -229,29 +251,42 @@ export function matchHapRules(
   archive: ZipArchive,
   inventory: readonly InventoryFile[],
 ): RuleMatch[] {
+  validateRules(rules);
   const reader = new EntryReader(archive);
   const excludes = EXCLUDE_PATTERNS.map((pattern) => new RegExp(pattern));
   const files = inventory.filter((file) => !excludes.some((regex) => regex.test(file.path)));
 
-  const matches: RuleMatch[] = [];
-  for (const rule of rules) {
-    const hit: InventoryFile[] = [];
-    let best: number | undefined;
-    let metadata: Record<string, string> = {};
-    for (const file of files) {
+  // Files are the outer loop so each entry is inflated at most once, while it
+  // is offered every rule, and released before the next file is read.
+  const accumulators = new Map<string, {
+    hit: InventoryFile[];
+    best: number | undefined;
+    metadata: Record<string, string>;
+  }>(rules.map((rule) => [rule.id, { hit: [], best: undefined, metadata: {} }]));
+
+  for (const file of files) {
+    reader.release();
+    for (const rule of rules) {
+      const state = accumulators.get(rule.id)!;
       const verdicts = rule.fileRules.map((fileRule) => matchOne(rule.id, fileRule, file, reader));
-      const decided = verdicts.find((verdict) => verdict.matched);
-      if (decided === undefined) continue;
+      if (!verdicts.some((verdict) => verdict.matched)) continue;
       const carried = verdicts.filter((verdict) => verdict.matched && verdict.confidence !== undefined)
         .map((verdict) => verdict.confidence!);
       const confidence = carried.length === 0 ? undefined : Math.max(...carried);
-      if (confidence !== undefined) best = best === undefined ? confidence : Math.max(best, confidence);
-      hit.push(file);
-      if (Object.keys(metadata).length === 0) {
+      if (confidence !== undefined) {
+        state.best = state.best === undefined ? confidence : Math.max(state.best, confidence);
+      }
+      state.hit.push(file);
+      if (Object.keys(state.metadata).length === 0) {
         const found = extractMetadata(rule.id, rule, file, reader);
-        if (Object.keys(found).length > 0) metadata = found;
+        if (Object.keys(found).length > 0) state.metadata = found;
       }
     }
+  }
+
+  const matches: RuleMatch[] = [];
+  for (const rule of rules) {
+    const { hit, best, metadata } = accumulators.get(rule.id)!;
     if (hit.length === 0) continue;
     if (rule.requireMetadata === true && Object.keys(metadata).length === 0) continue;
     matches.push({
@@ -396,7 +431,17 @@ export const TECH_RULES: readonly TechRule[] = [
     confidence: 0.9,
     fileRules: [
       { kind: 'extension', extensions: ['hbc', 'jsbundle'] },
-      { kind: 'magic', bytes: [0xc2, 0x1f, 0xf0, 0x9f] },
+      {
+        // HapRay's bare magic rule, gated on the extensions a Hermes bundle
+        // ships under. Ungated it is offered every entry in the archive and
+        // inflates all of them; the detection is unchanged.
+        kind: 'combined',
+        operator: 'and',
+        rules: [
+          { kind: 'extension', extensions: ['hbc', 'jsbundle', 'bundle'] },
+          { kind: 'magic', bytes: [0xc2, 0x1f, 0xf0, 0x9f] },
+        ],
+      },
       {
         kind: 'combined',
         operator: 'and',
