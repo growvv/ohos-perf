@@ -58,8 +58,14 @@ export interface ExplorationAction {
   readonly bounds: string;
 }
 
-/** Whether a tap moved the screen. */
-export type ExplorationOutcome = 'navigated' | 'no_change';
+/**
+ * What a step did.
+ *
+ * `navigated` reached a different page, `updated` changed the screen without
+ * changing the page (new data on the same template, a scroll), and `no_change`
+ * left the screen exactly as it was.
+ */
+export type ExplorationOutcome = 'navigated' | 'updated' | 'no_change';
 
 /** One tap, with the state hash either side of it. */
 export interface ExplorationStep {
@@ -80,6 +86,10 @@ export interface ExplorationResult {
   readonly steps: readonly ExplorationStep[];
   /** Distinct screen hashes reached, including the one it started on. */
   readonly statesReached: number;
+  /** Distinct page templates reached, including the one it started on. */
+  readonly pagesReached: number;
+  /** The page hashes in first-reach order, the way a reader follows the walk. */
+  readonly pages: readonly string[];
   /** True when it stopped because this screen had no unvisited clickable. */
   readonly exhausted: boolean;
 }
@@ -127,10 +137,43 @@ function canonical(tree: readonly UiNode[]): string {
 
 /** A short hex digest of a screen, stable across runs and hosts. */
 export function hashTree(tree: readonly UiNode[]): string {
-  return createHash('sha256')
-    .update(canonical(tree))
-    .digest('hex')
-    .slice(0, DIGEST_CHARS);
+  return digest(canonical(tree));
+}
+
+function digest(text: string): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, DIGEST_CHARS);
+}
+
+/**
+ * One line per node, with only what a person would call "a different page".
+ *
+ * HapRay asks a vision model whether two screens are the same page and accepts
+ * the answer unchecked. The question has a deterministic form: the same app
+ * and ability, the same node types in the same order at the same depths, and
+ * the same flags. Text, inspector ids and rects change with the data or with a
+ * scroll — precisely the differences HapRay's own prompt calls "minor" and
+ * "a scrolled version of the same page". Those are left out here, so the
+ * answer is measured rather than guessed.
+ */
+function pageCanonical(tree: readonly UiNode[]): string {
+  const line = (node: UiNode): string =>
+    [
+      node.bundleName,
+      node.abilityName,
+      node.depth,
+      node.type,
+      node.clickable ? '1' : '0',
+      node.enabled ? '1' : '0',
+      node.scrollable ? '1' : '0',
+    ]
+      .map((field) => `${String(field).length}:${String(field)}`)
+      .join('\u001f');
+  return tree.map(line).join('\u001e');
+}
+
+/** A short digest of a page's structure: two trees with the same shape share it. */
+export function hashPageShape(tree: readonly UiNode[]): string {
+  return digest(pageCanonical(tree));
 }
 
 /**
@@ -250,11 +293,14 @@ export async function explore(
 
   const steps: ExplorationStep[] = [];
   const states = new Set<string>();
+  const pages = new Set<string>();
   const visitedByScreen = new Map<string, Set<string>>();
 
   let tree = await device.dump();
   let hash = hashTree(tree);
+  let page = hashPageShape(tree);
   states.add(hash);
+  pages.add(page);
   let exhausted = false;
 
   while (steps.length < options.maxSteps) {
@@ -276,16 +322,20 @@ export async function explore(
 
     tree = await device.dump();
     const after = hashTree(tree);
+    const afterPage = hashPageShape(tree);
     states.add(after);
+    pages.add(afterPage);
     steps.push({
       index: steps.length,
       nodeId: action.nodeId,
       bounds: action.bounds,
       before: hash,
       after,
-      outcome: after === hash ? 'no_change' : 'navigated',
+      outcome:
+        after === hash ? 'no_change' : afterPage === page ? 'updated' : 'navigated',
     });
     hash = after;
+    page = afterPage;
   }
 
   return {
@@ -293,6 +343,8 @@ export async function explore(
     ...(seed === undefined ? {} : { seed }),
     steps,
     statesReached: states.size,
+    pagesReached: pages.size,
+    pages: [...pages],
     exhausted,
   };
 }

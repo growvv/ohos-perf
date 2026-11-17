@@ -3,6 +3,7 @@ import {
   deviceExplorationHost,
   explore,
   explorationDevice,
+  hashPageShape,
   hashTree,
   planNextAction,
   type ExplorationDevice,
@@ -84,6 +85,28 @@ describe('hashTree', () => {
   it('is a short stable hex digest, not the whole tree', () => {
     const tree = root([node({ id: 'a' })]);
     expect(hashTree(tree)).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+describe('hashPageShape', () => {
+  it('ignores text, ids and bounds: the same template is the same page', () => {
+    const one = root([node({ id: 'a', text: 'Alpha', bounds: '[0,0][1,1]', type: 'Button', clickable: true })]);
+    const two = root([node({ id: 'b', text: 'Beta', bounds: '[4,4][9,9]', type: 'Button', clickable: true })]);
+    expect(hashPageShape(one)).toBe(hashPageShape(two));
+    expect(hashTree(one)).not.toBe(hashTree(two));
+  });
+
+  it('changes when the structure changes', () => {
+    const button = root([node({ id: 'a', type: 'Button', clickable: true })]);
+    const text = root([node({ id: 'a', type: 'Text', clickable: true })]);
+    expect(hashPageShape(button)).not.toBe(hashPageShape(text));
+  });
+
+  it('changes when a node is added, removed or moves depth', () => {
+    const shallow = root([node({ id: 'a', type: 'Button' })]);
+    const deeper = root([node({ id: 'a', type: 'Button', depth: 2 })]);
+    const both = root([node({ id: 'a', type: 'Button' }), node({ id: 'b', type: 'Text' })]);
+    expect(new Set([hashPageShape(shallow), hashPageShape(deeper), hashPageShape(both)]).size).toBe(3);
   });
 });
 
@@ -212,13 +235,15 @@ describe('explore', () => {
     const boundsAt = (index: number): string =>
       `[${index},${index}][${index + 1},${index + 1}]`;
     screens.start = root([
-      node({ id: 'b0', clickable: true, type: 'Button', bounds: boundsAt(0) }),
+      // The type carries the level, so each screen is a distinct page template
+      // as well as a distinct exact state.
+      node({ id: 'b0', clickable: true, type: 'Button0', bounds: boundsAt(0) }),
     ]);
     for (let index = 0; index < count; index += 1) {
       screens[boundsAt(index)] =
         index + 1 === count
           ? root([])
-          : root([node({ id: `b${index + 1}`, clickable: true, type: 'Button', bounds: boundsAt(index + 1) })]);
+          : root([node({ id: `b${index + 1}`, clickable: true, type: `Button${index + 1}`, bounds: boundsAt(index + 1) })]);
     }
     return screens;
   }
@@ -234,6 +259,7 @@ describe('explore', () => {
     ]);
     // The start screen plus one new screen per step.
     expect(result.statesReached).toBe(4);
+    expect(result.pagesReached).toBe(4);
     expect(result.exhausted).toBe(false);
   });
 
@@ -255,13 +281,30 @@ describe('explore', () => {
 
   it('counts a tap that reached a new screen as a new state', async () => {
     const start = root([node({ id: 'a', clickable: true, type: 'Button', bounds: '[0,0][1,1]' })]);
-    const next = root([node({ id: 'b', clickable: true, type: 'Button', bounds: '[2,2][3,3]' })]);
+    const next = root([node({ id: 'b', clickable: true, type: 'List', bounds: '[2,2][3,3]' })]);
     const result = await explore(device({ start, '[0,0][1,1]': next }), {
       maxSteps: 2,
       strategy: 'depth_first',
     });
     expect(result.statesReached).toBe(2);
+    expect(result.pagesReached).toBe(2);
     expect(result.steps.map((step) => step.outcome)).toEqual(['navigated', 'no_change']);
+  });
+
+  it('calls a text-only change an updated page, not a new page', async () => {
+    // HapRay asks a model whether two screens are the same page. The same
+    // template with different data is one page; the model's opinion is a
+    // proxy for this structural comparison.
+    const start = root([node({ id: 'a', clickable: true, type: 'Button', text: 'One', bounds: '[0,0][1,1]' })]);
+    const next = root([node({ id: 'a', clickable: true, type: 'Button', text: 'Two', bounds: '[0,0][1,1]' })]);
+    const result = await explore(device({ start, '[0,0][1,1]': next }), {
+      maxSteps: 1,
+      strategy: 'depth_first',
+    });
+    expect(result.steps[0].outcome).toBe('updated');
+    expect(result.pagesReached).toBe(1);
+    expect(result.statesReached).toBe(2);
+    expect(result.pages).toHaveLength(1);
   });
 
   it('records the state hash of every step, so a run is reproducible evidence', async () => {
