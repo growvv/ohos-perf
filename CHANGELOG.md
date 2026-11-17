@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.13.0 — 2026-11-17
+
+P18 closed the last four capabilities with no implementation, and made the
+parity claim checkable.
+
+- **A parity ledger, checked against the code.** `packages/core/src/parity.ts`
+  holds all 35 inventory rows with a status and, when not ported, the reason;
+  `paritySummary()` computes the counts and `parity.test.ts` fails if a ported
+  row names an analyzer the engine does not register. The honest recount is
+  **26 ported / 4 partial / 0 missing / 5 out**. The README's previous
+  18 / 9 / 8 was prose written before 0.10.0 and never recounted.
+- **Fault tree `ipc_binder` (row 15).** Derived from the typed binder analysis
+  rather than from a shared file HapRay's own ordering makes stale. Absent, not
+  zero, when the trace has no binder data.
+- **`collect --jsheap` (row 20).** Pulls a heap snapshot; every refusal is
+  typed — no pid, not debuggable, nothing written before the deadline.
+- **Redundant-file I/O (row 21).** A `redundant_file.txt` in a scene is parsed
+  into read/used/unused counts. The format is documented here because HapRay's
+  producer is not in its pipeline; a line that does not fit is refused by line
+  number.
+- **File-to-HAR dependency graph (row 29).** `buildDepGraph` takes files,
+  modules and edges and returns the graph, cross-module counts and timing
+  cycles — no Homecheck checkout, no 16 GiB heap. Ownership is segment-aware
+  and longest-match.
+- **`rs_skip.cpu_waste.ms` (row 12).** The CPU a skipped frame wasted, summed
+  over the app frames RS discarded. Absent when nothing was traced.
+- **`compareScenes` (row 35).** Compares multi-step runs step by step instead
+  of merging them, so a change is attributed to the step that moved.
+
+The five `out` rows keep their measured reasons: HapTest exploration, the LLM
+GUI agent, coverage, the TensorFlow opt-detector and radare2 symbol recovery.
+
+- 1698 tests (1687 unit, 11 device), two typechecks, two builds.
+
 ## 0.12.1 — 2026-11-17
 
 A release-day defect in 0.12.0's packaging, and nothing else.

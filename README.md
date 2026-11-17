@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P17 are complete**: 1664 tests (1653 unit, 11 in the device
+**P1 through P18 are complete**: 1698 tests (1687 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1628 passed, 25
+attached device are absent — `npm run test:unit` reports **1662 passed, 25
 skipped (2 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1628 passed, 36 skipped**. With both fixtures present and a
+checkout is **1662 passed, 36 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -228,43 +228,49 @@ The HapRay parity series (one release per major item, so far):
 | P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | shipped in `0.10.0` |
 | P16 | W8 symbols | exact `(file_id, serial_id)` resolution, symbol statistics with the unresolved share, `--so-dir` device symbolization, offline flamegraph artifact | shipped in `0.11.0` |
 | P17 | W5 step DSL | selector language over the UI tree, `tap`/`tapText`/`swipeArea`/`inputInto` with scroll-to-find, step assertions that actually run, `run --cases` | shipped in `0.12.0` |
+| P18 | parity completion | a machine-checked 35-row parity ledger, fault-tree `ipc_binder`, `collect --jsheap`, redundant-file I/O, the file-to-HAR dependency graph, `rs_skip.cpu_waste.ms`, per-step comparison | shipped in `0.13.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
-(rev `9386e4e`): 35 user-facing capabilities, of which 18 are now ported, 9
-partial and 8 missing. The inventory read 6 / 9 / 20 at `0.3.0`; `0.6.0`
-reported 9 / 9 / 17 after the XLSX suite (row 34), frame load (row 9) and
-native memory (row 19) moved to ported; `0.7.0` moved hilog (row 30) to ported;
-`0.8.0` moves run-only preparation (row 2) to ported — the runner is
-collect-only by construction — and lifts the step DSL (row 3) from missing to
-partial, because a scenario is a validated action list with no selectors and no
-loops. `0.9.0` moves UI capture per step (row 7) and UI comparison (row 32) to
-ported, and lifts animation analysis (row 31) from missing to partial: a
-start/end capture pair is compared by the same tree and image comparators, but
-the animation label itself is not emitted — HapRay's dHash thresholds are
-unvalidated and resolution dependent, and "this region animated" is not a
-performance measurement. `0.10.0` moves static HAP tech-stack analysis (row
-25), the HapSize file inventory (row 26) and static report artifacts (row 27)
-to ported: the archive is read in memory, the rules are HapRay's own table as
-typed data, and the report section renders through the existing model. Its
-business metrics — ROI, UX scores, "estimated savings" — are not ported,
-because none of them is a measurement.
-`0.11.0` moves flamegraph generation (row 22) and symbol statistics with
-unresolved-symbol reporting (row 23) to ported: the device's own
-`trace_streamer --So_dir` does the symbolizing — HapRay's own approach for
-that row — and the artifact is an offline SVG + HTML page rather than a
-pako+d3 bundle. Standalone symbol recovery (row 28) stays missing by design:
-it is disassembly plus an LLM naming pass, which this package does not do.
-`0.12.0` moves the step DSL (row 3) and case discovery (row 1) to ported, and
-lifts test-case orchestration (row 6) to ported: a scenario selects nodes by
-content instead of by coordinate, can scroll a list to find its target, and
-asserts the screen it produced — the last of which HapRay parses and never
-runs. `--cases` is its `--run_testcases` with an anchored, documented filter
-that refuses to match nothing.
-Items deliberately not ported (Hypium/xdevice test
-execution, the LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery,
-bjc coverage) keep their measured reasons instead of a claim; the scenario
-runner replaces the first of them rather than porting it. The rendered
-roadmap, with the same content in Chinese, is on the
+(rev `9386e4e`): 35 user-facing capabilities. The status of every row is
+**data, not prose** — `packages/core/src/parity.ts` holds all 35 with a status
+and, when a row is not fully ported, the reason. `paritySummary()` computes the
+counts, and `parity.test.ts` checks each ported row's analyzer against the set
+the engine actually registers, so a claim cannot outlive the code:
+
+| Status | Rows |
+| --- | --- |
+| ported | 26 |
+| partial | 4 |
+| missing | 0 |
+| out, with a measured reason | 5 |
+
+The five `out` rows are capabilities whose prerequisite this package refuses
+to ship, and each reason names it: HapTest autonomous exploration (row 4,
+nondeterministic and unverified — the agent skill drives selectors instead),
+the LLM GUI agent (row 5, needs a network endpoint and API key), coverage
+(row 24, needs an instrumented build and the external `bjc` toolchain), the
+TensorFlow opt-detector (row 27, a ~2 GB stack and a probabilistic guess), and
+radare2 symbol recovery (row 28, heuristic disassembly plus LLM naming with no
+accuracy measurement).
+
+The four `partial` rows each name their missing subfeature: the system-API
+`UnMarsh` backtracking (row 12), the animation label (row 31 — dHash
+thresholds are unvalidated and resolution dependent), the multi-version trend
+page (row 33), and aggregating more than two reports into one trend (row 35).
+
+`0.13.0` closed the last four `missing` rows. The fault tree now carries an
+`ipc_binder` section derived from the typed binder analysis rather than from a
+shared file HapRay's own ordering makes stale (row 15); `collect --jsheap`
+pulls a heap snapshot, with every refusal typed (row 20); a
+`redundant_file.txt` in a scene is parsed into read/used/unused counts, with
+its format documented rather than guessed (row 21); and `buildDepGraph` turns a
+file list and module declarations into the file-to-HAR graph, cross-module
+edge counts and timing cycles HapRay needs a Homecheck checkout and a 16 GiB
+heap to produce (row 29). `rs_skip.cpu_waste.ms` reports the CPU a skipped
+frame wasted (row 12), and `compareScenes` compares multi-step runs step by
+step instead of merging them (row 35).
+
+The rendered roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).
 
 ## Requirements
