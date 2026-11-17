@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.2 — 2026-11-17
+
+Documentation only. The 0.13.1 tarball still shipped a core README that said
+"eight collectors"; npm publishes `packages/core/README.md` as the package's
+landing page, so that is what a reader on npmjs saw.
+
+- The core README now says nine, and `doc-counts.test.ts` reads it too. The
+  first version of that check missed it for a reason worth keeping: the prose
+  is hard-wrapped, so "nine" and "collectors" sat on different lines and a
+  regex over the raw text could not see across the newline. Every check now
+  normalizes whitespace before matching.
+- 1715 tests (1704 unit, 11 device), two typechecks, two builds.
+
 ## 0.13.1 — 2026-11-17
 
 0.13.0's release note promised a flag that did not exist, and its doc counts
