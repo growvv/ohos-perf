@@ -501,7 +501,7 @@ A suspect citing a name this run never measured is marked ungrounded.`)
     .command('explore')
     .description('walk an app\'s UI, tapping unvisited elements, and report the screens reached')
     .argument('<app>', 'bundle name to explore, e.g. com.example.app')
-    .option('--max-steps <n>', 'stop after this many taps', '30')
+    .option('--max-steps <n>', 'stop after this many steps', '30')
     .option(
       '--strategy <name>',
       'depth_first, breadth_first or random',

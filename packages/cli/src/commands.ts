@@ -164,7 +164,7 @@ export interface CollectOutput {
 export interface ExploreRequest {
   /** The bundle name to explore. */
   app: string;
-  /** Hard cap on taps. HapRay's default is 30. */
+  /** Hard cap on steps — a tap, scroll or back each spend one. HapRay's default is 30. */
   maxSteps: number;
   strategy: ExplorationStrategy;
   /** Makes `random` reproducible; ignored by the ordered strategies. */

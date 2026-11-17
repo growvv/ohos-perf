@@ -487,6 +487,68 @@ describe('explore', () => {
     expect(result.stoppedBy).toBe('left_app');
   });
 
+  it('does not swipe another bundle\'s scrollable, and backs out instead', async () => {
+    const start = root([
+      node({ id: 'go', bundleName: 'com.ours', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),
+    ]);
+    const foreign = root([
+      node({ id: 'theirList', bundleName: 'com.other', type: 'List', scrollable: true, bounds: '[0,0][100,100]' }),
+    ]);
+    const foreignScrolled = root([
+      node({ id: 'theirList2', bundleName: 'com.other', type: 'List', scrollable: true, bounds: '[0,100][100,200]' }),
+    ]);
+    // The foreign screen changes on every swipe, which under the old walk
+    // reset the per-screen scroll budget and spent the whole run there.
+    const dev = navDevice(
+      { start, '[0,0][1,1]': foreign },
+      {
+        scrolls: {
+          [hashTree(foreign)]: foreignScrolled,
+          [hashTree(foreignScrolled)]: foreignScrolled,
+        },
+        backs: { [hashTree(foreign)]: start },
+      },
+    );
+    const result = await explore(dev, { maxSteps: 6, strategy: 'depth_first', app: 'com.ours' });
+    expect(result.steps.map((step) => step.kind)).toEqual(['tap', 'back']);
+    expect(result.scrolls).toBe(0);
+    expect(result.backs).toBe(1);
+  });
+
+  it('stops with left_app rather than scrolling a foreign screen it cannot leave', async () => {
+    const foreign = root([
+      node({ id: 'theirList', bundleName: 'com.other', type: 'List', scrollable: true, bounds: '[0,0][100,100]' }),
+    ]);
+    const scrolled = root([
+      node({ id: 'theirList2', bundleName: 'com.other', type: 'List', scrollable: true, bounds: '[0,100][100,200]' }),
+    ]);
+    const result = await explore(
+      navDevice({ start: foreign }, { scrolls: { [hashTree(foreign)]: scrolled } }),
+      { maxSteps: 5, strategy: 'depth_first', app: 'com.ours' },
+    );
+    expect(result.steps).toEqual([]);
+    expect(result.scrolls).toBe(0);
+    expect(result.stoppedBy).toBe('left_app');
+  });
+
+  it('does not offer a model a foreign scrollable on a mixed screen', async () => {
+    const start = root([
+      node({ id: 'ours', bundleName: 'com.ours', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),
+      node({ id: 'theirs', bundleName: 'com.other', type: 'List', scrollable: true, bounds: '[2,2][3,3]' }),
+    ]);
+    let canScroll: boolean | undefined;
+    await explore(navDevice({ start }), {
+      maxSteps: 1,
+      strategy: 'depth_first',
+      app: 'com.ours',
+      choose: async (context) => {
+        canScroll = context.canScroll;
+        return { kind: 'tap', identity: 'ours', reason: 'the app control' };
+      },
+    });
+    expect(canScroll).toBe(false);
+  });
+
   it('records a model-chosen tap as decided by the model, with its reason', async () => {
     const start = root([
       node({ id: 'a', clickable: true, type: 'Button', bounds: '[0,0][1,1]' }),

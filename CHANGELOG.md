@@ -27,11 +27,13 @@ checkable:
   or `no change`, and the screen count, page count and trail are all computed
   from it. There is no second model call to trust.
 - **Navigation is measured and bounded.** `explore` scrolls the first
-  scrollable node — up to three times on one screen — and goes back once per
-  screen when nothing unvisited is tappable, rebuilding the trail from the page
-  each move actually produced. A scroll that changes no page is not progress.
-  The caps apply to model-chosen scroll and back too, so a model cannot loop
-  them.
+  scrollable node of the target app — up to three times on one screen — and
+  goes back once per screen when nothing unvisited is tappable, rebuilding the
+  trail from the page each move actually produced. A scroll that changes no
+  page is not progress; a screen belonging entirely to another bundle is not
+  acted on at all (no tap, no swipe), and the walk backs out or stops with
+  `left_app`. The caps apply to model-chosen scroll and back too, so a model
+  cannot loop them.
 - **Safety.** The model never supplies coordinates: it names an offered
   element and the tap goes to that element's measured bounds. When a model
   steers, irreversible targets (payment, ordering, transfer, sign-in, delete)
@@ -46,10 +48,11 @@ checkable:
 The endpoint is the same OpenAI-compatible one `agent` and `root-cause` use
 (`OHOS_PERF_AGENT_BASE_URL`/`_API_KEY`/`_MODEL`, falling back to `GLM_*`); the
 chat client was extracted as `httpChatModel` so all three turns share it.
-Without `--model`, `explore` is unchanged and offline.
+Without `--model`, `explore` stays offline and deterministic; the walk itself
+now scrolls, goes back and stays inside the target app.
 
 Parity row 38 is `ported`: 37 ported, 0 partial, 1 missing (39, thermal), 1 out
-(37, `build`). 2130 unit tests; the device suite is unchanged.
+(37, `build`). 2133 unit tests; the device suite is unchanged.
 
 ## 0.23.0 — 2026-11-18
 

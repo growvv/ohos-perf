@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P29 are complete**: 2141 tests (2130 unit, 11 in the device
+**P1 through P29 are complete**: 2144 tests (2133 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2102 passed, 28
+attached device are absent — `npm run test:unit` reports **2105 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2102 passed, 39 skipped**. With both fixtures present and a
+checkout is **2105 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -1094,14 +1094,16 @@ digest before and after a step yields three outcomes: `navigated` (a new page),
 digests; a report of "12 screens" cannot be inflated by a model's opinion.
 
 **Navigation is bounded and measured.** When nothing unvisited is tappable the
-walk scrolls the first scrollable node, up to three times on one screen, then
-returns one level with `back`, at most once per screen; the trail is rebuilt
-from the page measured after each move, so a tap that lands on an earlier page
-rewinds it exactly as a back would. A scroll that does not change the page is
-not progress. The caps apply to model-chosen scrolls and backs too, so a model
-cannot loop them, and the walk stops only for one of four measured reasons: the
-budget, an exhausted screen, the model's `stop`, or having left the app with no
-way back.
+walk scrolls the first scrollable node of the target app, up to three times on
+one screen, then returns one level with `back`, at most once per screen; the
+trail is rebuilt from the page measured after each move, so a tap that lands on
+an earlier page rewinds it exactly as a back would. A scroll that does not
+change the page is not progress. A screen that belongs entirely to another
+bundle is not acted on at all — no tap and no swipe of its lists; the walk
+backs out, or stops with `left_app` when it cannot. The caps apply to
+model-chosen scrolls and backs too, so a model cannot loop them, and the walk
+stops only for one of four measured reasons: the budget, an exhausted screen,
+the model's `stop`, or having left the app with no way back.
 
 **The model cannot invent a gesture.** It never supplies coordinates: it names
 an element the dump produced, and the gesture is driven to that element's
@@ -1109,7 +1111,7 @@ measured bounds. When a model steers, targets whose text matches the
 irreversible patterns (payment, ordering, transfer, sign-in, delete) are
 filtered out of the offer entirely — not discouraged in a prompt sentence — and
 the deterministic fallback draws from the same filtered set. `--json` carries
-`proposals` field by field: how many choices were used, how many refused, and
+`model` field by field: how many choices were used, how many refused, and
 each refusal with its step, so a run reads as "the model chose 14 steps and 3
 were refused", never as a silent correction.
 

@@ -605,7 +605,7 @@ JSON:
   as progress toward one** — a toggled checkbox is still the same page.
 - `nav` counts scrolls and backs. Both are bounded per screen (three scrolls,
   one back), and a scroll that changes no page is not progress.
-- `model` counts choices used and refused. **Read `proposals.refusals` before
+- `model` counts choices used and refused. **Read `model.refusals` before
   describing the walk**: each entry names the step and why the answer was
   refused — an element index that was not offered, `scroll`/`back` when the
   screen did not allow it, or an answer that was not JSON. A refusal is not a

@@ -407,10 +407,21 @@ function candidatesOf(state: ExplorationState): Candidate[] {
   return out;
 }
 
-/** The first node on the screen a scroll can target, if any. */
-function scrollableNode(tree: readonly UiNode[]): UiNode | undefined {
+/**
+ * The first node on the screen a scroll can target, if any.
+ *
+ * Restricted to the app the walk was asked to stay inside, for the same
+ * reason {@link candidatesOf} is: a scroll is an action on that app's screen,
+ * and swiping another bundle's list is exploration of a process the caller did
+ * not name. `bundleName === ''` is accepted, as in `candidatesOf`.
+ */
+function scrollableNode(tree: readonly UiNode[], app: string | undefined): UiNode | undefined {
   return tree.find(
-    (node) => node.scrollable && node.enabled && rectOf(node) !== undefined,
+    (node) =>
+      node.scrollable &&
+      node.enabled &&
+      rectOf(node) !== undefined &&
+      (app === undefined || node.bundleName === '' || node.bundleName === app),
   );
 }
 
@@ -491,7 +502,12 @@ export async function explore(
       ...(seed === undefined ? {} : { seed }),
       ...(options.app === undefined ? {} : { app: options.app }),
     };
-    const target = scrollableNode(tree);
+    // Outside the app there is nothing to scroll toward: a swipe on another
+    // bundle's list would explore a screen the caller did not name, and it can
+    // change the tree on every swipe, which resets the per-screen budget and
+    // spends the whole run there. The walk backs out or stops instead.
+    const outside = isOutsideApp(tree, options.app);
+    const target = outside ? undefined : scrollableNode(tree, options.app);
     const canScroll =
       device.swipe !== undefined &&
       target !== undefined &&
@@ -590,17 +606,23 @@ export async function explore(
     }
 
     if (decision === undefined) {
-      const first = ordered[0];
-      if (first !== undefined) {
-        decision = { kind: 'tap', nodeId: first.identity, bounds: first.node.bounds };
-      } else if (canScroll) {
-        decision = { kind: 'scroll', bounds: target!.bounds, direction: 'up' };
-      } else if (canBack) {
-        decision = { kind: 'back' };
+      if (outside) {
+        // The screen belongs to another app: return to the trail rather than
+        // act here, and end with the named outcome when there is no way back.
+        if (canBack) decision = { kind: 'back' };
+      } else {
+        const first = ordered[0];
+        if (first !== undefined) {
+          decision = { kind: 'tap', nodeId: first.identity, bounds: first.node.bounds };
+        } else if (canScroll) {
+          decision = { kind: 'scroll', bounds: target!.bounds, direction: 'up' };
+        } else if (canBack) {
+          decision = { kind: 'back' };
+        }
       }
     }
     if (decision === undefined) {
-      stoppedBy = isOutsideApp(tree, options.app) ? 'left_app' : 'exhausted';
+      stoppedBy = outside ? 'left_app' : 'exhausted';
       break;
     }
 
