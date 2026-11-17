@@ -221,8 +221,8 @@ The HapRay parity series (one release per major item, so far):
 | P16 | W8 symbols | exact `(file_id, serial_id)` resolution, symbol statistics with the unresolved share, `--so-dir` device symbolization, offline flamegraph artifact | shipped in `0.11.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
-(rev `9386e4e`): 35 user-facing capabilities, of which 16 are now ported, 10
-partial and 9 missing. The inventory read 6 / 9 / 20 at `0.3.0`; `0.6.0`
+(rev `9386e4e`): 35 user-facing capabilities, of which 18 are now ported, 9
+partial and 8 missing. The inventory read 6 / 9 / 20 at `0.3.0`; `0.6.0`
 reported 9 / 9 / 17 after the XLSX suite (row 34), frame load (row 9) and
 native memory (row 19) moved to ported; `0.7.0` moved hilog (row 30) to ported;
 `0.8.0` moves run-only preparation (row 2) to ported — the runner is
@@ -236,13 +236,16 @@ unvalidated and resolution dependent, and "this region animated" is not a
 performance measurement. `0.10.0` moves static HAP tech-stack analysis (row
 25), the HapSize file inventory (row 26) and static report artifacts (row 27)
 to ported: the archive is read in memory, the rules are HapRay's own table as
-typed data, and the report section renders through the existing model.
-`0.11.0` moves symbol statistics and unresolved-symbol reporting (row 16) and
-the flamegraph artifact (row 17) to ported, and lifts ELF symbol extraction
-(row 18) from missing to partial: the capture is symbolized by the device's
-own `trace_streamer --So_dir` rather than by re-implementing an ELF reader. Its
+typed data, and the report section renders through the existing model. Its
 business metrics — ROI, UX scores, "estimated savings" — are not ported,
-because none of them is a measurement. Items deliberately not ported (Hypium/xdevice test
+because none of them is a measurement.
+`0.11.0` moves flamegraph generation (row 22) and symbol statistics with
+unresolved-symbol reporting (row 23) to ported: the device's own
+`trace_streamer --So_dir` does the symbolizing — HapRay's own approach for
+that row — and the artifact is an offline SVG + HTML page rather than a
+pako+d3 bundle. Standalone symbol recovery (row 28) stays missing by design:
+it is disassembly plus an LLM naming pass, which this package does not do.
+Items deliberately not ported (Hypium/xdevice test
 execution, the LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery,
 bjc coverage) keep their measured reasons instead of a claim; the scenario
 runner replaces the first of them rather than porting it. The rendered
