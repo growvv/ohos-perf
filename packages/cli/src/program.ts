@@ -16,6 +16,7 @@ import {
   runQuery,
   runReport,
   runRender,
+  runRootCauseCommand,
   runExplore,
   runAgentCommand,
   runSymbolRecovery,
@@ -349,6 +350,41 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--json', 'print the artifact manifest as JSON')
     .action(async (report: string, opts: { out: string; json?: boolean }) => {
       io.emit(await runRender(deps, { report, outDir: opts.out }, { json: opts.json }));
+    });
+
+  program
+    .command('root-cause')
+    .description('rank a scene\'s measured evidence and explain it, with a model when one is configured')
+    .argument('<input>', 'scene directory, report.json file, or a report bundle directory')
+    .requiredOption('--out <dir>', 'output directory for root-cause.json, .md and .evidence.json')
+    .option('--offline', 'never ask a model; write the deterministic report alone')
+    .option('--model <name>', 'model name to send; defaults to the configured one')
+    .option('--app <packageName>', 'app package name, for evidence wording')
+    .option('--json', 'print the root-cause document as JSON')
+    .addHelpText('after', `
+With no endpoint configured this writes the offline report and says so, rather
+than failing: the ranked evidence is the report, and the model is an addition.
+A suspect citing a name this run never measured is marked ungrounded.`)
+    .action(async (input: string, opts: {
+      out: string;
+      offline?: boolean;
+      model?: string;
+      app?: string;
+      json?: boolean;
+    }) => {
+      io.emit(
+        await runRootCauseCommand(
+          deps,
+          {
+            input,
+            outDir: opts.out,
+            ...(opts.offline === true ? { offline: true } : {}),
+            ...(opts.model === undefined ? {} : { model: opts.model }),
+            ...(opts.app === undefined ? {} : { app: opts.app }),
+          },
+          { json: opts.json },
+        ),
+      );
     });
 
   program

@@ -18,6 +18,7 @@ import {
   type NamingReport,
   type RecoveryResult,
   type HiprofilerPluginName, type NamedQueryInfo, type NamedQueryResult,
+  type RootCauseDocument,
   type RunResult, type Scenario,
 } from '@ohos-perf/core';
 import { doctorReport, failureLine, safeMessage, type DoctorDeps } from './doctor';
@@ -366,6 +367,41 @@ export interface ReportOutput {
   comparison?: Record<DeltaStatus, number>;
 }
 
+/**
+ * A `root-cause` invocation: one scene or one saved report bundle.
+ *
+ * Unlike HapRay's action, `offline` is a supported mode rather than a
+ * placeholder: the ranked evidence is the product, and the model is an
+ * addition. `input` accepts a scene directory (analyzed on the fly, like
+ * `report`) or a `report.json` bundle, whose evidence is read without
+ * re-analyzing — a saved run must not be re-measured by today's code.
+ */
+export interface RootCauseRequest {
+  /** A scene directory, or a `report.json` file / bundle directory. */
+  input: string;
+  outDir: string;
+  /** Never ask a model; write the deterministic report alone. */
+  offline?: boolean;
+  /** Which model client to use; the seam decides what names it knows. */
+  model?: string;
+  /** Overrides the app named in the scene descriptor. */
+  app?: string;
+}
+
+/** What a `root-cause` run produced. */
+export interface RootCauseOutput {
+  /** The document `root-cause.json` carries, and what `--json` prints. */
+  document: RootCauseDocument;
+  outDir: string;
+  /** The artifact file names, in their fixed presentation order. */
+  files: string[];
+  /**
+   * True when no endpoint was configured, so the run wrote the offline report
+   * instead of failing. The caller tells the user which of the two they got.
+   */
+  fellBackToOffline?: boolean;
+}
+
 /** A `render` invocation: one saved report, one output directory. */
 export interface RenderRequest {
   /** A `report.json` file, or the bundle directory that holds one. */
@@ -514,6 +550,11 @@ export interface CliDeps {
   trend(req: TrendRequest): Promise<TrendOutput>;
   /** Re-render a saved bundle from its `report.json`. */
   render(req: RenderRequest): Promise<RenderOutput>;
+  /**
+   * Rank a scene's evidence, optionally adding a model's suspects, and write
+   * the three artifacts. Throws on any failure; the caller maps it to exit 1.
+   */
+  rootCause(req: RootCauseRequest): Promise<RootCauseOutput>;
   /** Walk an app's UI and report the screens it reached. */
   explore(req: ExploreRequest): Promise<ExploreOutput>;
   /**
@@ -995,6 +1036,67 @@ export async function runTrend(
         ` ${result.verdictless} without a known direction,` +
         ` ${result.unmeasured} not measured\n`,
       stderr: '',
+      exitCode: 0,
+    };
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Rank a scene's evidence, ask a model what it means, and write the report.
+ *
+ * HapRay's `root-cause` needs an endpoint: `--skip-llm` writes "Pending Agent
+ * Inference" placeholders, so its artifact is empty without one. Here the
+ * deterministic ranking is a real report, and a host with no endpoint gets it
+ * with a notice rather than a failure — the evidence is the product and the
+ * model is the addition. A model that did answer is named, and any suspect
+ * citing something the run never measured is counted in the summary line: the
+ * reader must see the claim and the check in the same place.
+ *
+ * `--json` prints the document, not a manifest: unlike `report`, the document
+ * here *is* the output, and it is small enough to print.
+ */
+export async function runRootCauseCommand(
+  deps: CliDeps,
+  req: RootCauseRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const result = await deps.rootCause(req);
+    if (opts.json) return { stdout: json(result.document), stderr: '', exitCode: 0 };
+
+    const { document } = result;
+    const { totals } = document.summary;
+    const lines = [
+      `root-cause  ${result.outDir}/root-cause.md`,
+      `artifacts   ${result.files.join(' ')}`,
+      `verdict     ${document.summary.verdict}`,
+      `observations  ${document.observations.length}` +
+        ` (${totals.critical} critical, ${totals.warn} warn, ${totals.info} info)`,
+    ];
+    const analysis = document.analysis;
+    if (analysis !== undefined) {
+      const ungrounded = analysis.suspects.reduce(
+        (sum, suspect) => sum + suspect.ungrounded.length, 0,
+      );
+      lines.push(
+        `analysis    ${analysis.model} — ${analysis.suspects.length} suspect` +
+          `${analysis.suspects.length === 1 ? '' : 's'}, ${ungrounded} ungrounded`,
+      );
+      // The names are listed, not just counted: a reader deciding whether to
+      // trust the analysis needs to see what it invented.
+      for (const suspect of analysis.suspects) {
+        if (suspect.ungrounded.length === 0) continue;
+        lines.push(`  suspect ${suspect.rank} cites ungrounded: ${suspect.ungrounded.join(', ')}`);
+      }
+    }
+    return {
+      stdout: `${lines.join('\n')}\n`,
+      stderr: result.fellBackToOffline === true
+        ? 'no model endpoint is configured, so this is the offline report;'
+          + ' set OHOS_PERF_AGENT_BASE_URL and OHOS_PERF_AGENT_API_KEY to add an analysis\n'
+        : '',
       exitCode: 0,
     };
   } catch (err) {

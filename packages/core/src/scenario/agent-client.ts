@@ -25,6 +25,23 @@ import { agentPrompt, parseDecision, type AgentDecision, type AgentModel, type A
 /** The slice of `fetch` this client needs. Injected, never imported. */
 export type AgentFetch = (url: string, init: RequestInit) => Promise<Response>;
 
+/**
+ * How a turn is rendered into a request, and how the answer is read back.
+ *
+ * The two travel together because they are one contract: a prompt that asks for
+ * an evidence citation cannot be read by a parser that insists on a gesture.
+ * The GUI agent is the default; anything else supplies its own pair.
+ */
+export interface AgentTurnShape {
+  /** The user message for one turn. */
+  prompt(turn: AgentTurn): string;
+  /** The answer as a decision, or a refusal naming what came back. */
+  parse(content: string): AgentDecision;
+}
+
+/** The GUI-driving shape: a screen to act on, an action or a verified `done`. */
+export const GUI_TURN: AgentTurnShape = { prompt: agentPrompt, parse: parseDecision };
+
 export interface HttpAgentModelOptions {
   /** The endpoint root, without `/chat/completions`. */
   readonly baseUrl: string;
@@ -33,6 +50,16 @@ export interface HttpAgentModelOptions {
   readonly fetch: AgentFetch;
   /** Request timeout in ms. Defaults to 60 s. */
   readonly timeoutMs?: number;
+  /**
+   * How a turn becomes a request and how its answer is read. Defaults to
+   * {@link GUI_TURN}.
+   *
+   * A caller whose turn is not a screen to drive — the root-cause report, whose
+   * turn carries the evidence — supplies its own shape. Without this the model
+   * would be told to answer with a gesture and an `expect` block, and a
+   * correct answer would then be rejected for having neither.
+   */
+  readonly shape?: AgentTurnShape;
 }
 
 export interface AgentConfig {
@@ -129,12 +156,13 @@ export function httpAgentModel(options: HttpAgentModelOptions): AgentModel {
 
   const url = `${baseUrl}/chat/completions`;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const shape = options.shape ?? GUI_TURN;
 
   return {
     async decide(turn: AgentTurn): Promise<AgentDecision> {
       const body = {
         model,
-        messages: [{ role: 'user', content: agentPrompt(turn) }],
+        messages: [{ role: 'user', content: shape.prompt(turn) }],
         // The answer is JSON the loop parses, so the endpoint is asked for JSON
         // rather than for prose that happens to contain some.
         response_format: { type: 'json_object' },
@@ -174,7 +202,7 @@ export function httpAgentModel(options: HttpAgentModelOptions): AgentModel {
       }
       // Parsed here, not in the loop: the error then names the answer rather
       // than the step, which is where the cause actually is.
-      return parseDecision(content);
+      return shape.parse(content);
     },
   };
 }

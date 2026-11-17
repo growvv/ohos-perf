@@ -20,6 +20,7 @@ const UNSTUBBED: ReadonlyArray<readonly [string, () => Promise<unknown>]> = [
   ['report', () => cliDeps().report({ sceneDir: 's', outDir: 'o' })],
   ['trend', () => cliDeps().trend({ reports: [], outDir: 'o' })],
   ['render', () => cliDeps().render({ report: 'r', outDir: 'o' })],
+  ['root-cause', () => cliDeps().rootCause({ input: 'i', outDir: 'o' })],
   ['explore', () => cliDeps().explore({ app: 'a', maxSteps: 1, strategy: 'depth_first' })],
   ['agent', () => cliDeps().agent({ app: 'a', task: 't', maxSteps: 1 })],
   ['symbols', () => cliDeps().symbols({ library: 'l', addresses: [] })],
@@ -67,7 +68,7 @@ describe('cliDeps', () => {
     const deps = cliDeps();
     const declared: ReadonlyArray<keyof CliDeps> = [
       'doctor', 'capsReport', 'analyze', 'collect', 'gesture', 'query', 'tools',
-      'compare', 'uiCompare', 'report', 'trend', 'render', 'explore', 'agent',
+      'compare', 'uiCompare', 'report', 'trend', 'render', 'rootCause', 'explore', 'agent',
       'symbols', 'hap', 'opt', 'emulator', 'run', 'version',
     ];
     for (const key of declared) expect(deps[key], key).toBeDefined();

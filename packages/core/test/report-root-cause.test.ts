@@ -84,8 +84,11 @@ describe('buildRootCauseDocument', () => {
     const doc = buildRootCauseDocument({
       ...input,
       evidence: [
-        evidence({ id: 'low', severity: 'info', explain: 'nothing much' }),
-        evidence({ id: 'bad', severity: 'critical', explain: 'the main thread was blocked for 400 ms' }),
+        evidence({ id: 'low', severity: 'info', explain: 'nothing much', signals: { count: 0 } }),
+        evidence({
+          id: 'bad', severity: 'critical', explain: 'the main thread was blocked for 400 ms',
+          signals: { blockedMs: 400 },
+        }),
       ],
     });
     expect(doc.summary.verdict).toContain('the main thread was blocked for 400 ms');
@@ -95,20 +98,72 @@ describe('buildRootCauseDocument', () => {
     // An empty run is a measurement too: "nothing was found" is different from
     // "nothing was measured", and the verdict has to say which.
     const doc = buildRootCauseDocument({ ...input, evidence: [] });
-    expect(doc.summary.totals).toEqual({ info: 0, warn: 0, critical: 0 });
+    expect(doc.summary.totals).toEqual({ info: 0, warn: 0, critical: 0, gaps: 0 });
     expect(doc.summary.verdict).toMatch(/no evidence/i);
+  });
+
+  it('leads with a measured finding, never with an analyzer that was skipped', () => {
+    // Measured defect: a sparse capture produces fifteen `degraded_capability`
+    // warnings, and the first version of the verdict led with "hilog skipped".
+    // A root-cause report that opens with a missing collector tells the reader
+    // the wrong thing: the gap is why nothing was measured, not what went wrong.
+    const doc = buildRootCauseDocument({
+      ...input,
+      evidence: [
+        evidence({
+          id: 'a-skipped', kind: 'degraded_capability', severity: 'warn',
+          explain: 'hilog skipped: missing hilog.stream',
+        }),
+        evidence({
+          id: 'z-jank', kind: 'jank', severity: 'warn',
+          signals: { worstMs: 118.5 },
+          explain: 'frame 42 took 118.5 ms against a 16.7 ms budget',
+        }),
+      ],
+    });
+    expect(doc.summary.verdict).toContain('frame 42 took 118.5 ms');
+    expect(doc.summary.verdict).not.toContain('hilog skipped');
+    // The gap is still counted, so a reader can see how much went unmeasured.
+    expect(doc.summary.totals.gaps).toBe(1);
+  });
+
+  it('treats a kind that normally measures as a gap when it carries no fact', () => {
+    // Measured defect: the `startup` analyzer reports "no startup data" as
+    // `kind: 'startup'` with empty signals, and it outranked nothing but came
+    // first by id — so the verdict opened with it instead of with the jank.
+    const doc = buildRootCauseDocument({
+      ...input,
+      evidence: [
+        evidence({ id: 'a-startup', kind: 'startup', severity: 'info', explain: 'no startup data' }),
+        evidence({ id: 'z-jank', kind: 'jank', severity: 'warn', explain: 'frame 42 took 118.5 ms', signals: { ms: 118.5 } }),
+      ],
+    });
+    expect(doc.summary.verdict).toContain('frame 42 took 118.5 ms');
+    expect(doc.summary.totals.gaps).toBe(1);
+  });
+
+  it('says the run measured nothing when every observation is a gap', () => {
+    const doc = buildRootCauseDocument({
+      ...input,
+      evidence: [
+        evidence({ id: 'a', kind: 'degraded_capability', explain: 'symbols skipped' }),
+        evidence({ id: 'b', kind: 'no_data', severity: 'info', explain: 'no UI capture' }),
+      ],
+    });
+    expect(doc.summary.verdict).toMatch(/nothing was measured/i);
+    expect(doc.summary.totals.gaps).toBe(2);
   });
 
   it('counts by severity and copies the scene identity', () => {
     const doc = buildRootCauseDocument({
       ...input,
       evidence: [
-        evidence({ id: 'a', severity: 'critical' }),
-        evidence({ id: 'b', severity: 'warn' }),
-        evidence({ id: 'c', severity: 'warn' }),
+        evidence({ id: 'a', severity: 'critical', signals: { n: 1 } }),
+        evidence({ id: 'b', severity: 'warn', signals: { n: 2 } }),
+        evidence({ id: 'c', severity: 'warn', signals: { n: 3 } }),
       ],
     });
-    expect(doc.summary.totals).toEqual({ info: 0, warn: 2, critical: 1 });
+    expect(doc.summary.totals).toEqual({ info: 0, warn: 2, critical: 1, gaps: 0 });
     expect(doc.scene).toEqual({
       app: 'com.demo', device: '5KPBB25927200695',
       window: { startNs: 0, endNs: 2_000_000_000 },

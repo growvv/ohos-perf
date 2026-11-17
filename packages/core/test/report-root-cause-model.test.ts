@@ -102,6 +102,21 @@ describe('rootCausePrompt', () => {
     };
     expect(rootCausePrompt(withAnalysis)).not.toContain('prior');
   });
+
+  it('names an unidentified app and an offline analysis as such', () => {
+    // Measured defect: the prompt read "app unknown on offline", which is two
+    // sentinels printed as if they were a name.
+    const sparse: RootCauseDocument = buildRootCauseDocument({
+      app: 'unknown', device: 'offline',
+      window: { startNs: 0, endNs: 1 },
+      generator: { name: '@ohos-perf/core', version: '0.23.0' },
+      evidence: [],
+    });
+    const prompt = rootCausePrompt(sparse);
+    expect(prompt).toContain('not identified in this capture');
+    expect(prompt).toContain('an offline analysis');
+    expect(prompt).not.toContain('app unknown on offline');
+  });
 });
 
 describe('parseRootCauseAnswer', () => {
@@ -213,6 +228,29 @@ describe('ungroundedNames', () => {
     expect(vocabulary.has('libapp.so')).toBe(true);
   });
 
+  it('collects the names the analyzer itself wrote in its explanation', () => {
+    // Measured defect: a live run over a sparse capture had the model repeat
+    // `ui.json`, `startedAtNs` and `thread_state` back from the evidence's own
+    // `explain` sentences, and the check flagged all three as invented. A name
+    // the analyzer printed is a name this run reported.
+    const sparse: RootCauseDocument = buildRootCauseDocument({
+      app: 'com.demo',
+      device: 'dev-1',
+      window: { startNs: 0, endNs: 1 },
+      generator: { name: '@ohos-perf/core', version: '0.23.0' },
+      evidence: [evidence({
+        id: 'ev-gap',
+        kind: 'degraded_capability',
+        explain: 'threads skipped: missing trace.thread_state: capability not probed',
+        signals: { missing: 'trace.thread_state' },
+      })],
+    });
+    const found = groundingVocabulary(sparse);
+    expect(found.has('trace.thread_state')).toBe(true);
+    // The kind is a word the run produced too.
+    expect(found.has('degraded_capability')).toBe(true);
+  });
+
   it('flags a symbol the run never measured', () => {
     const suspect: RootCauseSuspect = {
       rank: 1, evidenceIds: ['ev-jank'], rootCause: 'aboutToAppear is slow',
@@ -225,6 +263,17 @@ describe('ungroundedNames', () => {
     const suspect: RootCauseSuspect = {
       rank: 1, evidenceIds: ['ev-jank'], rootCause: 'worker-3 wakes too often',
       fix: 'f', confidence: 'high', ungrounded: [],
+    };
+    expect(ungroundedNames(suspect, vocabulary)).toEqual([]);
+  });
+
+  it('does not flag an ordinary hyphenated word as a name', () => {
+    // Measured defect: "Re-run" and "app-level" were reported as ungrounded
+    // claims. A hyphen is how English is written, not how code is named.
+    const suspect: RootCauseSuspect = {
+      rank: 1, evidenceIds: ['ev-jank'],
+      rootCause: 'Re-run the capture with app-level probes enabled',
+      fix: 'use an end-to-end capture', confidence: 'high', ungrounded: [],
     };
     expect(ungroundedNames(suspect, vocabulary)).toEqual([]);
   });

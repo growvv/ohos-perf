@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { agentPrompt, type AgentTurn } from '../src/scenario/agent';
 import { httpAgentModel, readAgentConfig } from '../src/scenario/agent-client';
+import { ROOT_CAUSE_TURN } from '../src/report/root-cause-model';
 
 /*
  * The model client (HapRay parity row 5).
@@ -159,5 +160,62 @@ describe('readAgentConfig', () => {
 
   it('returns undefined when the base URL is set but the key is not', () => {
     expect(readAgentConfig({ OHOS_PERF_AGENT_BASE_URL: 'https://e.test/v1' })).toBeUndefined();
+  });
+});
+
+describe('httpAgentModel with a non-GUI turn shape', () => {
+  /*
+   * The root-cause turn is not a screen to drive. Measured defect: the client
+   * rendered every turn with `agentPrompt` and parsed every answer with
+   * `parseDecision`, so a root-cause request told the model to answer with a
+   * gesture and an `expect` block, and then rejected the JSON answer it had
+   * actually asked for. The shape is one value so the two halves cannot drift.
+   */
+  const evidenceTurn: AgentTurn = {
+    task: 'explain the root cause of the measured performance evidence',
+    app: 'com.demo',
+    step: 0,
+    maxSteps: 1,
+    screen: 'Observations:\n- [ev-1] critical jank com.demo/main: frame 42 took 118.5 ms',
+    history: [],
+  };
+
+  it('sends the turn\'s screen as the prompt and accepts a JSON answer', async () => {
+    const answer = '{"summary":"the main thread stalls","suspects":[],"caveats":[],"needsMoreData":[]}';
+    const { fetch, calls } = fakeFetch(completion(answer));
+    const model = httpAgentModel({
+      baseUrl: 'https://example.test/v1', apiKey: 'k', model: 'm', fetch, shape: ROOT_CAUSE_TURN,
+    });
+    const decision = await model.decide(evidenceTurn);
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as {
+      messages: Array<{ content: string }>;
+    };
+    const prompt = body.messages[0]!.content;
+    expect(prompt).toContain('[ev-1]');
+    // The GUI instructions must not be in a prompt that is not a screen.
+    expect(prompt).not.toContain('{"action": {"action": "click"');
+    expect('done' in decision && decision.reason).toBe(answer);
+  });
+
+  it('refuses an answer that is not JSON, naming it', async () => {
+    const { fetch } = fakeFetch(completion('I think it is the main thread.'));
+    const model = httpAgentModel({
+      baseUrl: 'https://example.test/v1', apiKey: 'k', model: 'm', fetch, shape: ROOT_CAUSE_TURN,
+    });
+    await expect(model.decide(evidenceTurn)).rejects.toThrow(/not JSON/);
+  });
+
+  it('still uses the GUI prompt and parser when no shape is given', async () => {
+    const { fetch, calls } = fakeFetch(completion('{"done": true, "reason": "x"}'));
+    const model = httpAgentModel({
+      baseUrl: 'https://example.test/v1', apiKey: 'k', model: 'm', fetch,
+    });
+    const decision = await model.decide(turn);
+    const body = JSON.parse(String(calls[0]!.init.body)) as {
+      messages: Array<{ content: string }>;
+    };
+    expect(body.messages[0]!.content).toBe(agentPrompt(turn));
+    expect(decision).toEqual({ done: true, reason: 'x' });
   });
 });

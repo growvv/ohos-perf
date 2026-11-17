@@ -1,5 +1,6 @@
 import { OhosPerfError } from '../errors';
 import type { AgentModel, AgentTurn } from '../scenario/agent';
+import type { AgentTurnShape } from '../scenario/agent-client';
 import type {
   RootCauseAnalysis,
   RootCauseDocument,
@@ -82,7 +83,8 @@ export function rootCausePrompt(document: RootCauseDocument): string {
     'Every observation below was produced by an analyzer in this package; the',
     'bracketed id is what you must cite.',
     '',
-    `app ${document.scene.app} on ${document.scene.device}`,
+    `app ${document.scene.app === 'unknown' ? '(not identified in this capture)' : document.scene.app}`
+      + ` on ${document.scene.device === 'offline' ? 'an offline analysis' : document.scene.device}`,
     `verdict ${document.summary.verdict}`,
     '',
     'Observations:',
@@ -110,6 +112,30 @@ function turnFor(document: RootCauseDocument): AgentTurn {
     history: [],
   };
 }
+
+/**
+ * How an HTTP client must render and read this turn.
+ *
+ * The default `GUI_TURN` is the wrong shape twice over: it would tell the model
+ * to answer with a gesture and an `expect` block, and it would then reject the
+ * answer it asked for, because `parseDecision` insists on an `action` or
+ * `done`. The answer here is JSON prose with citations, so the parser accepts
+ * any JSON object and leaves validation to {@link parseRootCauseAnswer}, which
+ * knows the evidence ids.
+ */
+export const ROOT_CAUSE_TURN: AgentTurnShape = {
+  prompt: (turn) => turn.screen,
+  parse(content) {
+    try {
+      JSON.parse(unfence(content));
+    } catch {
+      throw badResponse(
+        `the model's answer is not JSON: ${JSON.stringify(content.slice(0, 200))}`,
+      );
+    }
+    return { done: true, reason: content };
+  },
+};
 
 /** Strip a markdown fence a model added around its JSON. */
 function unfence(text: string): string {
@@ -196,11 +222,15 @@ export function parseRootCauseAnswer(
 }
 
 /**
- * Every string the evidence actually carried: process, thread, and any string
- * signal value.
+ * Every string the evidence actually carried.
  *
- * A set rather than a list because the check is membership, and the vocabulary
- * of one run is small.
+ * Process, thread, any string signal value, and every identifier-shaped token
+ * in the analyzer's own `explain` sentence and in the item's `kind`. The last
+ * two matter because the analyzers name the inputs they were missing —
+ * `ui.json`, `trace.thread_state`, `coverageReport.json` — and a model quoting
+ * those back is repeating what this run reported, not inventing a symbol. A set
+ * rather than a list because the check is membership, and the vocabulary of one
+ * run is small.
  */
 export function groundingVocabulary(document: RootCauseDocument): Set<string> {
   const vocabulary = new Set<string>();
@@ -211,8 +241,17 @@ export function groundingVocabulary(document: RootCauseDocument): Set<string> {
       if (typeof value === 'string') vocabulary.add(value);
       else if (Array.isArray(value)) for (const entry of value) vocabulary.add(entry);
     }
+    vocabulary.add(item.kind);
+    for (const token of identifierTokens(item.explain)) vocabulary.add(token);
   }
   return vocabulary;
+}
+
+/** Identifier-shaped tokens in a sentence: the names a reader could look up. */
+function identifierTokens(text: string): string[] {
+  return (text.match(/[A-Za-z_][A-Za-z0-9_.\-]{2,}/g) ?? [])
+    .map((token) => token.replace(/[.\-]+$/, ''))
+    .filter((token) => looksLikeIdentifier(token));
 }
 
 /**
@@ -244,12 +283,15 @@ export function ungroundedNames(suspect: RootCauseSuspect, vocabulary: Set<strin
 /**
  * Whether a token is the kind of name a reader would check against a run.
  *
- * A file extension, an underscore, a hyphen, or an interior capital. A plain
- * lowercase word is prose.
+ * A file extension, an underscore, or an interior capital. **Not** a hyphen: a
+ * live run had the model write "Re-run" and "app-level", and a hyphen rule
+ * reported both as invented names. A hyphen is how English is written, not how
+ * code is named — and a real hyphenated identifier is caught by the other two
+ * rules when it matters.
  */
 function looksLikeIdentifier(token: string): boolean {
   if (/\.(?:so|ets|ts|js|json|hap|hsp|db|abc)$/i.test(token)) return true;
-  if (/[_\-]/.test(token)) return true;
+  if (token.includes('_')) return true;
   if (/[a-z][A-Z]/.test(token)) return true;
   return false;
 }

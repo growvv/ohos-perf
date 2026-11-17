@@ -120,6 +120,40 @@ describe('renderRootCauseMarkdown', () => {
     expect(md).toContain('a longer trace');
   });
 
+  it('says how many observations are gaps rather than findings', () => {
+    const doc = buildRootCauseDocument({
+      app: 'com.demo', device: 'dev-1',
+      window: { startNs: 0, endNs: 1 },
+      generator: { name: '@ohos-perf/core', version: '0.23.0' },
+      evidence: [
+        evidence({ id: 'gap', kind: 'degraded_capability', explain: 'hilog skipped' }),
+        evidence({
+          id: 'real', severity: 'critical', signals: { worstMs: 118.5 },
+          explain: 'frame 42 took 118.5 ms',
+        }),
+      ],
+    });
+    const md = renderRootCauseMarkdown(doc);
+    expect(md).toMatch(/1 report a gap in the capture/);
+    // The verdict still leads with the finding, not the missing collector.
+    expect(md.indexOf('frame 42 took 118.5 ms')).toBeLessThan(md.indexOf('hilog skipped'));
+  });
+
+  it('says "the whole capture" instead of printing the whole-database sentinel', () => {
+    // Measured defect: a scene with no `trace_range` renders the marker as a
+    // 285-year span ("0..9007199254740991 ns (9007199.25 s)"). The rest of the
+    // package already says "the whole capture" for this range.
+    const doc = buildRootCauseDocument({
+      app: 'com.demo', device: 'dev-1',
+      window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
+      generator: { name: '@ohos-perf/core', version: '0.23.0' },
+      evidence: [evidence({ id: 'e' })],
+    });
+    const md = renderRootCauseMarkdown(doc);
+    expect(md).toContain('window  the whole capture');
+    expect(md).not.toContain('9007199');
+  });
+
   it('renders byte-identically twice', () => {
     expect(renderRootCauseMarkdown(base)).toBe(renderRootCauseMarkdown(base));
   });

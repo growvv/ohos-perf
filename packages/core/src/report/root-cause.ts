@@ -78,7 +78,17 @@ export interface RootCauseAnalysis {
 
 /** The deterministic verdict, always present. */
 export interface RootCauseSummary {
-  totals: { info: number; warn: number; critical: number };
+  totals: {
+    info: number;
+    warn: number;
+    critical: number;
+    /**
+     * How many observations are measurement gaps rather than findings. A run
+     * over a sparse capture is mostly gaps, and a reader has to be able to tell
+     * "nothing was wrong" from "nothing could be measured".
+     */
+    gaps: number;
+  };
   /** One sentence, from the highest-severity observation. */
   verdict: string;
 }
@@ -141,28 +151,78 @@ export function rankObservations(evidence: readonly Evidence[]): RootCauseObserv
 /** Count each severity, so the summary can state the shape of the run. */
 function countSeverities(
   evidence: readonly Evidence[],
-): { info: number; warn: number; critical: number } {
-  const totals = { info: 0, warn: 0, critical: 0 };
-  for (const item of evidence) totals[item.severity] += 1;
+): RootCauseSummary['totals'] {
+  const totals = { info: 0, warn: 0, critical: 0, gaps: 0 };
+  for (const item of evidence) {
+    totals[item.severity] += 1;
+    if (isGap(item)) totals.gaps += 1;
+  }
   return totals;
+}
+
+/**
+ * Whether an evidence item reports a gap rather than a finding.
+ *
+ * Three shapes are gaps, and each is a different way of saying "nothing was
+ * measured here":
+ *
+ * - `degraded_capability` — the analyzer could not run at all;
+ * - `no_data` — the capture did not carry the input the analyzer reads;
+ * - an item with **no signals** — it carries no measured fact, so whatever it
+ *   says is about the capture, not about the app. The `startup` analyzer's
+ *   "no startup data" item is this shape while a measured startup carries its
+ *   duration, which is why the kind alone is not enough.
+ *
+ * The distinction exists because a root-cause report that opens with "hilog
+ * skipped" has told the reader nothing about performance. Severity cannot make
+ * that distinction: a skipped analyzer is a `warn` and a measured jank is also
+ * a `warn`.
+ */
+function isGap(item: Evidence): boolean {
+  if (item.kind === 'degraded_capability' || item.kind === 'no_data') return true;
+  return Object.keys(item.signals).length === 0;
+}
+
+/**
+ * Whether an observation restates a gap rather than a finding.
+ *
+ * The same three shapes {@link isGap} recognizes, restated over the document's
+ * own type so the verdict and the totals cannot disagree about what a gap is.
+ */
+function observationIsGap(item: RootCauseObservation): boolean {
+  if (item.kind === 'degraded_capability' || item.kind === 'no_data') return true;
+  return Object.keys(item.signals).length === 0;
 }
 
 /**
  * The one-sentence verdict.
  *
- * With evidence, it is the highest-severity observation's own sentence: the
- * analyzer already explained what it measured, and rewriting that would be a
- * second opinion nobody asked for. Without evidence the sentence says the run
- * found nothing, which is a measurement — distinct from a run that could not
- * look.
+ * With a finding, it is that observation's own sentence: the analyzer already
+ * explained what it measured, and rewriting that would be a second opinion
+ * nobody asked for. Gaps are skipped — "hilog skipped: missing hilog.stream"
+ * is why nothing was measured, not what went wrong — so a sparse capture does
+ * not open with the collector it lacked. When every observation is a gap the
+ * verdict says the run measured nothing, which is a different fact from a run
+ * that measured and found nothing.
  */
-function verdictFor(ranked: readonly RootCauseObservation[], total: number): string {
+function verdictFor(
+  ranked: readonly RootCauseObservation[],
+  total: number,
+  gaps: number,
+): string {
   if (total === 0) {
     return 'no evidence was produced for this scene, so there is nothing to explain';
   }
-  const worst = ranked[0]!;
-  const more = total === 1 ? '' : ` (and ${total - 1} other observation${total === 2 ? '' : 's'})`;
-  return `${worst.severity}: ${worst.explain}${more}`;
+  const finding = ranked.find((item) => !observationIsGap(item));
+  if (finding === undefined) {
+    return `nothing was measured: all ${total} observation${total === 1 ? '' : 's'}`
+      + ' report a gap in the capture, not a finding about the app';
+  }
+  const more = total === 1
+    ? ''
+    : ` (and ${total - 1} other observation${total === 2 ? '' : 's'}`
+      + `${gaps === 0 ? '' : `, ${gaps} of them gaps in the capture`})`;
+  return `${finding.severity}: ${finding.explain}${more}`;
 }
 
 /**
@@ -174,6 +234,7 @@ function verdictFor(ranked: readonly RootCauseObservation[], total: number): str
  */
 export function buildRootCauseDocument(input: RootCauseInput): RootCauseDocument {
   const ranked = rankObservations(input.evidence);
+  const totals = countSeverities(input.evidence);
   return {
     schemaVersion: ROOT_CAUSE_SCHEMA_VERSION,
     generator: { ...input.generator },
@@ -183,8 +244,8 @@ export function buildRootCauseDocument(input: RootCauseInput): RootCauseDocument
       window: { startNs: input.window.startNs, endNs: input.window.endNs },
     },
     summary: {
-      totals: countSeverities(input.evidence),
-      verdict: verdictFor(ranked, input.evidence.length),
+      totals,
+      verdict: verdictFor(ranked, input.evidence.length, totals.gaps),
     },
     observations: ranked,
   };

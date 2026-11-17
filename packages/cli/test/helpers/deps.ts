@@ -37,6 +37,7 @@ export function cliDeps(overrides: Partial<CliDeps> = {}): CliDeps {
     report: notStubbed('report'),
     trend: notStubbed('trend'),
     render: notStubbed('render'),
+    rootCause: notStubbed('root-cause'),
     explore: notStubbed('explore'),
     agent: notStubbed('agent'),
     symbols: notStubbed('symbols'),

@@ -52,6 +52,12 @@ import {
   renderFlamegraphHtml,
   renderFlamegraphSvg,
   FLAMEGRAPH_FILES,
+  buildRootCauseDocument,
+  askRootCause,
+  renderRootCauseMarkdown,
+  rootCausePrompt,
+  ROOT_CAUSE_SCHEMA_VERSION,
+  ROOT_CAUSE_TURN,
   hapSection,
   analyzeBinaries,
   extractBinaries,
@@ -86,6 +92,8 @@ import {
   type UiNode,
   type ExplorationClock,
   type AgentModel,
+  type Evidence,
+  type RootCauseDocument,
   type Scene,
   type SceneLayout,
   type SceneMetadata,
@@ -93,6 +101,7 @@ import {
 } from '@ohos-perf/core';
 import {
   safeMessage, type CliDeps, type DoctorDeps, type EmulatorDeps, type EmulatorTargetOptions,
+  type RootCauseRequest, type RootCauseOutput,
 } from './commands';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -162,6 +171,12 @@ export interface RealDepsOverrides {
    * opens a socket; the real one is built from the environment at call time.
    */
   agentModel?: (name?: string) => AgentModel;
+  /**
+   * The model client `root-cause` uses. Separate from {@link agentModel}
+   * because the two send different prompts and read different answers: a test
+   * that stubs one must not silently change the other's contract.
+   */
+  rootCauseModel?: (name?: string) => AgentModel;
   /** Device used by `agent`; replaced in tests to avoid touching a device. */
   agentDevice?: (target?: string) => Promise<{
     id: string;
@@ -621,6 +636,56 @@ function readAnalysisFile(path: string): AnalyzeResult {
 }
 
 /**
+ * The measured inputs a root-cause document is built from.
+ *
+ * Both input kinds converge here: a scene is analyzed with the same code
+ * `report` uses, and a saved bundle is read without re-analyzing, so a document
+ * over an old run describes what that run measured rather than what today's
+ * analyzers would say about a capture that may no longer exist.
+ */
+interface RootCauseSource {
+  app: string;
+  device: string;
+  window: TimeRange;
+  evidence: Evidence[];
+}
+
+/** The bundle `root-cause.evidence.json` carries: what a model would be sent. */
+interface RootCauseEvidenceBundle {
+  schemaVersion: number;
+  scene: RootCauseDocument['scene'];
+  observations: RootCauseDocument['observations'];
+  /** The exact prompt text, so a reader can replay the turn by hand. */
+  prompt: string;
+}
+
+/** Read a saved `report.json` as root-cause input. */
+function rootCauseFromReport(file: string): RootCauseSource {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (err) {
+    throw new OhosPerfError(
+      `cannot read report ${file}: ${safeMessage(err)}`,
+      { code: 'ROOT_CAUSE_BAD_INPUT', cause: err },
+    );
+  }
+  const model = parsed as ReportModel;
+  if (!Array.isArray(model.sections) || model.scenario === undefined) {
+    throw new OhosPerfError(
+      `${file} is not a report document (no sections or scenario block)`,
+      { code: 'ROOT_CAUSE_BAD_INPUT' },
+    );
+  }
+  return {
+    app: model.scenario.app.packageName,
+    device: model.scenario.device,
+    window: model.scenario.window,
+    evidence: model.sections.flatMap((section) => section.evidence),
+  };
+}
+
+/**
  * Production wiring for {@link CliDeps}.
  *
  * This is the only place the CLI knows about real IO. In particular
@@ -670,6 +735,31 @@ export function realDeps(
       ...config,
       ...(name === undefined ? {} : { model: name }),
       fetch: (url, init) => fetch(url, init),
+    });
+  });
+
+  /**
+   * The same client, for a turn that is not a screen to drive.
+   *
+   * `root-cause` sends evidence and expects JSON prose, so it supplies its own
+   * turn shape: the GUI prompt would ask for a gesture, and the GUI parser
+   * would then reject the answer it asked for. Kept separate from `agentModel`
+   * so an injected GUI model in a test cannot be handed the wrong contract.
+   */
+  const rootCauseModel = overrides.rootCauseModel ?? ((name?: string): AgentModel => {
+    const config = readAgentConfig(process.env);
+    if (config === undefined) {
+      throw new OhosPerfError(
+        'no model endpoint is configured; set OHOS_PERF_AGENT_BASE_URL and' +
+          ' OHOS_PERF_AGENT_API_KEY (or GLM_BASE_URL and GLM_API_KEY)',
+        { code: 'AGENT_BAD_CONFIG' },
+      );
+    }
+    return httpAgentModel({
+      ...config,
+      ...(name === undefined ? {} : { model: name }),
+      fetch: (url, init) => fetch(url, init),
+      shape: ROOT_CAUSE_TURN,
     });
   });
 
@@ -1078,6 +1168,74 @@ export function realDeps(
         sections: model.sections.length,
         metrics: model.totals.metrics,
         evidence: model.totals.evidence,
+      };
+    },
+
+    async rootCause(req) {
+      // A directory with a report.json is a saved bundle, and a `.json` path is
+      // one file of one. Everything else is a scene, analyzed now with the same
+      // code `report` uses so the two commands can never disagree about what a
+      // capture measured.
+      const input = resolve(req.input);
+      let source: RootCauseSource;
+      if (input.endsWith('.json') || (await isDirectory(input) && existsSync(join(input, 'report.json')))) {
+        source = rootCauseFromReport(input.endsWith('.json') ? input : join(input, 'report.json'));
+      } else {
+        const detailed = await analyzeSceneDetailed(openOfflineScene, req.input, req.app);
+        source = {
+          app: detailed.app.packageName,
+          device: detailed.device,
+          window: detailed.window,
+          evidence: detailed.run.result.evidence,
+        };
+      }
+
+      const document = buildRootCauseDocument({
+        app: source.app,
+        device: source.device,
+        window: source.window,
+        generator: { name: '@ohos-perf/core', version },
+        evidence: source.evidence,
+      });
+
+      // `--offline` is a promise, not a hint: the model seam is not even
+      // consulted, so no socket can be opened by a run that asked not to.
+      let final = document;
+      let fellBackToOffline = false;
+      if (req.offline !== true) {
+        const config = readAgentConfig(process.env);
+        if (config === undefined) {
+          // The evidence is the product; a missing endpoint is not a reason to
+          // produce nothing, which is what HapRay's placeholder does. The
+          // caller reports which of the two it wrote.
+          fellBackToOffline = true;
+        } else {
+          const model = rootCauseModel(req.model);
+          final = await askRootCause(model, document, { model: req.model ?? config.model });
+        }
+      }
+
+      const bundle: RootCauseEvidenceBundle = {
+        schemaVersion: ROOT_CAUSE_SCHEMA_VERSION,
+        scene: document.scene,
+        observations: document.observations,
+        prompt: rootCausePrompt(document),
+      };
+      const artifacts: Array<[string, string]> = [
+        ['root-cause.json', `${JSON.stringify(final, null, 2)}\n`],
+        ['root-cause.md', renderRootCauseMarkdown(final)],
+        ['root-cause.evidence.json', `${JSON.stringify(bundle, null, 2)}\n`],
+      ];
+      const outDir = resolve(req.outDir);
+      await mkdir(outDir, { recursive: true });
+      for (const [name, content] of artifacts) {
+        await writeFile(join(outDir, name), content);
+      }
+      return {
+        document: final,
+        outDir,
+        files: artifacts.map(([name]) => name),
+        ...(fellBackToOffline ? { fellBackToOffline: true } : {}),
       };
     },
 

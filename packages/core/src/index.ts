@@ -191,8 +191,10 @@ export type {
   AddressRef, FunctionRange, NamingAnswer, NamingCase, NamingQuestion, NamingReport,
   RecoveredSymbol, RecoveryResult, UnresolvedAddress,
 } from './hap/symbols-recovery';
-export { httpAgentModel, readAgentConfig } from './scenario/agent-client';
-export type { AgentConfig, AgentFetch, HttpAgentModelOptions } from './scenario/agent-client';
+export { GUI_TURN, httpAgentModel, readAgentConfig } from './scenario/agent-client';
+export type {
+  AgentConfig, AgentFetch, AgentTurnShape, HttpAgentModelOptions,
+} from './scenario/agent-client';
 export type {
   AgentDecision, AgentDevice, AgentHistoryEntry, AgentModel, AgentOptions,
   AgentTurn, AgentResult, AgentStatus, AgentStep, AgentStepStatus,
@@ -415,3 +417,28 @@ export { escapeHtml } from './report/escape';
 export { FLAMEGRAPH_FILES, renderFlamegraphSvg } from './report/flamegraph-svg';
 export { renderFlamegraphHtml } from './report/flamegraph-html';
 export type { FlamegraphPageInput } from './report/flamegraph-html';
+export {
+  ROOT_CAUSE_SCHEMA_VERSION,
+  buildRootCauseDocument,
+  rankObservations,
+} from './report/root-cause';
+export type {
+  RootCauseAnalysis,
+  RootCauseDocument,
+  RootCauseGenerator,
+  RootCauseInput,
+  RootCauseObservation,
+  RootCauseScene,
+  RootCauseSummary,
+  RootCauseSuspect,
+} from './report/root-cause';
+export {
+  PROMPT_EVIDENCE_LIMIT,
+  ROOT_CAUSE_TURN,
+  askRootCause,
+  groundingVocabulary,
+  parseRootCauseAnswer,
+  rootCausePrompt,
+  ungroundedNames,
+} from './report/root-cause-model';
+export { renderRootCauseMarkdown } from './report/root-cause-markdown';

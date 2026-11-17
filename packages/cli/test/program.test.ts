@@ -65,7 +65,7 @@ describe('--help', () => {
     const text = out.join('');
     for (const name of [
       'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'render', 'trend',
-      'run', 'ui-compare', 'explore', 'agent', 'opt', 'symbols',
+      'run', 'ui-compare', 'explore', 'agent', 'opt', 'symbols', 'root-cause',
     ]) {
       expect(text).toContain(name);
     }
@@ -170,6 +170,57 @@ describe('command wiring', () => {
     const calls: unknown[] = [];
     const { error } = await parse(['render', '/saved'], {
       render: async (req) => { calls.push(req); throw new Error('not reached'); },
+    });
+    expect(error?.code).toBe('commander.missingMandatoryOptionValue');
+    expect(calls).toEqual([]);
+  });
+
+  it('root-cause forwards the input, --out and the offline flag', async () => {
+    const calls: unknown[] = [];
+    const document = {
+      schemaVersion: 1 as const,
+      generator: { name: '@ohos-perf/core', version: '1.0.0' },
+      scene: { app: 'com.demo', device: 'd', window: { startNs: 0, endNs: 1 } },
+      summary: { totals: { info: 0, warn: 0, critical: 0, gaps: 0 }, verdict: 'nothing' },
+      observations: [],
+    };
+    const result = {
+      document, outDir: '/out', files: ['root-cause.json', 'root-cause.md', 'root-cause.evidence.json'],
+    };
+    const { emitted } = await parse(
+      ['root-cause', '/scene', '--out', '/out', '--offline', '--model', 'm', '--json'],
+      { rootCause: async (req) => { calls.push(req); return result; } },
+    );
+    expect(calls).toEqual([{ input: '/scene', outDir: '/out', offline: true, model: 'm' }]);
+    // --json prints the document itself, not a manifest: here the document is
+    // the output.
+    expect(JSON.parse(emitted[0].stdout)).toEqual(document);
+  });
+
+  it('root-cause leaves --offline off when it was not given, so a model may be asked', async () => {
+    const calls: Array<{ offline?: boolean }> = [];
+    await parse(['root-cause', '/scene', '--out', '/out'], {
+      rootCause: async (req) => {
+        calls.push(req);
+        return {
+          document: {
+            schemaVersion: 1 as const,
+            generator: { name: 'g', version: '1' },
+            scene: { app: 'a', device: 'd', window: { startNs: 0, endNs: 1 } },
+            summary: { totals: { info: 0, warn: 0, critical: 0, gaps: 0 }, verdict: 'v' },
+            observations: [],
+          },
+          outDir: '/out', files: [],
+        };
+      },
+    });
+    expect(calls[0]!.offline).toBeUndefined();
+  });
+
+  it('root-cause requires --out before doing any work', async () => {
+    const calls: unknown[] = [];
+    const { error } = await parse(['root-cause', '/scene'], {
+      rootCause: async (req) => { calls.push(req); throw new Error('not reached'); },
     });
     expect(error?.code).toBe('commander.missingMandatoryOptionValue');
     expect(calls).toEqual([]);

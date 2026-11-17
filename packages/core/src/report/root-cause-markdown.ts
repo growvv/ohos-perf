@@ -3,6 +3,7 @@ import type {
   RootCauseObservation,
   RootCauseSuspect,
 } from './root-cause';
+import { isWholeCapture } from './window';
 
 /**
  * The human report for a root-cause document (HapRay parity row 36).
@@ -103,9 +104,13 @@ export function renderRootCauseMarkdown(document: RootCauseDocument): string {
   lines.push('');
   lines.push(`app     ${scene.app}`);
   lines.push(`device  ${scene.device}`);
+  // The whole-database marker printed as numbers reads as a 285-year span; the
+  // rest of the package says "the whole capture" and so does this.
   lines.push(
-    `window  ${scene.window.startNs}..${scene.window.endNs} ns`
-    + ` (${((scene.window.endNs - scene.window.startNs) / 1e9).toFixed(2)} s)`,
+    isWholeCapture(scene.window)
+      ? 'window  the whole capture'
+      : `window  ${scene.window.startNs}..${scene.window.endNs} ns`
+        + ` (${((scene.window.endNs - scene.window.startNs) / 1e9).toFixed(2)} s)`,
   );
   lines.push(`produced by ${document.generator.name} ${document.generator.version}`);
   lines.push('');
@@ -116,7 +121,12 @@ export function renderRootCauseMarkdown(document: RootCauseDocument): string {
   lines.push('');
   lines.push(
     `totals: ${summary.totals.critical} critical, ${summary.totals.warn} warn,`
-    + ` ${summary.totals.info} info`,
+    + ` ${summary.totals.info} info`
+    // Only when there are any: "0 gaps" on a complete capture is noise, and a
+    // reader should not have to learn to skip a number that is always there.
+    + (summary.totals.gaps === 0
+      ? ''
+      : ` (${summary.totals.gaps} report a gap in the capture rather than a finding)`),
   );
   lines.push('');
 
