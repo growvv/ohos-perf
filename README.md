@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P16 are complete**: 1570 tests (1559 unit, 11 in the device
+**P1 through P17 are complete**: 1650 tests (1639 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1534 passed, 25
+attached device are absent — `npm run test:unit` reports **1614 passed, 25
 skipped (2 files)**; the device project adds one fixture-backed probe test and
-ten device-gated skips, so the combined clean checkout is **1535 passed, 35
+ten device-gated skips, so the combined clean checkout is **1615 passed, 35
 skipped**. With both fixtures present and a device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -110,7 +110,7 @@ Implemented today:
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
   `compare`, `ui-compare`, `hap`, `gesture {click,swipe,key,input,text}`,
-  `emulator {list,start,stop,create}`, `run <scenario.json>`
+  `emulator {list,start,stop,create}`, `run <scenario.json> | --cases <dir>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
   instance to its `hdc` TCP target so `collect --target` can use it
@@ -120,6 +120,12 @@ Implemented today:
   after it, always — writing one scene per (round, step) plus `steps.json`,
   `testInfo.json` and `pids.json`. A failed action fails the step and keeps
   its scene; `--keep-going` continues, and the exit code is 1 either way.
+- selector-driven steps: a ten-kind selector language over the captured UI
+  tree, `tap`/`tapText` with scroll-to-find, `swipeArea` inside a component,
+  `inputInto`, and a per-step `expect` block evaluated against a fresh dump —
+  so a step's status says the screen held what the author asserted, not just
+  that the device accepted a gesture. `run --cases <dir>` runs a directory of
+  scenarios as one suite and indexes the verdicts in `cases.json`.
 - static HAP inspection: `ohos-perf hap <package.hap>` reads the archive in
   memory through a pure-TypeScript ZIP reader, inventories every file by
   HapRay's own category table, detects the technology stack from a typed port
@@ -221,6 +227,7 @@ The HapRay parity series (one release per major item, so far):
 | P14 | W6 UI capture/diff | screenshots and trees per capture point, identity-based tree diff, pure-JS image diff, offline HTML | shipped in `0.9.0` |
 | P15 | W7 static HAP | offline HAP inventory, tech-stack fingerprints, duplicate/oversized assets, report section | shipped in `0.10.0` |
 | P16 | W8 symbols | exact `(file_id, serial_id)` resolution, symbol statistics with the unresolved share, `--so-dir` device symbolization, offline flamegraph artifact | shipped in `0.11.0` |
+| P17 | W5 step DSL | selector language over the UI tree, `tap`/`tapText`/`swipeArea`/`inputInto` with scroll-to-find, step assertions that actually run, `run --cases` | shipped in `0.12.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities, of which 18 are now ported, 9
@@ -247,6 +254,12 @@ unresolved-symbol reporting (row 23) to ported: the device's own
 that row — and the artifact is an offline SVG + HTML page rather than a
 pako+d3 bundle. Standalone symbol recovery (row 28) stays missing by design:
 it is disassembly plus an LLM naming pass, which this package does not do.
+`0.12.0` moves the step DSL (row 3) and case discovery (row 1) to ported, and
+lifts test-case orchestration (row 6) to ported: a scenario selects nodes by
+content instead of by coordinate, can scroll a list to find its target, and
+asserts the screen it produced — the last of which HapRay parses and never
+runs. `--cases` is its `--run_testcases` with an anchored, documented filter
+that refuses to match nothing.
 Items deliberately not ported (Hypium/xdevice test
 execution, the LLM GUI agent, TensorFlow opt-detector, radare2 symbol recovery,
 bjc coverage) keep their measured reasons instead of a claim; the scenario
@@ -445,7 +458,8 @@ Each step runs three phases, all of them actually executed:
   Its own failure marks the step failed but never masks the first error.
 
 Actions are `launch`, `forceStop`, `click`, `swipe`, `key`, `text`, `inputText`,
-`wait` and `marker`. The gesture actions go through the same `uitest uiInput`
+`wait`, `marker`, and the four selector actions `tap`, `tapText`, `swipeArea`
+and `inputInto` (below). The gesture actions go through the same `uitest uiInput`
 path as `ohos-perf gesture`, and `launch`/`forceStop` are `aa start` /
 `aa force-stop`; a non-zero exit fails the action with the device's own
 message. `marker` makes **no device call**: it records a named instant
@@ -479,6 +493,96 @@ default: the first failed step stops the run and the exit code is 1 — with
 step 2 must say what step 1 produced. `--keep-going` continues after a failure;
 the exit code is still 1. A collector the device lacks fails that step with the
 capability matrix's reason and the message names the step.
+
+### Selectors: tap what the screen says, not a coordinate
+
+A coordinate is a claim about one resolution. A selector is a claim about the
+screen's content, which is what a scenario means to say:
+
+```json
+{
+  "id": "open-settings",
+  "actions": [
+    { "kind": "tapText", "text": "Settings", "scrollTo": { "kind": "type", "type": "List" } },
+    { "kind": "tap", "target": { "kind": "id", "id": "search_field" } },
+    { "kind": "inputInto", "target": { "kind": "id", "id": "search_field" }, "text": "battery" },
+    { "kind": "swipeArea", "area": { "kind": "type", "type": "Swiper" }, "direction": "left" }
+  ],
+  "expect": {
+    "present": [{ "selector": { "kind": "text", "text": "Battery" }, "min": 1 }],
+    "absent": [{ "kind": "id", "id": "loading_spinner" }],
+    "foreground": true
+  },
+  "capture": { "durationMs": 3000, "collectors": ["hitrace"] }
+}
+```
+
+Every selector is one of ten kinds, and it is validated as data with its JSON
+path in the message:
+
+| Kind | Matches |
+| --- | --- |
+| `text` | `node.text`, case-insensitively; substring by default, equal with `exact: true` |
+| `id` | `node.id`, exactly |
+| `type` | `node.type`, exactly (`Button`, `List`, …) |
+| `clickable` | nodes that are `clickable` **and** `enabled` |
+| `all` / `any` | intersection / union of a non-empty list |
+| `not` | the complement **of its own candidate set** — `all: [text OK, not id x]` means "an OK node that is not x" |
+| `index` | the *n*-th match in document order, then top/left/right/bottom |
+| `bounds` | matches whose centre lies inside `within: {left, top, right, bottom}` |
+| `relative` | matches above/below/leftOf/rightOf the **first** match of `to` |
+
+A selector that matches zero nodes and one that matches two are different
+refusals (`SCENARIO_SELECTOR_NO_MATCH` / `SCENARIO_SELECTOR_AMBIGUOUS`), because
+the fixes differ. A selected node whose `bounds` did not parse is refused rather
+than tapped at `(0,0)`.
+
+`tap` and `tapText` take an optional `scrollTo`: when the target is not on
+screen, the runner swipes that container from 70% to 30% of its height, re-dumps
+after each swipe, up to five times. It stops at the list's edge — a swipe that
+changes nothing — and the refusal says how many swipes it actually spent, so
+"1" and "5" mean different things. A `scrollTo` container that is not
+`scrollable` is refused before any swipe. `tap` also takes `timeoutMs`, which
+re-dumps every 250 ms until the target appears.
+
+### Assertions: a step's status means the screen
+
+`expect` is evaluated against a fresh dump **after** the actions and **before**
+cleanup. `present` holds when a selector matches at least `min` (default 1) and
+at most `max` nodes; `absent` holds at zero; `foreground` (default: not checked)
+holds when the app owns at least one node on screen. Every clause is evaluated
+even after one fails, and each outcome lands in `steps.json` as
+`{label, ok, actual, detail?}` — so a failed run explains itself without a
+second capture. A failed assertion marks the step `failed` and **keeps its
+scene**: the capture is a real measurement of the screen the step produced.
+
+This is where we differ from HapRay deliberately: its DSL parses `verify` and
+never runs it, so its step status means only that the device accepted a
+gesture.
+
+### Many cases: `run --cases`
+
+```bash
+ohos-perf run --cases scenarios/ --out runs/suite --filter '^scroll' --json
+```
+
+`--cases` discovers every `*.scenario.json` in the directory, sorted by file
+stem, and runs each into `<out>/<case-id>/`. `--filter` is an **anchored**
+regular expression over the case id. A filter that matches nothing, and a
+directory with no case files, are refusals that name what was found — a suite
+that silently ran zero cases and reported success is worse than one that stops.
+One malformed case file fails that case only; the rest still run. The index is
+`<out>/cases.json`:
+
+```json
+{ "version": 1, "cases": [
+  { "id": "scroll", "status": "ok", "outDir": "runs/suite/scroll", "steps": { "ok": 3, "total": 3 } },
+  { "id": "broken", "status": "failed", "error": "…/broken.scenario.json: invalid scenario: …" }
+] }
+```
+
+The exit code is 1 when any case failed. `--rounds`, `--only` and `--keep-going`
+keep their meaning per case.
 
 ## UI capture and diff
 

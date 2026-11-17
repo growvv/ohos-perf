@@ -258,9 +258,32 @@ The document is versioned JSON (`version: 1`, `name`, `app`, optional
   it always (also after a failed action). A setup failure fails the step
   before any collector starts.
 - Actions: `launch` (`aa start -a <ability> -b <app>`), `forceStop`,
-  `click`, `swipe`, `key`, `text`, `inputText`, `wait`, `marker`. Gestures
+  `click`, `swipe`, `key`, `text`, `inputText`, `wait`, `marker`, plus the
+  four selector actions `tap`, `tapText`, `swipeArea`, `inputInto`. Gestures
   use the same `uitest uiInput` path as `ohos-perf gesture`. A non-zero device
   exit fails the action with the device's own message.
+- **Prefer a selector over a coordinate.** `{"kind":"click","x":540,"y":1170}`
+  is a claim about one resolution and one screen. `{"kind":"tapText","text":"Settings"}`
+  is what the scenario means to say, and it survives a different device or a
+  re-layout. A coordinate is the right tool only for a blank canvas that has no
+  node to select. Selector kinds: `text` (case-insensitive substring, or equal
+  with `exact: true`), `id`, `type`, `clickable`, `all`, `any`, `not` (scoped
+  to its own candidate set), `index`, `bounds`, `relative`. Zero matches and
+  several matches are different errors — narrow with `index` or `bounds`
+  rather than guessing. A selected node whose bounds did not parse is refused,
+  never tapped at (0,0).
+- `tap`/`tapText` take `scrollTo`: when the target is not on screen, the
+  runner swipes that scrollable container up to five times, stopping at its
+  edge. The refusal says how many swipes it spent, so "1" means the list never
+  moved and "5" means the target is past its end. A `scrollTo` that is not
+  `scrollable` is refused before any swipe. `tap` also takes `timeoutMs`.
+- **Assert, or the status means nothing.** A step's `expect` block is evaluated
+  against a fresh dump after the actions and before cleanup:
+  `present: [{selector, min?, max?}]`, `absent: [selector]`, `foreground`
+  (default: unchecked). Each outcome is in `steps.json` as
+  `{label, ok, actual, detail?}`, and a failed clause marks the step `failed`
+  while keeping its scene. Without `expect`, "ok" means only that the device
+  accepted the gesture — say that, rather than claiming the screen was right.
 - `marker` makes no device call. It records a named instant (`atMs`, host
   clock) in `steps.json`, so a gesture can be lined up with the scene's
   `capture.startedAtMs`. It is an annotation, not a trace event — do not
@@ -295,6 +318,21 @@ default: the first failed step stops the run, and `steps.json` /
 1 either way. A failed action keeps its scene — that trace is still a real
 measurement of what the device did, so analyze it rather than discard it.
 `run` never analyzes.
+
+### Many cases
+
+```bash
+ohos-perf run --cases scenarios/ --out runs/suite --filter '^scroll' --json
+```
+
+`--cases` runs every `*.scenario.json` in a directory, one run directory per
+case under `<out>/<case-id>/`, and writes `<out>/cases.json` with each verdict
+(`status`, `outDir`, `steps {ok,total}`, `error`). The exit code is 1 when any
+case failed. `--filter` is an **anchored** regex over the case id; a filter
+that matches nothing, or a directory with no cases, is a refusal that names
+what it found — never a silent zero-case "pass". One malformed file fails only
+that case. `--rounds`, `--only` and `--keep-going` apply per case. Read
+`cases.json` first: it tells you which cases are worth analyzing.
 
 ## UI capture and diff
 

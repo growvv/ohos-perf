@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.12.0 — 2026-11-17
+
+P17 (HapRay parity W5, step DSL): a scenario that says what it means, and a
+status that means something.
+
+A scenario action used to be a raw coordinate — `{"kind":"click","x":540,"y":1170}`
+— which is three failures at once: it does not survive a different resolution,
+it cannot say what should have been on screen afterwards, and it has no way to
+reach a list item below the fold. HapRay's DSL selects a component and derives
+the coordinate; ours now does the same, and goes one further: its `verify` is
+parsed and never run, and ours runs.
+
+### Features
+
+- **Selector language** (`scenario/selector.ts`): ten kinds over the flattened
+  UI tree — `text` (case-insensitive substring, or equal with `exact`), `id`,
+  `type`, `clickable`, `all`, `any`, `not`, `index`, `bounds`, `relative`.
+  Every selector is validated as data at load time, with its JSON path in the
+  message (`steps[0].actions[0].target.of[1]`). `not` is the complement of its
+  own candidate set, so `all: [text OK, not id x]` reads "an OK node that is
+  not x". Matching order is document order, then top/left/right/bottom, then
+  identity, so two runs over the same tree agree.
+- **Four selector actions**: `tap` (with `scrollTo` and `timeoutMs`),
+  `tapText` (the short form), `swipeArea` (inside a component's bounds, for a
+  carousel or an inner list), and `inputInto` (tap then type, one intent).
+  A target resolves to the centre of its bounds; a node whose `bounds` did not
+  parse is a typed refusal, never a tap at `(0,0)`.
+- **Scroll-to-find**: `scrollTo` names a scrollable container; when the target
+  is absent, the runner swipes it from 70% to 30% of its height, re-dumping
+  after each swipe, up to five times. It stops at the list's edge — a swipe
+  that changes nothing — and the refusal reports how many swipes it actually
+  spent, so "1" and "5" diagnose different problems. A non-scrollable
+  container is refused before any swipe.
+- **Step assertions**: an optional `expect` block — `present` with `min`/`max`,
+  `absent`, `foreground` — evaluated against a fresh dump after the actions
+  and before cleanup. Every clause is evaluated even after one fails; each
+  outcome is recorded in `steps.json` as `{label, ok, actual, detail?}`. A
+  failed clause marks the step `failed` and keeps its scene.
+- **`run --cases <dir>`**: discovers `*.scenario.json`, runs each into
+  `<out>/<case-id>/`, and writes `<out>/cases.json`. `--filter` is an anchored
+  regex over case ids. An empty directory or a filter that matches nothing is
+  a refusal naming what was found; a malformed case fails that case only.
+- **`Device.uiTree()`**: a fresh `dumpLayout` into a temporary directory that
+  is removed afterwards, so a step that dumps five times leaves no scene
+  artifact behind.
+
+### Notes
+
+- Coordinate actions are unchanged and still valid: a blank canvas has no node
+  to select. A version-1 scenario written before this release loads and runs
+  exactly as before.
+- Every swipe checks `uitest uiInput`'s `No Error` marker. The host exit code
+  is 0 even when the device refuses a gesture, so the marker is the only proof
+  of acceptance.
+- 1650 tests (1639 unit, 11 device). The device suite on the attached emulator
+  reports four environmental failures — no `hiprofiler_cmd`, a non-debuggable
+  app, no PMU — in files this phase does not touch.
+
 ## 0.11.0 — 2026-11-17
 
 P16 (HapRay parity W8): symbols that are real, and a flamegraph that opens
