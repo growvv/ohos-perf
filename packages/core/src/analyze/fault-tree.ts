@@ -6,6 +6,7 @@ import { num } from '../query/rows';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric, type MetricUnit } from '../report/metric';
 import type { AnalyzeContext, AnalyzeResult, Analyzer } from './types';
+import { computeBinderAnalysis, type BinderAnalysis } from './binder';
 
 /**
  * HapRay's fault-tree payload, with the exact nesting and key names of
@@ -719,6 +720,60 @@ function byMetricId(a: Metric, b: Metric): number {
   return 0;
 }
 
+/**
+ * The `ipc_binder` metrics, from the typed binder analysis.
+ *
+ * HapRay reads its own `ipc_binder` section from a binder JSON file written by
+ * an earlier step, and its registry order at rev 9386e4e means that file is
+ * often stale or missing — so the section reports nothing rather than an
+ * error. Deriving it from `BinderAnalysis` removes the ordering dependency
+ * entirely.
+ *
+ * Returns an empty list when there is no completed transaction: an average or
+ * a maximum over zero measurements is not a measurement, and a `0 ms` latency
+ * would read as "the IPC was instant".
+ */
+function ipcBinderMetrics(
+  analysis: BinderAnalysis | undefined,
+  ctx: AnalyzeContext,
+): Metric[] {
+  if (analysis === undefined) return [];
+  const completed = analysis.transactions.filter((tx) => tx.latencyMs !== null);
+  if (completed.length === 0) return [];
+
+  const latencies = completed.map((tx) => tx.latencyMs as number);
+  let total = 0;
+  let max = latencies[0]!;
+  for (const latency of latencies) {
+    total += latency;
+    if (latency > max) max = latency;
+  }
+  const rows = analysis.transactions.length;
+  const make = (
+    id: string,
+    value: number,
+    unit: MetricUnit,
+  ): Metric =>
+    metric({
+      id,
+      value,
+      unit,
+      fidelity: 'exact',
+      provenance: {
+        collector: 'hitrace+streamer',
+        table: 'binder_transaction',
+        rows,
+        device: ctx.deviceId,
+      },
+    });
+
+  return [
+    make('fault.ipc_binder.transactions.count', analysis.transactions.length, 'count'),
+    make('fault.ipc_binder.latency.avg', total / latencies.length, 'ms'),
+    make('fault.ipc_binder.latency.max', max, 'ms'),
+  ];
+}
+
 /** Sort order for evidence: `(kind, window.startNs, id)`. */
 function byEvidenceOrder(a: Evidence, b: Evidence): number {
   if (a.kind < b.kind) return -1;
@@ -772,6 +827,17 @@ export class FaultTreeAnalyzer implements Analyzer {
 
     const metrics = faultMetrics(signals, rows, ctx);
     const evidenceItems = faultEvidence(signals, ctx);
+
+    // The binder section is derived, not read from a shared file, so it is
+    // computed here rather than depending on another analyzer having run. It
+    // needs the `args` table, which a trace without binder events may not
+    // carry: absence of the table is absence of the data, not an error.
+    const binder =
+      ctx.binderAnalysis ??
+      (hasTable(ctx.db, 'args')
+        ? computeBinderAnalysis(ctx.db, { appPids: ctx.app.pids })
+        : undefined);
+    metrics.push(...ipcBinderMetrics(binder, ctx));
 
     metrics.sort(byMetricId);
     evidenceItems.sort(byEvidenceOrder);

@@ -7,6 +7,7 @@ import type { SceneMetadata } from '../ingest/metadata';
 import type { HilogLine } from '../hilog/parse';
 import type { HilogRule } from '../hilog/rules';
 import type { BinderQuery } from '../query/binder';
+import type { BinderAnalysis } from './binder';
 import type { CallstackQuery } from '../query/callstack';
 import type { FrameQuery } from '../query/frames';
 import type { MemMeasureQuery } from '../query/mem-measure';
@@ -55,6 +56,16 @@ export interface AnalyzeContext {
   callstacks?: CallstackQuery;
   perf?: PerfQuery;
   binder?: BinderQuery;
+  /**
+   * The binder analysis, when a caller already computed it.
+   *
+   * The fault tree's `ipc_binder` section is derived from this typed result
+   * rather than from a shared JSON file the way HapRay does it — at its own
+   * revision HapRay's registry order makes that file stale, so the section
+   * reports nothing. When absent the fault tree computes the analysis itself
+   * from `db`, so the section never depends on analyzer ordering.
+   */
+  binderAnalysis?: BinderAnalysis;
   startup?: StartupQuery;
   /**
    * The memory-plugin tables (`process_measure` joined to its filter). Present

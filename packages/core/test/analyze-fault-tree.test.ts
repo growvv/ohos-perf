@@ -337,3 +337,48 @@ describe('FaultTreeAnalyzer', () => {
     expect(noData[0].explain).toMatch(/analyze --app/);
   });
 });
+
+describe('fault tree ipc_binder section (parity row 15)', () => {
+  /*
+   * HapRay's fault tree carries an `ipc_binder` section read from a shared
+   * binder JSON file. At rev 9386e4e its registry order makes that file stale
+   * or missing, so the section silently reports nothing.
+   *
+   * Ours is derived from the typed `BinderAnalysis` the binder analyzer
+   * already computed, so there is no second file to go stale. The section is
+   * absent — not zero — when there is no binder data at all: a trace with no
+   * binder events is not a measurement of zero transactions.
+   */
+
+  it('emits the three fault.ipc_binder metrics from a binder analysis', async () => {
+    const binder = {
+      transactions: [],
+      processStats: [],
+      threadStats: [],
+      interfaceStats: [],
+    };
+    const result = await new FaultTreeAnalyzer().run({
+      ...makeCtx(),
+      binderAnalysis: {
+        ...binder,
+        transactions: [
+          { callerPid: 1, calleePid: 2, callerProc: 'a', calleeProc: 'b', requestTs: 0, responseTs: 3, latencyMs: 3 },
+          { callerPid: 1, calleePid: 2, callerProc: 'a', calleeProc: 'b', requestTs: 10, responseTs: 17, latencyMs: 7 },
+        ],
+      } as never,
+    });
+    const byId = new Map(result.metrics.map((m) => [m.id, m]));
+
+    expect(byId.get('fault.ipc_binder.transactions.count')!.value).toBe(2);
+    expect(byId.get('fault.ipc_binder.latency.avg')!.value).toBe(5);
+    expect(byId.get('fault.ipc_binder.latency.max')!.value).toBe(7);
+    expect(byId.get('fault.ipc_binder.latency.avg')!.unit).toBe('ms');
+  });
+
+  it('omits the section entirely when there is no binder analysis', async () => {
+    // Absence, not zero: a scene captured without binder data did not measure
+    // zero transactions, and a fault tree that said 0 would be a claim.
+    const result = await new FaultTreeAnalyzer().run(makeCtx());
+    expect(result.metrics.some((m) => m.id.startsWith('fault.ipc_binder.'))).toBe(false);
+  });
+});

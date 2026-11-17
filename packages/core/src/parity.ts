@@ -138,10 +138,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 15,
     name: 'Fault tree `ipc_binder` section',
-    status: 'missing',
-    reason:
-      'The binder analyzer computes the numbers, but the fault tree emits no ' +
-      '`fault.ipc_binder.*` metrics and no combined payload.',
+    status: 'ported',
+    reason: '',
     analyzer: 'FaultTreeAnalyzer',
   },
   {
