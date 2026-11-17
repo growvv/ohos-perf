@@ -62,6 +62,8 @@ import {
   analyzeBinaries,
   extractBinaries,
   httpAgentModel,
+  httpChatModel,
+  llmChooser,
   readAgentConfig,
   runAgent,
   recoverSymbols,
@@ -91,7 +93,9 @@ import {
   type RgbaImage,
   type UiNode,
   type ExplorationClock,
+  type ExplorationChooser,
   type AgentModel,
+  type ChatModel,
   type Evidence,
   type RootCauseDocument,
   type Scene,
@@ -166,6 +170,13 @@ export interface RealDepsOverrides {
   }>;
   /** Clock for `explore`'s settle loop; replaced in tests so no test sleeps. */
   exploreClock?: ExplorationClock;
+  /**
+   * The model client `explore --model` uses. Separate from {@link agentModel}
+   * and {@link rootCauseModel} because the three send different prompts and
+   * read different answers: a test that stubs one must not silently change the
+   * contract of another.
+   */
+  exploreModel?: ChatModel;
   /**
    * The model client `agent` drives the app with. Replaced in tests so no test
    * opens a socket; the real one is built from the environment at call time.
@@ -1377,6 +1388,29 @@ export function realDeps(
     },
 
     async explore(req) {
+      // The model is resolved before the device: a missing endpoint is a setup
+      // mistake, and failing on it should not spend a device connection.
+      let choose: ExplorationChooser | undefined;
+      let modelName: string | undefined;
+      if (req.model !== undefined) {
+        const config = readAgentConfig(process.env);
+        if (config === undefined) {
+          throw new OhosPerfError(
+            'explore --model needs a model endpoint; set OHOS_PERF_AGENT_BASE_URL and' +
+              ' OHOS_PERF_AGENT_API_KEY (or GLM_BASE_URL and GLM_API_KEY),' +
+              ' and optionally OHOS_PERF_AGENT_MODEL (or GLM_MODEL)',
+            { code: 'AGENT_BAD_CONFIG' },
+          );
+        }
+        modelName = req.model.trim() === '' ? config.model : req.model;
+        const chat = overrides.exploreModel ?? httpChatModel({
+          ...config,
+          model: modelName,
+          fetch: (url, init) => fetch(url, init),
+        });
+        choose = llmChooser(chat);
+      }
+
       const device = await exploreDevice(req.target);
       const host = deviceExplorationHost(device, {
         ...(req.settleMs === undefined ? {} : { settleMs: req.settleMs }),
@@ -1387,6 +1421,7 @@ export function realDeps(
         strategy: req.strategy,
         ...(req.seed === undefined ? {} : { seed: req.seed }),
         app: req.app,
+        ...(choose === undefined ? {} : { choose }),
       });
       return {
         app: req.app,
@@ -1408,6 +1443,16 @@ export function realDeps(
         // is what a reader follows to see where it went.
         screens: [...new Set([...(result.steps[0] === undefined ? [] : [result.steps[0].before]),
           ...result.steps.map((step) => step.after)])],
+        ...(result.proposals === undefined || modelName === undefined
+          ? {}
+          : {
+            model: {
+              name: modelName,
+              used: result.proposals.used,
+              refused: result.proposals.refused,
+              refusals: [...result.proposals.refusals],
+            },
+          }),
       };
     },
 

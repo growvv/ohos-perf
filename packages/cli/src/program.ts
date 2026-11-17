@@ -508,12 +508,20 @@ A suspect citing a name this run never measured is marked ungrounded.`)
       'depth_first',
     )
     .option('--seed <n>', 'make --strategy random reproducible')
+    .option('--model <name>', 'let this model choose each step from the elements the walk found')
     .option('--target <id>', 'walk this hdc target instead of the first connected one')
     .option('--json', 'print the walk result as JSON')
+    .addHelpText('after', `
+--model needs OHOS_PERF_AGENT_BASE_URL and OHOS_PERF_AGENT_API_KEY (or GLM_*).
+The model chooses among the elements the walk dumped; it never supplies
+coordinates, and irreversible targets are not offered to it. An answer that
+names an element not on the offer is refused and the deterministic order decides
+instead.`)
     .action(async (app: string, opts: {
       maxSteps: string;
       strategy: string;
       seed?: string;
+      model?: string;
       target?: string;
       json?: boolean;
     }) => {
@@ -540,6 +548,7 @@ A suspect citing a name this run never measured is marked ungrounded.`)
             maxSteps,
             strategy,
             ...(seed === undefined ? {} : { seed }),
+            ...(opts.model === undefined ? {} : { model: opts.model }),
             ...(opts.target === undefined ? {} : { target: opts.target }),
           },
           { json: opts.json },

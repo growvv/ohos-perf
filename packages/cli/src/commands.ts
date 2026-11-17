@@ -176,6 +176,11 @@ export interface ExploreRequest {
    */
   settleMs?: number;
   target?: string;
+  /**
+   * A model name. When present, the model chooses each step from the elements
+   * the walk found; when absent, the deterministic order decides.
+   */
+  model?: string;
 }
 
 /** What a successful `explore` reached, in the terms a reader can check. */
@@ -208,6 +213,13 @@ export interface ExploreOutput {
   exhausted: boolean;
   /** The hashes in the order they were first reached. */
   screens: string[];
+  /** Present when a model chose steps: what it proposed and what was refused. */
+  model?: {
+    name: string;
+    used: number;
+    refused: number;
+    refusals: Array<{ step: number; detail: string }>;
+  };
 }
 
 /**
@@ -1141,17 +1153,34 @@ export async function runExplore(
     const order = result.strategy === 'random'
       ? `random (seed ${result.seed ?? 0})`
       : result.strategy;
-    const stopped = result.exhausted
-      ? 'the screen had no unvisited clickable left'
-      : `the step cap (${req.maxSteps}) was reached`;
+    const stopped: Record<ExploreOutput['stoppedBy'], string> = {
+      budget: `the step cap (${req.maxSteps}) was reached`,
+      exhausted: 'nothing was left to tap, scroll or return from',
+      model: 'the model stopped the walk',
+      left_app: `the walk left ${result.app} and could not return`,
+    };
+    const lines = [
+      `explore  ${result.app} on ${result.device.id} (${result.device.kind})`,
+      `states  ${result.statesReached} screens · ${result.pagesReached} pages · ${result.steps} steps`,
+      `moved   ${result.navigated} navigated, ${result.updated} updated, ${result.noChange} no change`,
+    ];
+    if (result.scrolls > 0 || result.backs > 0) {
+      lines.push(`nav      ${result.scrolls} scroll, ${result.backs} back`);
+    }
+    lines.push(`order   ${order}`);
+    if (result.model !== undefined) {
+      lines.push(
+        `model   ${result.model.name} — ${result.model.used} used, ${result.model.refused} refused`,
+      );
+      for (const refusal of result.model.refusals) {
+        lines.push(`  refused step ${refusal.step}: ${refusal.detail}`);
+      }
+    }
+    lines.push(`stopped  ${stopped[result.stoppedBy]}`);
+    if (result.screens.length > 0) lines.push(`screens  ${result.screens.join(' ')}`);
+    if (result.pages.length > 0) lines.push(`pages   ${result.pages.join(' ')}`);
     return {
-      stdout:
-        `explore  ${result.app} on ${result.device.id} (${result.device.kind})\n` +
-        `states  ${result.statesReached} reached · ${result.steps} taps ` +
-        `(${result.navigated} navigated, ${result.noChange} no change)\n` +
-        `order   ${order}\n` +
-        `stopped  ${stopped}\n` +
-        (result.screens.length === 0 ? '' : `screens  ${result.screens.join(' ')}\n`),
+      stdout: `${lines.join('\n')}\n`,
       stderr: '',
       exitCode: 0,
     };

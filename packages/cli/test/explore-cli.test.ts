@@ -38,24 +38,65 @@ const deps = (overrides: Partial<CliDeps> = {}): CliDeps =>
   cliDeps({ explore: async () => output, ...overrides });
 
 describe('runExplore', () => {
-  it('separates taps that moved the screen from taps that did not', async () => {
+  it('separates screens from pages and moves from no-ops', async () => {
     const r = await runExplore(deps(), { app: 'com.demo', maxSteps: 4, strategy: 'depth_first' }, {});
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toBe('');
     expect(r.stdout).toContain('explore  com.demo on emu-1 (emulator)\n');
-    expect(r.stdout).toContain(
-      'states  4 reached · 4 taps (3 navigated, 1 no change)\n',
-    );
+    expect(r.stdout).toContain('states  4 screens · 4 pages · 4 steps\n');
+    expect(r.stdout).toContain('moved   3 navigated, 0 updated, 1 no change\n');
     expect(r.stdout).toContain('order   depth_first\n');
+    expect(r.stdout).toContain('pages   aaaabbbbccccdddd 1111222233334444');
   });
 
-  it('says the walk exhausted the screen instead of stopping at the cap', async () => {
+  it('counts a same-page change as updated, between navigated and no change', async () => {
     const r = await runExplore(
-      deps({ explore: async () => ({ ...output, exhausted: true, steps: 2 }) }),
-      { app: 'com.demo', maxSteps: 30, strategy: 'depth_first' },
+      deps({ explore: async () => ({ ...output, navigated: 2, updated: 1 }) }),
+      { app: 'com.demo', maxSteps: 4, strategy: 'depth_first' },
       {},
     );
-    expect(r.stdout).toContain('stopped  the screen had no unvisited clickable left\n');
+    expect(r.stdout).toContain('moved   2 navigated, 1 updated, 1 no change\n');
+  });
+
+  it('says why the walk stopped: budget, exhausted, model or left app', async () => {
+    const reasonFor = async (stoppedBy: ExploreOutput['stoppedBy']): Promise<string> => {
+      const r = await runExplore(
+        deps({ explore: async () => ({ ...output, stoppedBy }) }),
+        { app: 'com.demo', maxSteps: 4, strategy: 'depth_first' },
+        {},
+      );
+      return r.stdout;
+    };
+    expect(await reasonFor('budget')).toContain('stopped  the step cap (4) was reached\n');
+    expect(await reasonFor('exhausted')).toContain(
+      'stopped  nothing was left to tap, scroll or return from\n',
+    );
+    expect(await reasonFor('model')).toContain('stopped  the model stopped the walk\n');
+    expect(await reasonFor('left_app')).toContain(
+      'stopped  the walk left com.demo and could not return\n',
+    );
+  });
+
+  it('names the model and every refusal when a model chose steps', async () => {
+    const r = await runExplore(
+      deps({
+        explore: async () => ({
+          ...output,
+          model: {
+            name: 'm1',
+            used: 3,
+            refused: 1,
+            refusals: [{ step: 2, detail: 'the model chose element 9, but 2 element(s) were offered' }],
+          },
+        }),
+      }),
+      { app: 'com.demo', maxSteps: 4, strategy: 'depth_first' },
+      {},
+    );
+    expect(r.stdout).toContain('model   m1 — 3 used, 1 refused\n');
+    expect(r.stdout).toContain(
+      '  refused step 2: the model chose element 9, but 2 element(s) were offered\n',
+    );
   });
 
   it('names the seed for a random walk, so the order can be reproduced', async () => {
@@ -139,6 +180,31 @@ describe('explore command wiring', () => {
     ]);
     expect(seen).toEqual([
       { app: 'com.demo', maxSteps: 12, strategy: 'random', seed: 9, target: 'emu-1' },
+    ]);
+  });
+
+  it('forwards --model, and leaves it absent when the flag is not given', async () => {
+    const seen: unknown[] = [];
+    // A fresh program per invocation: commander keeps option values between
+    // parseAsync calls on one instance, which is not how a CLI process runs.
+    const run = async (argv: string[]): Promise<void> => {
+      const program = buildProgram(
+        deps({
+          explore: async (req) => {
+            seen.push(req);
+            return output;
+          },
+        }),
+        { writeOut: () => {}, writeErr: () => {}, emit: () => {} },
+        { exitOverride: true },
+      );
+      await program.parseAsync(['node', 'ohos-perf', ...argv]);
+    };
+    await run(['explore', 'com.demo', '--model', 'm1']);
+    await run(['explore', 'com.demo']);
+    expect(seen).toEqual([
+      { app: 'com.demo', maxSteps: 30, strategy: 'depth_first', model: 'm1' },
+      { app: 'com.demo', maxSteps: 30, strategy: 'depth_first' },
     ]);
   });
 
