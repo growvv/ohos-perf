@@ -284,7 +284,8 @@ The document is versioned JSON (`version: 1`, `name`, `app`, optional
 - **Assert, or the status means nothing.** A step's `expect` block is evaluated
   against a fresh dump after the actions and before cleanup:
   `present: [{selector, min?, max?}]`, `absent: [selector]`, `foreground`
-  (default: unchecked). Each outcome is in `steps.json` as
+  (default `true`: the app must own at least one node). Each outcome is in
+  `steps.json` as
   `{label, ok, actual, detail?}`, and a failed clause marks the step `failed`
   while keeping its scene. Without `expect`, "ok" means only that the device
   accepted the gesture — say that, rather than claiming the screen was right.

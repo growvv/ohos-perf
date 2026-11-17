@@ -225,22 +225,25 @@ function evaluate(
         : { detail: `expected none, found ${matched.length} of ${nodes.length} nodes` }),
     });
   }
-  if (expect.foreground !== undefined) {
-    const owned = nodes.filter((node) => node.bundleName === app).length;
-    const ok = expect.foreground ? owned > 0 : owned === 0;
-    outcomes.push({
-      label: 'foreground',
-      ok,
-      actual: owned,
-      ...(ok
-        ? {}
-        : {
-            detail: expect.foreground
-              ? `${app} owned no node of ${nodes.length} on screen`
-              : `${app} still owned ${owned} of ${nodes.length} nodes on screen`,
-          }),
-    });
-  }
+  // `foreground` defaults to true: a step that asserts its screen also
+  // asserts the screen is still the app's. Silence must not mean "skip the
+  // check", or a scenario that wandered into the launcher reports ok while
+  // every other clause passes on the system UI.
+  const wantForeground = expect.foreground ?? true;
+  const owned = nodes.filter((node) => node.bundleName === app).length;
+  const foregroundOk = wantForeground ? owned > 0 : owned === 0;
+  outcomes.push({
+    label: 'foreground',
+    ok: foregroundOk,
+    actual: owned,
+    ...(foregroundOk
+      ? {}
+      : {
+          detail: wantForeground
+            ? `${app} owned no node of ${nodes.length} on screen`
+            : `${app} still owned ${owned} of ${nodes.length} nodes on screen`,
+        }),
+  });
   return outcomes;
 }
 

@@ -555,8 +555,9 @@ re-dumps every 250 ms until the target appears.
 
 `expect` is evaluated against a fresh dump **after** the actions and **before**
 cleanup. `present` holds when a selector matches at least `min` (default 1) and
-at most `max` nodes; `absent` holds at zero; `foreground` (default: not checked)
-holds when the app owns at least one node on screen. Every clause is evaluated
+at most `max` nodes; `absent` holds at zero; `foreground` (default `true`)
+holds when the app owns at least one node on screen — so an `expect` block
+always checks that the screen is still the app's. Every clause is evaluated
 even after one fails, and each outcome lands in `steps.json` as
 `{label, ok, actual, detail?}` — so a failed run explains itself without a
 second capture. A failed assertion marks the step `failed` and **keeps its

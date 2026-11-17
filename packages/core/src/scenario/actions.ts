@@ -264,13 +264,14 @@ async function resolveWithWait(
 ): Promise<UiNode> {
   const deadline = timeoutMs === undefined ? 0 : Date.now() + timeoutMs;
   for (;;) {
-    const node = safeResolve(await dump(), target);
+    const nodes = await dump();
+    const node = safeResolve(nodes, target);
     if (node !== undefined) return node;
     const remaining = deadline - Date.now();
     if (timeoutMs === undefined || remaining <= 0) {
-      // The last dump's refusal is the most informative one: it counts the
-      // nodes that were on screen.
-      return resolveSelector(await dump(), target, label);
+      // Refuse from the dump just read: it is the same screen a second dump
+      // would see, and a real dumpLayout + recv costs seconds.
+      return resolveSelector(nodes, target, label);
     }
     await new Promise<void>((resolve) =>
       setTimeout(resolve, Math.min(POLL_MS, remaining)),

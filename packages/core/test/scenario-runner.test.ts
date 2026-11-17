@@ -539,8 +539,10 @@ describe('ScenarioRunner — expectations', () => {
       scenarioWithExpect({ present: [{ selector: { kind: 'text', text: 'Done' } }] }),
     );
     const steps = JSON.parse(readFileSync(join(out, 'steps.json'), 'utf8'));
-    expect(steps.steps[0].expectations).toHaveLength(1);
+    // `present` plus the `foreground` clause that defaults on with `expect`.
+    expect(steps.steps[0].expectations).toHaveLength(2);
     expect(steps.steps[0].expectations[0]).toMatchObject({ ok: true, actual: 1 });
+    expect(steps.steps[0].expectations[1]).toMatchObject({ label: 'foreground', ok: true });
   });
 
   it('refuses an assertion on a device that cannot dump the screen', async () => {
@@ -550,5 +552,47 @@ describe('ScenarioRunner — expectations', () => {
     );
     expect(result.steps[0]!.status).toBe('failed');
     expect(result.steps[0]!.error).toMatch(/screen|dump/i);
+  });
+});
+
+describe('ScenarioRunner — expectations, defaults and cost', () => {
+  it('checks foreground by default when an expect block is present', async () => {
+    // The spec's default is true: a step that asserts its screen also asserts
+    // it is still the app's screen. Silence must not mean "skip the check",
+    // or a scenario that wandered into the launcher reports ok.
+    const out = outDir();
+    const device = fakeDevice();
+    device.uiTree = async () => [uiNode({ bundleName: 'com.ohos.sceneboard' })];
+    const result = await new ScenarioRunner(device, { outDir: out }).run(
+      scenarioWithExpect({ present: [{ selector: { kind: 'text', text: 'x' } }] }),
+    );
+    const labels = result.steps[0]!.expectations?.map((e) => e.label);
+    expect(labels).toContain('foreground');
+    expect(result.steps[0]!.status).toBe('failed');
+  });
+
+  it('reads the screen once when a tap misses without a timeout', async () => {
+    const out = outDir();
+    let dumps = 0;
+    const device = fakeDevice();
+    device.uiTree = async () => { dumps += 1; return [uiNode({ id: 'other' })]; };
+    const result = await new ScenarioRunner(device, { outDir: out }).run(
+      parseScenario(JSON.stringify({
+        version: 1,
+        name: 'miss',
+        app: 'com.example.app',
+        rounds: 1,
+        steps: [{
+          id: 'open',
+          actions: [{ kind: 'tap', target: { kind: 'id', id: 'nope' } }],
+          capture: { durationMs: 1000, collectors: ['hitrace'] },
+        }],
+      })),
+    );
+    expect(result.steps[0]!.status).toBe('failed');
+    expect(result.steps[0]!.error).toMatch(/no node matched/);
+    // One dump answers "is it there": a second would cost a full
+    // dumpLayout + recv (seconds on a real device) to learn nothing new.
+    expect(dumps).toBe(1);
   });
 });
