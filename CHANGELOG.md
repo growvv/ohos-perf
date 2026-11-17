@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.18.1 — 2026-11-17
+
+One fix to what 0.18.0 printed.
+
+- **`explore --help` no longer states each default twice.** Commander appends
+  `(default: "30")` to an option with an initial value, and the description
+  also said `(default: 30)`, so the help read
+  `stop after this many taps (default: 30) (default: "30")`. The same defect
+  `trend --label` had in 0.16.0; a test now parses `explore --help` and fails
+  if a default appears in both places.
+- 1831 unit tests (1 new), two typechecks, two builds.
+
 ## 0.18.0 — 2026-11-17
 
 Parity row 4 is ported: autonomous UI exploration, and the ledger drops to four

@@ -451,10 +451,10 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .command('explore')
     .description('walk an app\'s UI, tapping unvisited elements, and report the screens reached')
     .argument('<app>', 'bundle name to explore, e.g. com.example.app')
-    .option('--max-steps <n>', 'stop after this many taps (default: 30)', '30')
+    .option('--max-steps <n>', 'stop after this many taps', '30')
     .option(
       '--strategy <name>',
-      'depth_first, breadth_first or random (default: depth_first)',
+      'depth_first, breadth_first or random',
       'depth_first',
     )
     .option('--seed <n>', 'make --strategy random reproducible')

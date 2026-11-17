@@ -187,3 +187,16 @@ describe('explore command wiring', () => {
     expect(out.join('')).toContain('explore');
   });
 });
+
+describe('explore help text', () => {
+  it('states each default once, not twice', async () => {
+    // Commander appends `(default: "30")` to an option that has an initial
+    // value. Writing the default into the description as well printed
+    // `(default: 30) (default: "30")`, which reads as a mistake.
+    const { out } = await parse(['explore', '--help']);
+    const help = out.join('');
+    expect(help).not.toMatch(/\(default: 30\)/);
+    expect(help).not.toMatch(/\(default: depth_first\)/);
+    expect(help).toContain('(default: "30")');
+  });
+});
