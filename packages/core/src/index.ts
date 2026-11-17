@@ -150,8 +150,10 @@ export { executeAction } from './scenario/actions';
 export { ScenarioRunner, writeRunFiles } from './scenario/runner';
 export type {
   Scenario, ScenarioAction, ScenarioStep, StepCapture, CollectorName,
+  ExpectPresent, StepExpectation,
 } from './scenario/schema';
-export type { ActionDevice } from './scenario/actions';
+export type { ActionContext, ActionDevice } from './scenario/actions';
+export type { Selector, SelectorRect } from './scenario/selector';
 export type {
   ActionOutcome, RunResult, RunStepResult, RunnerCollectOptions, RunnerDevice, RunOptions,
 } from './scenario/runner';
