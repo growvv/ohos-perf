@@ -11,12 +11,19 @@
  *    completion claim carries an expectation, the expectation is evaluated
  *    against a fresh dump, and a claim the screen contradicts is recorded as
  *    `unverified` — a failure with the clause that failed named.
- * 2. **The safety rule lives only in the prompt.** HapRay tells the model to
- *    avoid payment, ordering and transfers; a model that ignores the sentence
- *    acts anyway. Here the guard reads the node the tap lands on and refuses
- *    the gesture outright. An irreversible action stops the run: a model that
- *    reached for a payment button has lost the thread of the task, and asking
- *    it again spends steps on the one thing that must not happen.
+ * 2. **The safety rule is mostly in the prompt.** HapRay adds one sentence to
+ *    the task prompt — avoid login, payment, ordering, transfer, posting — and
+ *    that is the only layer that applies to every gesture. `phone_agent` does
+ *    ship a `confirmation_callback`, but it fires only when the model itself
+ *    labels the tap (`do(action="Tap", element=[x,y], message="重要操作")`), so
+ *    a plain `Tap` is performed with no check; it covers `Tap` alone, leaving
+ *    long press, double tap, swipe and text entry unguarded; and HapRay passes
+ *    no callback, so the default is a blocking `input()` that raises `EOFError`
+ *    in a batch run and is recorded as a failed step with the run continuing.
+ *    Here the guard reads the node the tap lands on and refuses the gesture
+ *    outright. An irreversible action stops the run: a model that reached for
+ *    a payment button has lost the thread of the task, and asking it again
+ *    spends steps on the one thing that must not happen.
  * 3. **The log cannot be replayed.** HapRay records `{action, thinking,
  *    message}` as prose, so two runs of the same task are two unrelated logs.
  *    Here every step records the gesture and the screen hash either side of
