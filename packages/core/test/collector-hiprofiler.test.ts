@@ -154,6 +154,36 @@ describe('HiprofilerCollector', () => {
     rmSync(layout.root, { recursive: true, force: true });
   });
 
+  it('rejects a trace that is only the container skeleton', async () => {
+    // Measured on a Mate 60 (API 26): a session that completes its `-t` window
+    // without recording anything still writes a valid `OHOSPROF` container of
+    // 1098 bytes — header and section index, no events. `size > 0` accepts it,
+    // trace_streamer converts it into an 88-table database whose only non-empty
+    // tables are metadata, and every analyzer then reports zero on data it never
+    // saw. The capture must fail instead, so the run says "no data" rather than
+    // "nothing was slow".
+    const hdc = new FakeHdc({
+      'hiprofiler_cmd -c': SESSION_OK,
+      'ls -l': {
+        stdout: `-rw-rw-r-- 1 hiprofiler shell 1098 2026-11-17 21:16 ${DEVICE_OUTPUT_PATH}`,
+        stderr: '',
+        code: 0,
+      },
+    });
+    const layout = fakeLayout();
+    let error: unknown;
+    try {
+      await new HiprofilerCollector().collect(hdc as never, 'dev', opts, layout as never);
+    } catch (err) {
+      error = err;
+    }
+    expect((error as OhosPerfError).code).toBe('HIPROFILER_NO_OUTPUT');
+    expect((error as Error).message).toMatch(/no events|skeleton|no data/i);
+    expect(hdc.calls.filter((c) => c.kind === 'recv')).toHaveLength(0);
+    expect(existsSync(layout.traceFile)).toBe(false);
+    rmSync(layout.root, { recursive: true, force: true });
+  });
+
   it('still stops the session when the device command throws', async () => {
     const hdc = new FakeHdc({}, ['hiprofiler_cmd -c']);
     const layout = fakeLayout();

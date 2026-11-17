@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P27 are complete**: 2020 tests (2009 unit, 11 in the device
+**P1 through P27 are complete**: 2021 tests (2010 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1981 passed, 28
+attached device are absent — `npm run test:unit` reports **1982 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1981 passed, 39 skipped**. With both fixtures present and a
+checkout is **1982 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,

@@ -32,6 +32,21 @@ export interface HiprofilerCollectOptions {
 /** hiprofiler_cmd's success marker; hdc exits 0 even when a session fails. */
 const DONE_MARKER = 'DONE';
 
+/**
+ * The size of a trace that holds only the container's header and the config
+ * echo, measured on a Mate 60 (API 26): 1024-byte header, a 4-byte length and
+ * a 70-byte `ftrace-plugin_config` block — 1098 bytes, with no event section.
+ *
+ * A session that runs its whole `-t` window without recording anything still
+ * writes this file and still prints `DONE`. Checking `size > 0` accepted it,
+ * trace_streamer turned it into an 88-table database whose only non-empty
+ * tables were metadata, and every analyzer then reported zero on data it never
+ * saw. The exact figure is used as a floor with headroom: a capture with a
+ * single event is already several kilobytes, so a trace this small cannot be a
+ * measurement of anything.
+ */
+const SKELETON_MAX_BYTES = 2048;
+
 /** Node's setTimeout 32-bit limit; the daemon takes whole seconds anyway. */
 const MAX_DURATION_MS = 2_147_483_647;
 
@@ -143,6 +158,19 @@ export class HiprofilerCollector implements Collector {
         throw new OhosPerfError(
           `hiprofiler produced no trace output at ${DEVICE_OUTPUT_PATH}` +
             ` (${size === undefined ? 'file not found' : 'file is empty'});` +
+            ` ls -l output: ${detail(combined(listing))}`,
+          { code: 'HIPROFILER_NO_OUTPUT' },
+        );
+      }
+      if (size <= SKELETON_MAX_BYTES) {
+        // The session completed but recorded nothing, so the file is the
+        // container skeleton rather than a measurement. Failing here is what
+        // keeps a quiet capture from being analyzed as a fast one.
+        throw new OhosPerfError(
+          `hiprofiler wrote ${size} bytes to ${DEVICE_OUTPUT_PATH}, which is the` +
+            ` container skeleton and holds no events: the session ran but recorded` +
+            ` nothing. Check that the target app was running and that the plugins` +
+            ` asked for are supported by this device.` +
             ` ls -l output: ${detail(combined(listing))}`,
           { code: 'HIPROFILER_NO_OUTPUT' },
         );

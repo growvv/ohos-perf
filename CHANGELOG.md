@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.22.2 — 2026-11-17
+
+Two defects behind the device suite's intermittent failures. Both were found by
+reproducing the failure, not by re-running until it passed.
+
+**A device capture that recorded nothing was accepted as a measurement.** A
+session that runs its whole `-t` window without recording still writes a valid
+`OHOSPROF` container of 1098 bytes — a 1024-byte header, a length word and a
+70-byte config echo, with no event section — and still prints `DONE`. The
+collector only rejected `size <= 0`, so that file passed, trace_streamer
+converted it into an 88-table database whose only non-empty tables were
+metadata, and every analyzer reported zero on data it never saw. The capture now
+fails with `HIPROFILER_NO_OUTPUT` and says the file holds no events, so a quiet
+run says "nothing was recorded" rather than "nothing was slow". The threshold
+is 2048 bytes against a measured skeleton of 1098 and a measured two-second
+`ftrace` capture of 523 KB.
+
+**The device suite's serial requirement lived in a command-line flag.** The
+seven device files share one device, and hitrace and hiprofiler are both
+single-session: running two at once produces `OpenRecording failed,
+errorCode(1103)`, `CreateSession FAIL` and a session that is silently cut short
+mid-write. `vitest.workspace.ts` documented this and `npm run test:device`
+passed `--fileParallelism=false`, but any other invocation —
+`npx vitest run --project device`, which is what the docs and the habit use —
+ran them in parallel and failed six of seven files. Setting `fileParallelism` on
+the workspace entry does nothing in Vitest 2.1 (measured: still six failures);
+`poolOptions.forks.singleFork` is honoured per project, so the project now pins
+itself to one fork and every invocation is serial. Removing the option fails
+six files again, which is what makes this a regression test rather than a hope.
+
+2010 unit tests (1982 passed + 28 skipped on a clean checkout), 11 device tests.
+
 ## 0.22.1 — 2026-11-17
 
 The build has been red since 0.19.0 and this release fixes it. No behaviour
