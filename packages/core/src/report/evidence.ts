@@ -18,7 +18,10 @@ export type EvidenceKind =
   | 'gc_pressure'
   | 'rs_skip'
   | 'startup'
-  | 'ui_tree';
+  | 'ui_tree'
+  | 'tech_stack'
+  | 'duplicate_asset'
+  | 'oversized_asset';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.
