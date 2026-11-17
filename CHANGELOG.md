@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.13.3 — 2026-11-17
+
+Two correctness fixes to what 0.13.0 shipped, and the ledger's own prose.
+
+- **A `--jsheap` capture can no longer record the previous run's snapshot.**
+  The collector polled for the newest `.heapsnapshot` under the app's data
+  directory. The dump is asynchronous so polling is necessary, but it also
+  meant a second capture with a slow dump took the earlier session's heap and
+  reported it `exact`. It now lists the snapshots before asking for a dump and
+  accepts only a path that was not already there.
+- **Row 12 no longer claims a metric the code emits.** `parity.ts` said the
+  row was missing the CPU-waste metric while `rs-skip.ts` has emitted
+  `rs_skip.cpu_waste.ms` since 0.13.0. `parity.test.ts` now checks a partial
+  row's missing clause against the metrics, not just its analyzer against the
+  registry.
+- The jsheap capture record in `scene.json` gained unit coverage, including
+  the two refusals a zero-byte or fractional snapshot deserves.
+- 1723 tests (1712 unit, 11 device), two typechecks, two builds.
+
 ## 0.13.2 — 2026-11-17
 
 Documentation only. The 0.13.1 tarball still shipped a core README that said
