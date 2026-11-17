@@ -1,6 +1,6 @@
 {
   "name": "@ohos-perf/cli",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "Command-line interface for HarmonyOS performance analysis: doctor, caps, collect, analyze, query, tools, compare, report, gesture, emulator and selector-driven scenarios",
   "keywords": [
     "harmonyos",
@@ -36,7 +36,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@ohos-perf/core": "0.23.0",
+    "@ohos-perf/core": "0.24.0",
     "commander": "^12.1.0"
   },
   "scripts": {

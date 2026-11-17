@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P27 are complete**: 2026 tests (2015 unit, 11 in the device
+**P1 through P29 are complete**: 2141 tests (2130 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1987 passed, 28
+attached device are absent — `npm run test:unit` reports **2102 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1987 passed, 39 skipped**. With both fixtures present and a
+checkout is **2102 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -166,8 +166,20 @@ Implemented today:
   tap that changed nothing is counted `no change` rather than as progress, and
   the visited set is per screen. After each tap it polls until the screen
   changes instead of waiting a flat 5 s, so the wait is a ceiling rather than a
-  cost. `render <report.json> --out <dir>` re-renders a saved bundle without
-  re-analyzing it.
+  cost. `--model` has a model choose each step among the elements the dump
+  offered; an answer naming an element that was not offered is refused and
+  recorded, and that step falls back to the deterministic order — the offer and
+  refusal contract is in "Model-guided exploration" below.
+- model-guided exploration: `explore <app> --model <name>` shows a model the
+  screen and the indexed elements the dump produced, and accepts only an
+  element index it offered, `scroll`, `back` or `stop`. Page identity is a
+  structural digest (`hashPageShape`) rather than a second model opinion, so
+  `navigated` (a new page), `updated` (the same page, changed) and `no change`
+  are measured from the screen's shape. The walk scrolls and goes back within
+  per-screen caps, rebuilds its trail from the pages it actually reached, and
+  never offers a model an irreversible target. Every refusal is reported with
+  its step and reason, so a model that fails is visible instead of silently
+  corrected.
 - model-driven agent: `agent <app> <task>` asks an injected model what to do
   next and shows it the tree as one line per node. A `done` answer carries an
   expectation that is evaluated against the screen, so a claim the screen
@@ -306,6 +318,7 @@ The HapRay parity series (one release per major item, so far):
 | P26 | row 5 completion | `agent <app> <task>` drives the app with an injected model: a completion claim carries an expectation the screen is checked against, an irreversible tap is refused before the device sees it, and every step records the gesture and both screen hashes so `replayAgent` can re-walk it without a model | shipped in `0.21.0` |
 | P27 | row 28 completion | `symbols recover <lib.so> <address...>` names unresolved `libfoo.so+0xoffset` references from the ELF's own `st_value`/`st_size` — a lookup, not radare2's boundary heuristic — and `--measure` reports the model's naming accuracy over names the file records, which HapRay never states | shipped in `0.22.0` |
 | P28 | row 36 | `root-cause <scene-dir\|report.json>` ranks the measured evidence by our own severities, states a verdict from the highest finding, and optionally asks a model for suspects — which must cite evidence ids and name only what the run measured, or the claim is marked ungrounded. `--offline` writes the report with no endpoint; a missing endpoint falls back to it and says so | shipped in `0.23.0` |
+| P29 | row 38 completion | `explore --model` lets a model choose each step among the elements the dump offered: an answer naming an unoffered element, scroll or back when unavailable, or a non-JSON reply is a recorded refusal and the deterministic order takes that step. Page identity is a structural digest, not a second model call, so `navigated`/`updated`/`no change` are measured; the walk scrolls and goes back within per-screen caps, and irreversible targets are never offered to a model | shipped in `0.24.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
@@ -320,9 +333,9 @@ outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 36 |
+| ported | 37 |
 | partial | 0 |
-| missing | 2 |
+| missing | 1 |
 | out, with a measured reason | 1 |
 
 Row 37 (`build`) is the one row this project refuses. It wraps `deveco-cli` to
@@ -331,12 +344,18 @@ own the toolchain that compiles the package it reads, and a half-ported wrapper
 would make every measurement depend on a compiler version this package does not
 control. `hap` and `opt` read what the build produced instead.
 
-Rows 38 (the LLM exploration strategy and state comparator) and 39 (thermal
-analysis) are `missing`, not refused: both are worth having, and both need work
-this phase did not do. Row 38 is P29. Row 39 is a collector plus an analyzer,
-and the collector is the part that has to be measured on a device first — a
-sensor list that is assumed rather than read would produce a thermal curve for
-a sensor the device does not have.
+Row 38 (the LLM exploration strategy and state comparator) left that list in
+`0.24.0`. HapRay asks a model two questions — which node to tap, and whether
+the screen changed — and checks neither answer: an element index outside the
+offered range gets whatever the array holds, a malformed answer gets element
+zero, and the state comparator's yes/no decides whether the step counted.
+`explore --model` keeps the first question with its answer verified against
+the offer, and replaces the second with `hashPageShape`, a digest of the
+screen's structure. The model never supplies coordinates, and irreversible
+targets are not offered at all. Row 39 (thermal analysis) is the one `missing`
+row left: a collector plus an analyzer, and the collector is the part that has
+to be measured on a device first — a sensor list that is assumed rather than
+read would produce a thermal curve for a sensor the device does not have.
 
 Row 5 (the LLM GUI agent) left that list in `0.21.0`. HapRay's blocker was
 the external `phone_agent` dependency, and the three things that made its
@@ -1038,6 +1057,66 @@ the same `OHOS_PERF_AGENT_*` (or `GLM_*`) variables `agent` reads. The client
 takes a *turn shape* — prompt and answer parser as one value — because a
 root-cause answer is JSON prose with citations, and the GUI agent's parser
 would reject it for having neither an `action` nor a `done`.
+
+## Model-guided exploration
+
+`explore --model <name>` lets a model choose the walk's steps. The interesting
+question is not whether a model can pick a button — it can — but what happens
+when it picks one that does not exist.
+
+```bash
+ohos-perf explore <app> --model <name> [--max-steps <n>] [--strategy depth_first|breadth_first|random]
+```
+
+**The model chooses among offered elements, and nothing else.** Each turn
+carries the rendered screen, the clickable elements the dump actually produced
+(indexed in order, with their bounds), the last eight steps, and only the
+actions the screen allows. An answer names one of those indexes, or `scroll`,
+`back` or `stop`. The answer is checked against the offer before the device
+sees it: an index outside the range, an unavailable action, a non-JSON reply,
+an unknown action name or a malformed field becomes a recorded refusal naming
+the step and the reason, and that step falls back to the deterministic order.
+HapRay's `llm_strategy.py` is the same decision without the check — an index
+past the end of its element list clicks element 0, an unparseable answer clicks
+the first element, and a failed call clicks the first button — so a stuck
+model and a busy one produce the same report.
+
+**Page identity is measured, not asked.** HapRay runs a second model call per
+transition (`llm_state_comparator.py`) to decide whether the screen changed,
+and that opinion decides whether the step counted. Here identity is
+`hashPageShape`, a digest over each node's bundle, ability, depth, type and
+three boolean traits — labels and bounds are left out, so a clock ticking in a
+text field or a scroll that moves existing content does not read as a new
+page. Comparing the
+digest before and after a step yields three outcomes: `navigated` (a new page),
+`updated` (the same page changed in place, e.g. a checkbox toggled) and
+`no change`. The screen and page counts, and the trail, are computed from those
+digests; a report of "12 screens" cannot be inflated by a model's opinion.
+
+**Navigation is bounded and measured.** When nothing unvisited is tappable the
+walk scrolls the first scrollable node, up to three times on one screen, then
+returns one level with `back`, at most once per screen; the trail is rebuilt
+from the page measured after each move, so a tap that lands on an earlier page
+rewinds it exactly as a back would. A scroll that does not change the page is
+not progress. The caps apply to model-chosen scrolls and backs too, so a model
+cannot loop them, and the walk stops only for one of four measured reasons: the
+budget, an exhausted screen, the model's `stop`, or having left the app with no
+way back.
+
+**The model cannot invent a gesture.** It never supplies coordinates: it names
+an element the dump produced, and the gesture is driven to that element's
+measured bounds. When a model steers, targets whose text matches the
+irreversible patterns (payment, ordering, transfer, sign-in, delete) are
+filtered out of the offer entirely — not discouraged in a prompt sentence — and
+the deterministic fallback draws from the same filtered set. `--json` carries
+`proposals` field by field: how many choices were used, how many refused, and
+each refusal with its step, so a run reads as "the model chose 14 steps and 3
+were refused", never as a silent correction.
+
+The endpoint is the one `agent` and `root-cause` use:
+`OHOS_PERF_AGENT_BASE_URL`/`_API_KEY`/`_MODEL`, falling back to HapRay's
+`GLM_*` variables. Without `--model` the command is fully offline and
+deterministic, as before.
 
 ## Emulators
 

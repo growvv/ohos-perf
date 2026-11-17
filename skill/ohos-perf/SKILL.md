@@ -592,6 +592,33 @@ ohos-perf root-cause <scene-dir|report.json> --out reports/run1 [--offline] [--m
 - Neither check is semantic. They answer "did the model name something this run
   measured?", not "is the cause right". Say which one you relied on.
 
+## Model-guided exploration
+
+`explore <app> --model <name>` lets a model choose each step among the
+clickable elements the current dump produced. The command reports, in text and
+JSON:
+
+- `screens` / `pages` count distinct exact trees and distinct page shapes. A
+  page is the tree's structure (`hashPageShape`), not a model's opinion.
+- `moved` splits steps into `navigated` (a new page), `updated` (the same page
+  changed in place) and `no change`. **Never report `updated` as a new page or
+  as progress toward one** — a toggled checkbox is still the same page.
+- `nav` counts scrolls and backs. Both are bounded per screen (three scrolls,
+  one back), and a scroll that changes no page is not progress.
+- `model` counts choices used and refused. **Read `proposals.refusals` before
+  describing the walk**: each entry names the step and why the answer was
+  refused — an element index that was not offered, `scroll`/`back` when the
+  screen did not allow it, or an answer that was not JSON. A refusal is not a
+  failed step (the deterministic order took it), but a run with many refusals
+  says the model is not usable for this app, and that belongs in the report
+  instead of the raw step count.
+- `stopped` says why the walk ended: the step budget, an exhausted screen, the
+  model's `stop`, or leaving the app with no way back.
+- Irreversible targets are not offered at all when a model steers; do not
+  claim the walk covered a payment or delete screen it never saw.
+- Without `--model` the walk is offline and deterministic; report the strategy
+  (and the seed for `random`) so the order can be repeated.
+
 ## Output contract
 
 `--json` output is the same structure the library returns. Evidence is ordered

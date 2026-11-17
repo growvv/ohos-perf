@@ -133,4 +133,15 @@ describe('the parity ledger', () => {
     const bundle = PARITY_ROWS.find((row) => row.row === 33);
     expect(bundle?.status).toBe('ported');
   });
+
+  it('ports the model-guided exploration row without a model state comparator', () => {
+    // Row 38 asks a model two things in HapRay: which node to tap, and whether
+    // the screen changed. The first is a genuine choice and is ported with its
+    // answer checked against the offer; the second has a deterministic answer
+    // (`hashPageShape`), so no second model call exists to leave untested.
+    expect(PARITY_ROWS.find((row) => row.row === 38)?.status).toBe('ported');
+    expect(paritySummary().missing).toBe(1);
+    expect(PARITY_ROWS.filter((row) => row.status === 'missing').map((row) => row.row))
+      .toEqual([39]);
+  });
 });

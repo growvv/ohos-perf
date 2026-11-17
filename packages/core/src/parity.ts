@@ -290,14 +290,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 38,
     name: 'LLM exploration strategy and state comparator (`haptest`)',
-    status: 'missing',
-    reason:
-      'HapRay hands the whole step to a model: `llm_strategy.py` asks it which'
-      + ' node to tap, and `llm_state_comparator.py` asks whether the screen'
-      + ' changed. Neither answer is checked, so a model that taps a dead'
-      + ' button reports progress. Not ported yet; P29 covers it, and the design'
-      + ' requires the model\'s answer to be verified against the screen it was'
-      + ' given before the step counts.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 39,

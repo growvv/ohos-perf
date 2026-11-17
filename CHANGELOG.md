@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.24.0 — 2026-11-18
+
+**`explore --model` lets a model choose the walk, and checks every choice
+against the screen it was shown.** HapRay's `haptest` asks a vision model which
+numbered element to tap and trusts the answer: an index past the end of its
+list clicks element 0, an unparseable answer clicks the first element, and a
+failed call clicks the first button. It then spends a second model call per
+transition deciding whether the screen counts as a new page, and that opinion
+decides whether the step counted.
+
+`ohos-perf explore <app> --model <name>` keeps the decision and makes it
+checkable:
+
+- **The offer is the screen.** The prompt carries the rendered tree, the
+  clickable elements the dump produced with their indexes and bounds, the last
+  eight steps, and only the actions the screen allows. An answer naming an
+  index outside the list is a recorded refusal naming both numbers; a non-JSON
+  answer, an unknown action or a malformed field is a refusal too. That step
+  then falls back to the deterministic order, and `--json` reports every
+  refusal with its step and reason — no silent element 0.
+- **Page identity is a digest, not an opinion.** `hashPageShape` hashes each
+  node's bundle, ability, depth, type and boolean traits; labels and bounds are
+  excluded, so a ticking clock or a scroll that moves existing content does not
+  read as a new page. Comparing it across a step yields `navigated`, `updated`
+  or `no change`, and the screen count, page count and trail are all computed
+  from it. There is no second model call to trust.
+- **Navigation is measured and bounded.** `explore` scrolls the first
+  scrollable node — up to three times on one screen — and goes back once per
+  screen when nothing unvisited is tappable, rebuilding the trail from the page
+  each move actually produced. A scroll that changes no page is not progress.
+  The caps apply to model-chosen scroll and back too, so a model cannot loop
+  them.
+- **Safety.** The model never supplies coordinates: it names an offered
+  element and the tap goes to that element's measured bounds. When a model
+  steers, irreversible targets (payment, ordering, transfer, sign-in, delete)
+  are filtered out of the offer, and the deterministic fallback draws from the
+  same filtered set.
+- **Output.** `explore` reports `screens`, `pages`, `moved` (navigated,
+  updated, no change), `nav` (scrolls, backs), the reason the walk stopped
+  (budget, exhausted, model, left app), and the model's used/refused counts
+  with each refusal. With `--model` and no endpoint, the CLI refuses before
+  touching a device, naming the variable to set.
+
+The endpoint is the same OpenAI-compatible one `agent` and `root-cause` use
+(`OHOS_PERF_AGENT_BASE_URL`/`_API_KEY`/`_MODEL`, falling back to `GLM_*`); the
+chat client was extracted as `httpChatModel` so all three turns share it.
+Without `--model`, `explore` is unchanged and offline.
+
+Parity row 38 is `ported`: 37 ported, 0 partial, 1 missing (39, thermal), 1 out
+(37, `build`). 2130 unit tests; the device suite is unchanged.
+
 ## 0.23.0 — 2026-11-18
 
 **`root-cause` turns measured evidence into a report a person reads — and
