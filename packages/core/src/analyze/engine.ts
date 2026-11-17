@@ -6,6 +6,7 @@ import { BinderAnalyzer } from './binder';
 import { ComponentReuseAnalyzer } from './components';
 import { EmptyFrameAnalyzer } from './empty-frame';
 import { FaultTreeAnalyzer } from './fault-tree';
+import { RedundantFileAnalyzer } from './redundant-file';
 import { FlamegraphAnalyzer } from './flamegraph';
 import { FrameLoadAnalyzer } from './frame-load';
 import { FrameAnalyzer } from './frames';
@@ -245,5 +246,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new ComponentReuseAnalyzer(),
     new HilogAnalyzer(),
     new UiAnalyzer(),
+    new RedundantFileAnalyzer(),
   ];
 }

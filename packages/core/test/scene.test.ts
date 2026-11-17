@@ -68,6 +68,7 @@ describe('createSceneLayout', () => {
       hidumperFile: join(dir, 'hidumper.json'),
       hilogFile: join(dir, 'hilog.log'),
       hilogJsonlFile: join(dir, 'hilog.jsonl'),
+      redundantFile: join(dir, 'redundant_file.txt'),
       uiFile: join(dir, 'ui.json'),
       screenshotFile: join(dir, 'screenshot.png'),
       metadataFile: join(dir, 'scene.json'),

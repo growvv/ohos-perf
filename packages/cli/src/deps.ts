@@ -342,6 +342,12 @@ interface OpenedScene {
    * rather than guessing a year.
    */
   hilog?: readonly HilogLine[];
+  /**
+   * The scene's raw `redundant_file.txt`, when it carried one. HapRay's
+   * cold-start redundant-file I/O reads this file; nothing here produces it
+   * yet, so it is read when present and its absence is a named `no_data`.
+   */
+  redundantFile?: string;
 }
 
 /** True when `path` exists and is a directory (a scene, not an `analyze --json` file). */
@@ -380,6 +386,7 @@ function analyzeContext(opened: OpenedScene) {
     ...(opened.screenshotError === undefined ? {} : { screenshotError: opened.screenshotError }),
     ...(opened.hidumper === undefined ? {} : { hidumper: opened.hidumper }),
     ...(opened.hilog === undefined ? {} : { hilog: [...opened.hilog] }),
+    ...(opened.redundantFile === undefined ? {} : { redundantFile: opened.redundantFile }),
     ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
     app: opened.app,
     // The whole database: a CLI run has no capture window to honour.
@@ -673,6 +680,11 @@ export function realDeps(
       // parser change is a re-analysis. The year is the capture's, which only
       // scene.json knows; a hand-built scene without one reads raw rows.
       const hilogText = declared('hilog') ? readHilogText(layout) : undefined;
+      // Not gated on `declared()`: the file is not a collector artifact, so a
+      // scene either carries one or it does not.
+      const redundantFile = existsSync(layout.redundantFile)
+        ? readFileSync(layout.redundantFile, 'utf8')
+        : undefined;
       const hilog = hilogText === undefined
         ? undefined
         : parseHilogText(hilogText, {
@@ -720,6 +732,7 @@ export function realDeps(
             ...(uiTree === undefined ? {} : { uiTree }),
             ...(screenshot === undefined ? {} : { screenshot }),
             ...(hilog === undefined ? {} : { hilog }),
+            ...(redundantFile === undefined ? {} : { redundantFile }),
           },
           scene.perfDb,
         ),
@@ -728,6 +741,7 @@ export function realDeps(
         ...(screenshotError === undefined ? {} : { screenshotError }),
         ...(hidumper === undefined ? {} : { hidumper }),
         ...(hilog === undefined ? {} : { hilog }),
+        ...(redundantFile === undefined ? {} : { redundantFile }),
       };
     } catch (err) {
       scene.close();

@@ -88,6 +88,12 @@ export interface AnalyzeContext {
    */
   hilogRules?: readonly HilogRule[];
   /**
+   * The raw `redundant_file.txt` a scene carried, when it did. HapRay's
+   * cold-start redundant-file I/O reads this file; the analyzer reports
+   * `no_data` with a reason when it is absent rather than three zeros.
+   */
+  redundantFile?: string;
+  /**
    * The scene's flattened UI tree, when it carried a `ui.json`. The `ui`
    * analyzer decides from what it is given rather than declaring `ui.tree` as a
    * requirement: a scene can carry a dump captured on a different device, and a

@@ -181,10 +181,9 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 21,
     name: 'Cold start redundant-file I/O',
-    status: 'missing',
-    reason:
-      'No analyzer reads `redundant_file.txt`; the startup analyzer measures a different ' +
-      'thing (duration, not redundant reads) and is not a partial port.',
+    status: 'ported',
+    reason: '',
+    analyzer: 'RedundantFileAnalyzer',
   },
   {
     row: 22,

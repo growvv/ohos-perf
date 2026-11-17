@@ -372,6 +372,7 @@ describe('defaultAnalyzers', () => {
       'components',
       'hilog',
       'ui',
+      'redundant-file',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FrameLoadAnalyzer);

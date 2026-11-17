@@ -23,7 +23,8 @@ export type EvidenceKind =
   | 'duplicate_asset'
   | 'oversized_asset'
   | 'symbol_stats'
-  | 'unresolved_symbol';
+  | 'unresolved_symbol'
+  | 'redundant_file';
 
 /**
  * A follow-up query an agent can issue to drill into an evidence item.
