@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.16.0 — 2026-11-17
+
+Parity row 35 is fully ported: `trend` aggregates any number of saved reports
+into one page, instead of only comparing two.
+
+- **`ohos-perf trend <report...> --out <dir> [--label <name>]`.** HapRay's
+  multi-version page accepts any report HTML files, pulls the embedded JSON
+  out of each, and asks a human to filter by app and version afterwards —
+  because the page has no model that could refuse. Here the refusals come
+  first: fewer than two reports is an invocation error, and the aggregation
+  refuses runs under a duplicate label or from two different apps.
+- **A gap is a gap.** A run that did not emit a metric gets `null`, not 0 —
+  and so does a *degraded* metric, whose zero is the engine's stand-in for
+  "there was nothing to read". A series counts its measured points, the page
+  says `not measured` instead of drawing a line, and the delta is taken
+  between the first and last run that actually measured it.
+- **A verdict only where one is possible.** `improved` / `regressed` /
+  `unchanged` come from the same metric-direction table `compare` uses;
+  a metric with no known direction carries a delta and no verdict, and the
+  command's summary line counts those separately.
+- **The ordering is stated.** Runs are ordered by capture start time when
+  every run recorded one, and in argument order otherwise — never a partial
+  time order, which would place an undated run first and make the x axis a
+  lie. `trend.json` records which rule applied.
+- **Offline, like every other artifact.** `trend.html` carries an inline SVG
+  sparkline per metric, no scripts, no external resources; `trend.json` is
+  the same model, byte-identical for the same runs in the same order.
+- New public API: `buildTrend`, `trendRunFromReport`, `renderTrendHtml`,
+  `renderTrendJson` and the `Trend` / `TrendRun` / `TrendSeries` /
+  `TrendPoint` / `TrendOrder` types.
+- The ledger moves to **29 ported / 1 partial / 0 missing / 5 out**. The one
+  partial row is 33, and its remaining clause is re-rendering a bundle from
+  saved inputs.
+- 1779 tests (1768 unit, 11 device), two typechecks, two builds.
+
 ## 0.15.0 — 2026-11-17
 
 Parity row 31 is fully ported: a start/end capture pair now produces animation

@@ -79,7 +79,7 @@ const VALUE_EXPORTS = [
   'ComponentReuseAnalyzer', 'computeComponentReuse', 'round2HalfEven',
   'EmulatorClient', 'EmulatorCommandError', 'EmulatorImageMissingError',
   'EmulatorLifecycle', 'EmulatorNotFoundError',
-  'PARITY_ROWS', 'paritySummary', 'parseRedundantFile', 'RedundantFileAnalyzer', 'JsheapCollector', 'readJsheapSnapshot', 'buildDepGraph', 'compareScenes', 'renderScenesComparison', 'sortSteps',
+  'PARITY_ROWS', 'paritySummary', 'parseRedundantFile', 'RedundantFileAnalyzer', 'JsheapCollector', 'readJsheapSnapshot', 'buildDepGraph', 'compareScenes', 'renderScenesComparison', 'sortSteps', 'buildTrend', 'renderTrendHtml', 'renderTrendJson', 'trendRunFromReport',
   'DEFAULT_QUERY_LIMIT', 'DEVICE_PERF_PATH', 'DEVICE_SCREENSHOT_PATH', 'DEVICE_UI_PATH',
   'DeviceNotFoundError',
   'EmptyFrameAnalyzer',

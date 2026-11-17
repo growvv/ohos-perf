@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P20 are complete**: 1741 tests (1730 unit, 11 in the device
+**P1 through P21 are complete**: 1779 tests (1768 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1702 passed, 28
+attached device are absent — `npm run test:unit` reports **1740 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1702 passed, 39 skipped**. With both fixtures present and a
+checkout is **1740 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -114,7 +114,8 @@ Implemented today:
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
-  `compare`, `ui-compare`, `hap`, `gesture {click,swipe,key,input,text}`,
+  `compare`, `ui-compare`, `report`, `trend`, `hap`,
+  `gesture {click,swipe,key,input,text}`,
   `emulator {list,start,stop,create}`, `run <scenario.json> | --cases <dir>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
@@ -143,6 +144,14 @@ Implemented today:
   identity and pixel changes by dHash and a bounded diff, with two marked PNGs
   and an offline HTML page. A pure-TypeScript PNG codec does the decoding, so
   no OpenCV, Pillow or native build is involved.
+- report bundle and trend: `report <scene> --out <dir>` writes `report.html`,
+  `report.json`, `summary.json`, `metrics.csv`, `evidence.csv` and
+  `report.xlsx` from one scene, plus `flamegraph.svg`/`.html` when the scene
+  has samples. `trend <report...> --out <dir> --label <name>` aggregates two
+  or more saved bundles into `trend.html` and `trend.json`: one point per run
+  per metric, a delta between the first and last run that measured it, and a
+  verdict only where the metric has a known direction. A run that did not
+  measure a metric — including a degraded stand-in — is a gap, never a zero.
 
 Metric ids emitted by the analyzers:
 
@@ -238,6 +247,7 @@ The HapRay parity series (one release per major item, so far):
 | P18 | parity completion | a machine-checked 35-row parity ledger, fault-tree `ipc_binder`, `collect --jsheap`, redundant-file I/O, the file-to-HAR dependency graph, `rs_skip.cpu_waste.ms`, per-step comparison | shipped in `0.13.0` |
 | P19 | row 12 completion | the system-API `UnMarsh` wakeup-chain backtracking, `rs_skip.cpu_waste.instructions`, per-method trace counts | shipped in `0.14.0` |
 | P20 | row 31 completion | animation labels that require the pixels and the tree to agree, HapRay's severity bands, pixel-only regions reported separately, unmeasurable regions named | shipped in `0.15.0` |
+| P21 | row 35 completion | `trend` aggregates any number of saved report bundles into one page: per-metric points, gaps for what a run did not measure, deltas across the runs that did, and a stated ordering | shipped in `0.16.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities. The status of every row is
@@ -248,8 +258,8 @@ the engine actually registers, so a claim cannot outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 28 |
-| partial | 2 |
+| ported | 29 |
+| partial | 1 |
 | missing | 0 |
 | out, with a measured reason | 5 |
 
@@ -262,10 +272,10 @@ TensorFlow opt-detector (row 27, a ~2 GB stack and a probabilistic guess), and
 radare2 symbol recovery (row 28, heuristic disassembly plus LLM naming with no
 accuracy measurement).
 
-The four `partial` rows each name their missing subfeature: the system-API
-`UnMarsh` backtracking (row 12), the animation label (row 31 — dHash
-thresholds are unvalidated and resolution dependent), the multi-version trend
-page (row 33), and aggregating more than two reports into one trend (row 35).
+One `partial` row is left, and it names its missing subfeature: re-rendering a
+saved report bundle from its inputs (row 33). Everything the bundle *is* — the
+typed model, the offline page, JSON/CSV/XLSX, baseline comparison and the
+multi-run trend page — is ported.
 
 `0.13.0` closed the last four `missing` rows. The fault tree now carries an
 `ipc_binder` section derived from the typed binder analysis rather than from a
@@ -280,7 +290,8 @@ paths — the system-API `UnMarsh RSTransactionData` wakeup chain (up to five
 hops) and the NativeWindow buffer events — charges the wasted work in both
 milliseconds and sampled instruction weight, and reports how many frames each
 method traced. `compareScenes` compares multi-step runs step by step instead
-of merging them (row 35).
+of merging them, and `trend` aggregates any number of saved bundles into one
+page with per-metric deltas and a stated ordering (row 35).
 
 The rendered roadmap, with the same content in Chinese, is on the
 [project site](https://growvv.github.io/ohos-perf/#roadmap).

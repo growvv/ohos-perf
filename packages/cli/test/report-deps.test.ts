@@ -154,3 +154,71 @@ describe('realDeps().report', () => {
     expect(existsSync(outDir)).toBe(false);
   });
 });
+
+describe('realDeps().trend', () => {
+  /** Two report bundles from the same scene, so the runs are comparable. */
+  async function bundles(root: string): Promise<{ a: string; b: string }> {
+    const a = join(root, 'run-a');
+    const b = join(root, 'run-b');
+    const deps = realDeps('0.4.0');
+    await deps.report({ sceneDir: join(root, 'scene'), outDir: a });
+    await deps.report({ sceneDir: join(root, 'scene'), outDir: b });
+    return { a, b };
+  }
+
+  it('reads two saved bundles and writes trend.html and trend.json', async () => {
+    const { root } = scene();
+    const { a, b } = await bundles(root);
+    const outDir = join(root, 'trend');
+
+    const result = await realDeps('0.4.0').trend({
+      reports: [{ label: 'v1', path: a }, { label: 'v2', path: b }],
+      outDir,
+    });
+
+    expect(result.files).toEqual(['trend.html', 'trend.json']);
+    expect(result.runs.map((run) => run.label)).toEqual(['v1', 'v2']);
+    expect(result.series).toBeGreaterThan(0);
+    expect(readFileSync(join(outDir, 'trend.html'), 'utf8')).toContain('frame.count');
+    const trend = JSON.parse(readFileSync(join(outDir, 'trend.json'), 'utf8'));
+    expect(trend.runs).toHaveLength(2);
+  });
+
+  it('accepts the report.json path as well as the bundle directory', async () => {
+    const { root } = scene();
+    const { a, b } = await bundles(root);
+    const result = await realDeps('0.4.0').trend({
+      reports: [{ path: join(a, 'report.json') }, { path: join(b, 'report.json') }],
+      outDir: join(root, 'trend2'),
+    });
+    // An unnamed run is labelled by the path it was read from.
+    expect(result.runs[0].label).toBe(join(a, 'report.json'));
+  });
+
+  it('refuses a path that is not a report document', async () => {
+    const { root } = scene();
+    const { a } = await bundles(root);
+    const bogus = join(root, 'bogus.json');
+    writeFileSync(bogus, '{"metrics":[],"evidence":[]}');
+
+    await expect(
+      realDeps('0.4.0').trend({
+        reports: [{ path: a }, { path: bogus }],
+        outDir: join(root, 'trend3'),
+      }),
+    ).rejects.toThrow(/not a report document/);
+    expect(existsSync(join(root, 'trend3'))).toBe(false);
+  });
+
+  it('refuses a missing report before writing anything', async () => {
+    const { root } = scene();
+    const { a } = await bundles(root);
+    await expect(
+      realDeps('0.4.0').trend({
+        reports: [{ path: a }, { path: join(root, 'absent') }],
+        outDir: join(root, 'trend4'),
+      }),
+    ).rejects.toThrow(/cannot read report/);
+    expect(existsSync(join(root, 'trend4'))).toBe(false);
+  });
+});

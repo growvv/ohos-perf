@@ -33,6 +33,7 @@ import {
   parseHilogText,
   analyzeHap,
   buildReport,
+  buildTrend,
   compareResults,
   compareSceneDirs,
   UI_DIFF_FILES,
@@ -42,6 +43,9 @@ import {
   renderReportJson,
   renderReportXlsx,
   renderSummaryJson,
+  renderTrendHtml,
+  renderTrendJson,
+  trendRunFromReport,
   renderFlamegraphHtml,
   renderFlamegraphSvg,
   FLAMEGRAPH_FILES,
@@ -73,6 +77,7 @@ import {
   type Scene,
   type SceneLayout,
   type SceneMetadata,
+  type ReportModel,
 } from '@ohos-perf/core';
 import {
   safeMessage, type CliDeps, type DoctorDeps, type EmulatorDeps, type EmulatorTargetOptions,
@@ -934,6 +939,66 @@ export function realDeps(
         ...(model.comparison === undefined
           ? {}
           : { comparison: { ...model.comparison.totals } }),
+      };
+    },
+
+    async trend(req) {
+      // A saved report is `report.json`; a directory is accepted when it is
+      // the bundle `report` wrote, because that is the path a caller has in
+      // their terminal scrollback. Nothing is analyzed here — the runs are
+      // already measured, and re-analyzing them would make the trend depend on
+      // today's code rather than on what each run measured.
+      const runs = req.reports.map((report) => {
+        const file = report.path.endsWith('.json') ? report.path : join(report.path, 'report.json');
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(readFileSync(file, 'utf8'));
+        } catch (err) {
+          throw new OhosPerfError(
+            `cannot read report ${file}: ${safeMessage(err)}`,
+            { code: 'TREND_BAD_INPUT', cause: err },
+          );
+        }
+        const model = parsed as ReportModel;
+        if (!Array.isArray(model.sections) || model.scenario === undefined) {
+          throw new OhosPerfError(
+            `${file} is not a report document (no sections or scenario block)`,
+            { code: 'TREND_BAD_INPUT' },
+          );
+        }
+        return trendRunFromReport(report.label ?? report.path, model);
+      });
+
+      const trend = buildTrend(runs);
+      const outDir = resolve(req.outDir);
+      const artifacts: Array<[string, string]> = [
+        ['trend.html', renderTrendHtml(trend)],
+        ['trend.json', renderTrendJson(trend)],
+      ];
+      await mkdir(outDir, { recursive: true });
+      for (const [name, content] of artifacts) {
+        await writeFile(join(outDir, name), content);
+      }
+
+      const count = (status: 'improved' | 'regressed' | 'unchanged'): number =>
+        trend.series.filter((series) => series.status === status).length;
+      const verdictless = trend.series.filter((series) => series.status === undefined).length;
+      return {
+        outDir,
+        files: artifacts.map(([name]) => name),
+        runs: trend.runs.map((run) => ({
+          label: run.label,
+          app: run.app,
+          device: run.device,
+          ...(run.startedAtNs === undefined ? {} : { startedAtNs: run.startedAtNs }),
+          metrics: run.metrics.length,
+        })),
+        orderedBy: trend.orderedBy,
+        series: trend.series.length,
+        improved: count('improved'),
+        regressed: count('regressed'),
+        unchanged: count('unchanged'),
+        verdictless,
       };
     },
 

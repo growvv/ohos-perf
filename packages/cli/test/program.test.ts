@@ -28,6 +28,7 @@ function deps(overrides: Partial<CliDeps> = {}): CliDeps {
     compare: async () => { throw new Error('compare not stubbed'); },
     uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => { throw new Error('report not stubbed'); },
+    trend: async () => { throw new Error('trend not stubbed'); },
     hap: async () => { throw new Error('hap not stubbed'); },
     emulator: {
       list: async () => [],
@@ -86,8 +87,8 @@ describe('--help', () => {
     const { out } = await parse(['--help']);
     const text = out.join('');
     for (const name of [
-      'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'run',
-      'ui-compare',
+      'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'trend',
+      'run', 'ui-compare',
     ]) {
       expect(text).toContain(name);
     }
@@ -133,6 +134,49 @@ describe('command wiring', () => {
       uiCompare: async (req) => { calls.push(req); throw new Error('not reached'); },
     });
     // Commander refuses the missing required option before the action runs.
+    expect(error).toBeDefined();
+    expect(error?.code).toBe('commander.missingMandatoryOptionValue');
+    expect(calls).toEqual([]);
+  });
+
+  it('trend forwards every report, the labels in order and --out', async () => {
+    const calls: Array<{ reports: Array<{ label?: string; path: string }>; outDir: string }> = [];
+    const result = {
+      outDir: '/out', files: ['trend.html', 'trend.json'], runs: [],
+      orderedBy: 'argument' as const, series: 0, improved: 0, regressed: 0,
+      unchanged: 0, verdictless: 0,
+    };
+    const { emitted } = await parse(
+      ['trend', 'r1', 'r2', '--out', '/out', '--label', 'v1', '--label', 'v2', '--json'],
+      { trend: async (req) => { calls.push(req); return result; } },
+    );
+    expect(calls).toEqual([{
+      reports: [{ path: 'r1', label: 'v1' }, { path: 'r2', label: 'v2' }],
+      outDir: '/out',
+    }]);
+    expect(JSON.parse(emitted[0].stdout)).toEqual(result);
+  });
+
+  it('trend leaves a label off a report that was not named', async () => {
+    const calls: Array<{ reports: Array<{ label?: string; path: string }>; outDir: string }> = [];
+    await parse(['trend', 'r1', 'r2', '--out', '/out', '--label', 'v1'], {
+      trend: async (req) => {
+        calls.push(req);
+        return {
+          outDir: '/out', files: [], runs: [], orderedBy: 'argument' as const, series: 0,
+          improved: 0, regressed: 0, unchanged: 0, verdictless: 0,
+        };
+      },
+    });
+    // `runTrend` fills the unnamed run's label with its path before the IO
+    // layer sees it, so the page never has a point labelled with nothing.
+    expect(calls[0].reports).toEqual([{ path: 'r1', label: 'v1' }, { path: 'r2', label: 'r2' }]);  });
+
+  it('trend requires --out before doing any work', async () => {
+    const calls: unknown[] = [];
+    const { error } = await parse(['trend', 'r1', 'r2'], {
+      trend: async (req) => { calls.push(req); throw new Error('not reached'); },
+    });
     expect(error).toBeDefined();
     expect(error?.code).toBe('commander.missingMandatoryOptionValue');
     expect(calls).toEqual([]);

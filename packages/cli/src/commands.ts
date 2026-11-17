@@ -268,6 +268,38 @@ export interface ReportOutput {
   comparison?: Record<DeltaStatus, number>;
 }
 
+/** A `trend` invocation: two or more saved reports and an output directory. */
+export interface TrendRequest {
+  /**
+   * The reports to aggregate. `label` names the run on the x axis; when absent
+   * the path is used, so a caller that did not name them still gets a page
+   * whose points can be told apart.
+   */
+  reports: Array<{ label?: string; path: string }>;
+  outDir: string;
+}
+
+/** What a successful `trend` wrote, and how the runs were ordered. */
+export interface TrendOutput {
+  outDir: string;
+  /** The artifact file names, in their fixed presentation order. */
+  files: string[];
+  runs: Array<{
+    label: string;
+    app: string;
+    device: string;
+    startedAtNs?: number;
+    metrics: number;
+  }>;
+  orderedBy: 'startedAtNs' | 'argument';
+  series: number;
+  improved: number;
+  regressed: number;
+  unchanged: number;
+  /** Series with no known direction, so no verdict was given. */
+  verdictless: number;
+}
+
 /** A `hap` invocation: one package on disk, an optional output directory. */
 export interface HapRequest {
   /** Path to the `.hap` / `.hsp` / `.zip` file. */
@@ -344,6 +376,8 @@ export interface CliDeps {
   uiCompare(req: UiCompareRequest): Promise<UiCompareOutput>;
   /** Analyze a scene and write the report bundle. Throws on any failure. */
   report(req: ReportRequest): Promise<ReportOutput>;
+  /** Aggregate two or more saved reports into one trend page. */
+  trend(req: TrendRequest): Promise<TrendOutput>;
   /**
    * Inspect a HAP on disk. Throws on any failure; the caller maps it to exit 1.
    *
@@ -744,6 +778,68 @@ export async function runReport(
         `(info ${result.bySeverity.info}, warn ${result.bySeverity.warn}, ` +
         `critical ${result.bySeverity.critical})\n` +
         comparison,
+      stderr: '',
+      exitCode: 0,
+    };
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+  }
+}
+
+/**
+ * Aggregate saved reports into one trend page.
+ *
+ * HapRay's multi-version page asks a human to filter by app and version after
+ * loading the files, because its page has no model to refuse with. Here the
+ * refusal happens before anything is read: fewer than two reports is an
+ * invocation error, and the aggregation itself refuses runs from different
+ * apps or under a duplicate label.
+ *
+ * The human line states how the runs were ordered — a reader has to know
+ * whether the x axis is time or argument order before reading movement into
+ * it — and separates the series that carry a verdict from those that cannot.
+ */
+export async function runTrend(
+  deps: CliDeps,
+  req: TrendRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  if (req.reports.length < 2) {
+    return {
+      stdout: '',
+      stderr:
+        `trend needs at least two reports; got ${req.reports.length}. ` +
+        'A trend of one is a report — use `report` for a single run.\n',
+      exitCode: 1,
+    };
+  }
+
+  try {
+    // Name each run before the IO layer sees it: a page whose points are
+    // labelled with nothing cannot be read, and the path is the one name the
+    // caller certainly supplied.
+    const result = await deps.trend({
+      ...req,
+      reports: req.reports.map((report) => ({
+        label: report.label ?? report.path,
+        path: report.path,
+      })),
+    });
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+
+    const order =
+      result.orderedBy === 'startedAtNs'
+        ? 'ordered by capture start time'
+        : 'ordered by argument (a run has no capture start time)';
+    return {
+      stdout:
+        `trend  ${result.outDir}/trend.html\n` +
+        `artifacts  ${result.files.join(' ')}\n` +
+        `runs  ${result.runs.length} (${result.runs.map((run) => run.label).join(', ')})` +
+        ` · ${order}\n` +
+        `series  ${result.series} metrics · ${result.improved} improved,` +
+        ` ${result.regressed} regressed, ${result.unchanged} unchanged,` +
+        ` ${result.verdictless} without a known direction\n`,
       stderr: '',
       exitCode: 0,
     };

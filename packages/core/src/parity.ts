@@ -257,8 +257,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
     name: 'Report bundle, dashboard and update',
     status: 'partial',
     reason:
-      'The typed report model, offline HTML, JSON/CSV/XLSX and baseline comparison are ' +
-      'ported; the multi-version trend page and re-render-from-saved-inputs are not.',
+      'The typed report model, offline HTML, JSON/CSV/XLSX, baseline comparison and the ' +
+      'multi-run trend page are ported; re-rendering a bundle from its saved inputs is not.',
   },
   {
     row: 34,
@@ -269,10 +269,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 35,
     name: 'Report comparison',
-    status: 'partial',
-    reason:
-      'Typed comparison and the scene+step pivot are ported; aggregating more than two ' +
-      'reports into one trend is not.',
+    status: 'ported',
+    reason: '',
   },
 ];
 

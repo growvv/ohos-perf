@@ -164,6 +164,10 @@ export type {
   SceneStep, ScenesComparison, StepComparison, StepStatus,
 } from './report/scenes';
 export { compareScenes, renderScenesComparison, sortSteps } from './report/scenes';
+export { buildTrend, renderTrendHtml, renderTrendJson, trendRunFromReport } from './report/trend';
+export type {
+  Trend, TrendOrder, TrendPoint, TrendRun, TrendSeries,
+} from './report/trend';
 export { executeAction } from './scenario/actions';
 export { ScenarioRunner, writeRunFiles } from './scenario/runner';
 export type {

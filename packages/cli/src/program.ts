@@ -16,6 +16,7 @@ import {
   runReport,
   runScenarioCommand,
   runTools,
+  runTrend,
   runUiCompare,
   safeMessage,
   failureLine,
@@ -27,6 +28,7 @@ import { parseDurationSeconds, parsePluginList } from './collect';
 import { parseCoordinate, parseKey, parseText, parseVelocity } from './gesture';
 import { parseLimit, parseQueryArgs } from './query';
 import { parseOnly } from './run';
+import { collectLabels } from './trend';
 
 /**
  * Commander wiring, kept free of `process`.
@@ -332,6 +334,33 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         );
       },
     );
+
+  program
+    .command('trend')
+    .description('aggregate two or more saved reports into one trend page')
+    .argument('<reports...>', 'report.json files or report bundle directories (at least two)')
+    .requiredOption('--out <dir>', 'output directory for trend.html and trend.json')
+    .option(
+      '--label <label>',
+      'a run label, repeated once per report in order (default: the report path)',
+      collectLabels,
+    )
+    .option('--json', 'print the trend manifest as JSON')
+    .action(async (reports: string[], opts: { out: string; label?: string[]; json?: boolean }) => {
+      io.emit(
+        await runTrend(
+          deps,
+          {
+            reports: reports.map((path, index) => {
+              const label = opts.label?.[index];
+              return { path, ...(label === undefined ? {} : { label }) };
+            }),
+            outDir: opts.out,
+          },
+          { json: opts.json },
+        ),
+      );
+    });
 
   program
     .command('hap')

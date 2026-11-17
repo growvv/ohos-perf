@@ -96,4 +96,17 @@ describe('the parity ledger', () => {
     const rsSkip = PARITY_ROWS.find((row) => row.row === 12);
     expect(rsSkip?.status).toBe('ported');
   });
+
+  it('leaves only the re-render clause of the report row open', () => {
+    // Row 33's remaining gap is a command, not an artifact: every bundle
+    // `report` writes is complete, and what HapRay's `update` adds is the
+    // ability to rebuild one from its saved inputs. The reason must name
+    // exactly that, so a reader can tell the row is one command from done.
+    const bundle = PARITY_ROWS.find((row) => row.row === 33);
+    expect(bundle?.status).toBe('partial');
+    expect(bundle?.reason).toMatch(/re-rendering/i);
+    // The trend page is ported and named as ported; only the re-render clause
+    // may be the absence.
+    expect(bundle?.reason).toMatch(/trend page are ported/i);
+  });
 });
