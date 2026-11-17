@@ -67,6 +67,7 @@ export class SymbolsAnalyzer implements Analyzer {
     const resolvedWeight = resolved.reduce((sum, row) => sum + row.samples, 0);
     const unresolvedWeight = unresolved.reduce((sum, row) => sum + row.samples, 0);
     const total = resolvedWeight + unresolvedWeight;
+    const hasSymbolTable = ctx.perf.hasSymbolTable();
     const files = [...new Set(resolved.map((row) => row.filePath).filter((path) => path !== ''))]
       .sort(byString);
     const top = resolved[0];
@@ -166,7 +167,9 @@ export class SymbolsAnalyzer implements Analyzer {
     for (const row of unresolved.slice(0, TOP_ITEMS)) {
       // A row with no symbol and no file is weight whose chain has no frames:
       // there is no address for `--so-dir` to symbolize, so the item says what
-      // happened rather than naming a flag that cannot help.
+      // happened rather than naming a flag that cannot help. A database with
+      // no `perf_files` at all is a different cause — the frames exist and
+      // nothing can name them — and says so.
       const frameLess = row.symbol === '' && row.filePath === '';
       items.push(evidence({
         kind: 'unresolved_symbol',
@@ -178,14 +181,17 @@ export class SymbolsAnalyzer implements Analyzer {
           file: row.filePath,
           samples: row.samples,
         },
-        explain: frameLess
-          ? `${row.samples} samples have no callchain frames, so no symbol can ` +
-            'name them; the conversion truncated these chains or the recorder ' +
-            'dropped them'
-          : `the recorder had no symbol for ${row.samples} samples` +
+        explain: !frameLess
+          ? `the recorder had no symbol for ${row.samples} samples` +
             `${row.filePath === '' ? '' : ` in ${row.filePath}`}` +
             ` (${row.symbol}); pass --so-dir with the app's libraries on the next ` +
-            'capture to symbolize these addresses',
+            'capture to symbolize these addresses'
+          : !hasSymbolTable
+            ? `${row.samples} samples cannot be named: this database has no ` +
+              '`perf_files` table, so no frame carries a symbol'
+            : `${row.samples} samples have no callchain frames, so no symbol can ` +
+              'name them; the conversion truncated these chains or the recorder ' +
+              'dropped them',
         drillDown: [
           {
             label: 'the unresolved rows',

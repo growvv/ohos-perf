@@ -242,6 +242,33 @@ describe('SymbolsAnalyzer — evidence', () => {
     }
   });
 
+  it('names the missing table, not missing frames, when perf_files is absent', async () => {
+    // The frames are there; the table that names them is not. Saying "no
+    // callchain frames" would send a reader looking for a truncated
+    // conversion that did not happen.
+    const path = join(dir, 'no-perf-files.db');
+    const d = new DatabaseSync(path);
+    d.exec(PERF_THREAD_DDL);
+    d.exec(`INSERT INTO perf_thread VALUES (0, 500, 9000, 'main')`);
+    d.exec(PERF_SAMPLE_DDL);
+    d.exec(`INSERT INTO perf_sample VALUES (0, 10, 1000, 500, 5, 1, 1000, 0, 'S')`);
+    d.exec(PERF_CALLCHAIN_DDL);
+    d.exec(`INSERT INTO perf_callchain VALUES (0, 10, 0, 0, 0, 0, 1, 0, 900, 0, 0)`);
+    d.exec(DATA_DICT_DDL);
+    d.exec(`INSERT INTO data_dict VALUES (900, 'main')`);
+    d.close();
+    const db = openDb(path);
+    try {
+      const r = await new SymbolsAnalyzer().run(ctxWith(db));
+      const item = r.evidence.find((e) => e.kind === 'unresolved_symbol')!;
+      expect(item.explain).toContain('perf_files');
+      expect(item.explain).not.toContain('no callchain frames');
+      expect(item.explain).not.toContain('--so-dir');
+    } finally {
+      db.close();
+    }
+  });
+
   it('emits one unresolved_symbol item per unresolved leaf, naming the fix', async () => {
     const db = symbolsDb('unresolved-evidence.db');
     try {

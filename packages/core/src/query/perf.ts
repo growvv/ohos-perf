@@ -216,6 +216,17 @@ export class PerfQuery {
   }
 
   /**
+   * True when `perf_files` exists, so a frame can carry a symbol at all.
+   *
+   * A capture without it has no symbol table to resolve against: every frame
+   * is unnamed for that reason, not because its callchain was truncated. The
+   * distinction matters to the wording a reader gets.
+   */
+  hasSymbolTable(): boolean {
+    return this.hasTable('perf_files');
+  }
+
+  /**
    * `perf_thread` rows whose `process_id` is one of `pids`, ordered by `id`.
    *
    * `process_id` is the process pid, not an ipid. An empty `pids` or an absent
