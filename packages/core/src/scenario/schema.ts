@@ -15,6 +15,7 @@
 
 import { OhosPerfError } from '../errors';
 import { HIPROFILER_PLUGIN_NAMES, type HiprofilerPluginName } from '../device/device';
+import { parseSelector, type Selector } from './selector';
 
 /** One thing a step does. `wait` and `marker` touch no device. */
 export type ScenarioAction =
@@ -33,7 +34,29 @@ export type ScenarioAction =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'inputText'; readonly x: number; readonly y: number; readonly text: string }
   | { readonly kind: 'wait'; readonly ms: number }
-  | { readonly kind: 'marker'; readonly name: string };
+  | { readonly kind: 'marker'; readonly name: string }
+  /*
+   * Selector actions (P17). A coordinate is a claim about one resolution; a
+   * selector is a claim about the screen, which is what a scenario means. The
+   * coordinate actions stay: a tap on a blank canvas has no other spelling.
+   */
+  | {
+      readonly kind: 'tap';
+      readonly target: Selector;
+      /** A scrollable container to swipe when `target` is below the fold. */
+      readonly scrollTo?: Selector;
+      /** Give up after this many swipes; default 5. */
+      readonly timeoutMs?: number;
+    }
+  | { readonly kind: 'tapText'; readonly text: string; readonly scrollTo?: Selector }
+  | {
+      readonly kind: 'swipeArea';
+      readonly area: Selector;
+      readonly direction: 'up' | 'down' | 'left' | 'right';
+      /** Fraction of the area's extent to travel, 1-100; default 60. */
+      readonly distance?: number;
+    }
+  | { readonly kind: 'inputInto'; readonly target: Selector; readonly text: string };
 
 /** The collectors a step may ask for, by the name `Device.collect` understands. */
 export const COLLECTOR_NAMES = [
@@ -54,6 +77,31 @@ export interface StepCapture {
   readonly hiperf?: { readonly frequency?: number };
 }
 
+/**
+ * One `present` clause: a selector that must match at least `min` nodes
+ * (default 1) and at most `max`.
+ */
+export interface ExpectPresent {
+  readonly selector: Selector;
+  readonly min?: number;
+  readonly max?: number;
+}
+
+/**
+ * What a step asserts the screen shows after its actions.
+ *
+ * Evaluated before cleanup, against a fresh dump, so a failed step still names
+ * its scene and says what the screen actually held. This is the deliberate
+ * difference from HapRay, whose DSL parses `verify` and never runs it: without
+ * an assertion, a step's "ok" means only that the device accepted a gesture.
+ */
+export interface StepExpectation {
+  readonly present?: readonly ExpectPresent[];
+  readonly absent?: readonly Selector[];
+  /** The app must still own at least one node on screen; default true. */
+  readonly foreground?: boolean;
+}
+
 export interface ScenarioStep {
   readonly id: string;
   readonly name: string;
@@ -61,6 +109,7 @@ export interface ScenarioStep {
   readonly actions: readonly ScenarioAction[];
   readonly cleanup: readonly ScenarioAction[];
   readonly capture: StepCapture;
+  readonly expect?: StepExpectation;
 }
 
 export interface Scenario {
@@ -197,7 +246,14 @@ const ACTION_KEYS: Readonly<Record<ScenarioAction['kind'], readonly string[]>> =
   inputText: ['kind', 'x', 'y', 'text'],
   wait: ['kind', 'ms'],
   marker: ['kind', 'name'],
+  tap: ['kind', 'target', 'scrollTo', 'timeoutMs'],
+  tapText: ['kind', 'text', 'scrollTo'],
+  swipeArea: ['kind', 'area', 'direction', 'distance'],
+  inputInto: ['kind', 'target', 'text'],
 };
+
+/** The directions `swipeArea` understands. */
+const SWIPE_DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 
 function parseAction(
   value: unknown,
@@ -276,6 +332,67 @@ function parseAction(
       }
       return { kind: 'marker', name };
     }
+    case 'tap': {
+      const target = parseSelector(action.target, at('target'));
+      const scrollTo = action.scrollTo === undefined
+        ? undefined
+        : parseSelector(action.scrollTo, at('scrollTo'));
+      const timeoutMs = action.timeoutMs === undefined
+        ? undefined
+        : nonNegativeInt(action.timeoutMs, at('timeoutMs'), error);
+      return {
+        kind: 'tap',
+        target,
+        ...(scrollTo === undefined ? {} : { scrollTo }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      };
+    }
+    case 'tapText': {
+      const text = requiredString(action.text, at('text'), error);
+      if (text === '') {
+        throw error(at('text'), 'expected a non-empty label; an empty one matches every node');
+      }
+      const scrollTo = action.scrollTo === undefined
+        ? undefined
+        : parseSelector(action.scrollTo, at('scrollTo'));
+      return {
+        kind: 'tapText',
+        text,
+        ...(scrollTo === undefined ? {} : { scrollTo }),
+      };
+    }
+    case 'swipeArea': {
+      const direction = action.direction;
+      if (
+        typeof direction !== 'string' ||
+        !(SWIPE_DIRECTIONS as readonly string[]).includes(direction)
+      ) {
+        throw error(at('direction'), `expected one of ${SWIPE_DIRECTIONS.join(', ')},` +
+          ` got ${JSON.stringify(direction)}`);
+      }
+      let distance: number | undefined;
+      if (action.distance !== undefined) {
+        const value = action.distance;
+        if (typeof value !== 'number' || !Number.isSafeInteger(value) ||
+            value < 1 || value > 100) {
+          throw error(at('distance'), 'expected a whole number from 1 to 100,' +
+            ` got ${JSON.stringify(value)}`);
+        }
+        distance = value;
+      }
+      return {
+        kind: 'swipeArea',
+        area: parseSelector(action.area, at('area')),
+        direction: direction as (typeof SWIPE_DIRECTIONS)[number],
+        ...(distance === undefined ? {} : { distance }),
+      };
+    }
+    case 'inputInto':
+      return {
+        kind: 'inputInto',
+        target: parseSelector(action.target, at('target')),
+        text: gestureText(action.text, at('text'), error),
+      };
   }
 }
 
@@ -405,7 +522,7 @@ function parseStep(
   const step = fields(
     value,
     path,
-    ['id', 'name', 'setup', 'actions', 'cleanup', 'capture'],
+    ['id', 'name', 'setup', 'actions', 'cleanup', 'capture', 'expect'],
     stepError,
   );
   const idPath = `${path}.id`;
@@ -421,6 +538,10 @@ function parseStep(
     ? id
     : requiredString(step.name, `${path}.name`, stepError);
 
+  const expect = step.expect === undefined
+    ? undefined
+    : parseExpect(step.expect, `${path}.expect`);
+
   return {
     id,
     name,
@@ -428,6 +549,68 @@ function parseStep(
     actions: parseActions(step.actions, `${path}.actions`, stepError),
     cleanup: parseActions(step.cleanup, `${path}.cleanup`, stepError),
     capture: parseCapture(step.capture, `${path}.capture`, stepError),
+    ...(expect === undefined ? {} : { expect }),
+  };
+}
+
+/**
+ * Parse a step's `expect` block.
+ *
+ * Every key is checked, so `presentt` is a refusal rather than an assertion
+ * that silently never runs — which is the failure mode that makes a test suite
+ * look green while testing nothing.
+ */
+function parseExpect(value: unknown, path: string): StepExpectation {
+  const block = fields(value, path, ['present', 'absent', 'foreground'], stepError);
+
+  let present: readonly ExpectPresent[] | undefined;
+  if (block.present !== undefined) {
+    if (!Array.isArray(block.present)) {
+      throw stepError(`${path}.present`, 'expected an array of { selector, min?, max? }');
+    }
+    present = block.present.map((entry, index) => {
+      const at = `${path}.present[${index}]`;
+      const clause = fields(entry, at, ['selector', 'min', 'max'], stepError);
+      const selector = parseSelector(clause.selector, `${at}.selector`);
+      const min = clause.min === undefined
+        ? undefined
+        : nonNegativeInt(clause.min, `${at}.min`, stepError);
+      const max = clause.max === undefined
+        ? undefined
+        : nonNegativeInt(clause.max, `${at}.max`, stepError);
+      if (min !== undefined && max !== undefined && min > max) {
+        throw stepError(`${at}.max`, `expected max >= min (min is ${min}, max is ${max})`);
+      }
+      return {
+        selector,
+        ...(min === undefined ? {} : { min }),
+        ...(max === undefined ? {} : { max }),
+      };
+    });
+  }
+
+  let absent: readonly Selector[] | undefined;
+  if (block.absent !== undefined) {
+    if (!Array.isArray(block.absent)) {
+      throw stepError(`${path}.absent`, 'expected an array of selectors');
+    }
+    absent = block.absent.map((entry, index) =>
+      parseSelector(entry, `${path}.absent[${index}]`),
+    );
+  }
+
+  let foreground: boolean | undefined;
+  if (block.foreground !== undefined) {
+    if (typeof block.foreground !== 'boolean') {
+      throw stepError(`${path}.foreground`, 'expected true or false');
+    }
+    foreground = block.foreground;
+  }
+
+  return {
+    ...(present === undefined ? {} : { present }),
+    ...(absent === undefined ? {} : { absent }),
+    ...(foreground === undefined ? {} : { foreground }),
   };
 }
 

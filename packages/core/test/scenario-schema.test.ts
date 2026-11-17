@@ -124,7 +124,9 @@ describe('parseScenario', () => {
   });
 
   it('rejects an unknown action kind, naming its path', () => {
-    expect(() => parseStep({ actions: [{ kind: 'tap', x: 1, y: 2 }] }))
+    // `tap` used to be the example of an unknown kind; P17 made it real, so
+    // the fixture uses one that is not in the language at all.
+    expect(() => parseStep({ actions: [{ kind: 'longPress', x: 1, y: 2 }] }))
       .toThrow(/steps\[0\]\.actions\[0\]\.kind/);
   });
 
@@ -233,5 +235,106 @@ describe('parseScenario', () => {
         },
       }],
     });
+  });
+});
+
+/*
+ * P17: selector actions and step expectations.
+ *
+ * The contract is that a selector is validated as data — every malformed
+ * selector names its JSON path — while a coordinate-only scenario from before
+ * this phase keeps loading unchanged.
+ */
+describe('parseScenario — selector actions', () => {
+  const actions = (list: unknown[]): unknown => parseStep({ actions: list });
+
+  it('accepts the four selector actions', () => {
+    const scenario = actions([
+      { kind: 'tap', target: { kind: 'text', text: 'OK' } },
+      { kind: 'tapText', text: 'Cancel' },
+      { kind: 'swipeArea', area: { kind: 'type', type: 'List' }, direction: 'up' },
+      { kind: 'inputInto', target: { kind: 'id', id: 'field' }, text: 'hello' },
+    ]) as { steps: { actions: { kind: string }[] }[] };
+    expect(scenario.steps[0].actions.map((a) => a.kind))
+      .toEqual(['tap', 'tapText', 'swipeArea', 'inputInto']);
+  });
+
+  it('accepts tap with scrollTo and timeoutMs', () => {
+    const scenario = actions([{
+      kind: 'tap',
+      target: { kind: 'id', id: 'item' },
+      scrollTo: { kind: 'type', type: 'List' },
+      timeoutMs: 5000,
+    }]) as { steps: { actions: unknown[] }[] };
+    expect(scenario.steps[0].actions).toHaveLength(1);
+  });
+
+  it('refuses a malformed selector, naming the action path', () => {
+    expect(() => actions([{ kind: 'tap', target: { kind: 'text', text: '' } }]))
+      .toThrow(/steps\[0\]\.actions\[0\]\.target/);
+  });
+
+  it('refuses an unknown direction', () => {
+    expect(() => actions([{
+      kind: 'swipeArea', area: { kind: 'type', type: 'List' }, direction: 'sideways',
+    }])).toThrow(/direction/);
+  });
+
+  it('refuses an empty tapText', () => {
+    expect(() => actions([{ kind: 'tapText', text: '' }])).toThrow(/text/);
+  });
+
+  it('refuses an unknown key on a selector action', () => {
+    expect(() => actions([{ kind: 'tapText', text: 'OK', selector: {} }]))
+      .toThrow(/selector/);
+  });
+
+  it('keeps a coordinate-only scenario working', () => {
+    const scenario = actions([{ kind: 'click', x: 10, y: 20 }]) as {
+      steps: { actions: { kind: string }[] }[];
+    };
+    expect(scenario.steps[0].actions[0].kind).toBe('click');
+  });
+});
+
+describe('parseScenario — expect', () => {
+  it('accepts a full expect block', () => {
+    const scenario = parseStep({
+      expect: {
+        present: [{ selector: { kind: 'text', text: 'Done' }, min: 1 }],
+        absent: [{ kind: 'id', id: 'spinner' }],
+        foreground: true,
+      },
+    }) as { steps: { expect?: { present?: unknown[] } }[] };
+    expect(scenario.steps[0].expect?.present).toHaveLength(1);
+  });
+
+  it('accepts an empty expect block', () => {
+    expect(() => parseStep({ expect: {} })).not.toThrow();
+  });
+
+  it('refuses an unknown key inside expect, naming it', () => {
+    expect(() => parseStep({ expect: { presentt: [] } })).toThrow(/presentt/);
+  });
+
+  it('refuses a malformed selector inside present, naming its path', () => {
+    expect(() => parseStep({
+      expect: { present: [{ selector: { kind: 'nope' } }] },
+    })).toThrow(/expect\.present\[0\]\.selector/);
+  });
+
+  it('refuses min greater than max', () => {
+    expect(() => parseStep({
+      expect: { present: [{ selector: { kind: 'type', type: 'X' }, min: 3, max: 1 }] },
+    })).toThrow(/min|max/);
+  });
+
+  it('refuses a non-boolean foreground', () => {
+    expect(() => parseStep({ expect: { foreground: 'yes' } })).toThrow(/foreground/);
+  });
+
+  it('refuses a malformed selector in absent, naming its path', () => {
+    expect(() => parseStep({ expect: { absent: [{ kind: 'text', text: '' }] } }))
+      .toThrow(/expect\.absent\[0\]/);
   });
 });
