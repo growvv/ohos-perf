@@ -148,6 +148,7 @@ export { readSceneMetadata, writeSceneMetadata } from './ingest/metadata';
 export { parseScenario, COLLECTOR_NAMES } from './scenario/schema';
 export { discoverCases, loadCases } from './scenario/cases';
 export { matchSelector, parseSelector, resolveSelector } from './scenario/selector';
+export { PARITY_ROWS, paritySummary } from './parity';
 export { executeAction } from './scenario/actions';
 export { ScenarioRunner, writeRunFiles } from './scenario/runner';
 export type {
@@ -157,6 +158,7 @@ export type {
 export type { ActionContext, ActionDevice } from './scenario/actions';
 export type { Selector, SelectorRect } from './scenario/selector';
 export type { CaseLoad, DiscoveredCase } from './scenario/cases';
+export type { ParityRow, ParityStatus } from './parity';
 export type {
   ActionOutcome, ExpectationOutcome, RunResult, RunStepResult, RunnerCollectOptions,
   RunnerDevice, RunOptions,
