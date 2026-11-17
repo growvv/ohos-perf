@@ -337,3 +337,45 @@ describe('RsSkipAnalyzer', () => {
     db.close();
   });
 });
+
+describe('rs-skip CPU waste (parity row 12)', () => {
+  /*
+   * HapRay's `cpu_waste` is the point of the capability: a frame the app built
+   * and RS then declined to composite is CPU spent for nothing. The waste is
+   * the app frame's own duration — the work exists, and the screen never got
+   * it.
+   *
+   * An untraced skip has no app frame, so it contributes no waste. Counting
+   * the RS frame's duration there would charge the app for work it never did.
+   */
+  it('sums the traced app frames\' durations as the wasted CPU time', async () => {
+    const db = dbWith('waste.db', {
+      frames: [
+        { id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 11, ts: 1e9 + 2e9, dur: 16e6, ipid: RS, itid: 4 },
+        { id: 21, ts: 1e9 + 3.5e6, dur: 12e6, ipid: APP, itid: 44 },
+      ],
+      events: [
+        { id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+        { id: 2, ts: 1e9 + 3e6, name: 'H:AcquireBuffer', callid: 4 },
+        { id: 3, ts: 1e9 + 2e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 },
+      ],
+    });
+    const r = await new RsSkipAnalyzer().run(ctxWith(db));
+    // Only frame 21 was traced; the second skip has no app frame.
+    expect(metricOf(r, 'rs_skip.cpu_waste.ms').value).toBe(12);
+    db.close();
+  });
+
+  it('omits cpu_waste when nothing was traced', async () => {
+    // Zero milliseconds of waste would claim the app did no work — for a
+    // capture where the trace could not say. Absence, not zero.
+    const db = dbWith('waste-none.db', {
+      frames: [{ id: 10, ts: 1e9, dur: 16e6, ipid: RS, itid: 4 }],
+      events: [{ id: 1, ts: 1e9 + 4e6, name: 'H:DisplayNode skip', callid: 4 }],
+    });
+    const r = await new RsSkipAnalyzer().run(ctxWith(db));
+    expect(r.metrics.map((m) => m.id)).not.toContain('rs_skip.cpu_waste.ms');
+    db.close();
+  });
+});

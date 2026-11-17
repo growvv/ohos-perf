@@ -330,6 +330,14 @@ export class RsSkipAnalyzer implements Analyzer {
       }),
     ];
     if (appKnown) {
+      // Wasted CPU: the app built a frame, RS declined to composite it, so the
+      // work is spent for nothing. The waste is the app frame's own duration.
+      // An untraced skip contributes nothing — there is no app frame to charge.
+      let wasteNs = 0;
+      for (const entry of result.frames) {
+        if (entry.traced !== undefined) wasteNs += entry.traced.frame.dur;
+      }
+
       metrics.push(
         metric({
           id: 'rs_skip.trace.accuracy',
@@ -348,6 +356,20 @@ export class RsSkipAnalyzer implements Analyzer {
           window: ctx.window,
         }),
       );
+      // Absent, not zero, when nothing traced: `0 ms` of waste would claim the
+      // app did no wasted work on a capture where the trace could not say.
+      if (wasteNs > 0) {
+        metrics.push(
+          metric({
+            id: 'rs_skip.cpu_waste.ms',
+            value: wasteNs / 1e6,
+            unit: 'ms',
+            provenance: prov,
+            fidelity: 'exact',
+            window: ctx.window,
+          }),
+        );
+      }
     } else {
       metrics.push(
         metric({
