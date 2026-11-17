@@ -243,6 +243,38 @@ describe('realDeps().render', () => {
     expect(readFileSync(join(outDir, 'report.xlsx'))).toEqual(readFileSync(join(saved, 'report.xlsx')));
   });
 
+  it('carries the bundle screenshot across, so the page never links a missing image', async () => {
+    // A saved bundle with a screenshot has `assets/screenshot.png` and a page
+    // that points at it. Re-rendering the page from the model would reproduce
+    // the <img> — the copy has to come too, or the page renders a broken icon.
+    const { root, sceneDir } = scene();
+    writeFileSync(join(sceneDir, 'screenshot.png'), encodePng({
+      width: 5, height: 3, data: new Uint8Array(5 * 3 * 4).fill(90),
+    }));
+    writeFileSync(join(sceneDir, 'scene.json'), JSON.stringify({
+      version: 1,
+      app: { packageName: 'com.demo', processNames: ['com.demo'] },
+      pids: [], deviceId: 't1',
+      capture: {
+        startedAtMs: 1, durationMs: 2, collectors: ['hitrace', 'screenshot'],
+        screenshot: { width: 5, height: 3, bytes: 100 },
+      },
+    }));
+    const deps = realDeps('0.9.0');
+    const saved = join(root, 'shot-bundle');
+    await deps.report({ sceneDir, outDir: saved });
+    rmSync(sceneDir, { recursive: true, force: true });
+
+    const outDir = join(root, 'shot-again');
+    const result = await deps.render({ report: saved, outDir });
+
+    expect(result.files).toContain('assets/screenshot.png');
+    expect(readFileSync(join(outDir, 'assets', 'screenshot.png')))
+      .toEqual(readFileSync(join(saved, 'assets', 'screenshot.png')));
+    expect(readFileSync(join(outDir, 'report.html'), 'utf8'))
+      .toContain('<img src="assets/screenshot.png"');
+  });
+
   it('accepts the report.json path directly', async () => {
     const { root, sceneDir } = scene();
     const deps = realDeps('0.4.0');

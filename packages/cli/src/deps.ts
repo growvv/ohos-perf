@@ -972,9 +972,23 @@ export function realDeps(
       for (const [name, content] of artifacts) {
         await writeFile(join(outDir, name), content);
       }
+      const files = artifacts.map(([name]) => name);
+
+      // The page links `assets/screenshot.png` whenever the model says one was
+      // captured. That file is a copy, not a value, so it is not in the model:
+      // the source bundle's copy is carried across when it exists, and a
+      // bundle without one renders the page it always did — no `<img>`, so
+      // nothing points at a file that is not there.
+      const sourceAsset = join(dirname(file), 'assets', 'screenshot.png');
+      if (model.scenario.screenshot !== undefined && existsSync(sourceAsset)) {
+        await mkdir(join(outDir, 'assets'), { recursive: true });
+        await copyFile(sourceAsset, join(outDir, 'assets', 'screenshot.png'));
+        files.push('assets/screenshot.png');
+      }
+
       return {
         outDir,
-        files: artifacts.map(([name]) => name),
+        files,
         sections: model.sections.length,
         metrics: model.totals.metrics,
         evidence: model.totals.evidence,

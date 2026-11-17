@@ -18,14 +18,16 @@ Parity row 33 is fully ported: a saved bundle can be re-rendered from its own
 - **No flamegraph, deliberately.** The drawing comes from folded stacks that
   live in `perf_sample`, not in the model. A re-render writes no flamegraph
   rather than an empty canvas, which would be a picture of a capture in which
-  nothing ran. The screenshot is the same: `assets/screenshot.png` is a copied
-  file, so it is the caller's to place beside the page.
+  nothing ran. The screenshot is carried across instead: it is a copied file
+  rather than a value, so `render` copies the source bundle's
+  `assets/screenshot.png` when the model says one was captured, and a bundle
+  without one renders the page it always did — no `<img>`, nothing missing.
 - **The output says which it was.** `render` prints
   `source  <path> (re-rendered, not re-analyzed)` so a reader who expected a
   fresh analysis is told none happened.
 - New public API: `renderBundle` and `BUNDLE_RENDERED_FILES`.
 - The ledger moves to **30 ported / 0 partial / 0 missing / 5 out**.
-- 1794 tests (1783 unit, 11 device), two typechecks, two builds.
+- 1795 tests (1784 unit, 11 device), two typechecks, two builds.
 
 ## 0.16.0 — 2026-11-17
 
