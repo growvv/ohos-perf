@@ -117,8 +117,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
     name: 'RenderService skip reverse tracing',
     status: 'partial',
     reason:
-      'Missing the system-API `UnMarsh RSTransactionData` backtracking and the CPU-waste metric; ' +
-      'the NativeWindow path and per-frame evidence are ported.',
+      'Missing the system-API `UnMarsh RSTransactionData` backtracking; ' +
+      'the NativeWindow path, per-frame evidence and `rs_skip.cpu_waste.ms` are ported.',
     analyzer: 'RsSkipAnalyzer',
   },
   {

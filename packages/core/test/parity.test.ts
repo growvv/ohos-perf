@@ -74,4 +74,20 @@ describe('the parity ledger', () => {
       expect(row.reason, `row ${row.row}`).toMatch(prerequisites[row.row]!);
     }
   });
+
+  it('does not name a subfeature as missing once the code emits it', () => {
+    // A `partial` row's reason is a claim about the code, and P18 added the
+    // CPU-waste metric while row 12's reason still said it was missing — the
+    // ledger was checking its statuses against the analyzers but never its
+    // prose against the metrics.
+    //
+    // The reason has two clauses: what is missing, then what is ported. Only
+    // the first is a claim of absence, so only the first is checked — matching
+    // the whole string would fail on the fix that names the metric as ported,
+    // which is how this test first went wrong.
+    const rsSkip = PARITY_ROWS.find((row) => row.row === 12);
+    expect(rsSkip?.status).toBe('partial');
+    const missingClause = rsSkip!.reason.split(';')[0]!;
+    expect(missingClause).not.toMatch(/cpu.waste/i);
+  });
 });

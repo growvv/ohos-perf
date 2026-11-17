@@ -11,7 +11,7 @@ landing page, so that is what a reader on npmjs saw.
   is hard-wrapped, so "nine" and "collectors" sat on different lines and a
   regex over the raw text could not see across the newline. Every check now
   normalizes whitespace before matching.
-- 1715 tests (1704 unit, 11 device), two typechecks, two builds.
+- 1716 tests (1705 unit, 11 device), two typechecks, two builds.
 
 ## 0.13.1 — 2026-11-17
 
@@ -67,7 +67,7 @@ parity claim checkable.
 The five `out` rows keep their measured reasons: HapTest exploration, the LLM
 GUI agent, coverage, the TensorFlow opt-detector and radare2 symbol recovery.
 
-- 1715 tests (1704 unit, 11 device), two typechecks, two builds.
+- 1716 tests (1705 unit, 11 device), two typechecks, two builds.
 
 ## 0.12.1 — 2026-11-17
 
