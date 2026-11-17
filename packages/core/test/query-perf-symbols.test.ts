@@ -288,6 +288,41 @@ describe('PerfQuery.symbolStats', () => {
     }
   });
 
+  it('keeps the weight of a chain with no frames in the identity', () => {
+    // A capture can hold a `perf_sample` whose `callchain_id` has no
+    // `perf_callchain` rows — a truncated conversion, or a kernel chain the
+    // recorder dropped. That weight names nothing, but it is still weight in
+    // the window: dropping it makes the analyzer's "resolved plus unresolved
+    // is the window" claim false, and makes the unresolved share read better
+    // than the capture is.
+    const db = withDb('frame-less-chain.db', (d) => {
+      d.exec(PERF_THREAD_DDL);
+      d.exec(`INSERT INTO perf_thread VALUES (0, 100, 500, 'main')`);
+      d.exec(PERF_SAMPLE_DDL);
+      d.exec(`INSERT INTO perf_sample VALUES
+        (0, 10, 1000, 100, 5, 1, 1000, 0, 'S'),
+        (1, 11, 1100, 100, 5, 1, 1100, 0, 'S')`);
+      d.exec(PERF_CALLCHAIN_DDL);
+      // Chain 10 has a frame; chain 11 has none at all.
+      d.exec(`INSERT INTO perf_callchain VALUES (0, 10, 0, 0, 0, 0, 1, 0, 900, 0, 0)`);
+      d.exec(PERF_FILES_DDL);
+      d.exec(`INSERT INTO perf_files VALUES (0, 1, 0, 'main', '/system/bin/app_process')`);
+      d.exec(DATA_DICT_DDL);
+      d.exec(`INSERT INTO data_dict VALUES (900, 'main')`);
+    });
+    try {
+      const q = new PerfQuery(db);
+      const rows = q.symbolStats([100], { startNs: 0, endNs: 2000 });
+      expect(rows.reduce((sum, row) => sum + row.samples, 0))
+        .toBe(q.eventCount([100], { startNs: 0, endNs: 2000 }));
+      // The frame-less weight is named by nothing, so it is unresolved.
+      expect(rows.find((row) => row.samples === 5 && row.unresolved && row.symbol === ''))
+        .toBeDefined();
+    } finally {
+      db.close();
+    }
+  });
+
   it('reports unresolvedSymbols as a subset of symbolStats, never additional', () => {
     const db = measuredDb('subset.db');
     try {

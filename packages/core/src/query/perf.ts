@@ -468,6 +468,11 @@ ORDER BY thread_id, callchain_id`,
    * resolves at all, which `leafAttribution` drops. Keeping them here is what
    * makes the rows sum to {@link eventCount} exactly, so a caller can check
    * that no weight went missing.
+   *
+   * A chain with no frames still holds weight: a truncated conversion or a
+   * dropped kernel chain leaves `perf_sample` rows whose `callchain_id` names
+   * nothing. That weight has no symbol and no file, so it lands in the
+   * unresolved `('', '')` row rather than vanishing from the identity.
    */
   symbolStats(threadIds: readonly number[], range: TimeRange): SymbolStat[] {
     if (threadIds.length === 0 || !this.hasTable('perf_sample')) return [];
@@ -479,22 +484,27 @@ ORDER BY thread_id, callchain_id`,
 
     const functionsByChain = this.chainFunctions(chainIds);
     const folded = new Map<string, SymbolStat>();
-    for (const callchainId of chainIds) {
-      const functions = functionsByChain.get(callchainId);
-      const leaf = functions?.[functions.length - 1];
-      // A chain with no frames names nothing and cannot be attributed to a
-      // symbol; the weight is still counted by `eventCount`, which is why the
-      // identity is stated over chains that have a leaf.
-      if (leaf === undefined) continue;
-      const unresolved = isUnresolvedSymbol(leaf.symbol);
-      const key = `${leaf.filePath}\u0000${leaf.symbol}\u0000${unresolved ? '1' : '0'}`;
+    const add = (symbol: string, filePath: string, weight: number): void => {
+      const unresolved = isUnresolvedSymbol(symbol);
+      const key = `${filePath}\u0000${symbol}\u0000${unresolved ? '1' : '0'}`;
       const existing = folded.get(key);
-      const weight = weights.get(callchainId) ?? 0;
       if (existing === undefined) {
-        folded.set(key, { symbol: leaf.symbol, filePath: leaf.filePath, samples: weight, unresolved });
+        folded.set(key, { symbol, filePath, samples: weight, unresolved });
       } else {
         existing.samples += weight;
       }
+    };
+
+    for (const callchainId of chainIds) {
+      const weight = weights.get(callchainId) ?? 0;
+      const leaf = functionsByChain.get(callchainId)?.at(-1);
+      // No frames: the chain names nothing, but its weight is still in the
+      // window, so it is counted as unresolved rather than dropped.
+      if (leaf === undefined) {
+        add('', '', weight);
+        continue;
+      }
+      add(leaf.symbol, leaf.filePath, weight);
     }
 
     return [...folded.values()].sort(
