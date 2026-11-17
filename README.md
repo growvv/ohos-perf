@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P24 are complete**: 1855 tests (1844 unit, 11 in the device
+**P1 through P25 are complete**: 1919 tests (1908 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **1805 passed, 28
+attached device are absent — `npm run test:unit` reports **1880 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **1805 passed, 39 skipped**. With both fixtures present and a
+checkout is **1880 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -138,6 +138,14 @@ Implemented today:
   file they came from. The least-covered file is called out. A scene without a
   report gets a `no_data` item saying coverage was not measured, where HapRay
   silently omits the section.
+- optimization detection: `ohos-perf opt <package|lib.so>` reads each arm64
+  library's ELF and reports what the file records — LTO from `lto_priv.*`
+  symbols and `.gnu.lto_*` sections, the level from an `-O` flag in `.comment`,
+  and otherwise from the instruction mix, labelled `proxy` with its signals
+  named. HapRay answers the same two questions with a ~2 GB TensorFlow LSTM and
+  a 551-feature SVM and prints the guess as a percentage; on its own test
+  `libflutter.so` both tools agree (high optimization, no LTO) while this one
+  says which half it measured. Nothing is extracted to disk and no model ships.
 - static HAP inspection: `ohos-perf hap <package.hap>` reads the archive in
   memory through a pure-TypeScript ZIP reader, inventories every file by
   HapRay's own category table, detects the technology stack from a typed port
@@ -194,6 +202,7 @@ Metric ids emitted by the analyzers:
 | `redundant_file.*` | redundant-file I/O | `redundant_file.reads.count`, `redundant_file.files.used`, `redundant_file.files.unused` |
 | `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` (animation labels live in `ui-diff.json`, not as metrics) |
 | `hap.*` | static HAP inspection | `hap.files.count`, `hap.size.bytes`, `hap.techstack.count`, `hap.duplicates.wasted.bytes`, `hap.oversized.count`, `hap.category.images.bytes` |
+| `binary.*` | optimization detection | `binary.files.count`, `binary.text.bytes`, `binary.instructions.count`, `binary.lto.files.count`, `binary.lto.unknown.files.count`, `binary.debug.files.count`, `binary.stripped.files.count`, `binary.high.optimization.files.count` (and the other level counts, `proxy`) |
 
 The recorded traces pin field-level output for the binder, threads and
 fault-tree analyzers against golden outputs from ArkAnalyzer-HapRay revision
@@ -271,6 +280,7 @@ The HapRay parity series (one release per major item, so far):
 | P22 | row 33 completion | `render` re-renders a saved bundle from its typed model with no scene, device or analyzer — every artifact byte-identical to the bundle it came from | shipped in `0.17.0` |
 | P23 | row 4 completion | `explore` walks the UI on a total order, records a dead tap as `no_change`, remembers visits per screen, replays `random` from a recorded seed, and settles on the screen's change instead of HapRay's fixed 5 s window | shipped in `0.18.0` |
 | P24 | row 24 completion | `analyze` reads a scene's `coverageReport.json` — the document `bjc` writes — and reports line, function and branch coverage as `approximate`, with a missing report a named `no_data` rather than HapRay's silent skip | shipped in `0.19.0` |
+| P25 | row 27 completion | `opt <package\|lib.so>` reads each arm64 library's ELF: LTO from `lto_priv.*`/`.gnu.lto_*`, the level from a recorded `-O` flag, and otherwise from the instruction mix, labelled `proxy` with its signals named — no TensorFlow model | shipped in `0.20.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
 (rev `9386e4e`): 35 user-facing capabilities. The status of every row is
@@ -281,16 +291,24 @@ the engine actually registers, so a claim cannot outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 32 |
+| ported | 33 |
 | partial | 0 |
 | missing | 0 |
-| out, with a measured reason | 3 |
+| out, with a measured reason | 2 |
 
-The three `out` rows are capabilities whose prerequisite this package refuses
+The two `out` rows are capabilities whose prerequisite this package refuses
 to ship, and each reason names it: the LLM GUI agent (row 5, needs a network
-endpoint and API key), the TensorFlow opt-detector (row 27, a ~2 GB stack and a
-probabilistic guess), and radare2 symbol recovery (row 28, heuristic
+endpoint and API key) and radare2 symbol recovery (row 28, heuristic
 disassembly plus LLM naming with no accuracy measurement).
+
+Row 27 (the TensorFlow opt-detector) left that list in `0.20.0`. Its blocker
+was never the question — "was this built optimized, and with LTO?" — but the
+~2 GB model it answered the question with. `opt <package|lib.so>` reads the
+ELF: `lto_priv.*` symbols and `.gnu.lto_*` sections prove LTO, a `-O` flag in
+`.comment` states the level, and the instruction mix is a measurement rather
+than an inference from a byte histogram. On HapRay's own test `libflutter.so`
+both tools agree — high optimization, no LTO — while this one says which part
+it measured and which it inferred.
 
 Row 24 (coverage) left that list in `0.19.0`. The instrumented build is still
 external — that is a property of how the app was compiled — but the analysis of
@@ -308,7 +326,7 @@ and fixes both, so the row is now `ported` on its own merits.
 No row is `partial` any more. Row 33's last clause was re-rendering a bundle
 from its saved inputs, and `render <report.json> --out <dir>` now does it from
 the typed model alone — no scene, no device, no analyzer — reproducing every
-artifact byte for byte. That leaves 32 ported and the 3 refused rows, each with
+artifact byte for byte. That leaves 33 ported and the 2 refused rows, each with
 the prerequisite it names.
 
 `0.13.0` closed the last four `missing` rows. The fault tree now carries an
@@ -761,6 +779,9 @@ and no extraction to disk:
 ohos-perf hap app.hap
 ohos-perf hap app.hap --out ./hap-report     # hap.json + hap.html
 ohos-perf hap app.hap --json                 # the typed document
+
+ohos-perf opt app.hap                        # optimization level and LTO
+ohos-perf opt libs/arm64/libapp.so --json
 ```
 
 The human output names the app, the file count and both sizes, one line per
@@ -1084,6 +1105,13 @@ UI 采集与对比：`collect --screenshot` 通过 `uitest screenCap` 把整屏 
 Pillow 或原生编译；不同分辨率的两张截图会被 `UI_SIZE_MISMATCH` 拒绝，而不是悄悄缩放。
 HapRay 的动画分级（dHash 阈值）刻意不移植：阈值未经验证且与分辨率相关，而“这块区域
 在动”不是性能指标。
+
+优化检测：`ohos-perf opt <package|lib.so>` 读每个 arm64 库的 ELF，报告文件自己记录的
+事实 —— 从 `lto_priv.*` 符号与 `.gnu.lto_*` 节读出 LTO，从 `.comment` 里的 `-O` 标志读出
+优化级别，两者都没有时再从指令构成推断，标为 `proxy` 并列出所依据的信号。HapRay 用约 2 GB
+的 TensorFlow LSTM 与 551 维 SVM 回答同样两个问题，把猜测印成百分比；在它自己的测试
+`libflutter.so` 上两个工具结论一致（高优化、无 LTO），而这里会说明哪一半是测出来的。
+不落地解压，也不随包分发模型。
 
 静态 HAP 检查：`ohos-perf hap <package.hap>` 用纯 TypeScript 的 ZIP 读取器（基于
 Node 内置 `zlib`）把安装包读进内存，按 HapRay 自己的扩展名分类表清点每个文件，用

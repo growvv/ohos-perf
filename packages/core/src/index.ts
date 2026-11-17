@@ -340,6 +340,17 @@ export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';
 // Static package inspection (offline)
 export { openZip, isZip } from './hap/zip';
 export type { ZipArchive, ZipEntry } from './hap/zip';
+export { readElf, classifyInstruction, countInstructions, EM_AARCH64 } from './hap/elf';
+export {
+  analyzeBinaries, classifyOptimization, extractBinaries, inspectBinary, optimizationSection,
+} from './hap/optimization';
+export type {
+  BinaryFacts, BinaryInput, BinaryReport, OptimizationAnalysis, OptimizationBasis,
+  OptimizationLevel, OptimizationVerdict,
+} from './hap/optimization';
+export type {
+  ElfFile, ElfSection, ElfSymbol, InstructionClass, InstructionCounts,
+} from './hap/elf';
 export {
   CATEGORY_EXTENSIONS, CATEGORY_MAX_BYTES, buildInventory, categorize,
 } from './hap/inventory';

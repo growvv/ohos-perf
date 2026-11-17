@@ -9,6 +9,8 @@ import {
   manifestPath, offlineCapabilities, packageVersion, realDeps,
   type CapabilityMatrixDb,
 } from '../src/deps';
+import { makeZip } from '../../core/test/helpers/hap-zip-writer';
+import { makeElf64, OP, text } from '../../core/test/helpers/elf-writer';
 
 /** The manifest as an independent reader sees it, not through `deps.ts`. */
 const manifest = JSON.parse(
@@ -1662,6 +1664,54 @@ describe('realDeps().explore', () => {
     });
     await deps.explore({ app: 'com.demo', maxSteps: 1, strategy: 'depth_first', target: 'emu-9' });
     expect(asked).toEqual(['emu-9']);
+  });
+});
+
+describe('realDeps().opt', () => {
+  it('reads a bare .so and reports its instruction mix and verdict', async () => {
+    // The seam takes a path and reads it, so this exercises the real ELF
+    // reader and the real analyzer over bytes written to disk.
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-cli--opt-'));
+    try {
+      const path = join(dir, 'libdemo.so');
+      writeFileSync(path, makeElf64([
+        { name: '.text', type: 1, flags: 6, data: text(...Array.from({ length: 40 }, () => OP.vector), ...Array.from({ length: 60 }, () => OP.add)) },
+        {
+          name: '.symtab',
+          symbols: [
+            { name: 'main', bind: 1, type: 2, size: 32 },
+            { name: 'lto_priv.0.abc', bind: 0, type: 2, size: 16 },
+          ],
+        },
+      ]));
+      const result = await realDeps('0.0.0').opt({ packagePath: path });
+      expect(result.analysis.totals).toMatchObject({ binaries: 1, lto: 1 });
+      const binary = result.analysis.binaries[0]!;
+      expect(binary.verdict).toMatchObject({ level: 'high', basis: 'inferred' });
+      expect(binary.facts.instructions.total).toBe(100);
+      expect(result.analysis.metrics.find((m) => m.id === 'binary.instructions.count')?.value).toBe(100);
+      expect(result.capabilities[0]?.id).toBe('static.hap');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads the arm64 libraries out of a package', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-cli--opthap-'));
+    try {
+      const path = join(dir, 'demo.hap');
+      const lib = makeElf64([{ name: '.text', type: 1, flags: 6, data: text(OP.ret, OP.bl) }]);
+      writeFileSync(path, makeZip([
+        { name: 'module.json', data: new TextEncoder().encode('{}') },
+        { name: 'libs/arm64/liba.so', data: lib, method: 0 },
+        { name: 'libs/arm64/libb.so', data: lib, method: 0 },
+      ]));
+      const result = await realDeps('0.0.0').opt({ packagePath: path });
+      expect(result.analysis.binaries.map((b) => b.path))
+        .toEqual(['libs/arm64/liba.so', 'libs/arm64/libb.so']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -12,6 +12,7 @@ import {
   runEmulatorStop,
   runGesture,
   runHap,
+  runOptimization,
   runQuery,
   runReport,
   runRender,
@@ -392,6 +393,17 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
           { json: opts.json },
         ),
       );
+    });
+
+  program
+    .command('opt')
+    .description(
+      "inspect a package's arm64 libraries: optimization level, LTO, debug info",
+    )
+    .argument('<package>', 'path to a .hap, .hsp, .zip or .so file')
+    .option('--json', 'print the analysis as JSON')
+    .action(async (packagePath: string, opts: { json?: boolean }) => {
+      io.emit(await runOptimization(deps, { packagePath }, { json: opts.json }));
     });
 
   program

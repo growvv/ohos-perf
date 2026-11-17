@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.20.0 — 2026-11-17
+
+Parity row 27 is ported: optimization detection. The ledger drops to two
+refused rows.
+
+HapRay's `opt-detector` answers "which `-O` level was this built at, and was LTO
+on?" by feeding raw `.text` bytes to a ~2 GB TensorFlow LSTM and a 551-feature
+SVM, then printing the guess as a percentage. Its own source records the cost:
+16.7% false positives on low-optimization binaries, at the threshold it ships.
+
+- **`opt <package|lib.so>` reads the ELF instead.** LTO is exact — `lto_priv.*`
+  symbols and `.gnu.lto_*` sections prove it, and their absence from a file
+  that still has a symbol table proves the opposite. A stripped file reports
+  `unknown` rather than `absent`, because the markers may have been removed.
+- **A recorded `-O` flag wins over any inference.** When the toolchain left one
+  in `.comment`, that is the compiler's own statement.
+- **Otherwise the instruction mix decides**, and the verdict says so:
+  `basis: inferred` with the signals named (`vector_density`, `no_vector_code`,
+  `debug_sections`). A binary with no instructions is `unknown`, not a guess.
+- **Calibrated against real libraries, not guessed.** Three release builds
+  measured 15.7%, 20.4% and 23.5% SIMD; HapRay calls the last `libflutter.so`
+  "O3 dominant", and this tool agrees on both its verdict and its "No LTO".
+- **A small ELF reader**, written for this and nothing more: section headers,
+  symbol tables, and an AArch64 classifier for the instruction classes whose
+  density shifts with optimization. Every read is bounds-checked, and a bad
+  magic, a short header or a section table past the end is a typed refusal
+  naming the field.
+- **Refusals instead of empty reports.** A package with no arm64 libraries, an
+  `.a` archive, and a file that is not an ELF are all named failures; an empty
+  result would read as "nothing to report".
+- 1908 unit tests (53 for the reader and analyzer, 7 for the command),
+  two typechecks, two builds.
+
 ## 0.19.0 — 2026-11-17
 
 Parity row 24 is ported: coverage ingestion. The ledger drops to three refused

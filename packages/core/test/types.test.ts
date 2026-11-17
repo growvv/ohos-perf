@@ -80,6 +80,8 @@ const VALUE_EXPORTS = [
   'EmulatorClient', 'EmulatorCommandError', 'EmulatorImageMissingError',
   'EmulatorLifecycle', 'EmulatorNotFoundError',
   'PARITY_ROWS', 'paritySummary', 'parseRedundantFile', 'RedundantFileAnalyzer', 'JsheapCollector', 'readJsheapSnapshot', 'buildDepGraph', 'compareScenes', 'renderScenesComparison', 'sortSteps', 'buildTrend', 'renderTrendHtml', 'renderTrendJson', 'trendRunFromReport', 'BUNDLE_RENDERED_FILES', 'renderBundle', 'CoverageAnalyzer', 'parseCoverageReport', 'explore', 'deviceExplorationHost', 'explorationDevice', 'hashTree', 'planNextAction',
+  'readElf', 'classifyInstruction', 'countInstructions', 'EM_AARCH64',
+  'analyzeBinaries', 'classifyOptimization', 'extractBinaries', 'inspectBinary', 'optimizationSection',
   'DEFAULT_QUERY_LIMIT', 'DEVICE_PERF_PATH', 'DEVICE_SCREENSHOT_PATH', 'DEVICE_UI_PATH',
   'DeviceNotFoundError',
   'EmptyFrameAnalyzer',

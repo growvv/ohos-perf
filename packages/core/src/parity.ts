@@ -209,10 +209,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 27,
     name: 'Optimization detector (`opt-detector`)',
-    status: 'out',
-    reason:
-      'Requires a ~2 GB TensorFlow LSTM plus an sklearn classifier and is AArch64-only; ' +
-      'it is a probabilistic guess, not a measurement.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 28,

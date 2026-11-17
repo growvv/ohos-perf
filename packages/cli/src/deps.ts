@@ -53,6 +53,8 @@ import {
   renderFlamegraphSvg,
   FLAMEGRAPH_FILES,
   hapSection,
+  analyzeBinaries,
+  extractBinaries,
   readSceneMetadata,
   readUiTree,
   resolveAppIdentity,
@@ -1131,6 +1133,23 @@ export function realDeps(
         await writeFile(join(outDir, name), content);
       }
       return { analysis, capabilities, outDir, artifacts: artifacts.map(([name]) => name) };
+    },
+
+    async opt(req) {
+      // The whole package is read into memory; extraction is a read, not a
+      // write, so nothing lands on disk.
+      const bytes = readFileSync(req.packagePath);
+      const name = basename(req.packagePath);
+      const analysis = analyzeBinaries(extractBinaries({ path: name, bytes }), name);
+      // Offline by construction, like `hap`: a file on disk needs no probe.
+      const capabilities: CapabilityState[] = [{
+        id: 'static.hap',
+        available: true,
+        collector: 'offline',
+        fidelity: 'exact',
+        probe: { command: '', stdout: '', stderr: '', code: 0 },
+      }];
+      return { analysis, capabilities };
     },
 
     tools() {

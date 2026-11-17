@@ -69,11 +69,16 @@ describe('the parity ledger', () => {
     // `bjc` writes: the instrumented build is still external, but the analysis
     // of its output no longer is, and the absence is a named `no_data` rather
     // than HapRay's silent skip.
+    //
+    // Row 27 (opt-detector) left it in `0.20.0`. HapRay's blocker was never
+    // the question — it was the ~2 GB model it answered the question with.
+    // An ELF records LTO markers and compiler flags directly, and its
+    // instruction mix is a measurement rather than an inference from a byte
+    // histogram, so `opt` reports both and labels the inferred part `proxy`.
     const out = PARITY_ROWS.filter((row) => row.status === 'out');
-    expect(out.map((row) => row.row).sort((a, b) => a - b)).toEqual([5, 27, 28]);
+    expect(out.map((row) => row.row).sort((a, b) => a - b)).toEqual([5, 28]);
     const prerequisites: Record<number, RegExp> = {
       5: /LLM/i,
-      27: /TensorFlow/i,
       28: /disassembl/i,
     };
     for (const row of out) {

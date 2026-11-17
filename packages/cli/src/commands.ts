@@ -11,6 +11,7 @@ import {
   type GestureResult,
   type ExplorationStrategy,
   type HapAnalysis,
+  type OptimizationAnalysis,
   type HiprofilerPluginName, type NamedQueryInfo, type NamedQueryResult,
   type RunResult, type Scenario,
 } from '@ohos-perf/core';
@@ -385,6 +386,23 @@ export interface HapOutput {
 }
 
 /**
+ * A request to inspect native binaries for optimization level and LTO.
+ *
+ * `packagePath` is a `.hap`/`.hsp`/`.zip`, or a bare `.so`. An `ar` archive is
+ * refused by the core: it is a third container format this package does not
+ * read, and an empty report for one would read as "nothing to report".
+ */
+export interface OptRequest {
+  packagePath: string;
+}
+
+/** What the inspection found: the document `opt.json` would carry, plus capabilities. */
+export interface OptOutput {
+  analysis: OptimizationAnalysis;
+  capabilities: CapabilityState[];
+}
+
+/**
  * Where the emulator commands look for the binary and its state.
  *
  * Every field is optional so the core applies its own discovery order
@@ -446,6 +464,11 @@ export interface CliDeps {
    * Reads the file, so an unreadable path fails here rather than in the action.
    */
   hap(req: HapRequest): Promise<HapOutput>;
+  /**
+   * Inspect a package's native binaries for optimization level and LTO.
+   * Throws on any failure; the caller maps it to exit 1.
+   */
+  opt(req: OptRequest): Promise<OptOutput>;
   /** HarmonyOS emulator lifecycle. Throws on any failure; the caller maps it to exit 1. */
   emulator: EmulatorDeps;
   /** Run a scenario. Throws on any failure; the caller maps it to exit 1. */
@@ -1066,6 +1089,97 @@ function packagePathError(packagePath: string): string | undefined {
     return `not a package (expected .hap, .hsp or .zip): ${packagePath}`;
   }
   return undefined;
+}
+
+/**
+ * Why a path cannot be inspected for optimization, or `undefined` when it can.
+ *
+ * A `.so` is accepted alongside the package formats because a caller often has
+ * the library in hand; an `.a` is refused by name here rather than by the
+ * core, so the terminal says which input was wrong before a byte is read.
+ */
+function binaryPathError(packagePath: string): string | undefined {
+  let stats;
+  try {
+    stats = statSync(packagePath);
+  } catch {
+    return `no such package: ${packagePath}`;
+  }
+  if (!stats.isFile()) return `not a file: ${packagePath}`;
+  const dot = packagePath.lastIndexOf('.');
+  const extension = dot <= 0 ? '' : packagePath.slice(dot + 1).toLowerCase();
+  if (extension === 'a') {
+    return `an .a archive is not read: pass the .so files, or the package that holds them`;
+  }
+  if (extension !== 'hap' && extension !== 'hsp' && extension !== 'zip' && extension !== 'so') {
+    return `not a package or library (expected .hap, .hsp, .zip or .so): ${packagePath}`;
+  }
+  return undefined;
+}
+
+/** `present` / `absent` / `unknown`, spelled for a terminal. */
+const LTO_WORD: Readonly<Record<string, string>> = {
+  present: 'LTO',
+  absent: 'no LTO',
+  unknown: 'LTO unknown',
+};
+
+/**
+ * `ohos-perf opt <package|lib.so>`.
+ *
+ * One line per binary with what the file records, then its verdict. The
+ * verdict's basis is printed because the difference between "the compiler said
+ * -O2" and "the instruction mix looks like -O2" is the whole point of this
+ * row: HapRay prints only the second, as a percentage.
+ */
+export async function runOptimization(
+  deps: CliDeps,
+  req: OptRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  const pathError = binaryPathError(req.packagePath);
+  if (pathError !== undefined) return { stdout: '', stderr: `${pathError}
+`, exitCode: 1 };
+
+  try {
+    const result = await deps.opt(req);
+    if (opts.json) {
+      return {
+        stdout: json({ analysis: result.analysis, capabilities: result.capabilities }),
+        stderr: '',
+        exitCode: 0,
+      };
+    }
+
+    const analysis = result.analysis;
+    let stdout = `package  ${analysis.package}
+`;
+    stdout +=
+      `binaries ${analysis.totals.binaries}, ${analysis.totals.lto} with LTO` +
+      `${analysis.totals.debug === 0 ? '' : `, ${analysis.totals.debug} with debug info`}` +
+      `${analysis.totals.stripped === 0 ? '' : `, ${analysis.totals.stripped} stripped`}
+`;
+    for (const binary of analysis.binaries) {
+      const facts = binary.facts;
+      const verdict = binary.verdict;
+      const basis = verdict.basis === 'none' ? '' : ` (${verdict.basis})`;
+      stdout += `binary   ${binary.path}  ${verdict.level}${basis}
+`;
+      stdout +=
+        `         ${LTO_WORD[facts.lto]}${facts.ltoMarkers.length === 0 ? '' : ` via ${facts.ltoMarkers[0]}`}` +
+        `, ${facts.instructions.total} instructions, ${facts.symbols.functions} functions` +
+        `${facts.debug ? ', debug info' : ''}
+`;
+      if (verdict.signals.length > 0) {
+        stdout += `         signals ${verdict.signals.join(', ')}
+`;
+      }
+    }
+    return { stdout, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}
+`, exitCode: 1 };
+  }
 }
 
 /**
