@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.1 — 2026-11-17
+
+A release-day defect in 0.12.0's packaging, and nothing else.
+
+- `@ohos-perf/cli@0.12.0` declared `"@ohos-perf/core": "0.11.0"` — the pin was
+  written by hand and never bumped. Installing the published CLI pulled the
+  previous core and died on its first import (`does not provide an export
+  named 'discoverCases'`). Inside the workspace the dependency resolves to the
+  local package, so no test consulted the range. `packages/cli/test/package-manifest.test.ts`
+  now fails when the pin and `packages/core/package.json` disagree, and
+  requires an exact pin.
+- Both packages republished at 0.12.1 so the pair installs together.
+
 ## 0.12.0 — 2026-11-17
 
 P17 (HapRay parity W5, step DSL): a scenario that says what it means, and a
