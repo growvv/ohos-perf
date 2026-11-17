@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  EXCLUDE_PATTERNS, TECH_RULES, matchRules, validateRules,
+  EXCLUDE_PATTERNS, TECH_RULES, matchHapRules, validateRules,
   type FileRule, type RuleMatch, type RuleMatchKind, type TechRule,
 } from '../src/hap/rules';
 import { openZip } from '../src/hap/zip';
@@ -17,7 +17,7 @@ function rule(partial: Pick<TechRule, 'id' | 'fileRules'> & Partial<TechRule>): 
 
 function run(rules: readonly TechRule[], entries: TestEntry[]): RuleMatch[] {
   const archive = openZip(makeZip(entries));
-  return matchRules(rules, archive, buildInventory(archive));
+  return matchHapRules(rules, archive, buildInventory(archive));
 }
 
 function refusal(fn: () => void): OhosPerfError {

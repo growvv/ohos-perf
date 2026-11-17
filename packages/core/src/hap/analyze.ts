@@ -4,7 +4,7 @@ import type { TimeRange } from '../types';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import { buildInventory, CATEGORY_MAX_BYTES, type FileCategory, type InventoryFile } from './inventory';
-import { matchRules, TECH_RULES, type RuleMatch } from './rules';
+import { matchHapRules, TECH_RULES, type RuleMatch } from './rules';
 import { openZip, type ZipArchive } from './zip';
 
 /*
@@ -325,7 +325,7 @@ export function analyzeHap(bytes: Uint8Array, packageName: string): HapAnalysis 
   const archive = openZip(bytes);
   const inventory = buildInventory(archive);
   const packageBlock = readPackage(archive);
-  const technologies = matchRules(TECH_RULES, archive, inventory);
+  const technologies = matchHapRules(TECH_RULES, archive, inventory);
   const duplicates = findDuplicates(archive, inventory);
   const oversized = findOversized(inventory);
   const categories = categoryTotals(inventory);

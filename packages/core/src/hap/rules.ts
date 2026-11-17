@@ -224,7 +224,7 @@ function extractMetadata(
  * sorted by `(type, ruleId)` so two runs of the same archive agree byte for
  * byte.
  */
-export function matchRules(
+export function matchHapRules(
   rules: readonly TechRule[],
   archive: ZipArchive,
   inventory: readonly InventoryFile[],
