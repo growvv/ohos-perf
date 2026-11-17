@@ -207,6 +207,41 @@ describe('SymbolsAnalyzer — evidence', () => {
     }
   });
 
+  it('does not tell a reader to symbolize weight that has no frames at all', async () => {
+    // A `perf_sample` whose chain has no `perf_callchain` rows is unresolved
+    // weight, but `--so-dir` cannot help it: there is no address to symbolize.
+    // The item has to say what actually happened instead of naming a flag.
+    const path = join(dir, 'frame-less.db');
+    const d = new DatabaseSync(path);
+    d.exec(PERF_THREAD_DDL);
+    d.exec(`INSERT INTO perf_thread VALUES (0, 500, 9000, 'main')`);
+    d.exec(PERF_SAMPLE_DDL);
+    d.exec(`INSERT INTO perf_sample VALUES
+      (0, 10, 1000, 500, 5, 1, 1000, 0, 'S'),
+      (1, 11, 1100, 500, 5, 1, 1100, 0, 'S')`);
+    d.exec(PERF_CALLCHAIN_DDL);
+    // Chain 10 has a frame; chain 11 has none.
+    d.exec(`INSERT INTO perf_callchain VALUES (0, 10, 0, 0, 0, 0, 2, 1, 488, 0, 0)`);
+    d.exec(PERF_FILES_DDL);
+    d.exec(`INSERT INTO perf_files VALUES (0, 2, 1, 'dladdr', '/system/lib/ld-musl.so')`);
+    d.exec(DATA_DICT_DDL);
+    d.exec(`INSERT INTO data_dict VALUES (488, 'start')`);
+    d.close();
+    const db = openDb(path);
+    try {
+      const r = await new SymbolsAnalyzer().run(ctxWith(db));
+      const item = r.evidence.find((e) => e.kind === 'unresolved_symbol')!;
+      expect(item.signals).toEqual({ symbol: '', file: '', samples: 5 });
+      expect(item.explain).not.toContain('--so-dir');
+      expect(item.explain).toContain('no callchain frames');
+      // The two halves still account for the whole window.
+      expect(Number(metricOf(r, 'symbol.samples.count').value)).toBe(5);
+      expect(Number(metricOf(r, 'symbol.unresolved.count').value)).toBe(5);
+    } finally {
+      db.close();
+    }
+  });
+
   it('emits one unresolved_symbol item per unresolved leaf, naming the fix', async () => {
     const db = symbolsDb('unresolved-evidence.db');
     try {

@@ -164,6 +164,10 @@ export class SymbolsAnalyzer implements Analyzer {
     }
 
     for (const row of unresolved.slice(0, TOP_ITEMS)) {
+      // A row with no symbol and no file is weight whose chain has no frames:
+      // there is no address for `--so-dir` to symbolize, so the item says what
+      // happened rather than naming a flag that cannot help.
+      const frameLess = row.symbol === '' && row.filePath === '';
       items.push(evidence({
         kind: 'unresolved_symbol',
         severity: 'warn',
@@ -174,11 +178,14 @@ export class SymbolsAnalyzer implements Analyzer {
           file: row.filePath,
           samples: row.samples,
         },
-        explain:
-          `the recorder had no symbol for ${row.samples} samples` +
-          `${row.filePath === '' ? '' : ` in ${row.filePath}`}` +
-          ` (${row.symbol}); pass --so-dir with the app's libraries on the next ` +
-          'capture to symbolize these addresses',
+        explain: frameLess
+          ? `${row.samples} samples have no callchain frames, so no symbol can ` +
+            'name them; the conversion truncated these chains or the recorder ' +
+            'dropped them'
+          : `the recorder had no symbol for ${row.samples} samples` +
+            `${row.filePath === '' ? '' : ` in ${row.filePath}`}` +
+            ` (${row.symbol}); pass --so-dir with the app's libraries on the next ` +
+            'capture to symbolize these addresses',
         drillDown: [
           {
             label: 'the unresolved rows',
