@@ -305,22 +305,38 @@ The HapRay parity series (one release per major item, so far):
 | P25 | row 27 completion | `opt <package\|lib.so>` reads each arm64 library's ELF: LTO from `lto_priv.*`/`.gnu.lto_*`, the level from a recorded `-O` flag, and otherwise from the instruction mix, labelled `proxy` with its signals named — no TensorFlow model | shipped in `0.20.0` |
 | P26 | row 5 completion | `agent <app> <task>` drives the app with an injected model: a completion claim carries an expectation the screen is checked against, an irreversible tap is refused before the device sees it, and every step records the gesture and both screen hashes so `replayAgent` can re-walk it without a model | shipped in `0.21.0` |
 | P27 | row 28 completion | `symbols recover <lib.so> <address...>` names unresolved `libfoo.so+0xoffset` references from the ELF's own `st_value`/`st_size` — a lookup, not radare2's boundary heuristic — and `--measure` reports the model's naming accuracy over names the file records, which HapRay never states | shipped in `0.22.0` |
+| P28 | row 36 | `root-cause <scene-dir\|report.json>` ranks the measured evidence by our own severities, states a verdict from the highest finding, and optionally asks a model for suspects — which must cite evidence ids and name only what the run measured, or the claim is marked ungrounded. `--offline` writes the report with no endpoint; a missing endpoint falls back to it and says so | shipped in `0.23.0` |
 
-The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay
-(rev `9386e4e`): 35 user-facing capabilities. The status of every row is
-**data, not prose** — `packages/core/src/parity.ts` holds all 35 with a status
-and, when a row is not fully ported, the reason. `paritySummary()` computes the
-counts, and `parity.test.ts` checks each ported row's analyzer against the set
-the engine actually registers, so a claim cannot outlive the code:
+The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
+re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
+which added `root-cause`, `build`, an LLM exploration strategy inside `haptest`
+and a thermal collector. Rows 1–35 keep the original inventory's numbers;
+36–39 are the new capabilities, appended so a reader can tell them apart.
+The status of every row is **data, not prose** — `packages/core/src/parity.ts`
+holds all 39 with a status and, when a row is not fully ported, the reason.
+`paritySummary()` computes the counts, and `parity.test.ts` checks each ported
+row's analyzer against the set the engine actually registers, so a claim cannot
+outlive the code:
 
 | Status | Rows |
 | --- | --- |
-| ported | 35 |
+| ported | 36 |
 | partial | 0 |
-| missing | 0 |
-| out, with a measured reason | 0 |
+| missing | 2 |
+| out, with a measured reason | 1 |
 
-Every row is ported as of `0.22.0`.
+Row 37 (`build`) is the one row this project refuses. It wraps `deveco-cli` to
+compile a debug HAP: a build tool, not a measurement. A package analyzer cannot
+own the toolchain that compiles the package it reads, and a half-ported wrapper
+would make every measurement depend on a compiler version this package does not
+control. `hap` and `opt` read what the build produced instead.
+
+Rows 38 (the LLM exploration strategy and state comparator) and 39 (thermal
+analysis) are `missing`, not refused: both are worth having, and both need work
+this phase did not do. Row 38 is P29. Row 39 is a collector plus an analyzer,
+and the collector is the part that has to be measured on a device first — a
+sensor list that is assumed rather than read would produce a thermal curve for
+a sensor the device does not have.
 
 Row 5 (the LLM GUI agent) left that list in `0.21.0`. HapRay's blocker was
 the external `phone_agent` dependency, and the three things that made its
@@ -954,6 +970,75 @@ Its rows sum to the window's app-thread weight, so `share` totals 100% — a
 profile. `symbol_stats` and `unresolved_symbol` evidence items name the
 heaviest rows and drill into it.
 
+## Root cause
+
+`root-cause` turns the evidence an analysis already produced into a report a
+person reads. It is the one command whose output is prose, so the design is
+mostly about what the prose is allowed to claim.
+
+```bash
+ohos-perf root-cause <scene-dir|report.json> --out <dir> [--offline] [--model <name>]
+```
+
+The input is a scene directory — analyzed with the same code `report` uses, so
+the two can never disagree about what a capture measured — or a saved
+`report.json`, which is read rather than re-analyzed: a document about an old
+run has to describe what that run measured, not what today's analyzers would
+say about a capture that may no longer exist.
+
+Three artifacts land in `--out`:
+
+| File | Content |
+| --- | --- |
+| `root-cause.json` | the typed document, schema-versioned like every other artifact |
+| `root-cause.md` | the human report: verdict, ranked observations, then any model analysis |
+| `root-cause.evidence.json` | the exact prompt a model would be sent, so the turn can be replayed by hand |
+
+**The deterministic half is the product.** HapRay's `--skip-llm` writes
+"Pending Agent Inference" placeholders, so its artifact is empty without an
+endpoint. Here the evidence is ranked by *our* severities in a total order
+(severity, then evidence id, so two runs of one capture produce identical
+bytes), and the verdict is the highest finding's own sentence — the analyzer
+already said what it measured, and rewriting that would be a second opinion
+nobody asked for. `--offline` writes this and never consults an endpoint; a
+host with no endpoint configured gets the same report plus a notice on stderr,
+rather than a failure.
+
+**Gaps are not findings.** A sparse capture produces a wall of
+`degraded_capability` and `no_data` items, and a first version of this command
+opened its verdict with "hilog skipped: capability not probed" — which tells
+the reader nothing about performance. An observation that reports a gap in the
+capture (either of those kinds, or any item carrying no measured signal) is now
+counted separately, skipped by the verdict, and named in the totals line. A run
+where every observation is a gap says it measured nothing, which is a different
+fact from a run that measured and found nothing.
+
+**What the model is allowed to claim.** The prompt carries the ranked
+observations *with their ids*, and the answer is checked twice:
+
+- **Citations.** An `evidenceId` the run did not produce is moved to
+  `ungrounded` and never presented as measured. A suspect left with no real
+  citation is kept — a reader has to see that the model tried and what it
+  invented — and marked in place in the Markdown, because a footnote is read
+  after the fix has been applied.
+- **Names.** A suspect naming a file, symbol, thread or library is checked
+  against the vocabulary the evidence actually carried: process and thread
+  names, string signal values, and the identifiers the analyzers themselves
+  printed in their own explanations. Anything else is listed as ungrounded.
+
+Neither check is semantic — they answer one question, "did the model name
+something this run measured?" — and that limit is stated rather than papered
+over. Running it against a live endpoint is what found the check's own two
+defects: it flagged `ui.json`, `startedAtNs` and `thread_state`, which the
+analyzers had printed themselves, and it flagged "Re-run" and "app-level" as
+invented names because they contain hyphens.
+
+The turn is sent through an OpenAI-compatible `/chat/completions` call using
+the same `OHOS_PERF_AGENT_*` (or `GLM_*`) variables `agent` reads. The client
+takes a *turn shape* — prompt and answer parser as one value — because a
+root-cause answer is JSON prose with citations, and the GUI agent's parser
+would reject it for having neither an `action` nor a `done`.
+
 ## Emulators
 
 `ohos-perf emulator` drives the `Emulator.exe` that DevEco Studio installs, so a
@@ -1184,6 +1269,23 @@ UX 评分 / “预计节省”等商业指标（都不是测量值）、从安�
 `symbol.unresolved.*`（实测 9.43%），与已命名权重之和等于窗口总权重。采集时加
 `--hiperf --so-dir <目录>` 可让设备在转换时直接符号化；`report` 会额外写出
 `flamegraph.svg` 与 `flamegraph.html`。
+
+根因报告：`ohos-perf root-cause <场景目录|report.json> --out <目录>` 把分析已经产出的
+证据变成一份人读的报告，产物是 `root-cause.json`（带 schema 版本的类型化文档）、
+`root-cause.md`（结论、按严重度排序的观测、以及可选的模型分析）与
+`root-cause.evidence.json`（模型实际会收到的提示词，可手工重放）。**确定性的那一半就是
+产品**：HapRay 的 `--skip-llm` 只写 "Pending Agent Inference" 占位符，没有端点时产物是空的；
+这里按本包自己的严重度做全序排序（严重度、再按证据 id，同一场景两次运行字节一致），
+结论取最高严重度那条观测自己的句子。`--offline` 完全不碰端点；没有配置端点时同样写出
+这份报告并在 stderr 说明，而不是失败。报告里的“缺口”不算“发现”：`degraded_capability`、
+`no_data` 以及任何不带测量信号的条目都单独计数、不参与结论——实测一个稀疏采集曾让结论
+以 "hilog skipped: capability not probed" 开头，那说明的是采集缺了什么，不是应用出了什么问题。
+模型能声称什么要经过两道检查：引用的证据 id 必须是本次运行真实产出的（否则移入
+`ungrounded`，并在 Markdown 里就地标注，而不是写成脚注）；提到的文件、符号、线程、库名
+必须在证据实际携带的词汇里（进程名、线程名、字符串信号值，以及分析器自己在解释里打印的
+标识符）。这两道检查都是字面检查而非语义判断，这个边界会写明。用本机网关实测时正是这两道
+检查暴露了自身的两个缺陷：它把分析器自己打印的 `ui.json`、`startedAtNs`、`thread_state`
+判为捏造，又因为含连字符把 "Re-run"、"app-level" 判为名字。
 
 `--hiperf` 需要可调试应用，空闲应用产生 `samples: 0` 也是一次有效采集，CLI 会明确
 打印 `hiperf 0` 而不是省略。`compare` 把每个指标标为 improved / regressed /

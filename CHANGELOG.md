@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.23.0 — 2026-11-18
+
+**`root-cause` turns measured evidence into a report a person reads — and
+checks what a model claims about it.** HapRay's `root-cause` reads its own
+report JSON, hands the summaries to a model and writes Markdown, so the model
+sees a summary of a summary and never the measured numbers. It also cannot run
+without an endpoint: `--skip-llm` writes "Pending Agent Inference"
+placeholders, which is an empty artifact rather than an offline one.
+
+`ohos-perf root-cause <scene-dir|report.json> --out <dir>` feeds the `Evidence`
+items directly and writes three artifacts: `root-cause.json` (schema-versioned),
+`root-cause.md`, and `root-cause.evidence.json` (the exact prompt a model would
+receive, so the turn can be replayed by hand). A scene directory is analyzed
+with the same code `report` uses; a saved `report.json` is read without
+re-analysis, so a document about an old run describes what that run measured.
+
+- **The deterministic half is the product.** Observations are ranked by our own
+  severities in a total order (severity, then evidence id), so two runs of one
+  capture produce identical bytes. The verdict is the highest finding's own
+  sentence. `--offline` never consults an endpoint; a host with no endpoint
+  configured gets the same report plus a notice on stderr rather than a failure.
+- **Gaps are not findings.** A sparse capture produces a wall of
+  `degraded_capability` and `no_data` items. A first version opened its verdict
+  with "hilog skipped: capability not probed", which says nothing about
+  performance. Observations that report a gap in the capture — either of those
+  kinds, or any item carrying no measured signal — are now counted separately,
+  kept out of the verdict, and named in the totals line. A run where every
+  observation is a gap says it measured nothing.
+- **Citations are checked.** An `evidenceId` the run did not produce is moved
+  to `ungrounded` and never presented as measured; a suspect left with no real
+  citation is kept, marked in place in the Markdown, because a footnote is read
+  after the fix has been applied.
+- **Names are checked.** A suspect naming a file, symbol, thread or library is
+  checked against what the evidence actually carried: process and thread names,
+  string signal values, and the identifiers the analyzers printed in their own
+  explanations. Neither check is semantic, and the limit is stated.
+
+Three defects were found by running the command rather than by reading it:
+
+- The HTTP client rendered every turn with `agentPrompt` and parsed every
+  answer with `parseDecision`, so a root-cause turn told the model to answer
+  with a gesture and then rejected the JSON it had asked for. The client now
+  takes an `AgentTurnShape` — prompt and parser as one value — with `GUI_TURN`
+  as the default.
+- The grounding check flagged names the analyzers themselves printed
+  (`ui.json`, `startedAtNs`, `thread_state`) and ordinary hyphenated prose
+  ("Re-run", "app-level"). The vocabulary now includes the analyzers' own
+  identifiers, and a hyphen alone no longer makes a token a name.
+- The whole-capture window marker rendered as a 285-year span, and the prompt
+  read "app unknown on offline".
+
+**The parity ledger is re-pinned from HapRay `9386e4e` to `bd5c98a`** — 428
+commits later. Rows 1–35 keep the original inventory's numbers; four rows are
+appended: 36 `root-cause` (ported), 37 `build` (out — it wraps `deveco-cli` to
+compile a debug HAP, which is a build tool, not a measurement), 38 the LLM
+exploration strategy and state comparator (missing; P29), and 39 thermal
+analysis (missing; a collector plus an analyzer, and the collector is the part
+that must be measured on a device first). 36 ported, 0 partial, 2 missing, 1 out.
+
+2080 unit tests. The device suite is unchanged.
+
 ## 0.22.4 — 2026-11-18
 
 **`agent` now warns about the risk before it drives a real device.** A model

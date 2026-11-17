@@ -15,10 +15,13 @@ import { defaultAnalyzers } from '../src/analyze/engine';
  */
 
 describe('the parity ledger', () => {
-  it('has one row per HapRay capability, numbered 1..35', () => {
-    expect(PARITY_ROWS).toHaveLength(35);
+  it('has one row per HapRay capability, numbered 1..39', () => {
+    // 1..35 is the inventory at rev `9386e4e`; 36..39 are what the 428 commits
+    // up to `bd5c98a` added. The numbers are contiguous because the ledger is
+    // the index a reader follows, not a set of independent labels.
+    expect(PARITY_ROWS).toHaveLength(39);
     expect(PARITY_ROWS.map((row) => row.row)).toEqual(
-      Array.from({ length: 35 }, (_, index) => index + 1),
+      Array.from({ length: 39 }, (_, index) => index + 1),
     );
   });
 
@@ -35,10 +38,10 @@ describe('the parity ledger', () => {
 
   it('counts exactly what it contains', () => {
     const summary = paritySummary();
-    expect(summary.total).toBe(35);
+    expect(summary.total).toBe(39);
     expect(
       summary.ported + summary.partial + summary.missing + summary.out,
-    ).toBe(35);
+    ).toBe(39);
     expect(summary.ported).toBe(
       PARITY_ROWS.filter((row) => row.status === 'ported').length,
     );
@@ -90,8 +93,14 @@ describe('the parity ledger', () => {
     // start and size in `st_value`/`st_size`, so the boundary is a lookup;
     // `symbols recover --measure` holds out names the file does record and
     // states the model's accuracy over them.
+    // Row 37 (`build`) was refused in 0.23.0, when the ledger was re-pinned to
+    // `bd5c98a`. It wraps `deveco-cli` to compile a debug HAP: a build tool,
+    // not a measurement. Refusing it is the one place this ledger says "we do
+    // not want this", as opposed to "we have not done it yet" — which is why
+    // the assertion names the row instead of requiring the list to be empty.
+    // A new `out` row has to be added here deliberately, with its argument.
     const out = PARITY_ROWS.filter((row) => row.status === 'out');
-    expect(out).toEqual([]);
+    expect(out.map((row) => row.row)).toEqual([37]);
   });
 
   it('does not name a subfeature as missing once the code emits it', () => {

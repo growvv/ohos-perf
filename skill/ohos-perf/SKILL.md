@@ -564,6 +564,34 @@ ohos-perf report <scene-dir> --out reports/run1 [--app <pkg>] [--baseline <input
 - `--json` prints the artifact manifest (paths and counts), not the report
   document.
 
+## Root cause
+
+When the question is "why is it slow" rather than "how slow is it", render the
+root-cause report:
+
+```bash
+ohos-perf root-cause <scene-dir|report.json> --out reports/run1 [--offline] [--model <name>]
+```
+
+- Artifacts: `root-cause.json` (the typed, versioned document),
+  `root-cause.md` (the human report) and `root-cause.evidence.json` (the exact
+  prompt a model would receive, so the turn can be replayed by hand).
+- `--offline` never contacts an endpoint and still writes a usable report.
+  Without it, a host with no endpoint configured falls back to the same report
+  and says so on stderr — that is a fallback, not a failure.
+- **A gap is not a finding.** `degraded_capability`, `no_data` and any
+  observation carrying no measured signal describe the *capture*. They are
+  counted in `summary.totals.gaps` and kept out of the verdict. When every
+  observation is a gap the verdict says the run measured nothing — report that
+  as a capture problem, never as an app with no problems.
+- **Check the citations before repeating a suspect.** Each suspect's
+  `evidenceIds` were checked against the ids the run produced, and its
+  `ungrounded` list names files, symbols, threads or libraries the evidence
+  never carried. A suspect with a non-empty `ungrounded` is not grounded in
+  this run: say so when quoting it, and never present its cause as measured.
+- Neither check is semantic. They answer "did the model name something this run
+  measured?", not "is the cause right". Say which one you relied on.
+
 ## Output contract
 
 `--json` output is the same structure the library returns. Evidence is ordered

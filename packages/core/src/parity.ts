@@ -1,6 +1,6 @@
 /**
  * The HapRay parity ledger: one row per capability in the source-level
- * inventory of ArkAnalyzer-HapRay rev `9386e4e`.
+ * inventory of ArkAnalyzer-HapRay rev `bd5c98a` (2026-11-18).
  *
  * This exists because the claim drifted. The README said "18 ported / 9
  * partial / 8 missing" long after six releases had moved rows, and nothing
@@ -11,6 +11,12 @@
  * The numbering is the inventory's own (`gap-analysis.md`), and it is what
  * the README and the site quote. Each `reason` for a non-ported row names what
  * is absent, so "not worth it" and "not done" are distinguishable.
+ *
+ * **Re-pinned from `9386e4e` to `bd5c98a`** in 0.23.0. The 428 commits between
+ * them added three actions (`build`, `root-cause`, and an LLM exploration
+ * strategy inside `haptest`) and a thermal collector. Rows 1–35 keep their
+ * numbers; the new capabilities are appended so a reader can tell the original
+ * inventory from what followed it.
  */
 
 /** How much of one HapRay capability this package implements. */
@@ -259,6 +265,51 @@ export const PARITY_ROWS: readonly ParityRow[] = [
     name: 'Report comparison',
     status: 'ported',
     reason: '',
+  },
+  /*
+   * Rows 36–39 were added after the pinned revision. They keep counting from
+   * 35 so a reader can tell the original inventory from what followed it.
+   */
+  {
+    row: 36,
+    name: 'Root-cause narrative (`root-cause`)',
+    status: 'ported',
+    reason: '',
+  },
+  {
+    row: 37,
+    name: 'Debug HAP build (`build`, wraps deveco-cli)',
+    status: 'out',
+    reason:
+      'this is a build tool, not a measurement: it invokes deveco-cli to produce'
+      + ' a debug package. A package analyzer cannot own the toolchain that'
+      + ' compiles the package it reads, and a half-ported wrapper would make'
+      + ' every measurement depend on a compiler version this package does not'
+      + ' control. `hap` and `opt` read what the build produced instead.',
+  },
+  {
+    row: 38,
+    name: 'LLM exploration strategy and state comparator (`haptest`)',
+    status: 'missing',
+    reason:
+      'HapRay hands the whole step to a model: `llm_strategy.py` asks it which'
+      + ' node to tap, and `llm_state_comparator.py` asks whether the screen'
+      + ' changed. Neither answer is checked, so a model that taps a dead'
+      + ' button reports progress. Not ported yet; P29 covers it, and the design'
+      + ' requires the model\'s answer to be verified against the screen it was'
+      + ' given before the step counts.',
+  },
+  {
+    row: 39,
+    name: 'Thermal analysis (`hidumper -s ThermalService`)',
+    status: 'missing',
+    reason:
+      'a collector plus an analyzer, so it is a capability of its own rather'
+      + ' than part of the root-cause narrative: HapRay samples each sensor'
+      + ' through hidumper and reports start/end/peak/mean and the rise. Not'
+      + ' ported yet; the collector is the part that has to be measured on a'
+      + ' device first, because a sensor list that is assumed rather than read'
+      + ' would produce a thermal curve for a sensor the device lacks.',
   },
 ];
 
