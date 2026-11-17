@@ -231,9 +231,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
   {
     row: 29,
     name: 'HapFlow static/dynamic integration',
-    status: 'missing',
-    reason:
-      'No file-to-HAR dependency graph, cross-HAR edge counts or `timing_cycles`.',
+    status: 'ported',
+    reason: '',
   },
   {
     row: 30,

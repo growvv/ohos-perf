@@ -151,6 +151,7 @@ export { matchSelector, parseSelector, resolveSelector } from './scenario/select
 export { PARITY_ROWS, paritySummary } from './parity';
 export { parseRedundantFile, RedundantFileAnalyzer } from './analyze/redundant-file';
 export { JsheapCollector, readJsheapSnapshot } from './collectors/jsheap';
+export { buildDepGraph } from './hap/depgraph';
 export { executeAction } from './scenario/actions';
 export { ScenarioRunner, writeRunFiles } from './scenario/runner';
 export type {
@@ -163,6 +164,9 @@ export type { CaseLoad, DiscoveredCase } from './scenario/cases';
 export type { ParityRow, ParityStatus } from './parity';
 export type { RedundantFileEntry, RedundantFileReport } from './analyze/redundant-file';
 export type { JsheapCapture } from './collectors/jsheap';
+export type {
+  DepGraph, DepGraphEdge, DepGraphFile, HarEdge, ModuleDecl, TimingCycle,
+} from './hap/depgraph';
 export type {
   ActionOutcome, ExpectationOutcome, RunResult, RunStepResult, RunnerCollectOptions,
   RunnerDevice, RunOptions,
