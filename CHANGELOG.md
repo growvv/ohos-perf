@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.22.4 — 2026-11-18
+
+**`agent` now warns about the risk before it drives a real device.** A model
+chooses every gesture, so a run acts on whatever account is already signed in.
+The guard refuses a tap whose *label* is irreversible, but a label is not
+intent: an app can word a destructive action in ways the pattern table does not
+cover, and a model can reach a screen a person would not have chosen. Every run
+prints a three-line warning to stderr naming that, and telling the user to
+review the walk and prefer a test account or a disposable build. The warning
+also appears in `agent --help`, and it is kept out of stdout so `--json`
+stays parseable.
+
+No behaviour change: the exit code, the transcript and the guard are the same.
+2015 unit tests.
+
 ## 0.22.3 — 2026-11-17
 
 **The irreversible-action guard let a near-miss tap through.** The guard reads
