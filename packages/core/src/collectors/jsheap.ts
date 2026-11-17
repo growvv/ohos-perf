@@ -59,25 +59,37 @@ function detail(result: HdcResult): string {
 }
 
 /**
- * The newest `.heapsnapshot` under the app's data directory, or `undefined`.
+ * Every `.heapsnapshot` under the app's data directory, newest first.
  *
  * `find` is given a bounded depth: a heap snapshot is written under the app's
  * files directory, and an unbounded search of `/data/app` would take minutes
  * on a device with many installed apps.
+ *
+ * Each entry keeps its `%T@` mtime so a caller can tell a snapshot this
+ * capture produced from one an earlier run left behind. Comparing against a
+ * device clock would need the host and device to agree on the time; the
+ * mtime is the device's own, and the pre-dump set is read from the same
+ * clock, so no agreement is required.
  */
-function findNewestSnapshot(hdc: Hdc, target: string, app: string): Promise<string | undefined> {
+function listSnapshots(hdc: Hdc, target: string, app: string): Promise<string[]> {
   return hdc
     .shell(
       target,
       `find ${DEVICE_SNAPSHOT_DIR}/${app} -maxdepth 6 -name '*.heapsnapshot'` +
-        ' -printf "%T@ %p\\n" 2>/dev/null | sort -n | tail -1',
+        ' -printf "%T@ %p\\n" 2>/dev/null | sort -rn',
     )
-    .then((result) => {
-      const line = result.stdout.trim();
-      if (line === '') return undefined;
-      const space = line.indexOf(' ');
-      return space === -1 ? line : line.slice(space + 1).trim();
-    });
+    .then((result) =>
+      result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    );
+}
+
+/** The path in a `<mtime> <path>` row. */
+function rowPath(row: string): string {
+  const space = row.indexOf(' ');
+  return space === -1 ? row : row.slice(space + 1).trim();
 }
 
 function sleep(ms: number): Promise<void> {
@@ -122,6 +134,14 @@ export class JsheapCollector implements Collector {
       );
     }
 
+    // What was on the device before the dump. The write is asynchronous, so
+    // the poll accepts the first `.heapsnapshot` that was not in this set — a
+    // snapshot an earlier run left behind is not evidence about this one, and
+    // recording it would report a different session's heap as this capture's.
+    const before = new Set(
+      (await listSnapshots(hdc, target, opts.app)).map(rowPath),
+    );
+
     const dump = await hdc.shell(target, `hidumper --mem-jsheap ${pidText} -T ${pidText}`);
     if (dump.code !== 0) {
       throw new OhosPerfError(
@@ -131,13 +151,16 @@ export class JsheapCollector implements Collector {
       );
     }
 
-    // The write is asynchronous on the device: poll until the file appears or
-    // the deadline passes. A snapshot that never appears is the failure mode
-    // this loop exists to make visible rather than to hang on.
+    // The write is asynchronous on the device: poll until a new file appears
+    // or the deadline passes. A snapshot that never appears is the failure
+    // mode this loop exists to make visible rather than to hang on.
     const deadline = Date.now() + timeoutMs;
     let devicePath: string | undefined;
     for (;;) {
-      devicePath = await findNewestSnapshot(hdc, target, opts.app);
+      // Rows are newest-first, so the first unseen path is the newest new one.
+      devicePath = (await listSnapshots(hdc, target, opts.app))
+        .map(rowPath)
+        .find((path) => !before.has(path));
       if (devicePath !== undefined) break;
       if (Date.now() >= deadline) break;
       await sleep(Math.min(POLL_MS, Math.max(1, deadline - Date.now())));
