@@ -152,6 +152,10 @@ export { PARITY_ROWS, paritySummary } from './parity';
 export { parseRedundantFile, RedundantFileAnalyzer } from './analyze/redundant-file';
 export { JsheapCollector, readJsheapSnapshot } from './collectors/jsheap';
 export { buildDepGraph } from './hap/depgraph';
+export type {
+  SceneStep, ScenesComparison, StepComparison, StepStatus,
+} from './report/scenes';
+export { compareScenes, renderScenesComparison, sortSteps } from './report/scenes';
 export { executeAction } from './scenario/actions';
 export { ScenarioRunner, writeRunFiles } from './scenario/runner';
 export type {

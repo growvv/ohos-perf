@@ -276,8 +276,8 @@ export const PARITY_ROWS: readonly ParityRow[] = [
     name: 'Report comparison',
     status: 'partial',
     reason:
-      'Typed improved/regressed/incomparable comparison is ported; the scene+step pivot ' +
-      'and multi-report aggregation are not.',
+      'Typed comparison and the scene+step pivot are ported; aggregating more than two ' +
+      'reports into one trend is not.',
   },
 ];
 
