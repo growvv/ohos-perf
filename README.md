@@ -170,11 +170,13 @@ startup and the flamegraph have no HapRay equivalent that runs on these traces;
 their tests pin the parser, aggregation and marker fallback instead, and no
 parity is claimed for them.
 
-Measured on the two recorded traces, `analyze` reports 75 metrics and 95
-evidence items on `emu_big` (20.8 MB) and 74 metrics and 181 evidence items on
-`real_device` (13.1 MB). Four of the older analyzers report real numbers there:
-`vsync.signals.count` 60 with `vsync.periods.count` 7 and `vsync.anomaly.rate`
-101.67 on `emu_big` (0 / 0 / 0 on `real_device`), `empty_frame.count` 6 with a
+Measured on the two recorded traces with `analyze <scene> --app <pkg> --json`,
+`analyze` reports 77 metrics and 97 evidence items on `emu_big` (20.8 MB,
+`pbench.baseline`) and 76 metrics and 183 evidence items on `real_device`
+(13.1 MB, `erviceAbility:1`). Four of the older analyzers report real numbers
+there: `vsync.signals.count` 60 with `vsync.periods.count` 7 and
+`vsync.anomaly.rate` 101.67 on `emu_big` (160 / 0 / 0 on `real_device`),
+`empty_frame.count` 6 with a
 10% rate on `emu_big` (160 and 100% on `real_device`), `rs_skip.frames.count` 4
 with `rs_skip.trace.accuracy` 100 on `real_device`, and `gc.partial.count` 2
 with `gc.rate` 0.75 on `real_device`. The frame family now reports stutter and
