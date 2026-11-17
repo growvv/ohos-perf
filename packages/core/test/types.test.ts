@@ -125,6 +125,9 @@ const VALUE_EXPORTS = [
   'RsSkipAnalyzer', 'ScreenshotCollector', 'tableRowCounts',
   'unknownQueryError',
   'VsyncAnalyzer',
+  'openZip', 'isZip', 'buildInventory', 'categorize', 'CATEGORY_EXTENSIONS',
+  'CATEGORY_MAX_BYTES', 'TECH_RULES', 'matchHapRules', 'validateRules', 'EXCLUDE_PATTERNS',
+  'analyzeHap', 'hapSection',
   'writeSceneMetadata', 'xpowerPlugin',
 ];
 

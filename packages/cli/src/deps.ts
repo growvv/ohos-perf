@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BinderQuery,
@@ -31,6 +31,7 @@ import {
   readProcfsSamples,
   readHilogText,
   parseHilogText,
+  analyzeHap,
   buildReport,
   compareResults,
   compareSceneDirs,
@@ -41,6 +42,7 @@ import {
   renderReportJson,
   renderReportXlsx,
   renderSummaryJson,
+  hapSection,
   readSceneMetadata,
   readUiTree,
   resolveAppIdentity,
@@ -843,6 +845,56 @@ export function realDeps(
           ? {}
           : { comparison: { ...model.comparison.totals } }),
       };
+    },
+
+    async hap(req) {
+      // The whole package is read into memory: the archive is a document, not
+      // an extraction, so nothing is written outside `--out`.
+      const analysis = analyzeHap(readFileSync(req.packagePath), basename(req.packagePath));
+      const output = {
+        package: analysis.package,
+        totals: analysis.totals,
+        technologies: analysis.technologies.map((match) => ({
+          ruleId: match.ruleId,
+          type: match.type,
+          files: match.files.length,
+          bytes: match.bytes,
+        })),
+        duplicates: {
+          groups: analysis.duplicates.length,
+          wastedBytes: analysis.duplicates.reduce((sum, group) => sum + group.wastedBytes, 0),
+        },
+        oversized: analysis.oversized.length,
+        largest: analysis.largest,
+      };
+      if (req.outDir === undefined) return output;
+
+      // One section, rendered by the same report model as a captured scene, so
+      // the page carries the same shape a reader already knows. The scenario
+      // block names the package, and the window is the archive's own `{0, 0}`.
+      const model = buildReport({
+        generator: { name: '@ohos-perf/core', version },
+        app: {
+          packageName: analysis.package.bundleName === ''
+            ? analysis.package.name
+            : analysis.package.bundleName,
+          pids: [],
+          processNames: [],
+        },
+        device: 'offline',
+        window: { startNs: 0, endNs: 0 },
+        sections: [hapSection(analysis)],
+      });
+      const artifacts: Array<[string, string]> = [
+        ['hap.json', JSON.stringify(analysis, null, 2) + '\n'],
+        ['hap.html', renderReportHtml(model)],
+      ];
+      const outDir = resolve(req.outDir);
+      await mkdir(outDir, { recursive: true });
+      for (const [name, content] of artifacts) {
+        await writeFile(join(outDir, name), content);
+      }
+      return { ...output, outDir, artifacts: artifacts.map(([name]) => name) };
     },
 
     tools() {

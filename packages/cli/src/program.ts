@@ -11,6 +11,7 @@ import {
   runEmulatorStart,
   runEmulatorStop,
   runGesture,
+  runHap,
   runQuery,
   runReport,
   runScenarioCommand,
@@ -309,6 +310,25 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         );
       },
     );
+
+  program
+    .command('hap')
+    .description('inspect a .hap/.hsp package offline: files, sizes, technologies, duplicates')
+    .argument('<package>', 'path to a .hap, .hsp or .zip file')
+    .option('--out <dir>', 'write hap.json and hap.html to this directory')
+    .option('--json', 'print the analysis as JSON')
+    .action(async (packagePath: string, opts: { out?: string; json?: boolean }) => {
+      io.emit(
+        await runHap(
+          deps,
+          {
+            packagePath,
+            ...(opts.out === undefined ? {} : { outDir: opts.out }),
+          },
+          { json: opts.json },
+        ),
+      );
+    });
 
   program
     .command('run')

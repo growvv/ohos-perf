@@ -18,7 +18,10 @@ export type CapabilityId =
   | 'ui.tree' | 'ui.gesture' | 'ui.capture'
   | 'power.xpower' | 'net.io' | 'disk.io' | 'js.heap' | 'coverage'
   | 'hilog.stream'
-  | 'startup.app_startup';
+  | 'startup.app_startup'
+  // Offline by construction: a package on disk needs no device probe, so this
+  // id has no row in TABLE_RULES and the device matrix keeps its 23 rows.
+  | 'static.hap';
 
 /**
  * How directly a capability measures the thing it claims to measure.

@@ -118,6 +118,7 @@ export const SECTION_TITLES: Readonly<Record<string, string>> = {
   memory: 'Memory trend',
   render: 'Render',
   'rs-skip': 'RenderService skips',
+  'static-hap': 'Static HAP inspection',
   startup: 'Startup',
   threads: 'Threads',
   ui: 'UI',

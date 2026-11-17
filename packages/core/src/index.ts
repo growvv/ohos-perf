@@ -292,6 +292,22 @@ export {
 export { resolveAppIdentity, resolveAppIpids } from './analyze/context';
 export type { Analyzer, AnalyzeContext, AnalyzeResult } from './analyze/types';
 
+// Static package inspection (offline)
+export { openZip, isZip } from './hap/zip';
+export type { ZipArchive, ZipEntry } from './hap/zip';
+export {
+  CATEGORY_EXTENSIONS, CATEGORY_MAX_BYTES, buildInventory, categorize,
+} from './hap/inventory';
+export type { FileCategory, InventoryFile } from './hap/inventory';
+export { EXCLUDE_PATTERNS, TECH_RULES, matchHapRules, validateRules } from './hap/rules';
+export type {
+  ContentPattern, FileRule, MetadataPattern, RuleMatch, RuleMatchKind, TechRule,
+} from './hap/rules';
+export { analyzeHap, hapSection } from './hap/analyze';
+export type {
+  CategoryTotal, DuplicateGroup, HapAnalysis, HapPackage, OversizedFile,
+} from './hap/analyze';
+
 // Reports
 export { metric } from './report/metric';
 export type { Metric, MetricUnit, Provenance } from './report/metric';

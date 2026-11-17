@@ -102,6 +102,10 @@ describe('buildMatrix availability rules', () => {
     expect(new Set(ids).size).toBe(23);
   });
 
+  it('never emits static.hap, which needs no device', () => {
+    expect(buildMatrix(FULL_DEVICE).all().map((state) => state.id)).not.toContain('static.hap');
+  });
+
   it('serves hilog.stream from the hilog binary', () => {
     const m = buildMatrix(FULL_DEVICE);
     expect(m.get('hilog.stream')!.collector).toBe('hilog');

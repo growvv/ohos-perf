@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import {
   OhosPerfError,
   parseScenario,
@@ -231,6 +231,41 @@ export interface ReportOutput {
   comparison?: Record<DeltaStatus, number>;
 }
 
+/** A `hap` invocation: one package on disk, an optional output directory. */
+export interface HapRequest {
+  /** Path to the `.hap` / `.hsp` / `.zip` file. */
+  packagePath: string;
+  /** When set, `hap.json` and `hap.html` are written here. */
+  outDir?: string;
+}
+
+/**
+ * What a package inspection found.
+ *
+ * The full per-file inventory stays in `hap.json`; this is what a terminal
+ * needs to answer "what is in here and what is large". `technologies` carries
+ * the rule that decided each match, because a detection without its rule is
+ * indistinguishable from a guess.
+ */
+export interface HapOutput {
+  package: {
+    name: string;
+    bundleName: string;
+    versionName: string;
+    versionCode: number;
+    appName: string;
+  };
+  totals: { files: number; size: number; compressedSize: number };
+  technologies: Array<{ ruleId: string; type: string; files: number; bytes: number }>;
+  duplicates: { groups: number; wastedBytes: number };
+  oversized: number;
+  largest: Array<{ path: string; size: number }>;
+  /** Present only when `--out` was given. */
+  outDir?: string;
+  /** Present only when `--out` was given; the artifact names, in order. */
+  artifacts?: string[];
+}
+
 /**
  * Where the emulator commands look for the binary and its state.
  *
@@ -281,6 +316,12 @@ export interface CliDeps {
   uiCompare(req: UiCompareRequest): Promise<UiCompareOutput>;
   /** Analyze a scene and write the report bundle. Throws on any failure. */
   report(req: ReportRequest): Promise<ReportOutput>;
+  /**
+   * Inspect a HAP on disk. Throws on any failure; the caller maps it to exit 1.
+   *
+   * Reads the file, so an unreadable path fails here rather than in the action.
+   */
+  hap(req: HapRequest): Promise<HapOutput>;
   /** HarmonyOS emulator lifecycle. Throws on any failure; the caller maps it to exit 1. */
   emulator: EmulatorDeps;
   /** Run a scenario. Throws on any failure; the caller maps it to exit 1. */
@@ -670,6 +711,79 @@ export async function runReport(
   } catch (err) {
     return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
   }
+}
+
+/**
+ * Inspect a HAP on disk, without a device.
+ *
+ * The path is checked here, before the IO layer sees it: a typo or a `.txt`
+ * named `app.hap` is an invocation error, not an analysis failure, and saying
+ * so costs no file read. Human output is one line per fact — the package
+ * block, the totals, one line per technology naming its rule, the duplicate
+ * and oversized counts, and the largest files.
+ */
+export async function runHap(
+  deps: CliDeps,
+  req: HapRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  const pathError = packagePathError(req.packagePath);
+  if (pathError !== undefined) return { stdout: '', stderr: `${pathError}\n`, exitCode: 1 };
+
+  try {
+    const result = await deps.hap(req);
+    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+
+    const app = result.package;
+    const identity = [app.bundleName === '' ? '' : app.bundleName, app.versionName]
+      .filter((part) => part !== '')
+      .join(' ');
+    const version = app.versionCode === 0 ? '' : ` (${app.versionCode})`;
+    const label = app.appName === '' ? '' : `  ${app.appName}`;
+    let stdout = `package  ${app.name}${identity === '' ? '' : `  ${identity}${version}`}${label}\n`;
+    stdout +=
+      `files    ${result.totals.files}, ${result.totals.size} bytes ` +
+      `(${result.totals.compressedSize} compressed)\n`;
+    stdout += result.technologies.length === 0
+      ? 'tech     none detected\n'
+      : result.technologies
+          .map(
+            (entry) =>
+              `tech     ${entry.type} (rule ${entry.ruleId})  ` +
+              `${entry.files} file(s), ${entry.bytes} bytes\n`,
+          )
+          .join('');
+    stdout +=
+      `duplicates  ${result.duplicates.groups} group(s), ` +
+      `${result.duplicates.wastedBytes} bytes wasted\n`;
+    stdout += `oversized  ${result.oversized} file(s)\n`;
+    if (result.largest.length > 0) {
+      stdout += `largest  ${result.largest.map((file) => `${file.path}  ${file.size} bytes`).join('\n         ')}\n`;
+    }
+    if (result.outDir !== undefined && result.artifacts !== undefined) {
+      stdout += `wrote    ${result.artifacts.join(', ')} in ${result.outDir}\n`;
+    }
+    return { stdout, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return { stdout: '', stderr: `${safeMessage(err)}\n`, exitCode: 1 };
+  }
+}
+
+/** Why a path cannot be a package, or `undefined` when it can. */
+function packagePathError(packagePath: string): string | undefined {
+  let stats;
+  try {
+    stats = statSync(packagePath);
+  } catch {
+    return `no such package: ${packagePath}`;
+  }
+  if (!stats.isFile()) return `not a file: ${packagePath}`;
+  const dot = packagePath.lastIndexOf('.');
+  const extension = dot <= 0 ? '' : packagePath.slice(dot + 1).toLowerCase();
+  if (extension !== 'hap' && extension !== 'hsp' && extension !== 'zip') {
+    return `not a package (expected .hap, .hsp or .zip): ${packagePath}`;
+  }
+  return undefined;
 }
 
 /**

@@ -48,6 +48,7 @@ function deps(
     compare: async () => { throw new Error('compare not stubbed'); },
     uiCompare: async () => { throw new Error('ui-compare not stubbed'); },
     report: async () => { throw new Error('report not stubbed'); },
+    hap: async () => { throw new Error('hap not stubbed'); },
     emulator: {
       list: async () => [],
       start: async () => { throw new Error('emulator not stubbed'); },
