@@ -195,10 +195,15 @@ export type {
   AddressRef, FunctionRange, NamingAnswer, NamingCase, NamingQuestion, NamingReport,
   RecoveredSymbol, RecoveryResult, UnresolvedAddress,
 } from './hap/symbols-recovery';
-export { GUI_TURN, httpAgentModel, readAgentConfig } from './scenario/agent-client';
+export { GUI_TURN, httpAgentModel, httpChatModel, readAgentConfig } from './scenario/agent-client';
 export type {
-  AgentConfig, AgentFetch, AgentTurnShape, HttpAgentModelOptions,
+  AgentConfig, AgentFetch, AgentTurnShape, ChatModel, HttpAgentModelOptions,
+  HttpModelOptions,
 } from './scenario/agent-client';
+export { explorationPrompt, llmChooser, parseStrategyAnswer } from './scenario/llm-strategy';
+export type {
+  StrategyAnswer, StrategyElement, StrategyRefusal, StrategyTurn,
+} from './scenario/llm-strategy';
 export type {
   AgentDecision, AgentDevice, AgentHistoryEntry, AgentModel, AgentOptions,
   AgentTurn, AgentResult, AgentStatus, AgentStep, AgentStepStatus,

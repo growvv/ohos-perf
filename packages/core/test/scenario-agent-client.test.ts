@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { agentPrompt, type AgentTurn } from '../src/scenario/agent';
-import { httpAgentModel, readAgentConfig } from '../src/scenario/agent-client';
+import { httpAgentModel, httpChatModel, readAgentConfig } from '../src/scenario/agent-client';
 import { ROOT_CAUSE_TURN } from '../src/report/root-cause-model';
 
 /*
@@ -43,6 +43,40 @@ function fakeFetch(body: unknown, init: { status?: number } = {}) {
 function completion(content: string) {
   return { choices: [{ message: { role: 'assistant', content } }] };
 }
+
+describe('httpChatModel', () => {
+  it('posts the prompt and returns the content', async () => {
+    const { fetch, calls } = fakeFetch(completion('{"action":"tap","element":0}'));
+    const model = httpChatModel({
+      baseUrl: 'https://example.test/v1', apiKey: 'k', model: 'm', fetch,
+    });
+    expect(await model.complete('which element?')).toBe('{"action":"tap","element":0}');
+    const body = JSON.parse(String(calls[0]!.init.body)) as Record<string, unknown>;
+    const messages = body['messages'] as Array<{ role: string; content: string }>;
+    expect(messages[0]!.content).toBe('which element?');
+    expect(body['response_format']).toEqual({ type: 'json_object' });
+  });
+
+  it('refuses an HTTP error, a non-JSON body and an empty answer', async () => {
+    const failing = httpChatModel({
+      baseUrl: 'https://e.test', apiKey: 'k', model: 'm',
+      fetch: fakeFetch('{"error":"quota"}', { status: 429 }).fetch,
+    });
+    await expect(failing.complete('x')).rejects.toThrow(/429/);
+
+    const notJson = httpChatModel({
+      baseUrl: 'https://e.test', apiKey: 'k', model: 'm',
+      fetch: fakeFetch('<html>').fetch,
+    });
+    await expect(notJson.complete('x')).rejects.toThrow(/not JSON/);
+
+    const empty = httpChatModel({
+      baseUrl: 'https://e.test', apiKey: 'k', model: 'm',
+      fetch: fakeFetch(completion('  ')).fetch,
+    });
+    await expect(empty.complete('x')).rejects.toThrow(/empty/);
+  });
+});
 
 describe('httpAgentModel', () => {
   it('posts the prompt to the chat completions endpoint', async () => {

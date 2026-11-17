@@ -42,7 +42,8 @@ export interface AgentTurnShape {
 /** The GUI-driving shape: a screen to act on, an action or a verified `done`. */
 export const GUI_TURN: AgentTurnShape = { prompt: agentPrompt, parse: parseDecision };
 
-export interface HttpAgentModelOptions {
+/** What any OpenAI-compatible client needs: an endpoint, a key, a model. */
+export interface HttpModelOptions {
   /** The endpoint root, without `/chat/completions`. */
   readonly baseUrl: string;
   readonly apiKey: string;
@@ -50,16 +51,32 @@ export interface HttpAgentModelOptions {
   readonly fetch: AgentFetch;
   /** Request timeout in ms. Defaults to 60 s. */
   readonly timeoutMs?: number;
+}
+
+export interface HttpAgentModelOptions extends HttpModelOptions {
   /**
    * How a turn becomes a request and how its answer is read. Defaults to
    * {@link GUI_TURN}.
    *
    * A caller whose turn is not a screen to drive — the root-cause report, whose
-   * turn carries the evidence — supplies its own shape. Without this the model
-   * would be told to answer with a gesture and an `expect` block, and a
-   * correct answer would then be rejected for having neither.
+   * turn carries the evidence, or exploration, whose turn carries a list of
+   * elements — supplies its own shape. Without this the model would be told to
+   * answer with a gesture and an `expect` block, and a correct answer would
+   * then be rejected for having neither.
    */
   readonly shape?: AgentTurnShape;
+}
+
+/**
+ * A text-in, text-out model client.
+ *
+ * Exploration needs exactly this: one prompt, one answer it parses itself. It
+ * is the same transport as {@link httpAgentModel} without the GUI turn contract,
+ * so a caller that has its own prompt does not have to pretend it is driving a
+ * screen.
+ */
+export interface ChatModel {
+  complete(prompt: string): Promise<string>;
 }
 
 export interface AgentConfig {
@@ -143,28 +160,27 @@ function contentOf(body: unknown): string {
 }
 
 /**
- * A model client over an OpenAI-compatible endpoint.
+ * A text completion client over an OpenAI-compatible endpoint.
  *
  * The options are validated once, at construction, so a misconfiguration fails
- * before a device is touched rather than on the first decision.
+ * before a device is touched rather than on the first prompt.
  */
-export function httpAgentModel(options: HttpAgentModelOptions): AgentModel {
+export function httpChatModel(options: HttpModelOptions): ChatModel {
   const baseUrl = options.baseUrl.trim().replace(/\/+$/, '');
   const model = options.model.trim();
-  if (baseUrl === '') throw badClient('the agent base URL must not be empty');
-  if (model === '') throw badClient('the agent model name must not be empty');
+  if (baseUrl === '') throw badClient('the model base URL must not be empty');
+  if (model === '') throw badClient('the model name must not be empty');
 
   const url = `${baseUrl}/chat/completions`;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const shape = options.shape ?? GUI_TURN;
 
   return {
-    async decide(turn: AgentTurn): Promise<AgentDecision> {
+    async complete(prompt: string): Promise<string> {
       const body = {
         model,
-        messages: [{ role: 'user', content: shape.prompt(turn) }],
-        // The answer is JSON the loop parses, so the endpoint is asked for JSON
-        // rather than for prose that happens to contain some.
+        messages: [{ role: 'user', content: prompt }],
+        // The answers this package reads are JSON, so the endpoint is asked
+        // for JSON rather than for prose that happens to contain some.
         response_format: { type: 'json_object' },
       };
 
@@ -181,7 +197,7 @@ export function httpAgentModel(options: HttpAgentModelOptions): AgentModel {
         });
       } catch (err) {
         throw new OhosPerfError(
-          `the agent endpoint could not be reached: ${(err as Error).message}`,
+          `the model endpoint could not be reached: ${(err as Error).message}`,
           { code: 'AGENT_UNREACHABLE', cause: err },
         );
       }
@@ -189,7 +205,7 @@ export function httpAgentModel(options: HttpAgentModelOptions): AgentModel {
       const text = await response.text();
       if (!response.ok) {
         throw new OhosPerfError(
-          `the agent endpoint answered ${response.status}: ${text.slice(0, EXCERPT_CHARS)}`,
+          `the model endpoint answered ${response.status}: ${text.slice(0, EXCERPT_CHARS)}`,
           { code: 'AGENT_HTTP_ERROR' },
         );
       }
@@ -200,9 +216,25 @@ export function httpAgentModel(options: HttpAgentModelOptions): AgentModel {
           code: 'AGENT_BAD_RESPONSE',
         });
       }
-      // Parsed here, not in the loop: the error then names the answer rather
-      // than the step, which is where the cause actually is.
-      return shape.parse(content);
+      return content;
+    },
+  };
+}
+
+/**
+ * A model client for a GUI-driving turn.
+ *
+ * The shape is applied here rather than by the caller so the two halves of a
+ * turn — the prompt that asks and the parser that reads — are always the same
+ * pair. Parsing happens in the client, so an error names the answer rather than
+ * the step, which is where the cause actually is.
+ */
+export function httpAgentModel(options: HttpAgentModelOptions): AgentModel {
+  const shape = options.shape ?? GUI_TURN;
+  const chat = httpChatModel(options);
+  return {
+    async decide(turn: AgentTurn): Promise<AgentDecision> {
+      return shape.parse(await chat.complete(shape.prompt(turn)));
     },
   };
 }
