@@ -121,6 +121,7 @@ export const SECTION_TITLES: Readonly<Record<string, string>> = {
   'static-hap': 'Static HAP inspection',
   startup: 'Startup',
   symbols: 'Symbols',
+  thermal: 'Thermal',
   threads: 'Threads',
   ui: 'UI',
   vsync: 'VSync',

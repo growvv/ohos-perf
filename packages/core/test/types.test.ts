@@ -96,6 +96,7 @@ const VALUE_EXPORTS = [
   'HidumperCollector', 'HILOG_COMMAND', 'HilogAnalyzer', 'HilogCollector',
   'ThermalCollector', 'THERMAL_COMMAND', 'DEFAULT_THERMAL_INTERVAL_MS',
   'MIN_THERMAL_INTERVAL_MS', 'readThermalRecords', 'parseThermalOutput',
+  'ThermalAnalyzer', 'thermalSensorSlug',
   'HIPROFILER_PLUGIN_NAMES', 'HITCH_COMMAND',
   'HITRACE_DEFAULT_CATEGORIES',
   'Hdc', 'HdcNotFoundError', 'HiperfCollector', 'hiperfRecordCommand',

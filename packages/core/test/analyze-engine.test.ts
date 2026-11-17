@@ -30,6 +30,7 @@ import { ThreadAnalyzer } from '../src/analyze/threads-score';
 import { VsyncAnalyzer } from '../src/analyze/vsync';
 import { HilogAnalyzer } from '../src/analyze/hilog';
 import { UiAnalyzer } from '../src/analyze/ui';
+import { ThermalAnalyzer } from '../src/analyze/thermal';
 import {
   defaultAnalyzers,
   runAnalyzerSections,
@@ -374,6 +375,7 @@ describe('defaultAnalyzers', () => {
       'ui',
       'redundant-file',
       'coverage',
+      'thermal',
     ]);
     expect(analyzers[0]).toBeInstanceOf(FrameAnalyzer);
     expect(analyzers[1]).toBeInstanceOf(FrameLoadAnalyzer);
@@ -394,6 +396,7 @@ describe('defaultAnalyzers', () => {
     expect(analyzers[16]).toBeInstanceOf(ComponentReuseAnalyzer);
     expect(analyzers[17]).toBeInstanceOf(HilogAnalyzer);
     expect(analyzers[18]).toBeInstanceOf(UiAnalyzer);
+    expect(analyzers[21]).toBeInstanceOf(ThermalAnalyzer);
     expect(defaultAnalyzers()).not.toBe(analyzers);
   });
 });

@@ -20,6 +20,7 @@ import { StartupAnalyzer } from './startup';
 import { RenderAnalyzer } from './render';
 import { RsSkipAnalyzer } from './rs-skip';
 import { SymbolsAnalyzer } from './symbols';
+import { ThermalAnalyzer } from './thermal';
 import { ThreadAnalyzer } from './threads-score';
 import { UiAnalyzer } from './ui';
 import { VsyncAnalyzer } from './vsync';
@@ -249,5 +250,6 @@ export function defaultAnalyzers(): Analyzer[] {
     new UiAnalyzer(),
     new RedundantFileAnalyzer(),
     new CoverageAnalyzer(),
+    new ThermalAnalyzer(),
   ];
 }

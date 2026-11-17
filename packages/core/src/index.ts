@@ -186,6 +186,7 @@ export type {
 } from './report/trend';
 export { CoverageAnalyzer, parseCoverageReport } from './analyze/coverage';
 export type { CoverageCounts, CoverageFile, CoverageRatio, CoverageReport } from './analyze/coverage';
+export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';
 export { executeAction } from './scenario/actions';
 export {
   explore, deviceExplorationHost, explorationDevice, hashPageShape, hashTree, planNextAction,

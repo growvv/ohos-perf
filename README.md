@@ -7,9 +7,9 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-22d3ee.svg)](LICENSE)
 
 A TypeScript toolkit for HarmonyOS performance analysis. It turns an attached device
-into structured, evidence-backed data: capability probing, nine collectors,
+into structured, evidence-backed data: capability probing, ten collectors,
 `trace_streamer` ingest, typed queries over the resulting SQLite
-databases, twenty-one analyzers, metrics with provenance, an evidence graph,
+databases, twenty-two analyzers, metrics with provenance, an evidence graph,
 baseline comparison, and a CLI designed to be called by agents.
 
 - Website: <https://growvv.github.io/ohos-perf/>
@@ -109,8 +109,9 @@ Implemented today:
   (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`), symbol statistics
   with the unresolved share (`symbol.*`), ArkUI component reuse
   (`components.*`), the device log rules (`hilog.*`), cold-start redundant-file
-  I/O (`redundant_file.*`) and the UI tree and screenshot (`ui.*`), driven by
-  an offline capability matrix derived from table presence
+  I/O (`redundant_file.*`), thermal sensor statistics (`thermal.*`) and the UI
+  tree and screenshot (`ui.*`), driven by an offline capability matrix derived
+  from table presence
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
@@ -234,6 +235,7 @@ Metric ids emitted by the analyzers:
 | `hilog.*` | hilog | `hilog.lines.count`, `hilog.rules.matched.count`, `hilog.rule.<name>.count` |
 | `coverage.*` | coverage ingestion | `coverage.lines.percent`, `coverage.lines.covered`, `coverage.functions.percent`, `coverage.branches.percent`, `coverage.files.count` |
 | `redundant_file.*` | redundant-file I/O | `redundant_file.reads.count`, `redundant_file.files.used`, `redundant_file.files.unused` |
+| `thermal.*` | device thermal sensors | `thermal.<sensor>.start.celsius`, `thermal.<sensor>.peak.celsius`, `thermal.<sensor>.rise.celsius`, `thermal.interval.median.ms` |
 | `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` (animation labels live in `ui-diff.json`, not as metrics) |
 | `hap.*` | static HAP inspection | `hap.files.count`, `hap.size.bytes`, `hap.techstack.count`, `hap.duplicates.wasted.bytes`, `hap.oversized.count`, `hap.category.images.bytes` |
 | `binary.*` | optimization detection | `binary.files.count`, `binary.text.bytes`, `binary.instructions.count`, `binary.lto.files.count`, `binary.lto.unknown.files.count`, `binary.debug.files.count`, `binary.stripped.files.count`, `binary.high.optimization.files.count` (and the other level counts, `proxy`) |
@@ -252,8 +254,8 @@ their tests pin the parser, aggregation and marker fallback instead, and no
 parity is claimed for them.
 
 Measured on the two recorded traces with `analyze <scene> --app <pkg> --json`,
-`analyze` reports 80 metrics and 99 evidence items on `emu_big` (20.8 MB,
-`pbench.baseline`) and 79 metrics and 185 evidence items on `real_device`
+`analyze` reports 81 metrics and 100 evidence items on `emu_big` (20.8 MB,
+`pbench.baseline`) and 80 metrics and 186 evidence items on `real_device`
 (13.1 MB, `erviceAbility:1`). Four of the older analyzers report real numbers
 there: `vsync.signals.count` 60 with `vsync.periods.count` 7 and
 `vsync.anomaly.rate` 101.67 on `emu_big` (160 / 0 / 0 on `real_device`),

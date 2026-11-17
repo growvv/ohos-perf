@@ -7,7 +7,8 @@ import type { TimeRange } from '../types';
  * fingerprint (a dHash), not a measurement: it is a string, and comparing two
  * of them is a separate operation from comparing numbers.
  */
-export type MetricUnit = 'ms' | 'fps' | '%' | 'count' | 'bytes' | 'none' | 'hash';
+export type MetricUnit =
+  | 'ms' | 'fps' | '%' | 'count' | 'bytes' | 'celsius' | 'none' | 'hash';
 
 /**
  * Where a metric came from.

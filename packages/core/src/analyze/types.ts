@@ -1,6 +1,7 @@
 import type { CapabilityId, CapabilityMatrix } from '../device/capability';
 import type { HidumperCapture } from '../collectors/hidumper';
 import type { ProcfsSample } from '../collectors/procfs';
+import type { ThermalCapture } from '../collectors/thermal';
 import type { QueryHandle } from '../db/driver';
 import type { RgbaImage } from '../image/png';
 import type { SceneMetadata } from '../ingest/metadata';
@@ -92,6 +93,12 @@ export interface AnalyzeContext {
    * cold-start redundant-file I/O reads this file; the analyzer reports
    * `no_data` with a reason when it is absent rather than three zeros.
    */
+  /**
+   * The scene's parsed thermal samples, when it carried a `thermal.jsonl`.
+   * Absent when the scene captured no thermal data; the analyzer degrades with
+   * a reason naming `--thermal` rather than reporting a cold device.
+   */
+  thermal?: ThermalCapture;
   redundantFile?: string;
   /**
    * The raw `coverageReport.json` a scene carried, when it did.

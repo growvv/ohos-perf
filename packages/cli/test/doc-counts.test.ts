@@ -23,16 +23,18 @@ const read = (path: string): string =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
 
 const ANALYZER_COUNT = defaultAnalyzers().length;
-const COLLECTOR_COUNT = 9;
+const COLLECTOR_COUNT = 10;
 
 /** "19" / "nineteen" — the spellings the prose actually uses. */
 const words: Record<number, string> = {
   8: 'eight',
   9: 'nine',
+  10: 'ten',
   14: 'fourteen',
   19: 'nineteen',
   20: 'twenty',
   21: 'twenty-one',
+  22: 'twenty-two',
 };
 
 function countPattern(n: number): RegExp {
@@ -65,8 +67,8 @@ describe('the documented analyzer and collector counts match the code', () => {
   it('has a name for every count the docs currently use', () => {
     // A new count that has no word spelling would make the regexes below fall
     // back to digits only, and a prose "twenty-one" would slip past.
-    expect(ANALYZER_COUNT).toBe(21);
-    expect(COLLECTOR_COUNT).toBe(9);
+    expect(ANALYZER_COUNT).toBe(22);
+    expect(COLLECTOR_COUNT).toBe(10);
   });
 
   it('README states the real analyzer count', () => {
