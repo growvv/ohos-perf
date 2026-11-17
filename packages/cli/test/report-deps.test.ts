@@ -184,6 +184,21 @@ describe('realDeps().trend', () => {
     expect(trend.runs).toHaveLength(2);
   });
 
+  it('counts a series nobody measured apart from one with no known direction', async () => {
+    // A scene whose binder capability is absent emits `binder.degraded`, which
+    // every run leaves unmeasured. Counting it under "no known direction"
+    // would claim it was compared and found directionless.
+    const { root } = scene();
+    const { a, b } = await bundles(root);
+    const result = await realDeps('0.4.0').trend({
+      reports: [{ label: 'v1', path: a }, { label: 'v2', path: b }],
+      outDir: join(root, 'trend-split'),
+    });
+    expect(result.unmeasured).toBeGreaterThan(0);
+    expect(result.verdictless + result.improved + result.regressed + result.unchanged
+      + result.unmeasured).toBe(result.series);
+  });
+
   it('accepts the report.json path as well as the bundle directory', async () => {
     const { root } = scene();
     const { a, b } = await bundles(root);

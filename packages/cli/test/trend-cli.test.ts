@@ -27,6 +27,7 @@ const output: TrendOutput = {
   regressed: 1,
   unchanged: 40,
   verdictless: 13,
+  unmeasured: 0,
 };
 
 function deps(overrides: Partial<CliDeps> = {}): CliDeps {
@@ -73,7 +74,33 @@ describe('runTrend', () => {
     expect(r.stdout).toContain('artifacts  trend.html trend.json\n');
     expect(r.stdout).toContain('runs  2 (v1, v2) · ordered by capture start time\n');
     expect(r.stdout).toContain(
-      'series  57 metrics · 3 improved, 1 regressed, 40 unchanged, 13 without a known direction\n',
+      'series  57 metrics · 3 improved, 1 regressed, 40 unchanged, ' +
+        '13 without a known direction, 0 not measured\n',
+    );
+  });
+
+  it('separates a series nobody measured from one with no known direction', async () => {
+    // "23 without a known direction" counted 16 series that no run measured at
+    // all: a metric nobody measured has no direction because it has no values,
+    // which is a different statement from a measured metric with no verdict.
+    const r = await runTrend(
+      deps({
+        trend: async () => ({
+          ...output,
+          series: 37,
+          improved: 0,
+          regressed: 0,
+          unchanged: 14,
+          verdictless: 7,
+          unmeasured: 16,
+        }),
+      }),
+      { reports: [{ label: 'a', path: '/a' }, { label: 'b', path: '/b' }], outDir: '/out' },
+      {},
+    );
+    expect(r.stdout).toContain(
+      'series  37 metrics · 0 improved, 0 regressed, 14 unchanged, ' +
+        '7 without a known direction, 16 not measured\n',
     );
   });
 

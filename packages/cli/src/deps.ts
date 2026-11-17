@@ -1035,7 +1035,13 @@ export function realDeps(
 
       const count = (status: 'improved' | 'regressed' | 'unchanged'): number =>
         trend.series.filter((series) => series.status === status).length;
-      const verdictless = trend.series.filter((series) => series.status === undefined).length;
+      // A series nobody measured has no verdict because it has no values —
+      // a different statement from a measured metric with no known direction,
+      // and conflating them overstates how much was compared.
+      const unmeasured = trend.series.filter((series) => series.measured === 0).length;
+      const verdictless = trend.series.filter(
+        (series) => series.status === undefined && series.measured > 0,
+      ).length;
       return {
         outDir,
         files: artifacts.map(([name]) => name),
@@ -1052,6 +1058,7 @@ export function realDeps(
         regressed: count('regressed'),
         unchanged: count('unchanged'),
         verdictless,
+        unmeasured,
       };
     },
 

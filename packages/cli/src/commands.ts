@@ -313,8 +313,10 @@ export interface TrendOutput {
   improved: number;
   regressed: number;
   unchanged: number;
-  /** Series with no known direction, so no verdict was given. */
+  /** Series with a known direction but no two measured points to compare. */
   verdictless: number;
+  /** Series no run measured at all; they have no values, not no direction. */
+  unmeasured: number;
 }
 
 /** A `hap` invocation: one package on disk, an optional output directory. */
@@ -858,7 +860,8 @@ export async function runTrend(
         ` · ${order}\n` +
         `series  ${result.series} metrics · ${result.improved} improved,` +
         ` ${result.regressed} regressed, ${result.unchanged} unchanged,` +
-        ` ${result.verdictless} without a known direction\n`,
+        ` ${result.verdictless} without a known direction,` +
+        ` ${result.unmeasured} not measured\n`,
       stderr: '',
       exitCode: 0,
     };

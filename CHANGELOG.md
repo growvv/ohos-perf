@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.17.2 — 2026-11-17
+
+One reporting fix to `trend`, found by running it on two real saved bundles.
+
+- **"not measured" is counted apart from "no known direction".** The summary
+  line folded both into one number, so a two-run trend over a scene without a
+  binder capture reported 23 series "without a known direction" when 16 of
+  them had no values at all. A metric nobody measured has no direction
+  *because* it has no values — a different statement, and the one that
+  overstates how much was compared. `TrendOutput` gained `unmeasured`, and the
+  line now reads `14 unchanged, 7 without a known direction, 16 not measured`.
+- 1797 tests (1786 unit, 11 device), two typechecks, two builds.
+
 ## 0.17.1 — 2026-11-17
 
 One fix to what 0.17.0 shipped.
