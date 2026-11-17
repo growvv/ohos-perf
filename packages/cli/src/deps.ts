@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -417,6 +417,10 @@ interface DetailedAnalysis {
   device: string;
   window: TimeRange;
   startedAtNs?: number;
+  /** The scene's screenshot dimensions, when it carried a readable one. */
+  screenshot?: { width: number; height: number };
+  /** The screenshot's source path, when it carried a readable one. */
+  screenshotFile?: string;
 }
 
 /**
@@ -442,6 +446,12 @@ async function analyzeSceneDetailed(
       ...(opened.metadata?.startedAtNs === undefined
         ? {}
         : { startedAtNs: opened.metadata.startedAtNs }),
+      ...(opened.screenshot === undefined
+        ? {}
+        : {
+            screenshot: { width: opened.screenshot.width, height: opened.screenshot.height },
+            screenshotFile: opened.layout.screenshotFile,
+          }),
     };
   } finally {
     // Windows keeps the file handle open otherwise, so a second analysis of
@@ -792,6 +802,7 @@ export function realDeps(
         ...(detailed.startedAtNs === undefined ? {} : { startedAtNs: detailed.startedAtNs }),
         sections: detailed.run.sections,
         ...(comparison === undefined ? {} : { comparison }),
+        ...(detailed.screenshot === undefined ? {} : { screenshot: detailed.screenshot }),
       });
 
       const artifacts: Array<[string, string | Uint8Array]> = [
@@ -808,10 +819,18 @@ export function realDeps(
       for (const [name, content] of artifacts) {
         await writeFile(join(outDir, name), content);
       }
+      const files = artifacts.map(([name]) => name);
+      // The HTML references `assets/screenshot.png`; the file is copied only
+      // when the scene had one, so the page never links to a missing image.
+      if (detailed.screenshotFile !== undefined && detailed.screenshot !== undefined) {
+        await mkdir(join(outDir, 'assets'), { recursive: true });
+        await copyFile(detailed.screenshotFile, join(outDir, 'assets', 'screenshot.png'));
+        files.push('assets/screenshot.png');
+      }
 
       return {
         outDir,
-        files: artifacts.map(([name]) => name),
+        files,
         sections: {
           total: model.sections.length,
           measured: model.totals.measured,
@@ -869,6 +888,7 @@ export function realDeps(
         ...(req.hiperf === undefined ? {} : { hiperf: req.hiperf }),
         ...(req.hidumper === true ? { hidumper: true } : {}),
         ...(req.uitest === true ? { uitest: true } : {}),
+        ...(req.screenshot === true ? { screenshot: true } : {}),
         ...(req.hilog === true ? { hilog: true } : {}),
       });
       const scene = await session.ingest();
@@ -892,6 +912,14 @@ export function realDeps(
           ...(meta?.capture?.uitest === undefined
             ? {}
             : { ui: { nodes: meta.capture.uitest.nodes } }),
+          ...(meta?.capture?.screenshot === undefined
+            ? {}
+            : {
+                screenshot: {
+                  width: meta.capture.screenshot.width,
+                  height: meta.capture.screenshot.height,
+                },
+              }),
           ...(meta?.capture?.hilog === undefined
             ? {}
             : { hilog: { lines: meta.capture.hilog.lines } }),

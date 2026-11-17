@@ -5,6 +5,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { encodePng } from '@ohos-perf/core';
 import { realDeps } from '../src/deps';
 
 /**
@@ -103,6 +104,42 @@ describe('realDeps().report', () => {
     expect(readFileSync(join(outDir, 'report.xlsx'))).not.toEqual(
       readFileSync(join(plain, 'report.xlsx')),
     );
+  });
+
+  it('copies the scene screenshot into assets/ and links it from the HTML', async () => {
+    const { root, sceneDir } = scene();
+    writeFileSync(join(sceneDir, 'screenshot.png'), encodePng({
+      width: 5, height: 3, data: new Uint8Array(5 * 3 * 4).fill(90),
+    }));
+    writeFileSync(join(sceneDir, 'scene.json'), JSON.stringify({
+      version: 1,
+      app: { packageName: 'com.demo', processNames: ['com.demo'] },
+      pids: [], deviceId: 't1',
+      capture: {
+        startedAtMs: 1, durationMs: 2, collectors: ['hitrace', 'screenshot'],
+        screenshot: { width: 5, height: 3, bytes: 100 },
+      },
+    }));
+
+    const outDir = join(root, 'with-shot');
+    const result = await realDeps('0.9.0').report({ sceneDir, outDir });
+
+    expect(result.files).toContain('assets/screenshot.png');
+    expect(existsSync(join(outDir, 'assets', 'screenshot.png'))).toBe(true);
+    expect(readFileSync(join(outDir, 'assets', 'screenshot.png')))
+      .toEqual(readFileSync(join(sceneDir, 'screenshot.png')));
+    expect(readFileSync(join(outDir, 'report.html'), 'utf8'))
+      .toContain('<img src="assets/screenshot.png"');
+  });
+
+  it('writes no assets/ and no <img> when the scene has no screenshot', async () => {
+    const { root, sceneDir } = scene();
+    const outDir = join(root, 'no-shot');
+    const result = await realDeps('0.9.0').report({ sceneDir, outDir });
+
+    expect(result.files).toEqual(FILES);
+    expect(existsSync(join(outDir, 'assets'))).toBe(false);
+    expect(readFileSync(join(outDir, 'report.html'), 'utf8')).not.toContain('<img');
   });
 
   it('fails before writing anything when the baseline is malformed', async () => {

@@ -340,6 +340,25 @@ describe('runCollect', () => {
     );
   });
 
+  it('names the screenshot dimensions in the samples line', async () => {
+    // A screenshot capture is reported by its size, the one number a caller can
+    // act on: a 0x0 screen would mean the capture recorded nothing.
+    const r = await runCollect(
+      deps({
+        collect: async () => ({
+          sceneDir: '/abs/scene1',
+          device: { id: 't1', kind: 'emulator' },
+          collectors: ['hitrace', 'uitest', 'screenshot'],
+          ui: { nodes: 76 },
+          screenshot: { width: 1260, height: 2720 },
+        }),
+      }),
+      req,
+      {},
+    );
+    expect(r.stdout).toContain('samples  ui 76, screenshot 1260x2720\n');
+  });
+
   it('prints a zero-frame hidumper capture explicitly', async () => {
     // Review Focus 1: a screen that presented nothing is a measurement. A
     // missing line would read as "hidumper did not run".

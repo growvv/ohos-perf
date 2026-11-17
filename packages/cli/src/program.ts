@@ -139,6 +139,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--hiperf', 'also capture a hiperf perf.data (debuggable app only)')
     .option('--hidumper', 'also sample the RenderService fps and hitch counters')
     .option('--uitest', 'also dump the on-screen UI tree')
+    .option('--screenshot', 'also capture the whole screen into screenshot.png')
     .option('--hilog', 'also stream the device log (hilog) for the capture window')
     .option('--target <id>', 'capture from this hdc target instead of the first connected one')
     .option('--json', 'print the result as JSON')
@@ -153,6 +154,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       hiperf?: boolean;
       hidumper?: boolean;
       uitest?: boolean;
+      screenshot?: boolean;
       hilog?: boolean;
       target?: string;
       json?: boolean;
@@ -220,6 +222,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         ...(opts.hiperf === true ? { hiperf: {} } : {}),
         ...(opts.hidumper === true ? { hidumper: true } : {}),
         ...(opts.uitest === true ? { uitest: true } : {}),
+        ...(opts.screenshot === true ? { screenshot: true } : {}),
         ...(opts.hilog === true ? { hilog: true } : {}),
         ...(opts.target === undefined ? {} : { target: opts.target }),
       }, { json: opts.json }));

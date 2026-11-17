@@ -99,6 +99,12 @@ export interface CollectRequest {
   /** Also dump the on-screen UI tree. */
   uitest?: boolean;
   /**
+   * Also capture the whole screen into `screenshot.png`. Independent of
+   * `uitest`: a screenshot without a tree is a valid capture, and the `ui`
+   * analyzer reports which half is missing rather than zeros for both.
+   */
+  screenshot?: boolean;
+  /**
    * Also stream the device log. Device-wide like `hidumper`, so no `--app` is
    * required; the raw log lands in `hilog.log` and is parsed at analysis time.
    */
@@ -123,6 +129,8 @@ export interface CollectOutput {
   hidumper?: { frames: number };
   /** Present only when a uitest capture ran; `nodes: 0` is a blank screen. */
   ui?: { nodes: number };
+  /** Present only when a screenshot capture ran; the screen's own dimensions. */
+  screenshot?: { width: number; height: number };
   /** Present only when a hilog capture ran; `lines` is what the collector read. */
   hilog?: { lines: number };
 }
@@ -442,6 +450,9 @@ export async function runCollect(
       ...(result.hiperf === undefined ? [] : [`hiperf ${result.hiperf.samples}`]),
       ...(result.hidumper === undefined ? [] : [`hidumper ${result.hidumper.frames}`]),
       ...(result.ui === undefined ? [] : [`ui ${result.ui.nodes}`]),
+      ...(result.screenshot === undefined
+        ? []
+        : [`screenshot ${result.screenshot.width}x${result.screenshot.height}`]),
     ];
     if (samples.length > 0) stdout += `samples  ${samples.join(', ')}\n`;
     return { stdout, stderr: '', exitCode: 0 };

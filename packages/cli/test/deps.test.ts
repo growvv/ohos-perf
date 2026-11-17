@@ -1010,6 +1010,44 @@ describe('realDeps().collect', () => {
     expect(closed).toBe(true);
   });
 
+  it('forwards the screenshot flag and reports its dimensions from scene.json', async () => {
+    const seen: unknown[] = [];
+    const parent = mkdtempSync(join(tmpdir(), 'ohosperf-collect-shot-'));
+    try {
+      const deps = realDeps('0.0.0', {
+        collectDevice: async () => ({
+          id: 't1',
+          kind: 'emulator',
+          collect: async (opts: unknown) => {
+            seen.push(opts);
+            return {
+              ingest: async () => {
+                writeFileSync(join(parent, 'scene.json'), JSON.stringify({
+                  version: 1,
+                  app: { packageName: '', processNames: [] },
+                  pids: [], deviceId: 't1',
+                  capture: {
+                    startedAtMs: 1, durationMs: 2,
+                    collectors: ['hitrace', 'screenshot'],
+                    screenshot: { width: 5, height: 3, bytes: 100 },
+                  },
+                }));
+                return { close: () => {} } as unknown as Scene;
+              },
+            };
+          },
+        }),
+      });
+      const result = await deps.collect({ durationMs: 10_000, out: parent, screenshot: true });
+      expect(seen).toEqual([{
+        durationMs: 10_000, sceneRoot: parent, screenshot: true,
+      }]);
+      expect(result.screenshot).toEqual({ width: 5, height: 3 });
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it('reports the collectors and capture counts written to scene.json', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'ohosperf-collect-out-'));
     try {
