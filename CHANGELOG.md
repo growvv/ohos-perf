@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.13.1 — 2026-11-17
+
+0.13.0's release note promised a flag that did not exist, and its doc counts
+were one release behind. Nothing about the analysis changed.
+
+- **`collect --jsheap` now exists.** 0.13.0 advertised it, but the flag was
+  never registered — the heap-snapshot capability was reachable only from the
+  core API. It requires `--app` (the dump targets one process), the capture is
+  recorded in `scene.json` under `capture.jsheap`, and a re-capture without
+  the flag removes a stale `jsheap.heapsnapshot` rather than leaving it beside
+  the new trace.
+- **Doc counts match the code.** The README, the site and the core package
+  description said "nineteen analyzers, eight collectors" while P18 had made
+  it twenty and nine. Two tests now read the docs and fail when a count or an
+  analyzer's metric prefix stops matching the registry. The README's metric
+  table also gained `hilog.*` and `redundant_file.*`, which were emitted but
+  undocumented.
+
 ## 0.13.0 — 2026-11-17
 
 P18 closed the last four capabilities with no implementation, and made the
