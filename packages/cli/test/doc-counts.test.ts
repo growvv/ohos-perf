@@ -114,4 +114,18 @@ describe('the documented analyzer and collector counts match the code', () => {
     expect(text).toMatch(collectorPattern(COLLECTOR_COUNT));
     expect(text).not.toMatch(collectorPattern(COLLECTOR_COUNT - 1));
   });
+
+  it('the README test counts add up', () => {
+    // A release published "2445 tests (2444 unit, 11 in the device project)",
+    // which cannot be true: the parts did not sum to the whole, because a bulk
+    // edit moved the total and one of the parts and missed the other. Nothing
+    // checked it, so a reader could not tell whether the suite had shrunk.
+    const text = flat(read('../../../README.md'));
+    const match = text.match(
+      /(\d+) tests \((\d+) unit, (\d+) in the device project\)/,
+    );
+    expect(match, 'the README no longer states the total and its parts').not.toBeNull();
+    const [, total, unit, device] = match!.map(Number) as [number, number, number, number];
+    expect(unit + device).toBe(total);
+  });
 });
