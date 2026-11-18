@@ -20,6 +20,10 @@ envelope P33 defined — as data.
   --machine-json` and returns what came back, so an MCP answer is byte-identical
   to the shell answer. Nothing re-implements a command or reshapes a payload;
   this module is a transport.
+- **A required option is required in the schema.** `collect` cannot run without
+  `--duration` and `--out`; the schema used to say nothing was required, so a
+  client built the call without them and got a commander usage error on its
+  first attempt. Every `requiredOption` is now in `inputSchema.required`.
 - **A list is a list.** A variadic positional (`symbols recover <library>
   [addresses...]`) and a repeatable option (`trend --label`, once per report)
   are declared as arrays of strings, and an array passed to a repeatable option
@@ -61,7 +65,7 @@ envelope P33 defined — as data.
   out does.
 
 HapRay has no MCP surface at all, so this is beyond the inventory rather than a
-parity row. 2379 unit tests (2329 + 50 skipped on a clean checkout after `npm install && npm run build`); the device
+parity row. 2380 unit tests (2330 + 50 skipped on a clean checkout after `npm install && npm run build`); the device
 suite is unchanged.
 
 ## 0.28.0 — 2026-11-18

@@ -87,6 +87,21 @@ describe('buildCatalog', () => {
     expect(buildCatalog(p)[0]!.argv({ procfs: true })).toEqual(['collect', '--procfs']);
   });
 
+  it('marks a required option as required, so a call is not doomed before it starts', () => {
+    // `collect` cannot run without `--duration` and `--out`. If the schema
+    // says nothing is required, a client builds the call without them and
+    // gets a commander usage error — a failure the schema could have
+    // prevented, on the agent's first attempt.
+    const p = new Command('ohos-perf').name('ohos-perf');
+    p.command('collect').description('capture')
+      .requiredOption('--duration <seconds>', 'capture duration')
+      .requiredOption('--out <dir>', 'scene output directory')
+      .option('--app <name>', 'package')
+      .action(() => {});
+    const tool = buildCatalog(p)[0]!;
+    expect(tool.inputSchema.required).toEqual(['duration', 'out']);
+  });
+
   it('leaves --json and --machine-json out: a tool call always speaks JSON', () => {
     const tool = buildCatalog(sample())[0]!;
     const props = (tool.inputSchema as { properties: Record<string, unknown> }).properties;

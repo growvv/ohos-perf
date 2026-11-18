@@ -140,6 +140,7 @@ function schemaOf(command: Command): McpInputSchema {
   for (const option of command.options) {
     if (HIDDEN_OPTIONS.has(optionKey(option))) continue;
     const description = option.description === '' ? {} : { description: option.description };
+    if (option.mandatory) required.push(optionKey(option));
     properties[optionKey(option)] = !takesValue(option)
       ? { type: 'boolean', ...description }
       : isRepeatable(option)

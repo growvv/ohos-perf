@@ -35,7 +35,7 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P34 are complete**: 2390 tests (2379 unit, 11 in the device
+**P1 through P34 are complete**: 2391 tests (2380 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — `npm install && npm run build`,
 with the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db`
@@ -1213,6 +1213,9 @@ structured content:
 - **A tool call is a CLI run.** The server spawns `ohos-perf <command>
   --machine-json` and returns what came back, so an MCP answer is byte-identical
   to the shell answer. Nothing re-implements a command.
+- **Required means required.** A `requiredOption` (`collect --duration --out`)
+  is in the schema's `required` list, so a client cannot build a call that
+  fails with a usage error the schema could have prevented.
 - **A list is a list.** A variadic positional and a repeatable option are
   `array` of `string`, and an array given to `--label` becomes one flag per
   item, so `trend` gets one label per report rather than the single value
