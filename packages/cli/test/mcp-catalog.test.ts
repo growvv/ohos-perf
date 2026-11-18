@@ -48,6 +48,26 @@ describe('buildCatalog', () => {
     expect(schema.required).toEqual(['scene-dir']);
   });
 
+  it('types a variadic argument as an array, so a caller can pass more than one', () => {
+    // `symbols recover <library> [addresses...]` takes a list. Typed as a
+    // plain string, a client that sends the array the argv builder already
+    // understands is refused by its own schema validator, and one that sends
+    // a space-joined string gets a single malformed address.
+    const p = new Command('ohos-perf').name('ohos-perf');
+    p.command('recover').description('name addresses').argument('<library>')
+      .argument('[addresses...]', 'references').action(() => {});
+    const tool = buildCatalog(p)[0]!;
+    const props = tool.inputSchema.properties as Record<string, { type: string; items?: { type: string } }>;
+    expect(props.addresses).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+      description: 'references',
+    });
+    expect(tool.inputSchema.required).toEqual(['library']);
+    expect(tool.argv({ library: 'lib.so', addresses: ['a+0x1', 'b+0x2'] }))
+      .toEqual(['recover', 'lib.so', 'a+0x1', 'b+0x2']);
+  });
+
   it('turns an option into an optional property, and a boolean into a flag', () => {
     const tool = buildCatalog(sample())[0]!;
     const props = (tool.inputSchema as { properties: Record<string, unknown> }).properties;
@@ -78,6 +98,31 @@ describe('buildCatalog', () => {
     const tool = buildCatalog(sample())[0]!;
     expect(tool.argv({ 'scene-dir': '/scene', app: 'com.demo' }))
       .toEqual(['analyze', '--app', 'com.demo', '/scene']);
+  });
+
+  it('repeats an option that was given a list, instead of joining it', () => {
+    // `trend --label a --label b` is one label per report. `String(['a','b'])`
+    // is `"a,b"` — a single label that matches no report — so an array has to
+    // become one flag per item.
+    const p = new Command('ohos-perf').name('ohos-perf');
+    p.command('trend').description('aggregate').argument('<reports...>')
+      .option('--out <dir>', 'output').option('--label <label>', 'a run label').action(() => {});
+    const tool = buildCatalog(p)[0]!;
+    expect(tool.argv({ reports: ['a.json', 'b.json'], out: 'o', label: ['first', 'second'] }))
+      .toEqual(['trend', '--out', 'o', '--label', 'first', '--label', 'second', 'a.json', 'b.json']);
+  });
+
+  it('declares a repeatable option as an array, because commander cannot say so', () => {
+    // `trend` gives `--label` the `collectLabels` parser; the schema has to
+    // say "list" or a client validates its own array away.
+    const collect = (value: string, previous: string[] | undefined) => [...(previous ?? []), value];
+    const p = new Command('ohos-perf').name('ohos-perf');
+    p.command('trend').description('aggregate').argument('<reports...>')
+      .option('--out <dir>', 'output').option('--label <label>', 'a run label', collect).action(() => {});
+    const tool = buildCatalog(p)[0]!;
+    const props = tool.inputSchema.properties as Record<string, { type: string }>;
+    expect(props.label?.type).toBe('array');
+    expect(props.out?.type).toBe('string');
   });
 
   it('omits an option that was not supplied, rather than passing undefined', () => {

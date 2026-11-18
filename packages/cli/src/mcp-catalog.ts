@@ -9,11 +9,20 @@
 
 import type { Argument, Command, Option } from 'commander';
 
-/** One property a tool accepts. Arguments are strings; flags may be booleans. */
-export interface McpSchemaProperty {
-  readonly type: 'string' | 'boolean' | 'number';
-  readonly description?: string;
-}
+/**
+ * One property a tool accepts.
+ *
+ * A scalar is a string or a boolean; a variadic positional is an array of
+ * strings, because `[addresses...]` takes more than one and a client's own
+ * schema validator would refuse an array against a `string`.
+ */
+export type McpSchemaProperty =
+  | { readonly type: 'string' | 'boolean' | 'number'; readonly description?: string }
+  | {
+      readonly type: 'array';
+      readonly items: { readonly type: 'string' };
+      readonly description?: string;
+    };
 
 /** The `inputSchema` of a tool: a closed object of named properties. */
 export interface McpInputSchema {
@@ -87,6 +96,25 @@ function takesValue(option: Option): boolean {
   return /[<[]/.test(option.flags);
 }
 
+/**
+ * Whether an option accumulates instead of replacing its value.
+ *
+ * Commander 12 keeps a collector on the option's own `parseArg` but offers no
+ * "is this repeatable" flag, so this asks the parser itself: given an empty
+ * history, does it return a list? That is a question about behaviour rather
+ * than about a name, so `--label` is found without a hand-kept list — the
+ * thing this module exists to avoid. A parser that throws, or that returns a
+ * scalar, is not a collector.
+ */
+function isRepeatable(option: Option): boolean {
+  if (typeof option.parseArg !== 'function') return false;
+  try {
+    return Array.isArray((option.parseArg as (value: string, previous: string[]) => unknown)('', []));
+  } catch {
+    return false;
+  }
+}
+
 /** Whether an argument is a positional, as opposed to a flag. */
 function argumentKey(argument: Argument): string {
   return argument.name();
@@ -97,18 +125,26 @@ function schemaOf(command: Command): McpInputSchema {
   const properties: Record<string, McpSchemaProperty> = {};
   const required: string[] = [];
   for (const argument of command.registeredArguments) {
-    properties[argumentKey(argument)] = {
-      type: 'string',
-      ...(argument.description === '' ? {} : { description: argument.description }),
-    };
+    properties[argumentKey(argument)] = argument.variadic
+      ? {
+          type: 'array',
+          items: { type: 'string' },
+          ...(argument.description === '' ? {} : { description: argument.description }),
+        }
+      : {
+          type: 'string',
+          ...(argument.description === '' ? {} : { description: argument.description }),
+        };
     if (argument.required) required.push(argumentKey(argument));
   }
   for (const option of command.options) {
     if (HIDDEN_OPTIONS.has(optionKey(option))) continue;
-    properties[optionKey(option)] = {
-      type: takesValue(option) ? 'string' : 'boolean',
-      ...(option.description === '' ? {} : { description: option.description }),
-    };
+    const description = option.description === '' ? {} : { description: option.description };
+    properties[optionKey(option)] = !takesValue(option)
+      ? { type: 'boolean', ...description }
+      : isRepeatable(option)
+        ? { type: 'array', items: { type: 'string' }, ...description }
+        : { type: 'string', ...description };
   }
   return { type: 'object', properties, required, additionalProperties: false };
 }
@@ -129,7 +165,11 @@ function argvOf(command: Command, path: readonly string[]): (args: Record<string
       const value = args[key];
       if (value === undefined) continue;
       if (takesValue(option)) {
-        argv.push(`--${key}`, String(value));
+        // A list means the flag was given more than once (`--label a
+        // --label b`); `String(['a','b'])` would be the single value "a,b".
+        for (const item of Array.isArray(value) ? value : [value]) {
+          argv.push(`--${key}`, String(item));
+        }
       } else if (value === true) {
         argv.push(`--${key}`);
       }

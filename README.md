@@ -35,7 +35,7 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P34 are complete**: 2387 tests (2376 unit, 11 in the device
+**P1 through P34 are complete**: 2390 tests (2379 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — `npm install && npm run build`,
 with the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db`
@@ -1213,6 +1213,10 @@ structured content:
 - **A tool call is a CLI run.** The server spawns `ohos-perf <command>
   --machine-json` and returns what came back, so an MCP answer is byte-identical
   to the shell answer. Nothing re-implements a command.
+- **A list is a list.** A variadic positional and a repeatable option are
+  `array` of `string`, and an array given to `--label` becomes one flag per
+  item, so `trend` gets one label per report rather than the single value
+  `"a,b"`.
 - **The schema is enforced, not just declared.** An argument the tool does not
   declare is `-32602` naming it, so `{"scene-dir": "/s", "basline": "/b"}` — one
   letter — is refused instead of silently running without a baseline and

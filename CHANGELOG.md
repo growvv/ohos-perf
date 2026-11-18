@@ -20,6 +20,12 @@ envelope P33 defined — as data.
   --machine-json` and returns what came back, so an MCP answer is byte-identical
   to the shell answer. Nothing re-implements a command or reshapes a payload;
   this module is a transport.
+- **A list is a list.** A variadic positional (`symbols recover <library>
+  [addresses...]`) and a repeatable option (`trend --label`, once per report)
+  are declared as arrays of strings, and an array passed to a repeatable option
+  becomes one flag per item instead of `String(['a','b'])`'s single `"a,b"`.
+  Commander exposes no "is this repeatable" flag, so the catalog asks the
+  option's own parser whether it returns a list.
 - **The schema is enforced.** `inputSchema` declares
   `additionalProperties: false`, so an undeclared argument is `-32602` naming
   it rather than a silent no-op: a one-letter `basline` would otherwise run a
@@ -55,7 +61,7 @@ envelope P33 defined — as data.
   out does.
 
 HapRay has no MCP surface at all, so this is beyond the inventory rather than a
-parity row. 2376 unit tests (2326 + 50 skipped on a clean checkout after `npm install && npm run build`); the device
+parity row. 2379 unit tests (2329 + 50 skipped on a clean checkout after `npm install && npm run build`); the device
 suite is unchanged.
 
 ## 0.28.0 — 2026-11-18
