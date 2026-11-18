@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -1050,6 +1051,36 @@ export function realDeps(
     doctor,
     version,
     emulator,
+
+    /**
+     * Run this CLI again, as a child process.
+     *
+     * `process.argv[1]` is the entry the parent was launched from, so a tool
+     * call runs the same build the server does — not whatever `ohos-perf`
+     * happens to be on `PATH`. The child's stdio is captured rather than
+     * inherited: the MCP server owns stdout, and a command that wrote to it
+     * directly would corrupt the framing.
+     */
+    runCli(argv) {
+      return new Promise((settle, reject) => {
+        const entry = process.argv[1];
+        if (entry === undefined) {
+          reject(new OhosPerfError('cannot run a command: the entry script is unknown'));
+          return;
+        }
+        const child = spawn(process.execPath, [entry, ...argv], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
+        child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+        child.on('error', (err) => {
+          reject(new OhosPerfError(`could not run the command: ${safeMessage(err)}`, { cause: err }));
+        });
+        child.on('close', (code) => {
+          settle({ stdout, stderr, code: code ?? 1 });
+        });
+      });
+    },
 
     async gesture(req) {
       const device = await gestureDevice(req.target);

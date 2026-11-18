@@ -664,6 +664,14 @@ export interface CliDeps {
   emulator: EmulatorDeps;
   /** Run a scenario. Throws on any failure; the caller maps it to exit 1. */
   run(req: RunRequest): Promise<RunResult>;
+  /**
+   * Run this CLI as a subprocess and report its three streams.
+   *
+   * The MCP server executes a tool call this way rather than calling a command
+   * function: a call then produces exactly what a shell run produces, envelope
+   * included, so the two surfaces cannot disagree about a measurement.
+   */
+  runCli(argv: readonly string[]): Promise<{ stdout: string; stderr: string; code: number }>;
   /** Package version, for `--version` and the help banner. */
   version: string;
 }

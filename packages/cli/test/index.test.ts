@@ -413,3 +413,74 @@ describe('tool-result contract from the built binary', () => {
     expect(written.command).toBe('root-cause');
   });
 });
+
+/*
+ * P34 — the MCP server.
+ *
+ * The built binary is the only honest place to test this: the framing is a
+ * property of the process (stdin in, one line out per message), and a harness
+ * that called `handle()` directly would not prove the command is reachable or
+ * that nothing else writes to stdout.
+ */
+describe('mcp over stdio', () => {
+  const MODERN = {
+    'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+    'io.modelcontextprotocol/clientCapabilities': {},
+  };
+
+  it('answers server/discover and tools/list, one line each', () => {
+    const input = [
+      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'server/discover', params: { _meta: MODERN } }),
+      JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: { _meta: MODERN } }),
+    ].join('\n') + '\n';
+    const r = spawnSync(process.execPath, [cliDist, 'mcp'], { encoding: 'utf8', input });
+    expect(r.status).toBe(0);
+    const lines = r.stdout.split('\n').filter((line) => line !== '');
+    // Nothing but MCP messages: one JSON-RPC response per request.
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0]!).result.supportedVersions).toContain('2026-07-28');
+    const names = JSON.parse(lines[1]!).result.tools.map((t: { name: string }) => t.name);
+    expect(names).toContain('ohos-perf_analyze');
+    expect(names).toContain('ohos-perf_emulator_list');
+    expect(names).toContain('ohos-perf_gesture_click');
+  });
+
+  it('serves the legacy handshake too, because an old client should still measure', () => {
+    const input = JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'c', version: '1' } },
+    }) + '\n';
+    const r = spawnSync(process.execPath, [cliDist, 'mcp'], { encoding: 'utf8', input });
+    expect(r.status).toBe(0);
+    const result = JSON.parse(r.stdout.split('\n')[0]!).result;
+    expect(result.protocolVersion).toBe('2025-11-25');
+    expect(result.serverInfo.name).toBe('ohos-perf');
+  });
+
+  it('runs a real tool call and returns the envelope', () => {
+    // A failing analysis, because it needs no device and no fixture: the point
+    // is that a call reaches a command and comes back as an envelope.
+    const input = JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { _meta: MODERN, name: 'ohos-perf_analyze', arguments: { 'scene-dir': '/nonexistent' } },
+    }) + '\n';
+    const r = spawnSync(process.execPath, [cliDist, 'mcp'], { encoding: 'utf8', input });
+    expect(r.status).toBe(0);
+    const { result } = JSON.parse(r.stdout.split('\n')[0]!);
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.error.code).toBe('SCENE_NO_INPUT');
+    expect(result.structuredContent.command).toBe('analyze');
+  });
+
+  it('keeps serving after a malformed line', () => {
+    const input = [
+      '{not json',
+      JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: { _meta: MODERN } }),
+    ].join('\n') + '\n';
+    const r = spawnSync(process.execPath, [cliDist, 'mcp'], { encoding: 'utf8', input });
+    expect(r.status).toBe(0);
+    const lines = r.stdout.split('\n').filter((line) => line !== '');
+    expect(JSON.parse(lines[0]!).error.code).toBe(-32700);
+    expect(JSON.parse(lines[1]!).result.tools.length).toBeGreaterThan(20);
+  });
+});

@@ -1086,5 +1086,46 @@ walk, and prefer a test account or a disposable build.`)
     await sendGesture(() => ({ action: 'text', text: parseText(text) }), opts);
   });
 
+  /**
+   * The MCP server.
+   *
+   * Registered last on purpose: its catalog is derived from the program, so
+   * every command above is a tool, and this one is not (a server cannot call
+   * itself into being). It owns stdout from here on — the framing is one
+   * JSON-RPC message per line — so the action writes nothing else.
+   */
+  program
+    .command('mcp')
+    .description('serve every command as an MCP tool over stdio')
+    .addHelpText('after', `
+The tool list is the CLI itself: one tool per command, named ohos-perf_<path>
+(ohos-perf_emulator_list). Each call runs the command with --machine-json and
+returns the tool-result envelope as structuredContent. isError means the
+command could not run; a failed gate is a successful call reporting bad news.`)
+    .action(async () => {
+      const { createMcpServer } = await import('./mcp-server');
+      const { buildCatalog } = await import('./mcp-catalog');
+      const server = createMcpServer({
+        tools: buildCatalog(program),
+        run: (argv) => deps.runCli(argv),
+        version: deps.version,
+      });
+      const readline = await import('node:readline');
+      const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+      // A failure while answering one line must not end the session: the
+      // client would see a closed pipe mid-task with no diagnosis.
+      for await (const line of lines) {
+        if (line.trim() === '') continue;
+        let answer: string | undefined;
+        try {
+          answer = await server.handle(line);
+        } catch (err) {
+          io.writeErr(`mcp: ${safeMessage(err)}\n`);
+          continue;
+        }
+        if (answer !== undefined) io.writeOut(answer);
+      }
+    });
+
   return program;
 }
