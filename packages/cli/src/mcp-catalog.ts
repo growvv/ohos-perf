@@ -171,14 +171,17 @@ function annotationsOf(path: readonly string[]): McpAnnotations {
  * Every leaf command in the program, as a tool.
  *
  * A group (`emulator`, `gesture`, `symbols`) is not callable and gets no tool;
- * only its leaves do. `help` is commander's own and is skipped. The result is
- * sorted by name, so a client that caches the list sees the same bytes.
+ * only its leaves do. `help` is commander's own and is skipped, and so is
+ * `mcp` — it is the transport the client is already talking over, and a tool
+ * that spawns a second server reading a stdin nobody writes would hang. The
+ * result is sorted by name, so a client that caches the list sees the same
+ * bytes.
  */
 export function buildCatalog(program: Command): McpTool[] {
   const tools: McpTool[] = [];
   const walk = (command: Command, path: readonly string[]): void => {
     for (const child of command.commands) {
-      if (child.name() === 'help') continue;
+      if (child.name() === 'help' || child.name() === 'mcp') continue;
       const next = [...path, child.name()];
       if (child.commands.length > 0) {
         walk(child, next);

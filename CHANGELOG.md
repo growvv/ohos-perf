@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.29.0 — 2026-11-18
+
+**Every command is an MCP tool.** An agent with an MCP client should not have
+to spawn a process and parse a line. `ohos-perf mcp` serves the CLI over stdio:
+one JSON-RPC 2.0 message per line in, at most one out, and the answer is the
+envelope P33 defined — as data.
+
+- **The tool list is the CLI.** `tools/list` returns one tool per leaf command,
+  named `ohos-perf_<path>` (`ohos-perf_analyze`, `ohos-perf_emulator_list`),
+  built from the commander program at startup: each tool's `inputSchema` is
+  that command's own options, its description is the command's own, and its
+  annotations come from what the command reaches. There is no second list to
+  drift, and a new command is a new tool with no change here. `--json`,
+  `--machine-json`, `--result-file`, `--help` and `--version` are not exposed,
+  and neither is `mcp` itself: a tool that spawned a second server reading a
+  stdin nobody writes would hang the client.
+- **A tool call is a CLI run.** The server spawns `ohos-perf <command>
+  --machine-json` and returns what came back, so an MCP answer is byte-identical
+  to the shell answer. Nothing re-implements a command or reshapes a payload;
+  this module is a transport.
+- **`isError` is the tool, not the news.** A call fails as `isError: true` only
+  when the command could not run — no envelope on stdout, or an envelope with
+  `error`. A failed `gate` is `isError: false` with
+  `structuredContent.outputs.payload.status === "fail"`: the measurement ran
+  and the news is bad, which is what the agent needs to know. Warnings stay a
+  second text block beside the result, never inside it.
+- **Both protocol eras, deliberately.** The modern revision `2026-07-28`
+  removed the `initialize` handshake — every request carries its version in
+  `_meta` and `server/discover` is mandatory — and this server answers it.
+  `2025-11-25` and earlier open with `initialize`, and it answers those too. A
+  client that predates the change should not have to be upgraded to be
+  measured. An unknown version is `-32022` with `data.supported` and
+  `data.requested`, so the client can retry rather than guess.
+- **A bad line does not end the session.** A line that is not JSON-RPC is a
+  `-32700` error with a `null` id and the loop continues; a notification is
+  answered with silence, as the spec requires; an unknown method is `-32601`
+  listing the four the server implements. stdout carries only JSON-RPC, and
+  diagnostics go to stderr.
+- **No dependency.** Newline-delimited JSON-RPC 2.0 framing is about 150 lines
+  of our own code rather than a 7 MB SDK, because this package's promise is no
+  native build step and no bundled binary.
+- **The skill says how to use it.** `skill/ohos-perf/SKILL.md` gained a section
+  on reaching the same commands over MCP, including the `isError` rule, so an
+  agent that attaches the server reads a result the same way one that shells
+  out does.
+
+HapRay has no MCP surface at all, so this is beyond the inventory rather than a
+parity row. 2374 unit tests (2346 + 28 skipped on a clean checkout); the device
+suite is unchanged.
+
 ## 0.28.0 — 2026-11-18
 
 **One envelope for every command.** An agent driving this CLI had to read a

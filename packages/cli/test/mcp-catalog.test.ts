@@ -25,6 +25,16 @@ describe('buildCatalog', () => {
     expect(toolName(['emulator', 'list'])).toBe('ohos-perf_emulator_list');
   });
 
+  it('leaves out the server itself: a tool that waits on stdin cannot be a tool', () => {
+    // `mcp` is the transport an agent is already talking over. Exposing it
+    // would offer a call that spawns a second server, reads a stdin nobody
+    // writes, and hangs until the client gives up.
+    const p = new Command('ohos-perf').name('ohos-perf');
+    p.command('tools').description('list queries').action(() => {});
+    p.command('mcp').description('serve every command over stdio').action(() => {});
+    expect(buildCatalog(p).map((t) => t.name)).toEqual(['ohos-perf_tools']);
+  });
+
   it('turns a required argument into a required string property', () => {
     const tool = buildCatalog(sample())[0]!;
     const schema = tool.inputSchema as {

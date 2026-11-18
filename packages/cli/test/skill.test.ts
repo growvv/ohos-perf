@@ -19,6 +19,7 @@ const readme = readNormalized(join(root, 'README.md'));
 const COMMANDS = new Set([
   'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report',
   'emulator', 'gesture', 'hap', 'run', 'ui-compare', 'root-cause', 'gate',
+  'mcp',
 ]);
 
 describe('agent skill adapter', () => {
@@ -45,6 +46,14 @@ describe('agent skill adapter', () => {
   it('documents every collector flag and the baseline comparison', () => {
     for (const needle of ['--procfs', '--hiprofiler', '--hiperf', '--hidumper', '--uitest',
       'ohos-perf compare', 'incomparable', 'ui.get']) {
+      expect(skill).toContain(needle);
+    }
+  });
+
+  it('tells an agent how to reach the same commands as MCP tools', () => {
+    // An agent that can attach an MCP server should not shell out: the tool
+    // call returns the envelope as structured content, with no text to parse.
+    for (const needle of ['ohos-perf mcp', 'tools/list', 'tools/call', 'structuredContent']) {
       expect(skill).toContain(needle);
     }
   });

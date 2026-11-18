@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P33 are complete**: 2347 tests (2336 unit, 11 in the device
+**P1 through P34 are complete**: 2385 tests (2374 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2308 passed, 28
+attached device are absent — `npm run test:unit` reports **2346 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2308 passed, 39 skipped**. With both fixtures present and a
+checkout is **2346 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -340,6 +340,7 @@ The HapRay parity series (one release per major item, so far):
 | P31 | beyond the inventory | `gate <budgets.json> <run>` judges a run against a versioned budget document — absolute `max`/`min` and `maxDelta`/`maxDeltaPct` against a baseline — with exit 2 for a violated or unmeasured budget and exit 1 for a gate that could not run. A metric the run never emitted is `missing`, never a pass, so a green build cannot mean an analyzer stopped running. HapRay's regression story stops at a chart a human reads | shipped in `0.26.0` |
 | P32 | beyond the inventory | `root-cause --baseline <run>` answers what changed between two runs: a deterministic movement of every metric (regressed / improved / unchanged / incomparable / gap) and of every evidence kind, rendered before the verdict and offered to the model, whose `metrics` citations are checked like evidence ids. A gap — a metric one run did not measure — is never an improvement, and the direction is the caller's baseline -> input rather than capture time. HapRay's multi-version page leaves the comparison to a human reading dropdowns and its root cause sees one run | shipped in `0.27.0` |
 | P33 | beyond the inventory | every command answers in one versioned envelope under `--machine-json` (one line on stdout) or `--result-file` (the same document on disk): `schemaVersion`, `toolId`, `command`, `success` derived from `exitCode`, the command's own payload, and the failure as a typed `error`. A `gate` verdict of fail is exit 2 with no `error` — the tool ran and the news is bad. `parseToolResult` validates on the way back in, which HapRay's write-only `machine_output.py` never does, and no result file is written unless asked | shipped in `0.28.0` |
+| P34 | beyond the inventory | `ohos-perf mcp` serves every command as an MCP tool over stdio: the tool list is derived from the commander program (one tool per leaf, `ohos-perf_<path>`, with that command's own options as its `inputSchema`), each call runs the command with `--machine-json` and returns the envelope as `structuredContent`, and the server answers both protocol eras — modern `2026-07-28` (`server/discover`, per-request `_meta`) and legacy `2025-11-25` (`initialize`) — so a client that predates the handshake change still works. `isError` means the command could not run, not that the news is bad. HapRay has no MCP surface at all | shipped in `0.29.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
@@ -1182,6 +1183,58 @@ and `parseToolResult` in `@ohos-perf/core` validates it on the way back in —
 unknown `schemaVersion`, another tool's `toolId`, and a `success` that
 contradicts `exitCode` are all refused, naming the value. HapRay's
 `machine_output.py` only writes.
+
+### Calling the measurements as tools: `ohos-perf mcp`
+
+An agent that speaks MCP should not shell out and parse a line. `ohos-perf mcp`
+serves the same commands over stdio, so the agent gets the envelope as
+structured content:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ohos-perf_analyze","arguments":{"scene":"runs/latest"}}}
+```
+
+```json
+{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","isError":false,
+ "content":[{"type":"text","text":"{\"schemaVersion\":\"1.0\", ... }"}],
+ "structuredContent":{"schemaVersion":"1.0","toolId":"ohos-perf", ... }}}
+```
+
+- **The tool list is the CLI.** One tool per command, named
+  `ohos-perf_<path>` — `ohos-perf_analyze`, `ohos-perf_emulator_list`,
+  `ohos-perf_ui_compare`. Each tool's `inputSchema` is that command's own
+  options, and each description is the command's own description, so the two
+  surfaces cannot drift: `tools/list` is derived from the commander program at
+  startup. `--json`, `--machine-json`, `--result-file`, `--help` and
+  `--version` are not exposed; a tool call always wants the envelope. Neither
+  is `mcp` itself — it is the transport the client is already talking over, and
+  a tool that spawned a second server reading a stdin nobody writes would hang.
+- **A tool call is a CLI run.** The server spawns `ohos-perf <command>
+  --machine-json` and returns what came back, so an MCP answer is byte-identical
+  to the shell answer. Nothing re-implements a command.
+- **`isError` means the command could not run**, matching the envelope's
+  `error`. A failed `gate` is `isError: false` with
+  `structuredContent.outputs.payload.status === "fail"`: the measurement ran
+  and the news is bad. Tools are annotated from the command's own reach:
+  `readOnlyHint` for the analyzers that only read a scene, and
+  `destructiveHint`/`openWorldHint` for the six that act on a device
+  (`collect`, `gesture`, `run`, `explore`, `agent`, `emulator`), so a client
+  can ask before it taps something.
+- **Both protocol eras.** The server answers the modern revision (`2026-07-28`,
+  which removed the `initialize` handshake in favour of per-request
+  `_meta` metadata plus a mandatory `server/discover`) and the legacy one
+  (`2025-11-25`, which opens with `initialize`). A client that predates the
+  change should not have to be upgraded to be measured. An unknown version is
+  refused with `-32022` and the list of versions the server does speak.
+- **No dependency.** The framing is newline-delimited JSON-RPC 2.0 — about 150
+  lines — rather than a 7 MB SDK, because this package's promise is no native
+  build step and no bundled binary.
+- **One line in, one line out.** stdout carries only JSON-RPC; diagnostics go
+  to stderr. A line that is not JSON is a `-32700` error and the session
+  continues, and a notification is answered with silence, as the spec requires.
+
+The MCP surface is how an agent reaches the tools; the skill
+(`skill/ohos-perf/SKILL.md`) is how it knows which one to call.
 
 ## Budgets and the gate
 

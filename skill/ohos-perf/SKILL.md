@@ -733,3 +733,28 @@ Both are global, so they go anywhere on the command line.
   `--result-file` says, so a scene directory stays clean.
 - `--help` and `--version` are not results: they print text even under
   `--machine-json`.
+
+## Reaching the same commands over MCP
+
+If your client speaks MCP, attach `ohos-perf mcp` instead of shelling out. It
+serves the same commands over stdio, one JSON-RPC 2.0 message per line:
+
+- `tools/list` returns one tool per command, named `ohos-perf_<path>` —
+  `ohos-perf_analyze`, `ohos-perf_emulator_list`, `ohos-perf_ui_compare`. Each
+  `inputSchema` is that command's own options, so a flag you read in `--help`
+  is a property with the same name. `--json`, `--machine-json`,
+  `--result-file`, `--help`, `--version` and `mcp` itself are not exposed.
+- `tools/call` takes `{name, arguments}` and returns the envelope from the
+  section above as `structuredContent` — the same document `--machine-json`
+  prints, not a summary of it. Read it exactly as you would read the line.
+- `isError` means the command could not run. A failed `gate` is
+  `isError: false` with `structuredContent.outputs.payload.status === 'fail'`;
+  report it as bad news, never as a broken tool.
+- Annotations say what a tool reaches: `readOnlyHint` for the analyzers that
+  only read a scene, and `destructiveHint`/`openWorldHint` for `collect`,
+  `gesture`, `run`, `explore`, `agent` and `emulator`. Ask before calling one
+  of those if your client supports confirmation.
+- The server answers both protocol eras — modern `2026-07-28`
+  (`server/discover`, version in `_meta`) and legacy `2025-11-25`
+  (`initialize`) — so use whichever your client speaks. An unsupported version
+  comes back as `-32022` with the list the server does speak.
