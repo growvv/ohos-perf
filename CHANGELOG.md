@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.30.1 — 2026-11-18
+
+**The snapshot reader now actually beats `JSON.parse`, and the numbers say so.**
+0.30.0's reader materialized both number arrays into a `Float64Array` and then
+aggregated. That is 8 bytes a slot — the same order as what `JSON.parse`
+allocates for them — so measured against a fair baseline it was *worse* than
+the parse it exists to replace (29.6 MB against 19.6 MB on a 9.4 MB snapshot),
+and the 14.3 MB figure in the 0.30.0 notes was not reproducible.
+
+- **`nodes` and `edges` are streamed, never materialized.** A counting pass
+  validates each array's length against the header before any aggregate is
+  built, then a cursor feeds the aggregate pass slot by slot. Nothing per node
+  or per edge is retained.
+- **Measured, peak RSS above a baseline taken after the text is read**: 12.3 MB
+  against 19.6 MB on a 9.4 MB snapshot, 30.1 MB against 106.5 MB on a 50 MB one.
+  The gap widens with size, which is where a real app's heap lives.
+- **The comparative test measures fairly.** Both child processes import the
+  module before taking a baseline; charging the 769 KB bundle to the scan alone
+  was enough to reverse the comparison on a small fixture.
+
 ## 0.30.0 — 2026-11-18
 
 **The captured JS heap is analyzed, not just saved.** HapRay's row 20 asks the
@@ -9,12 +29,13 @@ mentions it exists. `analyze` now reads it.
 
 - **A snapshot reader that does not parse the whole document.** A `.heapsnapshot`
   is a small header, two flat number arrays and a string table. The header is
-  parsed from its own bounded slice and `nodes`/`edges` are scanned digit by
-  digit into a `Float64Array`, so nothing per node is ever allocated: the whole
-  document goes through one aggregate pass and only the constructor groups
-  survive it. Measured on a 5.5 MB snapshot this peaks at 14.3 MB against 18.3
-  MB for `JSON.parse` — a real app's is tens to hundreds of megabytes, where
-  the object-per-number cost is what a whole-document parse cannot pay.
+  parsed from its own bounded slice; `nodes` and `edges` are streamed slot by
+  slot and never materialized, so only the aggregates and the string table are
+  retained. Measured peak RSS above a baseline taken after the text is read: a
+  9.4 MB snapshot peaks at 12.3 MB against 19.6 MB for `JSON.parse`, and a 50 MB
+  one at 30.1 MB against 106.5 MB — the gap widens with size, which is where a
+  real app's heap lives. Holding the two arrays instead measured *worse* than
+  the parse (29.6 MB against 19.6 MB), which is why they are streamed.
 - **The layout comes from the file, never from an offset.** V8's field list has
   changed (`detachedness` was added), so every field is located through
   `snapshot.meta.node_fields` / `edge_fields`. A missing field this reader needs

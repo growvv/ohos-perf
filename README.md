@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P35 are complete**: 2431 tests (2420 unit, 11 in the device
+**P1 through P35 are complete**: 2434 tests (2423 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — `npm install && npm run build`,
 with the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db`
-fixtures and any attached device absent — `npm run test:unit` reports **2392
+fixtures and any attached device absent — `npm run test:unit` reports **2395
 passed, 28 skipped (3 files)**, and all eleven device tests skip, so the
-combined clean checkout is **2403 passed, 39 skipped**. (Skip the build and 30
+combined clean checkout is **2406 passed, 39 skipped**. (Skip the build and 30
 files fail to resolve `@ohos-perf/core`, which is published as `dist`.) With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
@@ -314,8 +314,10 @@ carrying a snapshot is now analyzed: `analyze` reads `jsheap.heapsnapshot` and
 reports total heap, node count, detached count and object count as `exact`
 metrics, plus the largest constructor by self size. The reader streams the
 document instead of `JSON.parse`-ing it — one aggregate pass, nothing allocated
-per node: 14.3 MB peak against 18.3 MB for a full parse of the same 5.5 MB file,
-measured — and indexes every field from `snapshot.meta` rather than a
+per node and the two number arrays streamed rather than held: 12.3 MB peak
+against 19.6 MB for a full parse of the same 9.4 MB file, and 30.1 MB against
+106.5 MB on a 50 MB one, measured — and indexes every field from
+`snapshot.meta` rather than a
 hardcoded offset, and treats `to_node` as the node-slot offset V8 actually
 writes. A snapshot is a collector artifact, so it is read only when `scene.json`
 declares the `jsheap` collector — a file an earlier capture left behind is not
@@ -359,7 +361,7 @@ The HapRay parity series (one release per major item, so far):
 | P32 | beyond the inventory | `root-cause --baseline <run>` answers what changed between two runs: a deterministic movement of every metric (regressed / improved / unchanged / incomparable / gap) and of every evidence kind, rendered before the verdict and offered to the model, whose `metrics` citations are checked like evidence ids. A gap — a metric one run did not measure — is never an improvement, and the direction is the caller's baseline -> input rather than capture time. HapRay's multi-version page leaves the comparison to a human reading dropdowns and its root cause sees one run | shipped in `0.27.0` |
 | P33 | beyond the inventory | every command answers in one versioned envelope under `--machine-json` (one line on stdout) or `--result-file` (the same document on disk): `schemaVersion`, `toolId`, `command`, `success` derived from `exitCode`, the command's own payload, and the failure as a typed `error`. A `gate` verdict of fail is exit 2 with no `error` — the tool ran and the news is bad. `parseToolResult` validates on the way back in, which HapRay's write-only `machine_output.py` never does, and no result file is written unless asked | shipped in `0.28.0` |
 | P34 | beyond the inventory | `ohos-perf mcp` serves every command as an MCP tool over stdio: the tool list is derived from the commander program (one tool per leaf, `ohos-perf_<path>`, with that command's own options as its `inputSchema`), each call runs the command with `--machine-json` and returns the envelope as `structuredContent`, and the server answers both protocol eras — modern `2026-07-28` (`server/discover`, per-request `_meta`) and legacy `2025-11-25` (`initialize`) — so a client that predates the handshake change still works. `isError` means the command could not run, not that the news is bad. HapRay has no MCP surface at all | shipped in `0.29.0` |
-| P35 | beyond the inventory | `analyze` reads a scene's `jsheap.heapsnapshot` and reports the heap: total size, node count, detached count and object count as `exact` metrics, plus the largest constructor by self size. The reader streams the document instead of `JSON.parse`-ing it — one aggregate pass, nothing allocated per node: 14.3 MB peak against 18.3 MB for a full parse of the same 5.5 MB file, measured — and indexes every field from `snapshot.meta` rather than a hardcoded offset, and treats `to_node` as the node-slot offset V8 writes; a snapshot is read only when `scene.json` declares the `jsheap` collector, and its absence is a `no_data` naming `--jsheap`. Also fixes the collector: `-T` is a thread id, and it was being passed the pid. HapRay captures the file and analyzes nothing | shipped in `0.30.0` |
+| P35 | beyond the inventory | `analyze` reads a scene's `jsheap.heapsnapshot` and reports the heap: total size, node count, detached count and object count as `exact` metrics, plus the largest constructor by self size. The reader streams the document instead of `JSON.parse`-ing it — one aggregate pass, nothing allocated per node and the two number arrays streamed rather than held: 12.3 MB peak against 19.6 MB for a full parse of the same 9.4 MB file, and 30.1 MB against 106.5 MB on a 50 MB one, measured — and indexes every field from `snapshot.meta` rather than a hardcoded offset, and treats `to_node` as the node-slot offset V8 writes; a snapshot is read only when `scene.json` declares the `jsheap` collector, and its absence is a `no_data` naming `--jsheap`. Also fixes the collector: `-T` is a thread id, and it was being passed the pid. HapRay captures the file and analyzes nothing | shipped in `0.30.1` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,

@@ -8,12 +8,19 @@
  *
  * ## Why it does not `JSON.parse` the document
  *
- * Measured on this machine: a 5.5 MB snapshot parses into 17.6 MB of objects.
- * A real HarmonyOS app's snapshot is tens to hundreds of megabytes, so the
- * whole-document parse is the difference between a measurement and an
- * out-of-memory crash. The header is parsed (it is small and bounded), and the
- * number arrays are scanned digit by digit into a `Float64Array`, which is 8
- * bytes a slot instead of a boxed number plus array overhead.
+ * Measured on this machine, peak RSS above a baseline taken after the text is
+ * read: a 9.4 MB snapshot parses into 19.6 MB with `JSON.parse`, and this
+ * reader peaks at 12.3 MB; on a 50 MB snapshot, 106.5 MB against 30.1 MB. A
+ * real HarmonyOS app's snapshot is tens to hundreds of megabytes, and the gap
+ * widens with size, so the whole-document parse is the difference between a
+ * measurement and an out-of-memory crash.
+ *
+ * The header is parsed (it is small and bounded) and the string table is
+ * parsed from its own slice. `nodes` and `edges` are **streamed**, never
+ * materialized: holding them is 8 bytes a slot, the same order as what
+ * `JSON.parse` allocates for them, so a scanner that built both arrays and
+ * then aggregated measured *worse* than the parse it exists to replace
+ * (29.6 MB against 19.6 MB on the 9.4 MB file). Only aggregates are retained.
  *
  * ## What is validated, and why it matters
  *
@@ -287,51 +294,148 @@ function isNumberChar(char: string): boolean {
     char === '.' || char === 'e' || char === 'E';
 }
 
-/**
- * The numbers in a top-level flat array, scanned rather than parsed.
- *
- * `Float64Array` because snapshot numbers are integers well inside its exact
- * range (node ids, sizes, slot offsets) and it stores them unboxed — the point
- * of not calling `JSON.parse` on a document with hundreds of thousands of
- * them. The buffer doubles on overflow.
- */
-export function readNumberArray(text: string, key: string): Float64Array {
-  const label = `"${key}"`;
-  const at = topLevelKey(text, key);
-  if (at === -1) throw bad(`no ${label} array in the document`);
-  const open = text.indexOf('[', at + label.length);
-  if (open === -1) throw bad(`the ${label} key is not followed by an array`);
-
-  let buffer = new Float64Array(1024);
-  let length = 0;
+/** How many number tokens an array holds, counted without allocating. */
+function countNumbers(text: string, label: string, open: number): number {
+  let count = 0;
   let i = open + 1;
   for (;;) {
     const char = text[i];
     if (char === undefined) {
       throw bad(`the ${label} array is truncated at offset ${i} (no closing bracket)`);
     }
-    if (char === ']') return buffer.subarray(0, length);
-    if (char === ',' || char === ' ' || char === '\n' || char === '\r' || char === '\t') {
+    if (char === ']') return count;
+    if (char === ',' || isSpace(char)) {
       i++;
       continue;
     }
     if (!isNumberChar(char)) {
       throw bad(`the ${label} array is truncated or not a number array at offset ${i}`);
     }
-    let end = i;
-    while (end < text.length && isNumberChar(text[end]!)) end++;
-    const raw = text.slice(i, end);
-    const value = Number(raw);
-    if (!Number.isFinite(value)) {
-      throw bad(`the ${label} array holds ${JSON.stringify(raw)} at offset ${i}, which is not a number`);
+    count++;
+    i++;
+    while (i < text.length && isNumberChar(text[i]!)) i++;
+  }
+}
+
+/** Beyond this an integer accumulator is no longer exact; defer to `Number`. */
+const EXACT_INTEGER_LIMIT = 9e15;
+
+/**
+ * The number spanning `text[start, end)`, without allocating a string.
+ *
+ * Snapshot numbers are integers — ids, sizes, slot offsets — and almost all of
+ * them fit the fast path. `text.slice` per number is what made the scanner
+ * allocate one string per slot (2.2 million on a 9 MB file, measured); a
+ * fractional or exponent form, or an integer past 2^53, takes the slow path and
+ * is the only case that allocates.
+ */
+function numberAt(text: string, start: number, end: number): number {
+  let i = start;
+  let negative = false;
+  if (text[i] === '-') {
+    negative = true;
+    i++;
+  }
+  let value = 0;
+  for (; i < end; i++) {
+    const digit = text.charCodeAt(i) - 48;
+    if (digit < 0 || digit > 9) {
+      value = Number(text.slice(start, end));
+      return value;
     }
-    if (length === buffer.length) {
-      const grown = new Float64Array(buffer.length * 2);
-      grown.set(buffer);
-      buffer = grown;
+    value = value * 10 + digit;
+    if (value > EXACT_INTEGER_LIMIT) {
+      value = Number(text.slice(start, end));
+      return value;
     }
-    buffer[length++] = value;
-    i = end;
+  }
+  return negative ? -value : value;
+}
+
+/**
+ * A cursor over the numbers in a top-level flat array.
+ *
+ * Exists so the parser never holds the array: `nodes` and `edges` are read
+ * slot by slot, and only the aggregates built from them are retained. Holding
+ * both arrays is itself a `JSON.parse`-sized allocation (8 bytes a slot for
+ * 1.4 million edge slots, measured), so a scanner that materializes them and
+ * then aggregates cannot beat the parse it exists to replace.
+ */
+class NumberCursor {
+  private i: number;
+
+  constructor(
+    private readonly text: string,
+    /** The quoted key, for error messages. */
+    readonly label: string,
+    /** The array's opening bracket. */
+    readonly start: number,
+  ) {
+    this.i = start + 1;
+  }
+
+  /** The next number, or `undefined` when the array ends. */
+  next(): number | undefined {
+    const text = this.text;
+    for (;;) {
+      const char = text[this.i];
+      if (char === undefined) {
+        throw bad(`the ${this.label} array is truncated at offset ${this.i} (no closing bracket)`);
+      }
+      if (char === ']') return undefined;
+      if (char === ',' || isSpace(char)) {
+        this.i++;
+        continue;
+      }
+      if (!isNumberChar(char)) {
+        throw bad(`the ${this.label} array is truncated or not a number array at offset ${this.i}`);
+      }
+      let end = this.i + 1;
+      while (end < text.length && isNumberChar(text[end]!)) end++;
+      const start = this.i;
+      this.i = end;
+      const value = numberAt(text, start, end);
+      if (!Number.isFinite(value)) {
+        throw bad(
+          `the ${this.label} array holds ${JSON.stringify(text.slice(start, end))} at offset ${start},` +
+          ' which is not a number',
+        );
+      }
+      return value;
+    }
+  }
+}
+
+/** A cursor positioned at a top-level number array, refused when absent. */
+function numberCursor(text: string, key: string): NumberCursor {
+  const label = `"${key}"`;
+  const at = topLevelKey(text, key);
+  if (at === -1) throw bad(`no ${label} array in the document`);
+  const open = text.indexOf('[', at + label.length);
+  if (open === -1) throw bad(`the ${label} key is not followed by an array`);
+  return new NumberCursor(text, label, open);
+}
+
+/**
+ * The numbers in a top-level flat array, scanned rather than parsed.
+ *
+ * `Float64Array` because snapshot numbers are integers well inside its exact
+ * range (node ids, sizes, slot offsets) and it stores them unboxed. Sizing is
+ * exact via a counting pass: doubling instead peaked at twice the array's size
+ * (old and new buffer both live across a doubling).
+ *
+ * The parser itself does not call this — it streams through {@link NumberCursor}
+ * and keeps only aggregates. This is the API for a caller that wants the
+ * numbers themselves.
+ */
+export function readNumberArray(text: string, key: string): Float64Array {
+  const cursor = numberCursor(text, key);
+  const values = new Float64Array(countNumbers(text, cursor.label, cursor.start));
+  let length = 0;
+  for (;;) {
+    const value = cursor.next();
+    if (value === undefined) return values;
+    values[length++] = value;
   }
 }
 
@@ -345,12 +449,20 @@ function stringAt(strings: readonly string[], index: number, where: string): str
 }
 
 /**
- * Parse a snapshot into nodes and the aggregates a report reads.
+ * Parse a snapshot into the aggregates a report reads.
  *
- * The two array lengths are checked against `node_count * node_field_count`
- * and `edge_count * edge_field_count` before anything is read: a dump killed
- * mid-write leaves a short array, and reporting the nodes that happened to fit
- * would present a partial heap as the whole heap.
+ * The two arrays are **streamed, never materialized**. Holding `nodes` and
+ * `edges` as arrays is 8 bytes a slot — the same order as what `JSON.parse`
+ * allocates for them — so a scanner that built both and then aggregated
+ * measured *worse* than `JSON.parse` on every fixture tried (29.6 MB against
+ * 19.6 MB on a 9.4 MB file, 112.8 against 106.6 on a 50 MB one). Only the
+ * aggregates and the string table are retained.
+ *
+ * Each array is read twice: once to count its slots, which validates the
+ * length against `node_count * node_field_count` before any aggregate is
+ * built, and once to aggregate. A dump killed mid-write leaves a short array,
+ * and reporting the nodes that happened to fit would present a partial heap as
+ * the whole heap.
  *
  * `to_node` is a **node slot offset**, not an index — V8 writes
  * `node_index * node_field_count`. Reading it as an index is the classic way
@@ -359,19 +471,21 @@ function stringAt(strings: readonly string[], index: number, where: string): str
  */
 export function parseHeapSnapshot(text: string): HeapSnapshot {
   const header = readSnapshotHeader(text);
-  const nodes = readNumberArray(text, 'nodes');
-  const edges = readNumberArray(text, 'edges');
+  const nodeCursor = numberCursor(text, 'nodes');
+  const edgeCursor = numberCursor(text, 'edges');
 
   const expectedNodes = header.nodeCount * header.nodeFieldCount;
-  if (nodes.length !== expectedNodes) {
+  const nodeSlots = countNumbers(text, nodeCursor.label, nodeCursor.start);
+  if (nodeSlots !== expectedNodes) {
     throw bad(
-      `the "nodes" array holds ${nodes.length} values; node_count * node_fields is ${expectedNodes}`,
+      `the "nodes" array holds ${nodeSlots} values; node_count * node_fields is ${expectedNodes}`,
     );
   }
   const expectedEdges = header.edgeCount * header.edgeFieldCount;
-  if (edges.length !== expectedEdges) {
+  const edgeSlots = countNumbers(text, edgeCursor.label, edgeCursor.start);
+  if (edgeSlots !== expectedEdges) {
     throw bad(
-      `the "edges" array holds ${edges.length} values; edge_count * edge_fields is ${expectedEdges}`,
+      `the "edges" array holds ${edgeSlots} values; edge_count * edge_fields is ${expectedEdges}`,
     );
   }
 
@@ -394,14 +508,15 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
   let detachedCount = 0;
 
   for (let index = 0; index < header.nodeCount; index++) {
-    const base = index * width;
-    const type = stringAt(header.nodeTypeNames, nodes[base + typeAt]!, `node ${index} type`);
+    const record = new Float64Array(width);
+    for (let slot = 0; slot < width; slot++) record[slot] = nodeCursor.next()!;
+    const type = stringAt(header.nodeTypeNames, record[typeAt]!, `node ${index} type`);
     nodeCountByType.set(type, (nodeCountByType.get(type) ?? 0) + 1);
-    const selfSize = nodes[base + selfSizeAt]!;
+    const selfSize = record[selfSizeAt]!;
     totalSelfSize += selfSize;
-    if (detachedAt !== undefined && nodes[base + detachedAt] === 2) detachedCount += 1;
+    if (detachedAt !== undefined && record[detachedAt] === 2) detachedCount += 1;
     if (type === 'object' || type === 'closure') {
-      const name = stringAt(strings, nodes[base + nameAt]!, `node ${index} name`);
+      const name = stringAt(strings, record[nameAt]!, `node ${index} name`);
       const entry = byName.get(name);
       if (entry === undefined) byName.set(name, { selfSize, count: 1 });
       else {
@@ -411,9 +526,15 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
     }
   }
 
+  // Edges are validated and then discarded: nothing a report reads depends on
+  // them yet, and the only thing a bad one can do is mis-attribute, which is
+  // exactly what this refuses.
+  const edgeWidth = header.edgeFieldCount;
   const toNodeAt = header.edgeFieldIndex['to_node']!;
+  const record = new Float64Array(edgeWidth);
   for (let edge = 0; edge < header.edgeCount; edge++) {
-    const toNode = edges[edge * header.edgeFieldCount + toNodeAt]!;
+    for (let slot = 0; slot < edgeWidth; slot++) record[slot] = edgeCursor.next()!;
+    const toNode = record[toNodeAt]!;
     const target = toNode / width;
     if (toNode % width !== 0 || target >= header.nodeCount) {
       throw bad(

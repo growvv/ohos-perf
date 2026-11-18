@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { writeHeapSnapshot } from 'node:v8';
 import { readNumberArray, readSnapshotHeader, parseHeapSnapshot } from '../src/jsheap/snapshot';
 
@@ -148,7 +149,12 @@ describe('a snapshot written by this engine', () => {
     const byType = [...snapshot.nodeCountByType.values()].reduce((a, b) => a + b, 0);
     expect(byType).toBe(snapshot.header.nodeCount);
     expect(snapshot.totalSelfSize).toBeGreaterThan(0);
-    expect(snapshot.detachedCount).toBe(0);
+    // Not `0`: how many nodes a heap snapshot marks detached is a property of
+    // the engine that wrote it, and CI measured 111 on Node 22 where this
+    // machine measured 0 on Node 26. The invariant is that the count is a
+    // number inside the node count, not that it is zero.
+    expect(snapshot.detachedCount).toBeGreaterThanOrEqual(0);
+    expect(snapshot.detachedCount).toBeLessThanOrEqual(snapshot.nodeCount);
   });
 
   it('agrees with a whole-document JSON.parse about the heap total', () => {
@@ -283,33 +289,61 @@ describe('parseHeapSnapshot', () => {
  * file.
  */
 describe('the reader is cheaper than a whole-document parse', () => {
+  /**
+   * The comparison runs in **separate processes**, and both load the module
+   * before taking a baseline.
+   *
+   * An in-process RSS delta is not a measurement: the first parse's garbage is
+   * still resident when the second starts, so the second number inherits the
+   * first's peak. Measured in one process on CI, that reported the scan at
+   * 50.8 MB against a parse at 30.1 MB — the reverse of the truth, because the
+   * parse had already happened.
+   *
+   * The module is imported on both sides, before the baseline: the scanner
+   * lives in a 769 KB bundle, and charging that to the scan alone was enough to
+   * reverse the comparison on a small fixture.
+   */
   it('peaks below JSON.parse on a snapshot this engine writes', () => {
     const dir = mkdtempSync(join(tmpdir(), 'jsheap-mem-'));
-    const file = join(dir, 'mem.heapsnapshot');
     try {
+      const file = join(dir, 'mem.heapsnapshot');
       const keep: unknown[] = [];
       for (let i = 0; i < 20_000; i++) keep.push({ i, s: `v-${i % 97}`, a: [i] });
       writeHeapSnapshot(file);
       expect(keep.length).toBe(20_000);
-      const text = readFileSync(file, 'utf8');
 
-      const peakOf = (work: () => void): number => {
+      // A child script that reads the file one way and prints its peak.
+      const probe = join(dir, 'probe.mjs');
+      writeFileSync(probe, `
+        import { readFileSync } from 'node:fs';
+        const [mode, file, moduleUrl] = process.argv.slice(2);
+        const { parseHeapSnapshot } = await import(moduleUrl);
+        const text = readFileSync(file, 'utf8');
         const base = process.memoryUsage().rss;
         let peak = base;
-        work();
-        const now = process.memoryUsage().rss;
-        return Math.max(peak, now) - base;
+        const timer = setInterval(() => {
+          const rss = process.memoryUsage().rss;
+          if (rss > peak) peak = rss;
+        }, 1);
+        if (mode === 'parse') {
+          const parsed = JSON.parse(text);
+          if (parsed.nodes.length === 0) throw new Error('empty');
+        } else if (parseHeapSnapshot(text).nodeCount === 0) {
+          throw new Error('empty');
+        }
+        peak = Math.max(peak, process.memoryUsage().rss);
+        clearInterval(timer);
+        console.log(peak - base);
+      `);
+      const moduleUrl = new URL('../dist/index.js', import.meta.url).href;
+      const peakOf = (mode: string): number => {
+        const run = spawnSync(process.execPath, [probe, mode, file, moduleUrl], {
+          encoding: 'utf8',
+        });
+        if (run.status !== 0) throw new Error(`${mode} probe failed: ${run.stderr}`);
+        return Number(run.stdout.trim());
       };
-      // Parse first, in its own throwaway scope, so its garbage is not the
-      // baseline for the second measurement.
-      const parsePeak = peakOf(() => {
-        const parsed = JSON.parse(text) as { nodes: number[] };
-        expect(parsed.nodes.length).toBeGreaterThan(0);
-      });
-      const scanPeak = peakOf(() => {
-        expect(parseHeapSnapshot(text).nodeCount).toBeGreaterThan(0);
-      });
-      expect(scanPeak).toBeLessThan(parsePeak);
+      expect(peakOf('scan')).toBeLessThan(peakOf('parse'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
