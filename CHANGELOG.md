@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.32.2 — 2026-11-19
+
+Republish of 0.32.1. `@ohos-perf/cli@0.32.1` reached the registry while
+`@ohos-perf/core@0.32.1` was only staged and never published, so the CLI
+pinned a version that does not exist and `npm install -g @ohos-perf/cli`
+could not resolve. npm refuses to republish a staged version, so both
+packages move to 0.32.2 with the same content. No code changed.
+
 ## 0.32.1 — 2026-11-19
 
 **The ranking kept the wrong finding, and the docs said the case was
