@@ -1184,13 +1184,11 @@ export async function runTrend(
   opts: { json?: boolean },
 ): Promise<CliResult> {
   if (req.reports.length < 2) {
-    return {
-      stdout: '',
-      stderr:
-        `trend needs at least two reports; got ${req.reports.length}. ` +
-        'A trend of one is a report — use `report` for a single run.\n',
-      exitCode: 1,
-    };
+    return failureResult(new OhosPerfError(
+      `trend needs at least two reports; got ${req.reports.length}. ` +
+        'A trend of one is a report — use `report` for a single run.',
+      { code: 'TREND_TOO_FEW_REPORTS' },
+    ));
   }
 
   try {
@@ -1396,17 +1394,21 @@ export async function runAgentCommand(
   opts: { json?: boolean },
 ): Promise<CliResult> {
   if (req.task.trim() === '') {
-    return {
-      stdout: '',
-      stderr: 'agent: the task must not be empty\n',
-      exitCode: 1,
-    };
+    return failureResult(new OhosPerfError(
+      'agent: the task must not be empty',
+      { code: 'AGENT_EMPTY_TASK' },
+    ));
   }
 
   try {
     const result = await deps.agent(req);
+    // The exit code is the command's point, so both branches share it: a
+    // verified claim is 0, and an unverified, refused or exhausted run is 1.
+    // `--machine-json` forces `--json`, so a JSON branch that defaulted to 0
+    // would publish a failed walk as a successful tool result.
+    const exitCode = transcriptStatusOk(result.transcript) ? 0 : 1;
     if (opts.json) {
-      return { ...jsonResult(result), stderr: AGENT_RISK_WARNING };
+      return { ...jsonResult(result, exitCode), stderr: AGENT_RISK_WARNING };
     }
 
     const { transcript, device } = result;
@@ -1433,11 +1435,21 @@ export async function runAgentCommand(
         `walk   ${transcript.steps.length} steps, ${transcript.statesReached} states reached\n` +
         lines.map((line) => `${line}\n`).join(''),
       stderr: AGENT_RISK_WARNING,
-      exitCode: transcript.status === 'completed' ? 0 : 1,
+      exitCode,
     };
   } catch (err) {
     return failureResult(err);
   }
+}
+
+/**
+ * Whether a walk's status counts as success: only a claim the screen confirmed.
+ *
+ * Named once because both output branches exit on it; a JSON branch that
+ * spelled it differently is how a failed walk once shipped as exit 0.
+ */
+function transcriptStatusOk(transcript: AgentTranscript): boolean {
+  return transcript.status === 'completed';
 }
 
 /** A step's gesture in words, matching the transcript's own rendering. */
@@ -1549,7 +1561,7 @@ export async function runHap(
   opts: { json?: boolean },
 ): Promise<CliResult> {
   const pathError = packagePathError(req.packagePath);
-  if (pathError !== undefined) return { stdout: '', stderr: `${pathError}\n`, exitCode: 1 };
+  if (pathError !== undefined) return failureResult(new OhosPerfError(pathError, { code: 'HAP_BAD_PATH' }));
 
   try {
     const result = await deps.hap(req);
@@ -1658,8 +1670,7 @@ export async function runOptimization(
   opts: { json?: boolean },
 ): Promise<CliResult> {
   const pathError = binaryPathError(req.packagePath);
-  if (pathError !== undefined) return { stdout: '', stderr: `${pathError}
-`, exitCode: 1 };
+  if (pathError !== undefined) return failureResult(new OhosPerfError(pathError, { code: 'OPT_BAD_PATH' }));
 
   try {
     const result = await deps.opt(req);
@@ -1716,11 +1727,10 @@ export async function runScenarioCommand(
 ): Promise<CliResult> {
   if (input.casesDir !== undefined) {
     if (input.scenarioPath !== '') {
-      return {
-        stdout: '',
-        stderr: 'run: give either a scenario file or --cases <dir>, not both\n',
-        exitCode: 1,
-      };
+      return failureResult(new OhosPerfError(
+        'run: give either a scenario file or --cases <dir>, not both',
+        { code: 'SCENARIO_BOTH_INPUTS' },
+      ));
     }
     return runCases(deps, input, opts);
   }
@@ -1874,11 +1884,10 @@ async function runCases(
     mkdirSync(input.outDir, { recursive: true });
     writeFileSync(join(input.outDir, 'cases.json'), `${JSON.stringify(index, null, 2)}\n`);
   } catch (err) {
-    return {
-      stdout: '',
-      stderr: `cannot write cases.json: ${safeMessage(err)}\n`,
-      exitCode: 1,
-    };
+    return failureResult(new OhosPerfError(
+      `cannot write cases.json: ${safeMessage(err)}`,
+      { code: 'CASES_INDEX_BAD_PATH', cause: err },
+    ));
   }
 
   const failed = outcomes.filter((entry) => entry.status === 'failed').length;

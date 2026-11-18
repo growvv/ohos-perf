@@ -88,9 +88,24 @@ function contractFlags(argv: readonly string[]): ContractFlags {
   return { machineJson, ...(resultFile === undefined ? {} : { resultFile }) };
 }
 
-/** The command path from raw argv: the first non-flag token, plus its subcommand. */
+/**
+ * The command path from raw argv: the first non-flag token, plus its subcommand.
+ *
+ * The value of a flag is not a command name, so `--result-file out/r.json
+ * root-cause` has to skip the path — a walker that took the first non-dash
+ * token would label the run `out/r.json`.
+ */
 function commandPathFrom(argv: readonly string[]): string {
-  const positionals = argv.filter((arg) => !arg.startsWith('-'));
+  const positionals: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === undefined) continue;
+    if (arg === '--result-file') {
+      index += 1;
+    } else if (!arg.startsWith('-')) {
+      positionals.push(arg);
+    }
+  }
   const [first, second] = positionals;
   if (first === undefined) return 'ohos-perf';
   // Only the three grouped commands have a second level, and each names its
@@ -99,6 +114,24 @@ function commandPathFrom(argv: readonly string[]): string {
     return second === undefined ? first : `${first}.${second}`;
   }
   return first;
+}
+
+/**
+ * A commander throw that is a request for text, not a failure.
+ *
+ * Three codes mean "commander printed what was asked and is done":
+ * `helpDisplayed` (`--help`), `version` (`--version`) and `help` (the `help`
+ * subcommand, or a group invoked with no subcommand — the latter with exit 1,
+ * which is commander's own long-standing behaviour). None of them is a result,
+ * so none gets an envelope, and none may be re-printed: commander's own
+ * message for these is the `(outputHelp)` placeholder, which is not text for
+ * a user.
+ */
+function isTextRequest(err: unknown): boolean {
+  return err instanceof CommanderError
+    && (err.code === 'commander.helpDisplayed'
+      || err.code === 'commander.version'
+      || err.code === 'commander.help');
 }
 
 /**
@@ -114,10 +147,7 @@ function usageEnvelope(
   err: unknown,
   version: string,
 ): CliResult | undefined {
-  if (!(err instanceof CommanderError)) return undefined;
-  // `helpDisplayed` and `version` are successful requests for text; commander
-  // has already written it, and an envelope would be a second answer.
-  if (err.code === 'commander.helpDisplayed' || err.code === 'commander.version') return undefined;
+  if (!(err instanceof CommanderError) || isTextRequest(err)) return undefined;
   const flags = contractFlags(argv);
   if (!flags.machineJson && flags.resultFile === undefined) return undefined;
 
@@ -168,15 +198,25 @@ const program = buildProgram(deps, {
 program.parseAsync(process.argv).catch((err: unknown) => {
   // With `exitOverride`, commander throws even for help and version, which are
   // successful requests for text it has already written. Their exit code is
-  // the one commander chose (0), and there is nothing left to print.
-  if (err instanceof CommanderError
-    && (err.code === 'commander.helpDisplayed' || err.code === 'commander.version')) {
+  // the one commander chose (0 for `--help`/`--version`, 1 for a bare group),
+  // and there is nothing left to print.
+  if (err instanceof CommanderError && isTextRequest(err)) {
     process.exitCode = err.exitCode;
     return;
   }
   const envelope = usageEnvelope(process.argv.slice(2), err, deps.version);
   if (envelope !== undefined) {
+    // Commander already wrote its own message through `writeErr`; the
+    // envelope replaces it on stdout, and re-printing it here would show every
+    // usage error twice.
     emit(envelope);
+    return;
+  }
+  if (err instanceof CommanderError) {
+    // A usage error with no envelope: commander has already written the
+    // message (and any suggestion) through `writeErr`, so printing it again
+    // would duplicate it. Only the exit code is ours to set.
+    process.exitCode = err.exitCode === 0 ? 1 : err.exitCode;
     return;
   }
   process.stderr.write(`${failureLine(err)}\n`);

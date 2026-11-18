@@ -92,6 +92,23 @@ describe('runAgentCommand', () => {
     expect(result.stdout).toContain('payment is irreversible');
   });
 
+  it('keeps the verified exit code under --json', async () => {
+    // The exit code is the command's whole point, so the machine branch must
+    // not reset it to 0: `--machine-json` forces `--json`, and a model run
+    // that claimed success on a screen it never reached would then ship as a
+    // successful tool result.
+    for (const status of ['unverified', 'refused', 'exhausted'] as const) {
+      const notVerified: AgentTranscript = { ...transcript, status };
+      const result = await runAgentCommand(
+        cliDeps({ agent: async () => ({ transcript: notVerified, device: { id: 'emu-1', kind: 'emulator' } }) }),
+        { app: 'com.demo', task: 't', maxSteps: 5 },
+        { json: true },
+      );
+      expect(result.exitCode, status).toBe(1);
+      expect(JSON.parse(result.stdout).transcript.status).toBe(status);
+    }
+  });
+
   it('prints the whole document with --json', async () => {
     const result = await runAgentCommand(
       cliDeps({ agent: async () => ({ transcript, device: { id: 'emu-1', kind: 'emulator' } }) }),

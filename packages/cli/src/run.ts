@@ -6,6 +6,8 @@
  * the same reason `collect.ts` exists.
  */
 
+import { OhosPerfError } from '@ohos-perf/core';
+
 /**
  * Parse `--only open,scroll` into step ids.
  *
@@ -17,9 +19,10 @@
 export function parseOnly(raw: string): string[] {
   const ids = raw.split(',').map((id) => id.trim());
   if (ids.some((id) => id === '')) {
-    throw new Error(
+    throw new OhosPerfError(
       `invalid --only ${JSON.stringify(raw)}: an empty step id names no step;` +
         ' expected a comma-separated list of ids',
+      { code: 'SCENARIO_BAD_ONLY' },
     );
   }
   return ids;

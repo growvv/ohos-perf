@@ -34,7 +34,6 @@ import {
   runTrend,
   runUiCompare,
   safeMessage,
-  failureLine,
   failureResult,
   type CliDeps,
   type CliResult,
@@ -129,14 +128,29 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--machine-json', 'print one tool-result envelope line on stdout instead of the command output')
     .option('--result-file <path>', 'write the tool-result envelope to this file');
 
-  /** The command whose action is running; set by `preAction`, read by `emit`. */
-  let active: Command | undefined;
+  /**
+   * The command whose action is running; set by `preAction`, read by `emit`.
+   *
+   * A stack, not a slot: `buildProgram` is exported and a harness may parse
+   * the same program concurrently, in which case a single variable would let
+   * the second action relabel the first one's envelope. `postAction` pops, and
+   * `emit` reads the top.
+   */
+  const running: Command[] = [];
 
   program.hook('preAction', (_self, action) => {
-    active = action;
-    if ((action.optsWithGlobals() as { machineJson?: boolean }).machineJson === true) {
+    running.push(action);
+    const globals = action.optsWithGlobals() as { machineJson?: boolean; resultFile?: string };
+    // Both flags ask for an envelope, and an envelope wraps the structured
+    // answer. `--result-file` alone would otherwise write `outputs: {}` for
+    // every command whose payload lives only in its `--json` branch.
+    if (globals.machineJson === true || globals.resultFile !== undefined) {
       action.setOptionValue('json', true);
     }
+  });
+
+  program.hook('postAction', () => {
+    running.pop();
   });
 
   /** `analyze`, `emulator.list` — the path a consumer branches on. */
@@ -177,10 +191,25 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         }
         io.writeFile(path, renderToolResultFile(envelope));
       } catch (err) {
-        return failureResult(new OhosPerfError(
+        // The command may have succeeded, but the contract it was asked to
+        // write did not. The envelope for *that* failure is the answer, and
+        // under `--machine-json` it still has to be one line — a caller that
+        // sees zero lines cannot tell a crash from a quiet success.
+        const failure = failureResult(new OhosPerfError(
           `could not write the tool result to ${path}: ${safeMessage(err)}`,
           { code: 'TOOL_RESULT_BAD_PATH' },
         ));
+        return globals.machineJson === true
+          ? {
+              ...failure,
+              stdout: renderToolResultLine(buildToolResult({
+                toolVersion: deps.version,
+                command: commandPath(command),
+                exitCode: failure.exitCode,
+                ...(failure.error === undefined ? {} : { error: failure.error }),
+              })),
+            }
+          : failure;
       }
     }
     return globals.machineJson === true
@@ -190,7 +219,8 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
 
   /** `io.emit` plus the envelope, for every action in this program. */
   const emit = (result: CliResult): void => {
-    io.emit(active === undefined ? result : finish(active, result));
+    const current = running[running.length - 1];
+    io.emit(current === undefined ? result : finish(current, result));
   };
 
   program
@@ -284,7 +314,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       try {
         durationMs = parseDurationSeconds(opts.duration);
       } catch (err) {
-        emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+        emit(failureResult(err));
         return;
       }
 
@@ -292,32 +322,29 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       // without `--hiprofiler` would capture through hitrace and quietly drop
       // the user's request.
       if (opts.plugins !== undefined && opts.hiprofiler !== true) {
-        emit({
-          stdout: '',
-          stderr: 'invalid --plugins: --hiprofiler is required\n',
-          exitCode: 1,
-        });
+        emit(failureResult(new OhosPerfError(
+          'invalid --plugins: --hiprofiler is required',
+          { code: 'COLLECT_PLUGINS_WITHOUT_HIPROFILER' },
+        )));
         return;
       }
       // `--so-dir` names a host directory the device symbolizer reads. Without
       // `--hiperf` there is no perf capture to symbolize, so accepting it would
       // run a capture that quietly drops the user's request.
       if (opts.soDir !== undefined && opts.hiperf !== true) {
-        emit({
-          stdout: '',
-          stderr: 'invalid --so-dir: --hiperf is required\n',
-          exitCode: 1,
-        });
+        emit(failureResult(new OhosPerfError(
+          'invalid --so-dir: --hiperf is required',
+          { code: 'COLLECT_SO_DIR_WITHOUT_HIPERF' },
+        )));
         return;
       }
       // The interval only means something to a thermal capture; accepting it
       // alone would run a capture that quietly drops the user's request.
       if (opts.thermalInterval !== undefined && opts.thermal !== true) {
-        emit({
-          stdout: '',
-          stderr: 'invalid --thermal-interval: --thermal is required\n',
-          exitCode: 1,
-        });
+        emit(failureResult(new OhosPerfError(
+          'invalid --thermal-interval: --thermal is required',
+          { code: 'COLLECT_THERMAL_INTERVAL_WITHOUT_THERMAL' },
+        )));
         return;
       }
       let thermalRequest: boolean | { intervalMs: number } | undefined;
@@ -330,7 +357,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
               intervalMs: parseThermalIntervalSeconds(opts.thermalInterval),
             };
           } catch (err) {
-            emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+            emit(failureResult(err));
             return;
           }
         }
@@ -343,7 +370,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
             ? {}
             : { plugins: parsePluginList(opts.plugins) };
         } catch (err) {
-          emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+          emit(failureResult(err));
           return;
         }
       }
@@ -359,12 +386,11 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         opts.jsheap === true ||
         (hiprofilerRequest?.plugins?.includes('nativehook') ?? false);
       if (needsApp && (opts.app === undefined || opts.app === '')) {
-        emit({
-          stdout: '',
-          stderr: 'missing --app: --procfs, --cold-start, --hiperf, --jsheap and the' +
-            ' nativehook plugin require an application package name\n',
-          exitCode: 1,
-        });
+        emit(failureResult(new OhosPerfError(
+          'missing --app: --procfs, --cold-start, --hiperf, --jsheap and the' +
+            ' nativehook plugin require an application package name',
+          { code: 'COLLECT_APP_REQUIRED' },
+        )));
         return;
       }
 
@@ -408,7 +434,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         args = opts.args === undefined ? undefined : parseQueryArgs(opts.args);
         limit = opts.limit === undefined ? undefined : parseLimit(opts.limit);
       } catch (err) {
-        emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+        emit(failureResult(err));
         return;
       }
       emit(await runQuery(deps, {
@@ -634,16 +660,16 @@ A suspect citing a name this run never measured is marked ungrounded.`)
       try {
         if (opts.rounds !== undefined) {
           if (!/^[1-9]\d*$/.test(opts.rounds)) {
-            throw new Error(
+            throw new OhosPerfError(
               `invalid --rounds ${JSON.stringify(opts.rounds)}: expected a positive whole number`,
+              { code: 'SCENARIO_BAD_ROUNDS' },
             );
           }
           rounds = Number(opts.rounds);
         }
         only = opts.only === undefined ? undefined : parseOnly(opts.only);
       } catch (err) {
-        emit({ stdout: '', stderr: `${failureLine(err)}
-`, exitCode: 1 });
+        emit(failureResult(err));
         return;
       }
       emit(await runScenarioCommand(deps, {
@@ -698,7 +724,7 @@ instead.`)
           seed = parseMaxSteps(opts.seed);
         }
       } catch (err) {
-        emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+        emit(failureResult(err));
         return;
       }
       emit(
@@ -744,7 +770,7 @@ walk, and prefer a test account or a disposable build.`)
       try {
         maxSteps = parseMaxSteps(opts.maxSteps);
       } catch (err) {
-        emit({ stdout: '', stderr: `${failureLine(err)}\\n`, exitCode: 1 });
+        emit(failureResult(err));
         return;
       }
       emit(
@@ -908,11 +934,10 @@ walk, and prefer a test account or a disposable build.`)
     // before the action, which would break the CLI-wide failure contract
     // (one message on stderr, an emitted exit-1 result).
     if (opts.deviceType === undefined || opts.osVersion === undefined) {
-      emit({
-        stdout: '',
-        stderr: '--device-type and --os-version are required\n',
-        exitCode: 1,
-      });
+      emit(failureResult(new OhosPerfError(
+        '--device-type and --os-version are required',
+        { code: 'EMULATOR_FLAGS_REQUIRED' },
+      )));
       return;
     }
     const number = (flag: string, raw: string | undefined): number | undefined => {
@@ -932,7 +957,7 @@ walk, and prefer a test account or a disposable build.`)
       memoryGb = number('--memory', opts.memory);
       storageGb = number('--storage', opts.storage);
     } catch (err) {
-      emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+      emit(failureResult(err));
       return;
     }
     emit(await runEmulatorCreate(deps, {
@@ -973,7 +998,7 @@ walk, and prefer a test account or a disposable build.`)
     try {
       gesture = build();
     } catch (err) {
-      emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+      emit(failureResult(err));
       return;
     }
     emit(await runGesture(deps, {

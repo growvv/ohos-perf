@@ -361,4 +361,55 @@ describe('tool-result contract from the built binary', () => {
     expect(r.stdout).toBe('');
     expect(cliStderr(r.stderr)).toContain('--out');
   });
+
+  it('prints a usage error once, not twice', () => {
+    // Commander writes its own message through `writeErr` before the catch
+    // sees the error. Printing it again turns one usage line into two, which
+    // reads as a repeated failure rather than one.
+    const r = run(['--bogus']);
+    expect(r.status).toBe(1);
+    const occurrences = cliStderr(r.stderr).split('\n')
+      .filter((line) => line.includes("unknown option '--bogus'"));
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it('prints a usage error once under --machine-json too', () => {
+    const r = run(['--bogus', '--machine-json']);
+    expect(r.status).toBe(1);
+    const occurrences = cliStderr(r.stderr).split('\n')
+      .filter((line) => line.includes("unknown option '--bogus'"));
+    expect(occurrences).toHaveLength(1);
+    expect(JSON.parse(r.stdout).error.code).toBe('CLI_USAGE');
+  });
+
+  it('exits 0 and prints help text for the help subcommand', () => {
+    const r = run(['help']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('Usage: ohos-perf');
+    // Commander's own exit placeholder is not a message for a user.
+    expect(cliStderr(r.stderr)).toBe('');
+    expect(r.stdout).not.toContain('(outputHelp)');
+  });
+
+  it('prints a bare group\'s help without its exit placeholder', () => {
+    // Commander writes a bare group's help to stderr with exit 1 (the group
+    // names no subcommand, which is its own long-standing choice). What it
+    // must not also print is the `(outputHelp)` message it exits with.
+    const r = run(['emulator']);
+    expect(r.status).toBe(1);
+    expect(cliStderr(r.stderr)).toContain('Usage: ohos-perf emulator');
+    expect(r.stdout).toBe('');
+    expect(cliStderr(r.stderr)).not.toContain('(outputHelp)');
+  });
+
+  it('reads the command path past a --result-file that precedes it', () => {
+    // The flag's value is not a command name. An argv walker that took the
+    // first non-dash token labelled this run `out/r.json`.
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-path-'));
+    const path = join(dir, 'r.json');
+    const r = run(['--result-file', path, 'root-cause']);
+    expect(r.status).toBe(1);
+    const written = JSON.parse(readFileSync(path, 'utf8')) as { command: string };
+    expect(written.command).toBe('root-cause');
+  });
 });

@@ -729,7 +729,7 @@ describe('command wiring', () => {
       },
     );
     expect(called).toBe(false);
-    expect(emitted).toEqual([
+    expect(emitted).toMatchObject([
       { stdout: '', stderr: expect.stringContaining('--app'), exitCode: 1 },
     ]);
   });
@@ -806,7 +806,7 @@ describe('command wiring', () => {
       query: async () => { called = true; throw new Error('should not run'); },
     });
     expect(called).toBe(false);
-    expect(emitted).toEqual([{
+    expect(emitted).toMatchObject([{
       stdout: '', stderr: 'QUERY_BAD_ARGS: invalid --args: not valid JSON\n', exitCode: 1,
     }]);
   });
@@ -817,7 +817,7 @@ describe('command wiring', () => {
       query: async () => { called = true; throw new Error('should not run'); },
     });
     expect(called).toBe(false);
-    expect(emitted).toEqual([{
+    expect(emitted).toMatchObject([{
       stdout: '',
       stderr: 'QUERY_BAD_LIMIT: limit must be an integer between 1 and 1000, got "0"\n',
       exitCode: 1,
@@ -903,9 +903,9 @@ describe('run wiring', () => {
       { run: async () => { called = true; return runResult; } },
     );
     expect(called).toBe(false);
-    expect(emitted[0]).toEqual({
+    expect(emitted[0]).toMatchObject({
       stdout: '',
-      stderr: 'invalid --only "open,": an empty step id names no step;' +
+      stderr: 'SCENARIO_BAD_ONLY: invalid --only "open,": an empty step id names no step;' +
         ' expected a comma-separated list of ids\n',
       exitCode: 1,
     });
@@ -1085,5 +1085,81 @@ describe('--machine-json and --result-file', () => {
     const { emitted, files } = await run(['analyze', '/scene', '--json']);
     expect(files).toHaveLength(0);
     expect(JSON.parse(emitted[0]!.stdout)).toEqual({ metrics: [], evidence: [] });
+  });
+
+  it('gives --result-file alone a payload, without asking for --json', async () => {
+    // The envelope wraps the structured answer, so a caller who asked only for
+    // a file still gets one: `outputs: {}` in every written result would make
+    // the file useless to the reader it was written for.
+    const { files } = await run(['analyze', '/scene', '--result-file', 'r.json']);
+    expect(files).toHaveLength(1);
+    expect(JSON.parse(files[0]!.contents).outputs.payload).toEqual({ metrics: [], evidence: [] });
+  });
+
+  it('still prints one line when the result file cannot be written', async () => {
+    // Under `--machine-json` a caller reads stdout, not the file. A write
+    // failure that leaves stdout empty looks identical to a crash, so the
+    // failure has to arrive as the one line the caller was promised.
+    const emitted: CliResult[] = [];
+    const program = buildProgram(deps(), {
+      writeOut: () => {},
+      writeErr: () => {},
+      emit: (r) => emitted.push(r),
+      writeFile: () => { throw new Error('EACCES: permission denied'); },
+    }, { exitOverride: true });
+    try {
+      await program.parseAsync([
+        'node', 'ohos-perf', 'analyze', '/scene', '--machine-json', '--result-file', 'r.json',
+      ]);
+    } catch {
+      // exitOverride
+    }
+    expect(emitted[0]!.exitCode).toBe(1);
+    const lines = emitted[0]!.stdout.split('\n').filter((line) => line !== '');
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      command: 'analyze',
+      success: false,
+      exitCode: 1,
+      error: { code: 'TOOL_RESULT_BAD_PATH' },
+    });
+  });
+
+  it('gives every refused invocation a code, not just a line', async () => {
+    // A validation failure is a result too. `success: false` with `outputs: {}`
+    // and no `error` is indistinguishable from a crash, so an agent cannot tell
+    // "you typed the duration wrong" from "the tool broke" — the code is the
+    // only token that separates them.
+    const scenario = join(mkdtempSync(join(tmpdir(), 'machine-code-')), 's.scenario.json');
+    writeFileSync(scenario, JSON.stringify({
+      version: 1, name: 's', app: 'com.example.app',
+      steps: [{ id: 'open', actions: [], capture: { durationMs: 1000, collectors: ['hitrace'] } }],
+    }));
+    const cases: Array<{ argv: string[]; code: string }> = [
+      { argv: ['collect', '--duration', 'nope', '--out', 'x'], code: 'COLLECT_BAD_DURATION' },
+      { argv: ['collect', '--duration', '10', '--out', 'x', '--plugins', 'gpu'], code: 'COLLECT_PLUGINS_WITHOUT_HIPROFILER' },
+      { argv: ['collect', '--duration', '10', '--out', 'x', '--so-dir', '/libs'], code: 'COLLECT_SO_DIR_WITHOUT_HIPERF' },
+      { argv: ['collect', '--duration', '10', '--out', 'x', '--thermal-interval', '1'], code: 'COLLECT_THERMAL_INTERVAL_WITHOUT_THERMAL' },
+      { argv: ['collect', '--duration', '10', '--out', 'x', '--procfs'], code: 'COLLECT_APP_REQUIRED' },
+      { argv: ['trend', 'one', '--out', 'x'], code: 'TREND_TOO_FEW_REPORTS' },
+      { argv: ['hap', 'no/such/file.hap'], code: 'HAP_BAD_PATH' },
+      { argv: ['opt', 'no/such/file.hap'], code: 'OPT_BAD_PATH' },
+      { argv: ['run', 'a.json', '--cases', 'dir', '--out', 'x'], code: 'SCENARIO_BOTH_INPUTS' },
+      { argv: ['run', scenario, '--out', 'x', '--rounds', '0'], code: 'SCENARIO_BAD_ROUNDS' },
+      { argv: ['run', scenario, '--out', 'x', '--only', 'open,'], code: 'SCENARIO_BAD_ONLY' },
+      { argv: ['agent', 'com.demo', '  '], code: 'AGENT_EMPTY_TASK' },
+      { argv: ['emulator', 'create', 'X'], code: 'EMULATOR_FLAGS_REQUIRED' },
+      { argv: ['gesture', 'swipe', '500', '800', '500', '200', '--velocity', '100'], code: 'UITEST_BAD_GESTURE' },
+      { argv: ['query', '/scene', 'name', '--args', '{'], code: 'QUERY_BAD_ARGS' },
+    ];
+    for (const { argv, code } of cases) {
+      const { emitted } = await run([...argv, '--machine-json']);
+      expect(emitted[0]!.stdout, argv.join(' ')).not.toBe('');
+      const envelope = JSON.parse(emitted[0]!.stdout);
+      expect(envelope.error?.code, argv.join(' ')).toBe(code);
+      expect(envelope.success, argv.join(' ')).toBe(false);
+      expect(envelope.exitCode, argv.join(' ')).toBe(1);
+      expect(emitted[0]!.exitCode, argv.join(' ')).toBe(1);
+    }
   });
 });
