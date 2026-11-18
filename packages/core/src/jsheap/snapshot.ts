@@ -645,16 +645,24 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
   // Past the ceiling it is not built at all: the edges are still validated —
   // a corrupt one must still be a refusal — but nothing is retained for them.
   const outStart = new Int32Array(buildGraph ? header.nodeCount + 1 : 0);
-  if (buildGraph) {
-    for (let i = 0; i < header.nodeCount; i++) {
-      outStart[i + 1] = outStart[i]! + edgeCountOf![i]!;
-    }
-  }
   const targets = buildGraph ? new Int32Array(header.edgeCount) : undefined;
+  // `weak` edges are not references: the collector may drop their target
+  // whatever the source does. They are still validated and still counted in
+  // the heap total, but they are not written into the graph, so a `Map` that
+  // merely mentions a payload does not appear to own it. DevTools does the
+  // same, and keeps `shortcut` — a forwarding property is a real reference.
+  const strongCount = buildGraph ? new Int32Array(header.nodeCount) : undefined;
+  const edgeTypeAt = header.edgeFieldIndex['type']!;
+  const weakType = header.edgeTypeNames.indexOf('weak');
 
   const edgeWidth = header.edgeFieldCount;
   const toNodeAt = header.edgeFieldIndex['to_node']!;
   const edgeRecord = new Float64Array(edgeWidth);
+  // The edge loop walks the same per-node counts the node loop read, so it can
+  // tell which node each edge starts from without a second index.
+  let written = 0;
+  let source = 0;
+  let sourceRemaining = header.nodeCount > 0 ? edgeCountOf?.[0] ?? 0 : 0;
   for (let edge = 0; edge < header.edgeCount; edge++) {
     for (let slot = 0; slot < edgeWidth; slot++) edgeRecord[slot] = edgeCursor.next()!;
     const toNode = edgeRecord[toNodeAt]!;
@@ -666,8 +674,26 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
         `edge ${edge} points at to_node ${toNode}, outside the ${header.nodeCount} nodes`,
       );
     }
-    if (targets !== undefined) targets[edge] = target;
+    if (targets !== undefined && edgeRecord[edgeTypeAt] !== weakType) {
+      targets[written++] = target;
+      strongCount![source] = strongCount![source]! + 1;
+    }
+    if (buildGraph) {
+      sourceRemaining -= 1;
+      while (sourceRemaining === 0 && source < header.nodeCount - 1) {
+        source += 1;
+        sourceRemaining = edgeCountOf![source]!;
+      }
+    }
   }
+  if (strongCount !== undefined) {
+    for (let i = 0; i < header.nodeCount; i++) {
+      outStart[i + 1] = outStart[i]! + strongCount[i]!;
+    }
+  }
+  // Only the strong prefix is a graph. Handing the whole buffer over would put
+  // its unwritten zero tail into the predecessor counts as edges to node 0.
+  const strongTargets = targets === undefined ? undefined : targets.subarray(0, written);
 
   if (targets === undefined) {
     return {
@@ -689,7 +715,7 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
   const { idom, retained, reachableCount } = computeDominators({
     nodeCount: header.nodeCount,
     outStart,
-    targets,
+    targets: strongTargets!,
     selfSize: selfSizeOf!,
   });
 

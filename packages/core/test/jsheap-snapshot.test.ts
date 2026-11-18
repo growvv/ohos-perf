@@ -561,6 +561,69 @@ describe('retained attribution', () => {
       .toEqual({ name: 'Orphan', selfSize: 500, retainedSize: 0, count: 1 });
   });
 
+  it('does not let a weak edge retain its target', () => {
+    // A `weak` edge is not a reference: the collector may drop the target
+    // whatever the source does. Treating it as strong makes a Map that merely
+    // mentions a payload look like the payload's owner, and inflates every
+    // row above it. `shortcut` is different — DevTools keeps it — so it is
+    // pinned as still-strong in the next test.
+    const doc = (edgeType: number): string =>
+      JSON.stringify({
+        snapshot: {
+          meta: {
+            node_fields: ['type', 'name', 'id', 'self_size', 'edge_count', 'detachedness'],
+            node_types: [['hidden', 'array', 'string', 'object'], 'string', 'number', 'number', 'number', 'number'],
+            edge_fields: ['type', 'name_or_index', 'to_node'],
+            edge_types: [['context', 'element', 'property', 'internal', 'hidden', 'shortcut', 'weak'], 'string_or_number', 'node'],
+          },
+          node_count: 3,
+          edge_count: 2,
+        },
+        // root --property--> Map(self 16) --edgeType--> Payload(self 10000)
+        nodes: [0, 0, 1, 0, 1, 0, 3, 1, 2, 16, 1, 1, 3, 2, 3, 10000, 0, 1],
+        edges: [2, 1, 6, edgeType, 2, 12],
+        strings: ['', 'Map', 'Payload'],
+      });
+    const weak = parseHeapSnapshot(doc(6));
+    if (weak.retained.kind !== 'measured') throw new Error('unreachable');
+    // The payload is in the file but held by nothing: it keeps its row and its
+    // self size, contributes no retained bytes, and is counted unreachable.
+    expect(weak.retained.unreachableCount).toBe(1);
+    expect(weak.retained.byConstructor.find((row) => row.name === 'Payload'))
+      .toEqual({ name: 'Payload', selfSize: 10000, retainedSize: 0, count: 1 });
+    // And the Map no longer looks like its owner.
+    expect(weak.retained.byConstructor.find((row) => row.name === 'Map'))
+      .toEqual({ name: 'Map', selfSize: 16, retainedSize: 16, count: 1 });
+    // The heap total still counts it: it is in the file.
+    expect(weak.totalSelfSize).toBe(10016);
+  });
+
+  it('keeps a shortcut edge as a reference', () => {
+    // V8 writes `shortcut` for a property that forwards to another node (a
+    // bound function's target, a prototype link). DevTools counts it, so the
+    // target stays reachable and the source retains it.
+    const doc = JSON.stringify({
+      snapshot: {
+        meta: {
+          node_fields: ['type', 'name', 'id', 'self_size', 'edge_count', 'detachedness'],
+          node_types: [['hidden', 'array', 'string', 'object'], 'string', 'number', 'number', 'number', 'number'],
+          edge_fields: ['type', 'name_or_index', 'to_node'],
+          edge_types: [['context', 'element', 'property', 'internal', 'hidden', 'shortcut', 'weak'], 'string_or_number', 'node'],
+        },
+        node_count: 3,
+        edge_count: 2,
+      },
+      nodes: [0, 0, 1, 0, 1, 0, 3, 1, 2, 16, 1, 1, 3, 2, 3, 10000, 0, 1],
+      edges: [2, 1, 6, 5, 2, 12],
+      strings: ['', 'Map', 'Payload'],
+    });
+    const s = parseHeapSnapshot(doc);
+    if (s.retained.kind !== 'measured') throw new Error('unreachable');
+    expect(s.retained.unreachableCount).toBe(0);
+    expect(s.retained.byConstructor.find((row) => row.name === 'Payload')?.retainedSize)
+      .toBe(10000);
+  });
+
   it('double-counts an object nested inside one of the same name, like DevTools', () => {
     // `root -> Array(self 10) -> Array(self 20)`. One row sums both nodes'
     // retained sizes (10 + 20 = 30 for the outer, 20 for the inner), so the
