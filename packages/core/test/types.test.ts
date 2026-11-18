@@ -83,6 +83,7 @@ const VALUE_EXPORTS = [
   'recoverSymbols', 'symbolIndex', 'functionAt', 'addressOfOffset', 'measureNaming', 'normaliseName', 'explorationDevice', 'hashPageShape', 'hashTree', 'planNextAction', 'runAgent', 'replayAgent', 'agentPrompt', 'parseDecision', 'renderTree',
   'describeDecision', 'irreversibleReason', 'IRREVERSIBLE_PATTERNS', 'GUI_TURN', 'httpAgentModel', 'httpChatModel', 'readAgentConfig',
   'explorationPrompt', 'llmChooser', 'parseStrategyAnswer',
+  'BUDGET_SCHEMA_VERSION', 'parseBudgetDocument', 'deltaBudgetIds', 'evaluateGate', 'renderGateJson',
   'readElf', 'classifyInstruction', 'countInstructions', 'EM_AARCH64',
   'analyzeBinaries', 'classifyOptimization', 'extractBinaries', 'inspectBinary', 'optimizationSection',
   'DEFAULT_QUERY_LIMIT', 'DEVICE_PERF_PATH', 'DEVICE_SCREENSHOT_PATH', 'DEVICE_UI_PATH',

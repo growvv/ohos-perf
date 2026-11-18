@@ -187,6 +187,16 @@ export type {
 export { CoverageAnalyzer, parseCoverageReport } from './analyze/coverage';
 export type { CoverageCounts, CoverageFile, CoverageRatio, CoverageReport } from './analyze/coverage';
 export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';
+export {
+  BUDGET_SCHEMA_VERSION,
+  deltaBudgetIds,
+  evaluateGate,
+  parseBudgetDocument,
+  renderGateJson,
+} from './gate';
+export type {
+  BudgetBound, BudgetDocument, BudgetEntry, GateResult, GateStatus, GateVerdict,
+} from './gate';
 export { executeAction } from './scenario/actions';
 export {
   explore, deviceExplorationHost, explorationDevice, hashPageShape, hashTree, planNextAction,
