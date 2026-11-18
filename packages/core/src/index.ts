@@ -184,6 +184,11 @@ export type { BundleRerenderInput } from './report/rerender';
 export type {
   Trend, TrendOrder, TrendPoint, TrendRun, TrendSeries,
 } from './report/trend';
+export { buildMovement } from './report/movement';
+export type {
+  MovementEvidenceRow, MovementInput, MovementRow, MovementSide, MovementStatus,
+  RootCauseMovement,
+} from './report/movement';
 export { CoverageAnalyzer, parseCoverageReport } from './analyze/coverage';
 export type { CoverageCounts, CoverageFile, CoverageRatio, CoverageReport } from './analyze/coverage';
 export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';

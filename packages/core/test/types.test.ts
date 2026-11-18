@@ -79,7 +79,7 @@ const VALUE_EXPORTS = [
   'ComponentReuseAnalyzer', 'computeComponentReuse', 'round2HalfEven',
   'EmulatorClient', 'EmulatorCommandError', 'EmulatorImageMissingError',
   'EmulatorLifecycle', 'EmulatorNotFoundError',
-  'PARITY_ROWS', 'paritySummary', 'parseRedundantFile', 'RedundantFileAnalyzer', 'JsheapCollector', 'readJsheapSnapshot', 'buildDepGraph', 'compareScenes', 'renderScenesComparison', 'sortSteps', 'buildTrend', 'renderTrendHtml', 'renderTrendJson', 'trendRunFromReport', 'BUNDLE_RENDERED_FILES', 'renderBundle', 'CoverageAnalyzer', 'parseCoverageReport', 'evaluateExpectation', 'explore', 'deviceExplorationHost',
+  'PARITY_ROWS', 'paritySummary', 'parseRedundantFile', 'RedundantFileAnalyzer', 'JsheapCollector', 'readJsheapSnapshot', 'buildDepGraph', 'compareScenes', 'renderScenesComparison', 'sortSteps', 'buildTrend', 'renderTrendHtml', 'renderTrendJson', 'trendRunFromReport', 'buildMovement', 'BUNDLE_RENDERED_FILES', 'renderBundle', 'CoverageAnalyzer', 'parseCoverageReport', 'evaluateExpectation', 'explore', 'deviceExplorationHost',
   'recoverSymbols', 'symbolIndex', 'functionAt', 'addressOfOffset', 'measureNaming', 'normaliseName', 'explorationDevice', 'hashPageShape', 'hashTree', 'planNextAction', 'runAgent', 'replayAgent', 'agentPrompt', 'parseDecision', 'renderTree',
   'describeDecision', 'irreversibleReason', 'IRREVERSIBLE_PATTERNS', 'GUI_TURN', 'httpAgentModel', 'httpChatModel', 'readAgentConfig',
   'explorationPrompt', 'llmChooser', 'parseStrategyAnswer',
