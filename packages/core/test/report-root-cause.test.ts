@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ROOT_CAUSE_SCHEMA_VERSION,
   buildRootCauseDocument,
   rankObservations,
   type RootCauseInput,
 } from '../src/report/root-cause';
+import { buildMovement } from '../src/report/movement';
 import type { Evidence } from '../src/report/evidence';
+import type { Metric } from '../src/report/metric';
 
 /*
  * P28 — the deterministic half of the root-cause report.
@@ -168,7 +171,7 @@ describe('buildRootCauseDocument', () => {
       app: 'com.demo', device: '5KPBB25927200695',
       window: { startNs: 0, endNs: 2_000_000_000 },
     });
-    expect(doc.schemaVersion).toBe(1);
+    expect(doc.schemaVersion).toBe(ROOT_CAUSE_SCHEMA_VERSION);
   });
 
   it('has no analysis section until a model answers', () => {
@@ -184,5 +187,47 @@ describe('buildRootCauseDocument', () => {
     const one = buildRootCauseDocument({ ...input, evidence: [a, b] });
     const two = buildRootCauseDocument({ ...input, evidence: [b, a] });
     expect(JSON.stringify(one)).toBe(JSON.stringify(two));
+  });
+});
+
+describe('buildRootCauseDocument — movement', () => {
+  const metric = (id: string, value: number): Metric => ({
+    id,
+    value,
+    unit: 'count',
+    fidelity: 'exact',
+    provenance: { collector: 'hitrace', device: 'emu' },
+  });
+  const movement = buildMovement(
+    {
+      label: 'v1', app: 'com.demo', device: 'emu',
+      result: { metrics: [metric('frame.jank.rate', 10)], evidence: [] },
+    },
+    {
+      label: 'v2', app: 'com.demo', device: 'emu',
+      result: { metrics: [metric('frame.jank.rate', 15)], evidence: [] },
+    },
+  );
+
+  it('leaves movement out entirely when no baseline was given', () => {
+    const doc = buildRootCauseDocument({ ...input, evidence: [] });
+    expect(doc.movement).toBeUndefined();
+    // Not a `movement: undefined` key: a consumer reading JSON must be able to
+    // tell "no baseline" from "a baseline with no movement".
+    expect(JSON.parse(JSON.stringify(doc))).not.toHaveProperty('movement');
+  });
+
+  it('carries the movement when one was supplied', () => {
+    const doc = buildRootCauseDocument({ ...input, evidence: [], movement });
+    expect(doc.movement?.rows[0]?.id).toBe('frame.jank.rate');
+    expect(doc.movement?.verdict).toContain('v1 → v2');
+  });
+
+  it('copies the movement rather than referencing it', () => {
+    // A caller that reuses its movement object must not be able to change a
+    // document it already built.
+    const doc = buildRootCauseDocument({ ...input, evidence: [], movement });
+    (movement.rows[0] as { status: string }).status = 'improved';
+    expect(doc.movement?.rows[0]?.status).toBe('regressed');
   });
 });

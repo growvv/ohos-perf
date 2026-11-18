@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { buildRootCauseDocument, type RootCauseDocument } from '../src/report/root-cause';
 import { renderRootCauseMarkdown } from '../src/report/root-cause-markdown';
+import { buildMovement } from '../src/report/movement';
 import type { Evidence } from '../src/report/evidence';
+import type { Metric } from '../src/report/metric';
 
 /*
  * P28 task 3 — the human report.
@@ -177,5 +179,102 @@ describe('renderRootCauseMarkdown', () => {
       evidence: [evidence({ id: 'e', signals: { note: 'a|b' } })],
     });
     expect(renderRootCauseMarkdown(doc)).toContain('a\\|b');
+  });
+});
+
+describe('renderRootCauseMarkdown — movement', () => {
+  const metric = (id: string, value: number): Metric => ({
+    id,
+    value,
+    unit: 'count',
+    fidelity: 'exact',
+    provenance: { collector: 'hitrace', device: 'emu' },
+  });
+  const movement = buildMovement(
+    {
+      label: 'v1', app: 'com.demo', device: 'emu',
+      result: {
+        metrics: [
+          metric('frame.jank.rate', 10),
+          metric('frame.fps', 50),
+          metric('fault.total.count', 1),
+          metric('only.in.v1', 3),
+        ],
+        evidence: [evidence({ id: 'a', kind: 'jank' })],
+      },
+    },
+    {
+      label: 'v2', app: 'com.demo', device: 'emu',
+      result: {
+        metrics: [
+          metric('frame.jank.rate', 15),
+          metric('frame.fps', 60),
+          metric('fault.total.count', 4),
+        ],
+        evidence: [evidence({ id: 'b', kind: 'jank' }), evidence({ id: 'c', kind: 'thermal' })],
+      },
+    },
+  );
+  const doc: RootCauseDocument = buildRootCauseDocument({
+    app: 'com.demo', device: 'dev-1',
+    window: { startNs: 0, endNs: 1 },
+    generator: { name: '@ohos-perf/core', version: '0.27.0' },
+    evidence: [evidence({ id: 'ev-jank', severity: 'critical', signals: { ms: 118.5 } })],
+    movement,
+  });
+
+  it('puts what moved before the verdict', () => {
+    const md = renderRootCauseMarkdown(doc);
+    const movedAt = md.indexOf('## What moved');
+    const verdictAt = md.indexOf('## Verdict');
+    expect(movedAt).toBeGreaterThan(-1);
+    expect(verdictAt).toBeGreaterThan(movedAt);
+  });
+
+  it('is absent entirely when there is no baseline', () => {
+    expect(renderRootCauseMarkdown(base)).not.toContain('## What moved');
+  });
+
+  it('names both runs and states the movement verdict', () => {
+    const md = renderRootCauseMarkdown(doc);
+    expect(md).toContain('v1 → v2');
+    expect(md).toContain(movement.verdict);
+  });
+
+  it('lists each metric with its status and a dash for a gap', () => {
+    const md = renderRootCauseMarkdown(doc);
+    expect(md).toContain('frame.jank.rate');
+    expect(md).toContain('regressed');
+    // A gap has no value on one side; printing 0 would be a measurement.
+    const gapLine = md.split('\n').find((line) => line.includes('only.in.v1'))!;
+    expect(gapLine).toContain('—');
+    expect(gapLine).toContain('gap');
+  });
+
+  it('prints a gap reason and never a delta for it', () => {
+    const lines = renderRootCauseMarkdown(doc).split('\n');
+    const reasonLine = lines.find((line) => line.startsWith('- `only.in.v1`'))!;
+    expect(reasonLine).toContain('the to run emitted no only.in.v1');
+    const gapRow = lines.find((line) => line.startsWith('| only.in.v1'))!;
+    expect(gapRow.endsWith('| — |')).toBe(true);
+  });
+
+  it('shows an incomparable delta without calling it better or worse', () => {
+    const line = renderRootCauseMarkdown(doc)
+      .split('\n')
+      .find((line) => line.includes('fault.total.count'))!;
+    expect(line).toContain('incomparable');
+    expect(line).not.toContain('regressed');
+    expect(line).not.toContain('improved');
+  });
+
+  it('counts findings by kind for both runs', () => {
+    const md = renderRootCauseMarkdown(doc);
+    expect(md).toContain('thermal');
+    expect(md).toMatch(/findings/i);
+  });
+
+  it('renders byte-identically twice', () => {
+    expect(renderRootCauseMarkdown(doc)).toBe(renderRootCauseMarkdown(doc));
   });
 });

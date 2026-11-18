@@ -3,6 +3,7 @@ import type {
   RootCauseObservation,
   RootCauseSuspect,
 } from './root-cause';
+import type { MovementRow, RootCauseMovement } from './movement';
 import { isWholeCapture } from './window';
 
 /**
@@ -89,6 +90,84 @@ function renderSuspect(suspect: RootCauseSuspect): string[] {
   return lines;
 }
 
+/** One value cell: an em dash for a side that did not measure the metric. */
+function valueCell(value: MovementRow['from']): string {
+  return value === null ? '—' : String(value);
+}
+
+/** A delta cell: the number and, when it exists, the percentage. */
+function deltaCell(row: MovementRow): string {
+  if (row.status === 'gap') return '—';
+  if (row.delta === undefined) return '—';
+  return row.deltaPct === undefined
+    ? String(row.delta)
+    : `${row.delta} (${row.deltaPct}%)`;
+}
+
+/**
+ * The movement section: what changed between the baseline and this run.
+ *
+ * It comes before the verdict because it is the reader's own question — "what
+ * regressed?" — and the verdict answers "what is in this run", which is a
+ * different question. A gap prints its reason in place of a delta: a `0` there
+ * would be a measurement the run never made.
+ */
+function renderMovement(movement: RootCauseMovement): string[] {
+  const { from, to, totals } = movement;
+  const lines: string[] = [];
+  lines.push('## What moved');
+  lines.push('');
+  lines.push(`${from.label} (baseline) → ${to.label}`);
+  lines.push('');
+  lines.push(movement.verdict);
+  lines.push('');
+  lines.push(
+    `totals: ${totals.regressed} regressed, ${totals.improved} improved,`
+    + ` ${totals.unchanged} unchanged, ${totals.incomparable} incomparable,`
+    + ` ${totals.gaps} gaps`
+    + (totals.skipped === 0
+      ? ''
+      : ` (${totals.skipped} skipped analyzer${totals.skipped === 1 ? '' : 's'} excluded)`),
+  );
+  lines.push('');
+
+  if (movement.rows.length === 0) {
+    lines.push('no metric was measured in either run.');
+    lines.push('');
+  } else {
+    lines.push('| metric | status | baseline | this run | change |');
+    lines.push('| --- | --- | --- | --- | --- |');
+    for (const row of movement.rows) {
+      lines.push(
+        `| ${cell(row.id)} | ${row.status} | ${cell(valueCell(row.from))}`
+        + ` | ${cell(valueCell(row.to))} | ${cell(deltaCell(row))} |`,
+      );
+    }
+    lines.push('');
+    // Reasons after the table, not in it: a sentence in a numeric cell breaks
+    // the alignment a reader scans, and a gap reason is the one cell that is
+    // prose.
+    const gaps = movement.rows.filter((row) => row.gap !== undefined);
+    if (gaps.length > 0) {
+      for (const row of gaps) lines.push(`- \`${row.id}\` is a gap: ${cell(row.gap!.reason)}`);
+      lines.push('');
+    }
+  }
+
+  if (movement.evidence.length > 0) {
+    lines.push('findings by kind:');
+    lines.push('');
+    lines.push('| kind | baseline | this run | change |');
+    lines.push('| --- | --- | --- | --- |');
+    for (const row of movement.evidence) {
+      lines.push(`| ${cell(row.kind)} | ${row.from} | ${row.to} | ${row.delta} |`);
+    }
+    lines.push('');
+  }
+
+  return lines;
+}
+
 /**
  * Render the document as Markdown.
  *
@@ -114,6 +193,10 @@ export function renderRootCauseMarkdown(document: RootCauseDocument): string {
   );
   lines.push(`produced by ${document.generator.name} ${document.generator.version}`);
   lines.push('');
+
+  if (document.movement !== undefined) {
+    lines.push(...renderMovement(document.movement));
+  }
 
   lines.push('## Verdict');
   lines.push('');

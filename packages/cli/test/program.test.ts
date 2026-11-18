@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CommanderError } from 'commander';
+import { buildRootCauseDocument } from '../../core/src/report/root-cause';
 import type { CliDeps, CliResult } from '../src/commands';
 import { buildProgram } from '../src/program';
 
@@ -207,13 +208,11 @@ describe('command wiring', () => {
 
   it('root-cause forwards the input, --out and the offline flag', async () => {
     const calls: unknown[] = [];
-    const document = {
-      schemaVersion: 1 as const,
+    const document = buildRootCauseDocument({
+      app: 'com.demo', device: 'd', window: { startNs: 0, endNs: 1 },
       generator: { name: '@ohos-perf/core', version: '1.0.0' },
-      scene: { app: 'com.demo', device: 'd', window: { startNs: 0, endNs: 1 } },
-      summary: { totals: { info: 0, warn: 0, critical: 0, gaps: 0 }, verdict: 'nothing' },
-      observations: [],
-    };
+      evidence: [],
+    });
     const result = {
       document, outDir: '/out', files: ['root-cause.json', 'root-cause.md', 'root-cause.evidence.json'],
     };
@@ -233,13 +232,11 @@ describe('command wiring', () => {
       rootCause: async (req) => {
         calls.push(req);
         return {
-          document: {
-            schemaVersion: 1 as const,
+          document: buildRootCauseDocument({
+            app: 'a', device: 'd', window: { startNs: 0, endNs: 1 },
             generator: { name: 'g', version: '1' },
-            scene: { app: 'a', device: 'd', window: { startNs: 0, endNs: 1 } },
-            summary: { totals: { info: 0, warn: 0, critical: 0, gaps: 0 }, verdict: 'v' },
-            observations: [],
-          },
+            evidence: [],
+          }),
           outDir: '/out', files: [],
         };
       },

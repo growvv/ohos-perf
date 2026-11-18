@@ -1,5 +1,6 @@
 import type { TimeRange } from '../types';
 import type { Evidence, EvidenceKind } from './evidence';
+import type { RootCauseMovement } from './movement';
 
 /**
  * The root-cause document (HapRay parity row 36).
@@ -20,8 +21,15 @@ import type { Evidence, EvidenceKind } from './evidence';
  * {@link RootCauseSuspect.ungrounded} records.
  */
 
-/** The root-cause document schema. A change to any shape below bumps this. */
-export const ROOT_CAUSE_SCHEMA_VERSION = 1;
+/**
+ * The root-cause document schema. A change to any shape below bumps this.
+ *
+ * Version 2 added the optional `movement` block. An additive field is still a
+ * shape change: a consumer that switches on the version needs to know that a
+ * document may now carry a second run's numbers, and a version that stayed at 1
+ * would make the two shapes indistinguishable.
+ */
+export const ROOT_CAUSE_SCHEMA_VERSION = 2;
 
 /** Who produced the document; the version is the CLI package version. */
 export interface RootCauseGenerator {
@@ -101,6 +109,12 @@ export interface RootCauseDocument {
   summary: RootCauseSummary;
   /** Ranked by severity then id: a total order, so two runs agree. */
   observations: RootCauseObservation[];
+  /**
+   * What changed between the baseline and this run, when the caller supplied
+   * one. Absent means no baseline was given, which is a different fact from a
+   * baseline whose runs happened to agree.
+   */
+  movement?: RootCauseMovement;
   analysis?: RootCauseAnalysis;
 }
 
@@ -111,6 +125,8 @@ export interface RootCauseInput {
   window: TimeRange;
   generator: RootCauseGenerator;
   evidence: readonly Evidence[];
+  /** The baseline-to-input movement, when the caller compared two runs. */
+  movement?: RootCauseMovement;
 }
 
 /** Severity as a sort key: higher is more urgent. */
@@ -232,6 +248,28 @@ function verdictFor(
  * when a model answered. A caller that renders the document without one gets a
  * usable report, which is the property HapRay's `--skip-llm` lacks.
  */
+/**
+ * Copy a movement so the document owns its own values.
+ *
+ * The same rule `scene` and `generator` already follow: a caller that reuses
+ * its movement object must not be able to change a document it has already
+ * built. The copy is explicit rather than `structuredClone` so a future field
+ * added to the movement is a compile error here instead of a silent share.
+ */
+function copyMovement(movement: RootCauseMovement): RootCauseMovement {
+  return {
+    from: { ...movement.from },
+    to: { ...movement.to },
+    verdict: movement.verdict,
+    rows: movement.rows.map((row) => ({
+      ...row,
+      ...(row.gap === undefined ? {} : { gap: { ...row.gap } }),
+    })),
+    evidence: movement.evidence.map((row) => ({ ...row })),
+    totals: { ...movement.totals },
+  };
+}
+
 export function buildRootCauseDocument(input: RootCauseInput): RootCauseDocument {
   const ranked = rankObservations(input.evidence);
   const totals = countSeverities(input.evidence);
@@ -248,5 +286,6 @@ export function buildRootCauseDocument(input: RootCauseInput): RootCauseDocument
       verdict: verdictFor(ranked, input.evidence.length, totals.gaps),
     },
     observations: ranked,
+    ...(input.movement === undefined ? {} : { movement: copyMovement(input.movement) }),
   };
 }
