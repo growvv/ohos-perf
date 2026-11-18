@@ -598,15 +598,29 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
   // One record buffer, reused. Allocating it per node was a per-node
   // allocation of the very kind this reader exists to avoid.
   const record = new Float64Array(width);
+  let edgeSum = 0;
   for (let index = 0; index < header.nodeCount; index++) {
     for (let slot = 0; slot < width; slot++) record[slot] = nodeCursor.next()!;
     const type = stringAt(header.nodeTypeNames, record[typeAt]!, `node ${index} type`);
     nodeCountByType.set(type, (nodeCountByType.get(type) ?? 0) + 1);
     const selfSize = record[selfSizeAt]!;
+    if (!Number.isInteger(selfSize) || selfSize < 0) {
+      throw bad(`node ${index} has self_size ${selfSize}, which is not a non-negative integer`);
+    }
     totalSelfSize += selfSize;
+    const edgeCount = record[edgeCountAt]!;
+    // A negative count would walk the CSR prefix sum backwards and write edges
+    // before the start of `targets`, where they vanish; a count that does not
+    // add up leaves zero-filled targets (every one of them node 0) or drops
+    // surplus writes. Both corrupt the graph without changing any array length,
+    // so the dominator tree would be plausible and wrong.
+    if (!Number.isInteger(edgeCount) || edgeCount < 0) {
+      throw bad(`node ${index} has edge_count ${edgeCount}, which is not a non-negative integer`);
+    }
+    edgeSum += edgeCount;
     if (selfSizeOf !== undefined) {
       selfSizeOf[index] = selfSize;
-      edgeCountOf![index] = record[edgeCountAt]!;
+      edgeCountOf![index] = edgeCount;
       nameOf![index] = record[nameAt]!;
     }
     if (detachedAt !== undefined && record[detachedAt] === 2) detachedCount += 1;
@@ -620,6 +634,11 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
         entry.count += 1;
       }
     }
+  }
+  if (edgeSum !== header.edgeCount) {
+    throw bad(
+      `the per-node edge counts sum to ${edgeSum}; edge_count is ${header.edgeCount}`,
+    );
   }
 
   // The forward adjacency, in the same CSR layout `computeDominators` reads.

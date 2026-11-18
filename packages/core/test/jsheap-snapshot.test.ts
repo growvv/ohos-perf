@@ -261,6 +261,34 @@ describe('parseHeapSnapshot', () => {
     }
   });
 
+  it('refuses a node whose edge count is negative', () => {
+    // The CSR prefix sum walks backwards and the edge writes land before the
+    // start of `targets`, where they are silently dropped — every node below
+    // the corrupt one becomes unreachable instead of the file being refused.
+    const bad = heap().replace(
+      '"nodes":[0,0,1,0,2,0,',
+      '"nodes":[0,0,1,0,-1,0,',
+    );
+    expect(() => parseHeapSnapshot(bad)).toThrow(/edge_count|edge count|-1/);
+  });
+
+  it('refuses per-node edge counts that do not add up to edge_count', () => {
+    // Either direction corrupts the graph without moving any array length:
+    // too few leaves zero-filled `targets` slots pointing at node 0, too many
+    // drops the surplus writes.
+    const tooMany = heap().replace('"nodes":[0,0,1,0,2,0,', '"nodes":[0,0,1,0,3,0,');
+    expect(() => parseHeapSnapshot(tooMany)).toThrow(/edge_count|edge count|3/);
+    const tooFew = heap().replace('"nodes":[0,0,1,0,2,0,', '"nodes":[0,0,1,0,1,0,');
+    expect(() => parseHeapSnapshot(tooFew)).toThrow(/edge_count|edge count|1/);
+  });
+
+  it('refuses a node with a negative self size', () => {
+    // A negative size flows straight into the total and the retained ranking,
+    // producing a negative "bytes" column instead of a refusal.
+    const bad = heap().replace('3,1,2,64,0,2', '3,1,2,-64,0,2');
+    expect(() => parseHeapSnapshot(bad)).toThrow(/self_size|self size|-64/);
+  });
+
   it('omits detached counting when the snapshot has no detachedness field', () => {
     const older = JSON.stringify({
       snapshot: {
