@@ -251,6 +251,16 @@ describe('parseHeapSnapshot', () => {
     expect(() => parseHeapSnapshot(bad)).toThrow(/edge 1|999/);
   });
 
+  it('refuses an edge with a negative to_node', () => {
+    // -6 divides evenly by the node field count (-6 % 6 is -0) and -1 is below
+    // nodeCount, so the range check alone lets it through; the target would be
+    // node -1, silently dropped from reachability.
+    for (const corrupt of [-6, -12]) {
+      const bad = heap().replace('"edges":[2,1,6,2,2,12]', `"edges":[2,1,6,2,2,${corrupt}]`);
+      expect(() => parseHeapSnapshot(bad)).toThrow(/edge 1|negative|to_node/);
+    }
+  });
+
   it('omits detached counting when the snapshot has no detachedness field', () => {
     const older = JSON.stringify({
       snapshot: {

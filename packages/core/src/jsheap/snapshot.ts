@@ -640,9 +640,11 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
     for (let slot = 0; slot < edgeWidth; slot++) edgeRecord[slot] = edgeCursor.next()!;
     const toNode = edgeRecord[toNodeAt]!;
     const target = toNode / width;
-    if (toNode % width !== 0 || target >= header.nodeCount) {
+    // `-6 % 6` is `-0` and `-1 < nodeCount`, so the range check alone lets a
+    // negative offset through as node -1; it must be refused first.
+    if (toNode < 0 || toNode % width !== 0 || target >= header.nodeCount) {
       throw bad(
-        `edge ${edge} points at to_node ${toNode}, past the end of ${header.nodeCount} nodes`,
+        `edge ${edge} points at to_node ${toNode}, outside the ${header.nodeCount} nodes`,
       );
     }
     if (targets !== undefined) targets[edge] = target;
