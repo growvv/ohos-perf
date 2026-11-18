@@ -1,0 +1,107 @@
+[
+  {
+    "case": "browser_eager_history_load",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "browser_history_delete_no_transaction",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "browser_history_list_foreach",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "cloudmusic_play_time_high_frequency_update",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "cloudmusic_search_result_foreach",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "interviewapp_search_history_unbounded",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "jingmo_dataset_import_no_transaction",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "jingmo_random_poem_orderby_random",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "jingmo_sync_page_reimport",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "sepweather_font_register_per_page",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "sheafreader_article_list_foreach",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "sheafreader_extract_tag_tolowercase",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "sheafreader_insert_duplicate_exception",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "sheafreader_refresh_feeds_sequential",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "sheafreader_unread_counts_n_plus_1",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "wanharmony_persisted_home_list_growth",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "weatherassistant_http_session_leak",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "weatherassistant_remote_weather_icons",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "ytmusic_current_playing_timeupdate",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "ytmusic_history_json_parse_per_row",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+    "case": "ytmusic_search_no_debounce",
+    "return": 0,
+    "report": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  }
+]

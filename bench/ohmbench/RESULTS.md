@@ -16,12 +16,21 @@ benchmark's own scorer (`bench/ohmbench/score.mjs`), which transcribes
 | at K=3 | P 0.833, R 0.905 |
 
 The target was precision ≥ 0.80 and more root causes found than HapRay.
-Precision is 0.841. HapRay's blind-input baseline is **zero code locations**:
-its `root-cause` command requires a device report tree (`--report-dir`) and
-exits 1 without one, and its `static` command reports only SO/resource
-inventory. On the same blind input — source, `prompt.json`, `testcase/`, no
-`groundtruth.json`, no `fix.patch`, no git history — HapRay finds nothing to
-match, so any recall above zero is more bugs found.
+Precision is 0.841. HapRay's blind-input baseline is **zero code locations**,
+and that is measured rather than inferred: its `root-cause` action was run
+against all 21 blind trees (`bench/ohmbench/hapray/probe.py`, at rev
+`bd5c98a`). It accepts a source tree as `--report-dir` — the flag's help says
+"report directory", but nothing checks — and every one of the 21 runs returns
+0 with the same body:
+
+> 未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db /
+> so_file_load.json 等）。
+
+No report names a `.ets` file. Its `static` action takes a HAP and reports
+only SO/resource inventory, so it cannot name a source line either. On the
+same blind input — source, `prompt.json`, `testcase/`, no `groundtruth.json`,
+no `fix.patch`, no git history — HapRay finds nothing to match, so any recall
+above zero is more bugs found.
 
 ## Exact commands
 
@@ -39,6 +48,11 @@ node bench/ohmbench/score.mjs \
 
 # Regenerate the results from scratch.
 node bench/ohmbench/run.mjs --bench <OhmBench> --cases <reconstructed-trees> --out bench/ohmbench/results
+
+# The HapRay baseline. Run from the HapRay checkout's perf_testing/ dir, with
+# its venv and PYTHONPATH=.; pass the case dirs as arguments.
+PYTHONPATH=. .venv/Scripts/python.exe bench/ohmbench/hapray/probe.py \
+  <case-tree>... <out.json>
 ```
 
 `<OhmBench>` is a clone of `MF0-ANT1SHY/OhmBench` **with `core.autocrlf=false`**.

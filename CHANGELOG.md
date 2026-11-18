@@ -13,9 +13,11 @@ nothing else — precision **0.841**, recall **0.881**.
 
 The benchmark's own scorer produces those numbers (`bench/ohmbench/score.mjs`,
 a transcription of its `evaluation.md`). HapRay, on the same input, returns
-zero code locations: its root cause needs a device report tree and exits 1
-without one. Every miss and its reason is written down in
-`bench/ohmbench/RESULTS.md` rather than averaged away.
+zero code locations — measured, not assumed: its `root-cause` action accepts
+a source tree as `--report-dir` and, on all 21 blind trees, answers
+"未发现可用的性能信号产物" without naming a single `.ets` file
+(`bench/ohmbench/hapray/probe.py`). Every miss and its reason is written down
+in `bench/ohmbench/RESULTS.md` rather than averaged away.
 
 Two things mattered more than adding rules.
 
