@@ -22,17 +22,26 @@ baseline — a scene directory, a `report.json` or a report bundle on either sid
   A baseline captured later therefore cannot invert the verdicts.
 - **The model may cite what moved.** The prompt carries the movement, and a
   suspect's new `metrics` array is checked against the movement's rows exactly
-  like `evidenceIds`; an id that did not move is recorded in `ungrounded`.
+  like `evidenceIds`; an id that did not move is recorded in `ungrounded`. Only
+  `regressed`, `improved` and `incomparable` rows are citable — an `unchanged`
+  row is the same value on both sides and a `gap` row was never measured on one
+  of them, so neither supports "this changed and caused the regression".
+- **Fidelity travels with the movement.** Each row carries both sides'
+  `fidelity`; when they differ the Markdown table and the prompt print
+  `approximate → exact`. A percentage read from a weaker baseline is a weaker
+  claim, and `compare` has always said so per row.
 - **Refusals and artifacts.** Two runs for different apps are refused naming
-  both (`ROOT_CAUSE_BAD_BASELINE`), before any model is asked. The Markdown
-  gains a **What moved** section before the verdict, the terminal summary gains
-  a `movement` line, and `root-cause.evidence.json` carries the movement the
-  model was shown. `ROOT_CAUSE_SCHEMA_VERSION` is now `2`.
+  both (`ROOT_CAUSE_BAD_BASELINE`), before any model is asked; `--app` selects
+  the process in the input only, so it cannot relabel the baseline's app and
+  slip past the refusal. The Markdown gains a **What moved** section before the
+  verdict, the terminal summary gains a `movement` line, and
+  `root-cause.evidence.json` carries the movement the model was shown.
+  `ROOT_CAUSE_SCHEMA_VERSION` is now `2`.
 
 The parity ledger is unchanged — 38 ported, 0 partial, 0 missing, 1 out
 (`build`): HapRay's multi-version page leaves the comparison to a human and its
 root cause reads one run, so this is a capability the inventory does not
-contain. 2285 unit tests; the device suite is unchanged.
+contain. 2294 unit tests; the device suite is unchanged.
 
 ## 0.26.0 — 2026-11-18
 

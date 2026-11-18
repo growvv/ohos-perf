@@ -269,6 +269,9 @@ function copyMovement(movement: RootCauseMovement): RootCauseMovement {
     verdict: movement.verdict,
     rows: movement.rows.map((row) => ({
       ...row,
+      // Nested objects are copied too: `{ ...row }` alone would leave a
+      // caller's fidelity pair and gap reason shared with this document.
+      fidelity: { ...row.fidelity },
       ...(row.gap === undefined ? {} : { gap: { ...row.gap } }),
     })),
     evidence: movement.evidence.map((row) => ({ ...row })),

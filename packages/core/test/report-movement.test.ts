@@ -193,6 +193,27 @@ describe('buildMovement — percentages', () => {
   });
 });
 
+describe('buildMovement — fidelity', () => {
+  it('carries each side’s fidelity, so a mixed pair is visible', () => {
+    // `compare` and `buildTrend` both carry fidelity; a movement that dropped
+    // it would present an approximate baseline against an exact run as if the
+    // two numbers were measured the same way.
+    const movement = buildMovement(
+      input('v1', [metric('frame.jank.rate', 10, { fidelity: 'approximate' })]),
+      input('v2', [metric('frame.jank.rate', 15, { fidelity: 'exact' })]),
+    );
+    expect(movement.rows[0]!.fidelity).toEqual({ from: 'approximate', to: 'exact' });
+  });
+
+  it('records null fidelity for a side that did not measure the metric', () => {
+    const movement = buildMovement(
+      input('v1', [metric('frame.jank.rate', 10, { fidelity: 'proxy' })]),
+      input('v2', []),
+    );
+    expect(movement.rows[0]!.fidelity).toEqual({ from: 'proxy', to: null });
+  });
+});
+
 describe('buildMovement — ordering', () => {
   it('orders rows regressed, improved, unchanged, incomparable, gap', () => {
     const movement = buildMovement(

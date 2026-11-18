@@ -1331,14 +1331,22 @@ export function realDeps(
 
       let movement: RootCauseMovement | undefined;
       if (req.baseline !== undefined) {
-        const baseline = await loadRootCauseSource(openOfflineScene, req.baseline, req.app);
+        // `--app` selects the process inside the input, so it must not reach
+        // the baseline: applying it there would relabel that scene's app and
+        // make the mismatch check below pass on two different apps. The
+        // baseline's own scene.json (or report.json) is its app.
+        const baseline = await loadRootCauseSource(openOfflineScene, req.baseline, undefined);
         if (baseline.app !== source.app) {
           // `buildMovement` refuses this too, but with its own code. The CLI's
           // error names the flag the user passed, so a terminal reader is told
           // which file to look at.
+          const why = baseline.app === 'unknown'
+            ? `--baseline ${req.baseline} recorded no app of its own, so it cannot be`
+              + ` compared with ${source.app}`
+            : `--baseline ${req.baseline} measures ${baseline.app}, but ${req.input}`
+              + ` measures ${source.app}`;
           throw new OhosPerfError(
-            `--baseline ${req.baseline} measures ${baseline.app}, but ${req.input}`
-              + ` measures ${source.app}; a movement is only comparable within one app`,
+            `${why}; a movement is only comparable within one app`,
             { code: 'ROOT_CAUSE_BAD_BASELINE' },
           );
         }

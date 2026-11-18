@@ -1,4 +1,5 @@
 import type { AnalyzeResult } from '../analyze/types';
+import type { Fidelity } from '../device/capability';
 import { OhosPerfError } from '../errors';
 import { METRIC_DIRECTIONS, type MetricDirection } from './compare';
 import type { EvidenceKind } from './evidence';
@@ -69,6 +70,16 @@ export interface MovementRow {
   readonly delta?: number;
   /** Percent over `|from|`; absent when `from` is 0 or either side is not numeric. */
   readonly deltaPct?: number;
+  /**
+   * Each side's fidelity; `null` for a side with no value.
+   *
+   * A movement compares two measurements, and `compare`/`buildTrend` both carry
+   * fidelity for the same reason: an approximate baseline read against an exact
+   * run is a weaker claim than two exact ones, and a row that dropped the
+   * distinction would present them alike. The pair is kept per side because a
+   * run can change how it measures a metric between captures.
+   */
+  readonly fidelity: { readonly from: Fidelity | null; readonly to: Fidelity | null };
   readonly status: MovementStatus;
   /** Why a side is a gap; present only when `status === 'gap'`. */
   readonly gap?: { readonly side: 'from' | 'to' | 'both'; readonly reason: string };
@@ -152,18 +163,24 @@ function judge(id: string, before: Metric | undefined, after: Metric | undefined
   const from = sideValue(before);
   const to = sideValue(after);
   const unit = (after ?? before)!.unit;
+  // A side with no value has no fidelity either: `degraded` metrics are
+  // skipped entirely, and an absent one was never measured.
+  const fidelity = {
+    from: from === null ? null : before!.fidelity,
+    to: to === null ? null : after!.fidelity,
+  };
 
   if (from === null || to === null) {
     const side = from === null && to === null ? 'both' : from === null ? 'from' : 'to';
     const reason = from === null
       ? gapReason(id, before, 'from')
       : gapReason(id, after, 'to');
-    return { id, unit, from, to, status: 'gap', gap: { side, reason } };
+    return { id, unit, from, to, fidelity, status: 'gap', gap: { side, reason } };
   }
 
   const numeric = typeof from === 'number' && typeof to === 'number';
   if (!numeric) {
-    return { id, unit, from, to, status: 'incomparable' };
+    return { id, unit, from, to, fidelity, status: 'incomparable' };
   }
 
   const delta = to - from;
@@ -177,6 +194,7 @@ function judge(id: string, before: Metric | undefined, after: Metric | undefined
     to,
     delta,
     ...(deltaPct === undefined ? {} : { deltaPct }),
+    fidelity,
     status,
   };
 }

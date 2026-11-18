@@ -105,6 +105,19 @@ function deltaCell(row: MovementRow): string {
 }
 
 /**
+ * A fidelity note for a row whose two sides do not agree, or `''`.
+ *
+ * The pair is printed only when it differs: `exact → exact` on every row is
+ * noise a reader learns to skip, but `approximate → exact` changes how much
+ * the percentage is worth. `compare` keeps the same distinction per row.
+ */
+function fidelityNote(row: MovementRow): string {
+  const { from, to } = row.fidelity;
+  if (from === null || to === null || from === to) return '';
+  return ` (${from} → ${to})`;
+}
+
+/**
  * The movement section: what changed between the baseline and this run.
  *
  * It comes before the verdict because it is the reader's own question — "what
@@ -140,7 +153,7 @@ function renderMovement(movement: RootCauseMovement): string[] {
     for (const row of movement.rows) {
       lines.push(
         `| ${cell(row.id)} | ${row.status} | ${cell(valueCell(row.from))}`
-        + ` | ${cell(valueCell(row.to))} | ${cell(deltaCell(row))} |`,
+        + ` | ${cell(valueCell(row.to))} | ${cell(deltaCell(row))}${fidelityNote(row)} |`,
       );
     }
     lines.push('');

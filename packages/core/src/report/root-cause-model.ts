@@ -88,7 +88,12 @@ function movementLines(document: RootCauseDocument): string[] {
     const change = row.status === 'gap'
       ? `gap: ${row.gap?.reason ?? 'not measured'}`
       : `${String(row.from)} -> ${String(row.to)}${pct}`;
-    return `- [${row.id}] ${row.status} ${change}`;
+    // Only when the sides disagree: the model should know the percentage rests
+    // on a weaker measurement on one side, and a row where both agree needs no
+    // note.
+    const { from, to } = row.fidelity;
+    const note = from === null || to === null || from === to ? '' : ` (${from} -> ${to} fidelity)`;
+    return `- [${row.id}] ${row.status} ${change}${note}`;
   });
   const findings = movement.evidence
     .map((row) => `${row.kind} ${row.from}->${row.to}`)
@@ -147,7 +152,8 @@ export function rootCausePrompt(document: RootCauseDocument): string {
     'Rules:',
     '- Cite only ids that appear above; an id you invent is rejected and recorded.',
     ...(hasMovement
-      ? ['- Cite a moved metric id in "metrics" only when it appears in the movement above.']
+      ? ['- Cite a metric id in "metrics" only when its row above is regressed,'
+        + ' improved or incomparable; an unchanged or gap row is not a change.']
       : []),
     '- Name a file, symbol, library or thread only if it appears above.',
     '- If the evidence does not support a cause, say so in caveats rather than guessing.',
@@ -243,7 +249,16 @@ export function parseRootCauseAnswer(
   }
   const record = asRecord(parsed, 'answer');
   const known = new Set(document.observations.map((item) => item.evidenceId));
-  const knownMetrics = new Set((document.movement?.rows ?? []).map((row) => row.id));
+  // Only rows that actually moved are citable: an `unchanged` row is the same
+  // value on both sides, and a `gap` row is a metric one run never measured.
+  // Either cited as "the change behind this regression" is a claim the two
+  // runs do not support.
+  const knownMetrics = new Set(
+    (document.movement?.rows ?? [])
+      .filter((row) => row.status === 'regressed' || row.status === 'improved'
+        || row.status === 'incomparable')
+      .map((row) => row.id),
+  );
 
   const rawSuspects = record['suspects'];
   const suspects: RootCauseSuspect[] = [];

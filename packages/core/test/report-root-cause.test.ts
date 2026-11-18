@@ -230,4 +230,12 @@ describe('buildRootCauseDocument — movement', () => {
     (movement.rows[0] as { status: string }).status = 'improved';
     expect(doc.movement?.rows[0]?.status).toBe('regressed');
   });
+
+  it('copies each row’s nested fidelity and gap', () => {
+    // `{ ...row }` is a shallow copy: a caller mutating the pair it passed
+    // would otherwise rewrite a document already on disk.
+    const doc = buildRootCauseDocument({ ...input, evidence: [], movement });
+    (movement.rows[0]!.fidelity as { from: string }).from = 'proxy';
+    expect(doc.movement?.rows[0]?.fidelity.from).toBe('exact');
+  });
 });

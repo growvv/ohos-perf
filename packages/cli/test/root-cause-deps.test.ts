@@ -312,6 +312,22 @@ describe('realDeps().rootCause — --baseline', () => {
     })).rejects.toThrow(/com\.demo.*com\.other/);
   });
 
+  it('refuses a baseline for a different app even when --app names one', async () => {
+    // `--app` tells the input which process to read; applying it to the
+    // baseline too would relabel that scene's app and make the mismatch check
+    // pass on two scenes that measured different apps.
+    const before = jankScene({ stuttered: 1, rendered: 4, app: 'com.demo', startedAtNs: 1000 });
+    const after = jankScene({ stuttered: 2, rendered: 4, app: 'com.other', startedAtNs: 2000 });
+
+    await expect(realDeps('0.27.0').rootCause({
+      input: after.sceneDir,
+      baseline: before.sceneDir,
+      app: 'com.other',
+      outDir: join(after.root, 'out'),
+      offline: true,
+    })).rejects.toMatchObject({ code: 'ROOT_CAUSE_BAD_BASELINE' });
+  });
+
   it('reads the baseline as `from` even when it was captured later', async () => {
     // `buildTrend` orders by start time; a movement must not, or a baseline
     // captured later would silently invert every verdict.

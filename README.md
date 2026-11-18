@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P32 are complete**: 2296 tests (2285 unit, 11 in the device
+**P1 through P32 are complete**: 2305 tests (2294 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2257 passed, 28
+attached device are absent — `npm run test:unit` reports **2266 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2257 passed, 39 skipped**. With both fixtures present and a
+checkout is **2266 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -1095,8 +1095,12 @@ ohos-perf root-cause runs/this-release --baseline runs/last-release --out out/
 The movement is computed by `buildMovement` in the core package, from the two
 runs' metrics and their evidence counts. It lands in the document as
 `movement`, in the Markdown as a **What moved** section before the verdict, and
-in the model's prompt — where a suspect may cite a moved metric id in
-`metrics`, checked against the movement's own rows exactly like an evidence id.
+in the model's prompt — where a suspect may cite a metric id in `metrics` only
+when its row is `regressed`, `improved` or `incomparable`; an `unchanged` or
+`gap` row is not a change, so citing one is recorded as ungrounded. Every row
+carries each side's `fidelity`, and a row whose two sides disagree
+(`approximate → exact`) says so in the table and the prompt — a percentage read
+from an approximate baseline is a weaker claim than two exact ones.
 
 | status | meaning |
 | --- | --- |
@@ -1121,9 +1125,11 @@ Three rules are load-bearing:
   `deltaPct`; the row is still ranked, and no `Infinity` reaches the JSON.
 
 Two runs for different apps are refused, naming both, before any model is
-asked. HapRay's multi-version page loads any report files and leaves the
-filtering to a human reading dropdowns, and its root cause reads a single run —
-there is no cross-run comparison of evidence anywhere in the tree.
+asked; `--app` names the process inside the input only, so the baseline is
+always read as the app its own `scene.json` recorded. HapRay's multi-version
+page loads any report files and leaves the filtering to a human reading
+dropdowns, and its root cause reads a single run — there is no cross-run
+comparison of evidence anywhere in the tree.
 
 ## Budgets and the gate
 

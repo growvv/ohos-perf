@@ -303,7 +303,12 @@ describe('the model turn over a movement', () => {
     {
       label: 'v1', app: 'com.demo', device: 'emu',
       result: {
-        metrics: [metric('frame.jank.rate', 10), metric('frame.fps', 50)],
+        metrics: [
+          metric('frame.jank.rate', 10),
+          metric('frame.fps', 50),
+          metric('frame.count', 100),
+          metric('startup.duration', 900),
+        ],
         // `degraded_capability` is a kind the observations below never carry:
         // it reaches the vocabulary only through the movement.
         evidence: [...items, evidence({ id: 'ev-degraded', kind: 'degraded_capability', signals: {} })],
@@ -311,7 +316,10 @@ describe('the model turn over a movement', () => {
     },
     {
       label: 'v2', app: 'com.demo', device: 'emu',
-      result: { metrics: [metric('frame.jank.rate', 15), metric('frame.fps', 60)], evidence: [] },
+      result: {
+        metrics: [metric('frame.jank.rate', 15), metric('frame.fps', 60), metric('frame.count', 100)],
+        evidence: [],
+      },
     },
   );
   const moved: RootCauseDocument = buildRootCauseDocument({
@@ -353,6 +361,76 @@ describe('the model turn over a movement', () => {
     );
     expect(analysis.suspects[0]!.metrics).toEqual(['frame.jank.rate']);
     expect(analysis.suspects[0]!.ungrounded).toEqual([]);
+  });
+
+  it('names a fidelity mismatch on the row, and leaves agreeing rows alone', () => {
+    // The model should weigh a +125% from an approximate baseline against an
+    // exact run as the weaker claim it is, and a row where both sides agree
+    // should not spend prompt budget saying so.
+    const mixed = buildMovement(
+      {
+        label: 'v1', app: 'com.demo', device: 'emu',
+        result: {
+          metrics: [metric('frame.jank.rate', 10), { ...metric('frame.empty.rate', 4), fidelity: 'approximate' }],
+          evidence: [],
+        },
+      },
+      {
+        label: 'v2', app: 'com.demo', device: 'emu',
+        result: { metrics: [metric('frame.jank.rate', 15), metric('frame.empty.rate', 9)], evidence: [] },
+      },
+    );
+    const document = buildRootCauseDocument({
+      app: 'com.demo', device: 'dev-1',
+      window: { startNs: 0, endNs: 2_000_000_000 },
+      generator: { name: '@ohos-perf/core', version: '0.27.0' },
+      evidence: items,
+      movement: mixed,
+    });
+    const lines = rootCausePrompt(document).split('\n');
+    // The row lines, not the verdict sentence: the verdict is prose, the rows
+    // are what the model is told to cite.
+    const mixedLine = lines.find((line) => line.startsWith('- [frame.empty.rate]'))!;
+    const agreeing = lines.find((line) => line.startsWith('- [frame.jank.rate]'))!;
+    expect(mixedLine).toContain('approximate');
+    expect(agreeing).not.toContain('approximate');
+  });
+
+  it('records an unchanged metric id as ungrounded: it did not move', () => {
+    // The row exists in the movement and shows the same value on both sides.
+    // Accepting it would let a suspect claim "this change caused the
+    // regression" about something that did not change.
+    const analysis = parseRootCauseAnswer(
+      JSON.stringify({
+        summary: 's',
+        suspects: [{
+          evidenceIds: ['ev-jank'], metrics: ['frame.count'],
+          rootCause: 'r', fix: 'f', confidence: 'high',
+        }],
+        caveats: [], needsMoreData: [],
+      }),
+      moved,
+      'm',
+    );
+    expect(analysis.suspects[0]!.metrics).toEqual([]);
+    expect(analysis.suspects[0]!.ungrounded).toEqual(['frame.count']);
+  });
+
+  it('records a gap metric id as ungrounded: one run did not measure it', () => {
+    const analysis = parseRootCauseAnswer(
+      JSON.stringify({
+        summary: 's',
+        suspects: [{
+          evidenceIds: ['ev-jank'], metrics: ['startup.duration'],
+          rootCause: 'r', fix: 'f', confidence: 'high',
+        }],
+        caveats: [], needsMoreData: [],
+      }),
+      moved,
+      'm',
+    );
+    expect(analysis.suspects[0]!.metrics).toEqual([]);
+    expect(analysis.suspects[0]!.ungrounded).toEqual(['startup.duration']);
   });
 
   it('records a metric id that did not move as ungrounded', () => {

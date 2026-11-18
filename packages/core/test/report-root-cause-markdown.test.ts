@@ -183,11 +183,11 @@ describe('renderRootCauseMarkdown', () => {
 });
 
 describe('renderRootCauseMarkdown — movement', () => {
-  const metric = (id: string, value: number): Metric => ({
+  const metric = (id: string, value: number, fidelity: Metric['fidelity'] = 'exact'): Metric => ({
     id,
     value,
     unit: 'count',
-    fidelity: 'exact',
+    fidelity,
     provenance: { collector: 'hitrace', device: 'emu' },
   });
   const movement = buildMovement(
@@ -199,6 +199,7 @@ describe('renderRootCauseMarkdown — movement', () => {
           metric('frame.fps', 50),
           metric('fault.total.count', 1),
           metric('only.in.v1', 3),
+          metric('frame.empty.rate', 4, 'approximate'),
         ],
         evidence: [evidence({ id: 'a', kind: 'jank' })],
       },
@@ -210,6 +211,7 @@ describe('renderRootCauseMarkdown — movement', () => {
           metric('frame.jank.rate', 15),
           metric('frame.fps', 60),
           metric('fault.total.count', 4),
+          metric('frame.empty.rate', 9),
         ],
         evidence: [evidence({ id: 'b', kind: 'jank' }), evidence({ id: 'c', kind: 'thermal' })],
       },
@@ -276,5 +278,23 @@ describe('renderRootCauseMarkdown — movement', () => {
 
   it('renders byte-identically twice', () => {
     expect(renderRootCauseMarkdown(doc)).toBe(renderRootCauseMarkdown(doc));
+  });
+
+  it('marks a row whose two sides were measured with different fidelity', () => {
+    // A +125% read from an approximate baseline against an exact run is a
+    // weaker claim than two exact ones, and `compare` already says so per row.
+    const line = renderRootCauseMarkdown(doc)
+      .split('\n')
+      .find((line) => line.startsWith('| frame.empty.rate'))!;
+    expect(line).toContain('approximate');
+    expect(line).toContain('exact');
+  });
+
+  it('does not clutter a row whose sides agree on fidelity', () => {
+    const line = renderRootCauseMarkdown(doc)
+      .split('\n')
+      .find((line) => line.startsWith('| frame.jank.rate'))!;
+    expect(line).not.toContain('exact');
+    expect(line).not.toContain('approximate');
   });
 });

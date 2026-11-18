@@ -662,11 +662,17 @@ ohos-perf root-cause <scene-dir|report.json> --out reports/run1 [--offline] [--m
   - A `gap` row means that side did not measure the metric (absent, or a
     skipped analyzer). **Report it as "not measured", never as an improvement** —
     the row has no delta on purpose.
-  - A suspect may cite moved metric ids in `metrics`; those were checked
-    against the movement exactly like `evidenceIds`, so an id in `ungrounded`
-    did not move in this pair of runs.
+  - A suspect may cite metric ids in `metrics`, but only rows that actually
+    moved (`regressed`, `improved`, `incomparable`) are citable; an id in
+    `ungrounded` either did not move, was a gap, or was not in this pair of
+    runs at all.
+  - Every row carries both sides' `fidelity`. When they differ the table and
+    the prompt print `approximate → exact`; a percentage read from a weaker
+    baseline is a weaker claim, so say so rather than quoting it flat.
   - A baseline for a different app is refused, naming both, before any model
-    is asked. A scene and a saved report bundle are both valid on either side.
+    is asked. A scene and a saved report bundle are both valid on either side,
+    and `--app` applies to the input only: the baseline's own `scene.json` is
+    its app, so the refusal cannot be bypassed by passing a package name.
 - Neither check is semantic. They answer "did the model name something this run
   measured?", not "is the cause right". Say which one you relied on.
 
