@@ -43,7 +43,6 @@ const CONFIDENCE_WEIGHT = { high: 3, medium: 2, low: 1 } as const;
 /** The ranked suspects for a set of scanned files. */
 export function findSuspects(files: readonly SourceFile[]): Suspect[] {
   const hits: Omit<Suspect, 'rank'>[] = [];
-  const seen = new Set<string>();
 
   for (const file of files) {
     const moduleText = file.moduleLines.join('\n');
@@ -60,25 +59,32 @@ export function findSuspects(files: readonly SourceFile[]): Suspect[] {
     ];
 
     for (const facts of factsList) {
+      // One symbol, one suspect. Two rules firing on `updateSources` — a write
+      // loop and a SQL loop — are one finding about one piece of code, and
+      // reporting it twice would spend two of the five slots a reader gets.
+      // The sharper rule wins: its description is the one that names the cost.
+      let best: { rule: string; description: string; confidence: Suspect['confidence'] } | undefined;
       for (const rule of RULES) {
         const description = rule.match(facts);
         if (description === undefined) continue;
-        const key = `${file.path}\u0000${facts.symbol.className ?? ''}\u0000${facts.symbol.symbol}\u0000${rule.id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const isModule = facts.symbol.symbol === '';
-        const lineStart = isModule ? moduleLineOf(file, description) : facts.symbol.lineStart;
-        hits.push({
-          file: file.path,
-          ...(facts.symbol.className === undefined ? {} : { className: facts.symbol.className }),
-          ...(isModule ? {} : { symbol: facts.symbol.symbol }),
-          lineStart,
-          lineEnd: isModule ? lineStart : facts.symbol.lineEnd,
-          rule: rule.id,
-          description,
-          confidence: rule.confidence,
-        });
+        if (best === undefined || CONFIDENCE_WEIGHT[rule.confidence] > CONFIDENCE_WEIGHT[best.confidence]) {
+          best = { rule: rule.id, description, confidence: rule.confidence };
+        }
       }
+      if (best === undefined) continue;
+
+      const isModule = facts.symbol.symbol === '';
+      const lineStart = isModule ? moduleLineOf(file, best.description) : facts.symbol.lineStart;
+      hits.push({
+        file: file.path,
+        ...(facts.symbol.className === undefined ? {} : { className: facts.symbol.className }),
+        ...(isModule ? {} : { symbol: facts.symbol.symbol }),
+        lineStart,
+        lineEnd: isModule ? lineStart : facts.symbol.lineEnd,
+        rule: best.rule,
+        description: best.description,
+        confidence: best.confidence,
+      });
     }
   }
 

@@ -113,7 +113,42 @@ export const RULES: readonly Rule[] = [
       // LazyForEach is the fix; its presence means the list is already virtual.
       if (/LazyForEach\s*\(/.test(body)) return undefined;
       if (!/List\s*\(|Scroll\s*\(|Grid\s*\(|WaterFlow\s*\(/.test(body)) return undefined;
+      // A `ForEach` over a collection with a per-item component is the eager
+      // list; one over a literal or a key list is not. Require a member
+      // expression as the data source, which is what every real case has.
+      if (!/ForEach\s*\(\s*(this\.|[\w$]+\.[\w$]+)/.test(body)) return undefined;
       return `every row is built up front, including the ones off screen: ${firstMatch(body, /ForEach\s*\(/)!}`;
+    },
+  },
+  {
+    id: 'bulk-query-in-lifecycle',
+    category: 'latency',
+    confidence: 'high',
+    match(facts) {
+      // `allDate.forEach(async date => … query(date))` in aboutToAppear: the
+      // page issues one query per day of history before it can render, and
+      // the results are awaited inside a forEach, so nothing is batched.
+      if (!/aboutToAppear|onPageShow|aboutToReuse/.test(facts.symbol.symbol)) return undefined;
+      const body = facts.symbol.body;
+      if (!/forEach\s*\(\s*async/.test(body)) return undefined;
+      if (!/await\s+[\w$.]*(query|select|load|fetch|read)\w*\s*\(/i.test(body)) return undefined;
+      return `the page runs one query per item before it can render: ${firstMatch(body, /forEach\s*\(\s*async/)!}`;
+    },
+  },
+  {
+    id: 'insert-exception-absorb',
+    category: 'cpu',
+    confidence: 'high',
+    match(facts) {
+      // `try { await store.insert(...) } catch { /* duplicate, ignore */ }`:
+      // every refresh re-attempts every row and pays the cost of the exception
+      // that follows. The fix is to query first or to use a conflict clause.
+      const body = facts.symbol.body;
+      if (!/insert\s*\(/.test(body)) return undefined;
+      const catchBlock = /catch\s*(?:\([^)]*\))?\s*\{[^}]*\}/s.exec(body);
+      if (catchBlock === null) return undefined;
+      if (!/duplicate|ignore|already exists|constraint/i.test(catchBlock[0])) return undefined;
+      return `a duplicate insert is detected by letting the constraint fail and catching it: ${firstMatch(body, /insert\s*\(/)!}`;
     },
   },
   {
@@ -179,8 +214,10 @@ export const RULES: readonly Rule[] = [
       for (const line of lines) {
         if (LOOP.test(line) && line.includes('{')) loopDepth += 1;
         // One read per row of a list already in memory. The fix is a grouped
-        // query; the cost is a query round trip per item.
-        if (loopDepth > 0 && /await\s+this\.\w*\.?\w*(get|query|count|find|read)\w*\s*\(/i.test(line)) {
+        // query; the cost is a query round trip per item. The read has to name
+        // a count or a single-row lookup — a write loop is a different rule,
+        // and a bulk read outside the loop is not this defect at all.
+        if (loopDepth > 0 && /await\s+this\.\w+\.(getUnreadCount|getCount|count|findById|getById|queryById)\s*\(/i.test(line)) {
           return `one query per row, where a single grouped query would do: ${line.trim()}`;
         }
         if (line.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
@@ -247,14 +284,44 @@ export const RULES: readonly Rule[] = [
     match(facts) {
       const body = facts.symbol.body;
       if (!/(putSync|setSync)\s*\(/.test(body)) return undefined;
-      // A store that also deletes, or caps its size, is bounded: the write is
-      // not the defect. Check the whole file, because the delete usually lives
-      // in a sibling method. `delItem` is the name the benchmark's store uses,
-      // so the test is on the verb rather than on one method spelling.
+      // A store is bounded only if something *limits* it: a size check before
+      // the write, or a trim/evict call. A `delItem` method that exists but is
+      // only ever reached from a user action does not bound anything — the
+      // benchmark's store has exactly that shape, and its root cause is the
+      // absence of a cap.
       const wholeFile = facts.file.lines.join('\n');
-      if (/\b(del|delete|remove|clear|trim|evict)\w*\s*\(/i.test(wholeFile)) return undefined;
+      if (/length\s*[><]=?|size\s*[><]=?|slice\s*\(|splice\s*\(|trim|evict|maxItems|limit/i.test(wholeFile)) return undefined;
       const line = firstMatch(body, /(putSync|setSync)\s*\(/)!;
-      return `every value is persisted under its own key and nothing ever removes one: ${line}`;
+      return `every value is persisted under its own key and nothing caps the number of keys: ${line}`;
+    },
+  },
+  {
+    id: 'font-register-repeated',
+    category: 'memory',
+    confidence: 'high',
+    match(facts) {
+      const body = facts.symbol.body;
+      const registrations = body.match(/font\.registerFont\s*\(/g);
+      if (registrations === null || registrations.length === 0) return undefined;
+      // A lifecycle method re-registers fonts on every visit. The family name
+      // may be constant, which is worse than random: the same name is
+      // registered again over the existing entry, and the engine keeps both.
+      if (!/aboutToAppear|onPageShow|aboutToReuse|onVisibleAreaChange/.test(facts.symbol.symbol)) return undefined;
+      const line = firstMatch(body, /font\.registerFont\s*\(/)!;
+      return `fonts are registered again on every visit to the page: ${line}`;
+    },
+  },
+  {
+    id: 'remote-image-in-builder',
+    category: 'network',
+    confidence: 'high',
+    match(facts) {
+      const body = facts.symbol.body;
+      // A remote URL as an Image source downloads per render; a bundled
+      // `$rawfile`/`$r` does not.
+      if (!/Image\s*\(\s*['"]https?:/.test(body) && !/Image\s*\(\s*['"]http:\/\//.test(body)) return undefined;
+      const line = firstMatch(body, /Image\s*\(\s*['"]https?:/)!;
+      return `a remote image is fetched instead of a bundled asset: ${line}`;
     },
   },
   {

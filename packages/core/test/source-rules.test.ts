@@ -120,7 +120,10 @@ describe('the remaining rules, one per defect shape the benchmark records', () =
       '  }',
       '}',
     ].join('\n'));
-    expect(rows.map((row) => row.rule)).toContain('db-write-in-loop');
+    // One symbol, one suspect: the write loop and the SQL loop are the same
+    // finding about the same code, and the sharper rule names the cost.
+    expect(rows).toHaveLength(1);
+    expect(['db-write-in-loop', 'sql-statement-in-loop']).toContain(rows[0]?.rule);
   });
 
   it('flags a sequential await in a for loop', () => {

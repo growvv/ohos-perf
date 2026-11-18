@@ -64,9 +64,17 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'build', 'oh_modules', '.hvig
 
 const TYPE_DECL = /^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(class|struct|interface|enum)\s+([A-Za-z_$][\w$]*)/;
 const MODIFIERS = '(?:public|private|protected|static|async|readonly|override|declare|abstract|get|set)\\s+';
+/** Decorators that may prefix a declaration on the same line. */
+const DECORATOR_PREFIX = '(?:@[A-Za-z_$][\\w$]*(?:\\([^)]*\\))?\\s+)*';
 const METHOD_DECL = new RegExp(
-  `^\\s*(?:${MODIFIERS})*([A-Za-z_$][\\w$]*)\\s*\\([^;]*\\)\\s*(?::\\s*[^{;]+)?\\{`,
+  `^\\s*${DECORATOR_PREFIX}(?:${MODIFIERS})*([A-Za-z_$][\\w$]*)\\s*\\([^;]*\\)\\s*(?::\\s*[^{;]+)?\\{`,
 );
+/**
+ * An ArkTS builder: `@Builder name(args) { … }`, or `@Builder` on its own line
+ * followed by `name(args) {`. The decorator is part of the declaration, so the
+ * range starts at the decorator line.
+ */
+const DECORATOR = /^\s*@[A-Za-z_$][\w$]*(?:\([^)]*\))?\s*$/;
 const FIELD_DECL = new RegExp(
   `^\\s*(?:${MODIFIERS})*([A-Za-z_$][\\w$]*)\\s*(?:[?!])?\\s*:\\s*[^=;]+(?:=|;)`,
 );
@@ -189,7 +197,10 @@ export function scanSourceFile(path: string, text: string): SourceFile {
       const name = method?.[1] ?? field?.[1];
       if (name !== undefined && !NOT_A_SYMBOL.has(name)) {
         const endLine = findBlockEnd(lines, stripped, index, deltas);
-        found.push({ className: scopes[scopes.length - 1]!.name, symbol: name, lineStart: index + 1, lineEnd: endLine });
+        // The declaration starts at the decorator above it, if there is one.
+        let startLine = index + 1;
+        while (startLine > 1 && DECORATOR.test(stripped[startLine - 2] ?? '')) startLine -= 1;
+        found.push({ className: scopes[scopes.length - 1]!.name, symbol: name, lineStart: startLine, lineEnd: endLine });
       }
     }
 
