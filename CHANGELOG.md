@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.27.0 — 2026-11-18
+
+**A root cause that knows what changed.** `root-cause` explained one run.
+After a regression the reader's question is what *changed*, and answering it
+needs two runs: `root-cause --baseline <run>` now compares the input against a
+baseline — a scene directory, a `report.json` or a report bundle on either side
+— and writes the movement into the document, the Markdown and the model turn.
+
+- **The movement.** `buildMovement` (exported from `@ohos-perf/core`) returns
+  one row per metric id with `regressed` / `improved` / `unchanged` /
+  `incomparable` / `gap`, plus a per-kind count of evidence items on both runs.
+  Rows are in a total order — status group, then magnitude, then id — so the
+  same two runs produce byte-identical output.
+- **A gap is never a movement.** A metric one run did not emit, or emitted as a
+  skipped analyzer's degraded zero, is `gap` with a reason and no delta.
+  `*.degraded` proxy metrics are counted and excluded from the rows. A jank
+  rate that disappeared must not read as "improved from 12% to 0".
+- **The caller owns the direction.** `from` is always the baseline and `to` the
+  input, whatever the capture times say — unlike `trend`, whose x axis is time.
+  A baseline captured later therefore cannot invert the verdicts.
+- **The model may cite what moved.** The prompt carries the movement, and a
+  suspect's new `metrics` array is checked against the movement's rows exactly
+  like `evidenceIds`; an id that did not move is recorded in `ungrounded`.
+- **Refusals and artifacts.** Two runs for different apps are refused naming
+  both (`ROOT_CAUSE_BAD_BASELINE`), before any model is asked. The Markdown
+  gains a **What moved** section before the verdict, the terminal summary gains
+  a `movement` line, and `root-cause.evidence.json` carries the movement the
+  model was shown. `ROOT_CAUSE_SCHEMA_VERSION` is now `2`.
+
+The parity ledger is unchanged — 38 ported, 0 partial, 0 missing, 1 out
+(`build`): HapRay's multi-version page leaves the comparison to a human and its
+root cause reads one run, so this is a capability the inventory does not
+contain. 2285 unit tests; the device suite is unchanged.
+
 ## 0.26.0 — 2026-11-18
 
 **A budget that fails a build on a metric nobody measured.** `compare` says

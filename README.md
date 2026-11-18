@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P31 are complete**: 2245 tests (2234 unit, 11 in the device
+**P1 through P32 are complete**: 2296 tests (2285 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2206 passed, 28
+attached device are absent — `npm run test:unit` reports **2257 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2206 passed, 39 skipped**. With both fixtures present and a
+checkout is **2257 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -338,6 +338,7 @@ The HapRay parity series (one release per major item, so far):
 | P29 | row 38 completion | `explore --model` lets a model choose each step among the elements the dump offered: an answer naming an unoffered element, scroll or back when unavailable, or a non-JSON reply is a recorded refusal and the deterministic order takes that step. Page identity is a structural digest, not a second model call, so `navigated`/`updated`/`no change` are measured; the walk scrolls and goes back within per-screen caps, and irreversible targets are never offered to a model | shipped in `0.24.0` |
 | P30 | row 39 completion | `collect --thermal` samples `hidumper -s ThermalService -a '-t'` into `thermal.jsonl` with each reading's raw value, inferred unit and normalized Celsius value; `analyze` reports start/end/peak/mean/rise per sensor, sample count, duration and median interval, with a missing capture a `no_data` naming `--thermal` instead of HapRay's silent `None`. Sensors come from the device, and a scenario step can request the capture | shipped in `0.25.0` |
 | P31 | beyond the inventory | `gate <budgets.json> <run>` judges a run against a versioned budget document — absolute `max`/`min` and `maxDelta`/`maxDeltaPct` against a baseline — with exit 2 for a violated or unmeasured budget and exit 1 for a gate that could not run. A metric the run never emitted is `missing`, never a pass, so a green build cannot mean an analyzer stopped running. HapRay's regression story stops at a chart a human reads | shipped in `0.26.0` |
+| P32 | beyond the inventory | `root-cause --baseline <run>` answers what changed between two runs: a deterministic movement of every metric (regressed / improved / unchanged / incomparable / gap) and of every evidence kind, rendered before the verdict and offered to the model, whose `metrics` citations are checked like evidence ids. A gap — a metric one run did not measure — is never an improvement, and the direction is the caller's baseline -> input rather than capture time. HapRay's multi-version page leaves the comparison to a human reading dropdowns and its root cause sees one run | shipped in `0.27.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
@@ -1020,7 +1021,7 @@ person reads. It is the one command whose output is prose, so the design is
 mostly about what the prose is allowed to claim.
 
 ```bash
-ohos-perf root-cause <scene-dir|report.json> --out <dir> [--offline] [--model <name>]
+ohos-perf root-cause <scene-dir|report.json> --out <dir> [--baseline <input>] [--offline] [--model <name>]
 ```
 
 The input is a scene directory — analyzed with the same code `report` uses, so
@@ -1077,10 +1078,52 @@ analyzers had printed themselves, and it flagged "Re-run" and "app-level" as
 invented names because they contain hyphens.
 
 The turn is sent through an OpenAI-compatible `/chat/completions` call using
-the same `OHOS_PERF_AGENT_*` (or `GLM_*`) variables `agent` reads. The client
+the same `OHOS_PERF_AGENT_*` (or `GLM_*`) environment variables `agent` reads. The client
 takes a *turn shape* — prompt and answer parser as one value — because a
 root-cause answer is JSON prose with citations, and the GUI agent's parser
 would reject it for having neither an `action` nor a `done`.
+
+### What moved: `--baseline`
+
+A root cause over one run can say what is wrong. The question a reader actually
+asks after a regression is what *changed*, and answering it needs two runs:
+
+```bash
+ohos-perf root-cause runs/this-release --baseline runs/last-release --out out/
+```
+
+The movement is computed by `buildMovement` in the core package, from the two
+runs' metrics and their evidence counts. It lands in the document as
+`movement`, in the Markdown as a **What moved** section before the verdict, and
+in the model's prompt — where a suspect may cite a moved metric id in
+`metrics`, checked against the movement's own rows exactly like an evidence id.
+
+| status | meaning |
+| --- | --- |
+| `regressed` | the metric moved the wrong way for its known direction |
+| `improved` | it moved the right way |
+| `unchanged` | it did not move — not an improvement |
+| `incomparable` | it moved, but the metric has no known direction; the delta is recorded and no verdict is stated |
+| `gap` | one run did not measure it — absent, or a skipped analyzer's degraded proxy |
+
+Three rules are load-bearing:
+
+- **A gap is never a movement.** A metric one run did not emit, or emitted as a
+  skipped analyzer's zero, is `gap` on that side. Reading it as an improvement
+  ("jank rate fell from 12% to 0") is the defect the whole package exists to
+  prevent, so the row carries a reason and no delta at all. The `*.degraded`
+  proxy metrics are not rows: they are counted and excluded.
+- **The caller owns the direction.** `from` is always `--baseline` and `to` is
+  always the input, whatever the two capture times say. `trend` sorts by
+  `startedAtNs` because its x axis is time; a movement that did the same would
+  silently invert every verdict when a baseline was captured later.
+- **No percentage of zero.** A baseline of 0 gives a delta without a
+  `deltaPct`; the row is still ranked, and no `Infinity` reaches the JSON.
+
+Two runs for different apps are refused, naming both, before any model is
+asked. HapRay's multi-version page loads any report files and leaves the
+filtering to a human reading dropdowns, and its root cause reads a single run —
+there is no cross-run comparison of evidence anywhere in the tree.
 
 ## Budgets and the gate
 

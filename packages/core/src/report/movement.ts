@@ -216,6 +216,19 @@ function countKinds(result: AnalyzeResult): Map<EvidenceKind, number> {
   return counts;
 }
 
+/**
+ * A value as the verdict sentence prints it: three decimals, no trailing
+ * zeros.
+ *
+ * The row keeps the measured value — a reader comparing two runs needs the
+ * number — but the sentence is prose, and "regressed from 4.733727810650888 to
+ * 69.26406926406926" is a number only a machine reads.
+ */
+function spoken(value: number | string | null): string {
+  if (typeof value !== 'number') return String(value);
+  return String(round3(value));
+}
+
 /** One sentence from the ranked rows: the worst regression, or what did move. */
 function verdictFor(from: MovementSide, to: MovementSide, rows: readonly MovementRow[]): string {
   const prefix = `${from.label} → ${to.label}: `;
@@ -224,7 +237,7 @@ function verdictFor(from: MovementSide, to: MovementSide, rows: readonly Movemen
   if (worst !== undefined) {
     const pct = worst.deltaPct === undefined ? '' : ` (${worst.deltaPct}%)`;
     const others = regressions.length - 1;
-    return `${prefix}${worst.id} regressed from ${String(worst.from)} to ${String(worst.to)}${pct}`
+    return `${prefix}${worst.id} regressed from ${spoken(worst.from)} to ${spoken(worst.to)}${pct}`
       + (others === 0 ? '' : `, and ${others} other regression${others === 1 ? '' : 's'}`);
   }
   const improved = rows.filter((row) => row.status === 'improved').length;

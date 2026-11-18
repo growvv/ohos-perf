@@ -648,6 +648,25 @@ ohos-perf root-cause <scene-dir|report.json> --out reports/run1 [--offline] [--m
   `ungrounded` list names files, symbols, threads or libraries the evidence
   never carried. A suspect with a non-empty `ungrounded` is not grounded in
   this run: say so when quoting it, and never present its cause as measured.
+- **When a metric regressed, name the change, not just the run.** Pass the
+  release that was fine as the baseline:
+
+  ```bash
+  ohos-perf root-cause runs/this-release --baseline runs/last-release --out out/
+  ```
+
+  The document's `movement.rows` is the cross-run answer, one row per metric
+  with `status` `regressed` / `improved` / `unchanged` / `incomparable` / `gap`,
+  plus `movement.evidence` counting each finding kind on both sides. The
+  direction is always baseline → input, whatever the capture times say.
+  - A `gap` row means that side did not measure the metric (absent, or a
+    skipped analyzer). **Report it as "not measured", never as an improvement** —
+    the row has no delta on purpose.
+  - A suspect may cite moved metric ids in `metrics`; those were checked
+    against the movement exactly like `evidenceIds`, so an id in `ungrounded`
+    did not move in this pair of runs.
+  - A baseline for a different app is refused, naming both, before any model
+    is asked. A scene and a saved report bundle are both valid on either side.
 - Neither check is semantic. They answer "did the model name something this run
   measured?", not "is the cause right". Say which one you relied on.
 

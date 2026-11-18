@@ -323,6 +323,19 @@ describe('buildMovement — refusals and invariants', () => {
     expect(movement.verdict).toMatch(/other regression/);
   });
 
+  it('rounds the values it prints in the verdict, but not in the row', () => {
+    // Measured defect on a live pair of traces: the sentence read "regressed
+    // from 4.733727810650888 to 69.26406926406926", which is a number only a
+    // machine reads. The row keeps the measured values; the sentence is prose.
+    const movement = buildMovement(
+      input('v1', [metric('frame.empty.rate', 4.733727810650888)]),
+      input('v2', [metric('frame.empty.rate', 69.26406926406926)]),
+    );
+    expect(movement.verdict).toContain('from 4.734 to 69.264');
+    expect(movement.verdict).not.toContain('4.733727810650888');
+    expect(movement.rows[0]!.from).toBe(4.733727810650888);
+  });
+
   it('says nothing regressed when only improvements moved', () => {
     const movement = buildMovement(
       input('v1', [metric('frame.fps', 50)]),
