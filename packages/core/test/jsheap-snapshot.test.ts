@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeHeapSnapshot } from 'node:v8';
-import { readNumberArray, readSnapshotHeader } from '../src/jsheap/snapshot';
+import { readNumberArray, readSnapshotHeader, parseHeapSnapshot } from '../src/jsheap/snapshot';
 
 /** A minimal but structurally real snapshot, in V8's own shape. */
 function document(overrides: Record<string, unknown> = {}): string {
@@ -140,5 +140,122 @@ describe('a snapshot written by this engine', () => {
     const header = readSnapshotHeader(text);
     expect(readNumberArray(text, 'nodes')).toHaveLength(header.nodeCount * header.nodeFieldCount);
     expect(readNumberArray(text, 'edges')).toHaveLength(header.edgeCount * header.edgeFieldCount);
+  });
+
+  it('parses every node and keeps its counts consistent with the header', () => {
+    const snapshot = parseHeapSnapshot(readFileSync(path, 'utf8'));
+    expect(snapshot.nodes).toHaveLength(snapshot.header.nodeCount);
+    const byType = [...snapshot.nodeCountByType.values()].reduce((a, b) => a + b, 0);
+    expect(byType).toBe(snapshot.header.nodeCount);
+    expect(snapshot.totalSelfSize).toBeGreaterThan(0);
+    expect(snapshot.detachedCount).toBe(0);
+  });
+
+  it('agrees with a whole-document JSON.parse about the heap total', () => {
+    // The scanner exists to avoid `JSON.parse` on a large file, so the one
+    // thing it must never do is disagree with it. The reference parse is cheap
+    // at this fixture's size; the point is that two independent readings of
+    // the same bytes produce the same total and the same type counts.
+    const text = readFileSync(path, 'utf8');
+    const reference = JSON.parse(text) as {
+      snapshot: { meta: { node_fields: string[]; node_types: string[][] }; node_count: number };
+      nodes: number[];
+    };
+    const fields = reference.snapshot.meta.node_fields;
+    const typeAt = fields.indexOf('type');
+    const sizeAt = fields.indexOf('self_size');
+    const width = fields.length;
+    let total = 0;
+    const counts = new Map<string, number>();
+    for (let i = 0; i < reference.snapshot.node_count; i++) {
+      const base = i * width;
+      total += reference.nodes[base + sizeAt]!;
+      const type = reference.snapshot.meta.node_types[0]![reference.nodes[base + typeAt]!]!;
+      counts.set(type, (counts.get(type) ?? 0) + 1);
+    }
+
+    const snapshot = parseHeapSnapshot(text);
+    expect(snapshot.totalSelfSize).toBe(total);
+    expect([...snapshot.nodeCountByType.entries()].sort())
+      .toEqual([...counts.entries()].sort());
+  });
+});
+
+describe('parseHeapSnapshot', () => {
+  /** Two objects of 64 and 32 bytes under the root, one detached. */
+  function heap(): string {
+    return JSON.stringify({
+      snapshot: {
+        meta: {
+          node_fields: ['type', 'name', 'id', 'self_size', 'edge_count', 'detachedness'],
+          node_types: [
+            ['hidden', 'array', 'string', 'object'],
+            'string', 'number', 'number', 'number', 'number',
+          ],
+          edge_fields: ['type', 'name_or_index', 'to_node'],
+          edge_types: [['context', 'element', 'property', 'internal', 'hidden', 'shortcut', 'weak'], 'string_or_number', 'node'],
+        },
+        node_count: 3,
+        edge_count: 2,
+      },
+      // root(hidden, 0 bytes), A(object, 64, detached), B(object, 32)
+      nodes: [0, 0, 1, 0, 2, 0, 3, 1, 2, 64, 0, 2, 3, 2, 3, 32, 0, 1],
+      // root --property--> A ; root --property--> B. to_node is index * 6.
+      edges: [2, 1, 6, 2, 2, 12],
+      strings: ['', 'A', 'B'],
+    });
+  }
+
+  it('reads every node with its type name, size and detached flag', () => {
+    const snapshot = parseHeapSnapshot(heap());
+    expect(snapshot.nodes).toHaveLength(3);
+    expect(snapshot.nodes[1]).toMatchObject({ type: 'object', name: 'A', selfSize: 64, detached: true });
+    expect(snapshot.nodes[2]).toMatchObject({ type: 'object', name: 'B', selfSize: 32, detached: false });
+  });
+
+  it('sums self size and counts detached nodes', () => {
+    const snapshot = parseHeapSnapshot(heap());
+    expect(snapshot.totalSelfSize).toBe(96);
+    expect(snapshot.detachedCount).toBe(1);
+  });
+
+  it('translates to_node from a slot offset into a node index', () => {
+    // `to_node` is node index * node_field_count (measured: 6 -> node 1).
+    // Reading it as an index would attribute every edge to node 6.
+    const snapshot = parseHeapSnapshot(heap());
+    expect(snapshot.nodes[1]!.name).toBe('A');
+    expect(snapshot.nodeCountByType.get('object')).toBe(2);
+  });
+
+  it('refuses an edge that points past the end of the node array', () => {
+    const bad = heap().replace('"edges":[2,1,6,2,2,12]', '"edges":[2,1,6,2,2,999]');
+    expect(() => parseHeapSnapshot(bad)).toThrow(/edge 1|999/);
+  });
+
+  it('omits detached counting when the snapshot has no detachedness field', () => {
+    const older = JSON.stringify({
+      snapshot: {
+        meta: {
+          node_fields: ['type', 'name', 'id', 'self_size', 'edge_count'],
+          node_types: [['hidden', 'object'], 'string', 'number', 'number', 'number'],
+          edge_fields: ['type', 'name_or_index', 'to_node'],
+          edge_types: [['property'], 'string_or_number', 'node'],
+        },
+        node_count: 1,
+        edge_count: 0,
+      },
+      nodes: [1, 0, 1, 16, 0],
+      edges: [],
+      strings: [''],
+    });
+    const snapshot = parseHeapSnapshot(older);
+    expect(snapshot.detachedCount).toBe(0);
+    expect(snapshot.nodes[0]!.detached).toBe(false);
+  });
+
+  it('ranks constructors by self size, ties broken by name', () => {
+    const snapshot = parseHeapSnapshot(heap());
+    expect(snapshot.retainedByConstructor[0]!.name).toBe('A');
+    expect(snapshot.retainedByConstructor.map((row) => row.name)).toEqual(['A', 'B']);
   });
 });

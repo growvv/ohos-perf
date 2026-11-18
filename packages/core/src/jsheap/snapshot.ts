@@ -284,3 +284,144 @@ export function readNumberArray(text: string, key: string): Float64Array {
     i = end;
   }
 }
+
+/** A string-table lookup, refused by index when it points outside the table. */
+function stringAt(strings: readonly string[], index: number, where: string): string {
+  const value = strings[index];
+  if (value === undefined) {
+    throw bad(`${where} points at strings[${index}], past the end of ${strings.length} strings`);
+  }
+  return value;
+}
+
+/**
+ * Parse a snapshot into nodes and the aggregates a report reads.
+ *
+ * The two array lengths are checked against `node_count * node_field_count`
+ * and `edge_count * edge_field_count` before anything is read: a dump killed
+ * mid-write leaves a short array, and reporting the nodes that happened to fit
+ * would present a partial heap as the whole heap.
+ *
+ * `to_node` is a **node slot offset**, not an index — V8 writes
+ * `node_index * node_field_count`. Reading it as an index is the classic way
+ * to mis-attribute every edge; it is validated here so a corrupt value is a
+ * refusal rather than a silently wrong aggregate.
+ */
+export function parseHeapSnapshot(text: string): HeapSnapshot {
+  const header = readSnapshotHeader(text);
+  const nodes = readNumberArray(text, 'nodes');
+  const edges = readNumberArray(text, 'edges');
+
+  const expectedNodes = header.nodeCount * header.nodeFieldCount;
+  if (nodes.length !== expectedNodes) {
+    throw bad(
+      `the "nodes" array holds ${nodes.length} values; node_count * node_fields is ${expectedNodes}`,
+    );
+  }
+  const expectedEdges = header.edgeCount * header.edgeFieldCount;
+  if (edges.length !== expectedEdges) {
+    throw bad(
+      `the "edges" array holds ${edges.length} values; edge_count * edge_fields is ${expectedEdges}`,
+    );
+  }
+
+  const strings = readStringTable(text);
+  const typeAt = header.nodeFieldIndex['type']!;
+  const nameAt = header.nodeFieldIndex['name']!;
+  const selfSizeAt = header.nodeFieldIndex['self_size']!;
+  const edgeCountAt = header.nodeFieldIndex['edge_count']!;
+  const detachedAt = header.nodeFieldIndex['detachedness'];
+
+  const parsed: HeapNode[] = [];
+  const nodeCountByType = new Map<string, number>();
+  let totalSelfSize = 0;
+  let detachedCount = 0;
+
+  for (let index = 0; index < header.nodeCount; index++) {
+    const base = index * header.nodeFieldCount;
+    const type = stringAt(header.nodeTypeNames, nodes[base + typeAt]!, `node ${index} type`);
+    const name = stringAt(strings, nodes[base + nameAt]!, `node ${index} name`);
+    const selfSize = nodes[base + selfSizeAt]!;
+    const detached = detachedAt !== undefined && nodes[base + detachedAt] === 2;
+    parsed.push({
+      index,
+      type,
+      name,
+      selfSize,
+      edgeCount: nodes[base + edgeCountAt]!,
+      detached,
+    });
+    nodeCountByType.set(type, (nodeCountByType.get(type) ?? 0) + 1);
+    totalSelfSize += selfSize;
+    if (detached) detachedCount += 1;
+  }
+
+  const toNodeAt = header.edgeFieldIndex['to_node']!;
+  for (let edge = 0; edge < header.edgeCount; edge++) {
+    const toNode = edges[edge * header.edgeFieldCount + toNodeAt]!;
+    const target = toNode / header.nodeFieldCount;
+    if (toNode % header.nodeFieldCount !== 0 || target >= header.nodeCount) {
+      throw bad(
+        `edge ${edge} points at to_node ${toNode}, past the end of ${header.nodeCount} nodes`,
+      );
+    }
+  }
+
+  return {
+    header,
+    nodes: parsed,
+    nodeCountByType,
+    totalSelfSize,
+    detachedCount,
+    retainedByConstructor: rankConstructors(parsed),
+  };
+}
+
+/** The `strings` table, parsed from its own slice. */
+function readStringTable(text: string): readonly string[] {
+  const key = text.indexOf('"strings"');
+  if (key === -1) throw bad('no "strings" array in the document');
+  const open = text.indexOf('[', key);
+  if (open === -1) throw bad('the "strings" key is not followed by an array');
+  const end = endOfValue(text, open);
+  if (end === -1) throw bad('the "strings" array is not terminated');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.slice(open, end));
+  } catch (err) {
+    throw new OhosPerfError(
+      `the "strings" array is not valid JSON: ${(err as Error).message}`,
+      { code: 'JSHEAP_BAD_SNAPSHOT', cause: err },
+    );
+  }
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
+    throw bad('the "strings" array is not an array of strings');
+  }
+  return parsed as string[];
+}
+
+/**
+ * `object` and `closure` nodes grouped by name, largest self size first.
+ *
+ * Self size, not retained: a dominator pass is a second algorithm with its own
+ * failure modes, and this list answers "which constructor holds the most bytes
+ * of its own". Ties break on name so two runs on one file agree byte for byte.
+ * The list is bounded to {@link TOP_CONSTRUCTORS} so a heap with half a
+ * million distinct names keeps a flat memory profile.
+ */
+function rankConstructors(nodes: readonly HeapNode[]): readonly ConstructorShare[] {
+  const byName = new Map<string, { selfSize: number; count: number }>();
+  for (const node of nodes) {
+    if (node.type !== 'object' && node.type !== 'closure') continue;
+    const entry = byName.get(node.name);
+    if (entry === undefined) byName.set(node.name, { selfSize: node.selfSize, count: 1 });
+    else {
+      entry.selfSize += node.selfSize;
+      entry.count += 1;
+    }
+  }
+  return [...byName.entries()]
+    .map(([name, share]) => ({ name, selfSize: share.selfSize, count: share.count }))
+    .sort((a, b) => (b.selfSize - a.selfSize) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .slice(0, TOP_CONSTRUCTORS);
+}
