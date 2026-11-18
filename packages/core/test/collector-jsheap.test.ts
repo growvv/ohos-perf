@@ -46,6 +46,38 @@ describe('JsheapCollector', () => {
     expect(new JsheapCollector().provides).toEqual(['js.heap']);
   });
 
+  it('dumps the whole process heap: -T is a tid, not a pid', async () => {
+    // `hidumper -h` documents `--mem-jsheap pid [-T tid]`. Passing the pid as
+    // the tid asked for a thread dump; measured on the Mate 60 that exits 0
+    // and writes nothing, so the capture silently produced no snapshot.
+    const { layout: l } = layout();
+    const snapshot = '/data/app/el2/100/base/com.demo/files/leak/heap.heapsnapshot';
+    let findCalls = 0;
+    const calls: string[] = [];
+    const hdc = {
+      shell: async (_t: string, cmd: string) => {
+        calls.push(cmd);
+        if (/^pidof /.test(cmd)) return { stdout: '4242\n', stderr: '', code: 0 };
+        if (/^hidumper --mem-jsheap/.test(cmd)) return { stdout: 'ok', stderr: '', code: 0 };
+        if (/^find /.test(cmd)) {
+          findCalls += 1;
+          return {
+            stdout: findCalls === 1 ? '' : `1700000000.5 ${snapshot}\n`,
+            stderr: '',
+            code: 0,
+          };
+        }
+        return { stdout: '', stderr: '', code: 0 };
+      },
+      recv: async (_t: string, _remote: string, local: string) => {
+        writeFileSync(local, '{"snapshot":{}}');
+      },
+    };
+    await new JsheapCollector().collect(hdc as never, 't1', { app: 'com.demo' }, l);
+    expect(calls.filter((cmd) => cmd.startsWith('hidumper --mem-jsheap')))
+      .toEqual(['hidumper --mem-jsheap 4242']);
+  });
+
   it('finds the pid, dumps, and pulls the snapshot the dump produced', async () => {
     const { layout: l } = layout();
     const snapshot = '/data/app/el2/100/base/com.demo/files/leak/heap.heapsnapshot';

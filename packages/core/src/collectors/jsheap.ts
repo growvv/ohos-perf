@@ -142,7 +142,11 @@ export class JsheapCollector implements Collector {
       (await listSnapshots(hdc, target, opts.app)).map(rowPath),
     );
 
-    const dump = await hdc.shell(target, `hidumper --mem-jsheap ${pidText} -T ${pidText}`);
+    // `-T` is a *thread* id (`hidumper -h`: `--mem-jsheap pid [-T tid]`).
+    // Passing the pid there asks for a thread dump, which on the Mate 60 exits
+    // 0 and writes no snapshot — a silent empty capture. Without it hidumper
+    // dumps the whole process heap, which is what this collector means.
+    const dump = await hdc.shell(target, `hidumper --mem-jsheap ${pidText}`);
     if (dump.code !== 0) {
       throw new OhosPerfError(
         `hidumper --mem-jsheap ${pidText} failed (exit ${dump.code}: ${detail(dump)});` +
