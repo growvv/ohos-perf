@@ -314,3 +314,51 @@ describe.skipIf(!distExists)('cli entry point', () => {
     ).toBeGreaterThanOrEqual(srcMtime);
   });
 });
+
+/*
+ * P33 task 4 — the contract from the built binary.
+ *
+ * A commander usage error never reaches an action, so the envelope cannot be
+ * built in `program.ts`: `index.ts` is the only place that sees the failure
+ * and still knows argv. Help is deliberately not a result — an agent asking
+ * for it wants the text.
+ */
+describe('tool-result contract from the built binary', () => {
+  it('prints one envelope for a missing required option', () => {
+    const r = run(['root-cause', '--machine-json']);
+    expect(r.status).toBe(1);
+    const lines = r.stdout.split('\n').filter((line) => line !== '');
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      schemaVersion: '1.0',
+      toolId: 'ohos-perf',
+      command: 'root-cause',
+      success: false,
+      exitCode: 1,
+      error: { code: 'CLI_USAGE' },
+    });
+  });
+
+  it('writes the envelope to --result-file and creates its parent directory', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ohosperf-contract-'));
+    const path = join(dir, 'nested', 'result.json');
+    const r = run(['root-cause', '--machine-json', '--result-file', path]);
+    expect(r.status).toBe(1);
+    const written = JSON.parse(readFileSync(path, 'utf8')) as { error: { code: string } };
+    expect(written.error.code).toBe('CLI_USAGE');
+  });
+
+  it('still prints help as text under --machine-json', () => {
+    const r = run(['--help', '--machine-json']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('Usage: ohos-perf');
+    expect(r.stdout).not.toContain('"schemaVersion"');
+  });
+
+  it('prints no envelope when neither flag was given', () => {
+    const r = run(['root-cause']);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe('');
+    expect(cliStderr(r.stderr)).toContain('--out');
+  });
+});
