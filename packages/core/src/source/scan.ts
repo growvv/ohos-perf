@@ -206,9 +206,13 @@ export function scanSourceFile(path: string, text: string): SourceFile {
 /**
  * The 1-based line a declaration ends on.
  *
- * A block declaration ends on the line its brace closes. A field ends on the
- * `;` that terminates it — which may be many lines down when its initializer
- * is a concatenation.
+ * A block declaration ends on the line its brace closes. A field ends where
+ * its statement completes — the `;`, or the first line whose text does not end
+ * in an operator that promises a continuation. That second case is not
+ * pedantry: ArkTS lets a field omit its semicolon, and a scanner that ran to
+ * the next one would give `pathStack: NavPathStack | null = null` the whole
+ * struct as its body — which is how an `eager-foreach` rule ends up firing on
+ * every field that shares a class with a `build()`.
  */
 function findBlockEnd(
   lines: readonly string[],
@@ -217,22 +221,25 @@ function findBlockEnd(
   deltas: readonly number[],
 ): number {
   const delta = deltas[start] ?? 0;
-  if (delta <= 0) {
-    // No block opened on this line: a field. Run to the terminating ';'. A
-    // field with no semicolon (ArkTS allows the last member to omit it) runs
-    // until the depth would go negative — the line that closes its class.
+  if (delta > 0) {
     let depth = 0;
     for (let index = start; index < lines.length; index++) {
-      if ((stripped[index] ?? '').includes(';')) return index + 1;
       depth += deltas[index] ?? 0;
-      if (depth < 0) return index;
+      if (depth <= 0) return index + 1;
     }
     return lines.length;
   }
-  let depth = 0;
+
+  // A field: stop at the terminating ';', or at the first complete statement.
   for (let index = start; index < lines.length; index++) {
-    depth += deltas[index] ?? 0;
-    if (depth <= 0) return index + 1;
+    const code = (stripped[index] ?? '').trimEnd();
+    if (code.includes(';')) return index + 1;
+    if (index === start) continue;
+    // A continuation line ends in an operator that promises more.
+    if (/[+,=(\[.?:]$/.test(code)) continue;
+    // A closing brace ends the enclosing type, not this field.
+    if (/^[}\])]/.test(code)) return index;
+    return index + 1;
   }
   return lines.length;
 }

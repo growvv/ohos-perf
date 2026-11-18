@@ -133,4 +133,158 @@ export const RULES: readonly Rule[] = [
       return undefined;
     },
   },
+  {
+    id: 'ui-state-high-frequency',
+    category: 'cpu',
+    confidence: 'high',
+    match(facts) {
+      const lines = facts.symbol.body.split('\n');
+      let inCallback = false;
+      for (const line of lines) {
+        // `timeUpdate` fires about ten times a second; a state write inside it
+        // re-renders the bound view at that rate.
+        if (/['"]timeUpdate['"]|timeUpdate\s*\(/.test(line)) inCallback = true;
+        if (inCallback && /AppStorage\.setOrCreate|@State\s|this\.\w+\s*=\s*(time|position|progress)/.test(line)) {
+          return `a high-frequency playback callback writes bound state, re-rendering the view: ${line.trim()}`;
+        }
+        if (inCallback && /^\s*\}\)\s*$/.test(line)) inCallback = false;
+      }
+      return undefined;
+    },
+  },
+  {
+    id: 'db-write-in-loop',
+    category: 'latency',
+    confidence: 'high',
+    match(facts) {
+      const lines = facts.symbol.body.split('\n');
+      let loopDepth = 0;
+      for (const line of lines) {
+        if (LOOP.test(line) && line.includes('{')) loopDepth += 1;
+        if (loopDepth > 0 && /\.(insert|update|delete)\s*\(|executeSql\s*\(/.test(line)) {
+          return `a database write runs once per iteration, each in its own transaction: ${line.trim()}`;
+        }
+        if (line.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
+      }
+      return undefined;
+    },
+  },
+  {
+    id: 'n-plus-1-query',
+    category: 'latency',
+    confidence: 'high',
+    match(facts) {
+      const lines = facts.symbol.body.split('\n');
+      let loopDepth = 0;
+      for (const line of lines) {
+        if (LOOP.test(line) && line.includes('{')) loopDepth += 1;
+        // One read per row of a list already in memory. The fix is a grouped
+        // query; the cost is a query round trip per item.
+        if (loopDepth > 0 && /await\s+this\.\w*\.?\w*(get|query|count|find|read)\w*\s*\(/i.test(line)) {
+          return `one query per row, where a single grouped query would do: ${line.trim()}`;
+        }
+        if (line.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
+      }
+      return undefined;
+    },
+  },
+  {
+    id: 'sequential-await-loop',
+    category: 'latency',
+    confidence: 'medium',
+    match(facts) {
+      const lines = facts.symbol.body.split('\n');
+      let loopDepth = 0;
+      for (const line of lines) {
+        if (LOOP.test(line) && line.includes('{')) loopDepth += 1;
+        // An await on `this.` inside a loop is one round trip per item, run
+        // one after the other; the fix is to collect and await together. A
+        // database read is the sharper N+1 case and is scored above this one,
+        // so this fires on everything else.
+        if (loopDepth > 0 && /await\s+this\./.test(line) && !/await\s+this\.\w*\.?\w*(get|query|count|find|read)\w*\s*\(/i.test(line)) {
+          return `each iteration waits for the previous one to finish: ${line.trim()}`;
+        }
+        if (line.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
+      }
+      return undefined;
+    },
+  },
+  {
+    id: 'repeated-expensive-conversion',
+    category: 'cpu',
+    confidence: 'medium',
+    match(facts) {
+      const body = facts.symbol.body;
+      // A copy of the whole string per call. Inside a loop it is per item; in
+      // a helper that a loop calls, the same cost is paid once per item.
+      const conversion = /\.toLowerCase\s*\(|\.toUpperCase\s*\(|JSON\.parse\s*\(/.exec(body);
+      if (conversion === null) return undefined;
+      const line = firstMatch(body, /\.toLowerCase\s*\(|\.toUpperCase\s*\(|JSON\.parse\s*\(/)!;
+      const inLoop = /for\s*\(|while\s*\(|forEach\s*\(/.test(body);
+      return inLoop
+        ? `a full copy of the input is made once per iteration: ${line}`
+        : `a full copy of the input is made on every call, which the caller repeats per item: ${line}`;
+    },
+  },
+  {
+    id: 'persistent-storage-unbounded',
+    category: 'memory',
+    confidence: 'medium',
+    match(facts) {
+      // Module scope only: `persistProp` is a top-level statement. Running this
+      // over every symbol as well would report the same statement once per
+      // member of the file, burying the real findings under duplicates.
+      if (facts.symbol.symbol !== '') return undefined;
+      const match = /PersistentStorage\.persistProp\s*(?:<[^(]*>)?\s*\(\s*['"]([^'"]+)['"]\s*,\s*\[/.exec(facts.moduleText);
+      if (match === null) return undefined;
+      return `the whole list is persisted under "${match[1]}", so it grows with every page loaded`;
+    },
+  },
+  {
+    id: 'unbounded-accumulation',
+    category: 'memory',
+    confidence: 'medium',
+    match(facts) {
+      const body = facts.symbol.body;
+      if (!/(putSync|setSync)\s*\(/.test(body)) return undefined;
+      // A store that also deletes, or caps its size, is bounded: the write is
+      // not the defect. Check the whole file, because the delete usually lives
+      // in a sibling method. `delItem` is the name the benchmark's store uses,
+      // so the test is on the verb rather than on one method spelling.
+      const wholeFile = facts.file.lines.join('\n');
+      if (/\b(del|delete|remove|clear|trim|evict)\w*\s*\(/i.test(wholeFile)) return undefined;
+      const line = firstMatch(body, /(putSync|setSync)\s*\(/)!;
+      return `every value is persisted under its own key and nothing ever removes one: ${line}`;
+    },
+  },
+  {
+    id: 'font-register-per-instance',
+    category: 'memory',
+    confidence: 'high',
+    match(facts) {
+      const body = facts.symbol.body;
+      if (!/font\.registerFont\s*\(/.test(body)) return undefined;
+      // A unique family per call means each registration is a new font that
+      // never replaces the previous one.
+      if (!/generateRandomUUID|randomUUID|Math\.random|Date\.now|uuid/i.test(body)) return undefined;
+      const line = firstMatch(body, /font\.registerFont\s*\(/)!;
+      return `a new font family is registered per call, so every instance keeps its own copy: ${line}`;
+    },
+  },
+  {
+    id: 'http-session-not-destroyed',
+    category: 'memory',
+    confidence: 'high',
+    match(facts) {
+      const body = facts.symbol.body;
+      if (!/http\.createHttp\s*\(/.test(body)) return undefined;
+      // A session that is never destroyed keeps its connection and its
+      // response body alive. Check the file: the destroy usually sits in a
+      // cleanup method beside the one that creates the session.
+      const wholeFile = facts.file.lines.join('\n');
+      if (/\.destroy\s*\(/.test(wholeFile)) return undefined;
+      const line = firstMatch(body, /http\.createHttp\s*\(/)!;
+      return `an HTTP session is created per request and never destroyed: ${line}`;
+    },
+  },
 ];

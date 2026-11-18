@@ -95,3 +95,123 @@ describe('rules', () => {
     expect(rows).toEqual([]);
   });
 });
+
+describe('the remaining rules, one per defect shape the benchmark records', () => {
+  it('flags a state write inside a timeUpdate callback', () => {
+    const rows = suspectsIn('P.ets', [
+      'export class AVPlayerUtils {',
+      '  play(): void {',
+      "    this.player.on('timeUpdate', (time: number) => {",
+      '      AppStorage.setOrCreate(StorageConstants.PLAY_TIME, time)',
+      '    })',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('ui-state-high-frequency');
+  });
+
+  it('flags an awaited insert inside forEach', () => {
+    const rows = suspectsIn('D.ets', [
+      'export class Import {',
+      '  async run(items: Item[]): Promise<void> {',
+      '    items.forEach(async (item: Item) => {',
+      "      await this.dao.insert('t', item)",
+      '    })',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('db-write-in-loop');
+  });
+
+  it('flags a sequential await in a for loop', () => {
+    const rows = suspectsIn('S.ets', [
+      'export class FeedService {',
+      '  async refresh(feeds: Feed[]): Promise<void> {',
+      '    for (const feed of feeds) {',
+      '      await this.refreshOne(feed.id)',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('sequential-await-loop');
+  });
+
+  it('flags toLowerCase inside a per-item helper', () => {
+    const rows = suspectsIn('P.ets', [
+      'export class FeedParser {',
+      '  static extractTag(xml: string): string {',
+      '    return xml.toLowerCase()',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('repeated-expensive-conversion');
+  });
+
+  it('flags an unbounded persistProp list', () => {
+    const rows = suspectsIn('Home.ets', [
+      'PersistentStorage.persistProp<Data[]>("homeList", [])',
+      'export struct HomePage {}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('persistent-storage-unbounded');
+  });
+
+  it('flags an unbounded preference store', () => {
+    const rows = suspectsIn('history.ets', [
+      'export class HistoryStore {',
+      '  setItem(keyword: string) {',
+      '    this.store.putSync(keyword, keyword)',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('unbounded-accumulation');
+  });
+
+  it('flags a per-instance font family', () => {
+    const rows = suspectsIn('F.ets', [
+      'export class PageTitleFont {',
+      '  static register(): string {',
+      "    const family = 'PageTitle-' + util.generateRandomUUID()",
+      "    font.registerFont({ familyName: family, familySrc: $rawfile('f.ttf') })",
+      '    return family',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('font-register-per-instance');
+  });
+
+  it('flags an http session that is never destroyed', () => {
+    const rows = suspectsIn('W.ets', [
+      'export class getWeatherUtil {',
+      '  getWeather(code: number) {',
+      '    const request = http.createHttp()',
+      "    return request.request('http://x')",
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('http-session-not-destroyed');
+  });
+
+  it('does not flag an http session that is destroyed', () => {
+    const rows = suspectsIn('W.ets', [
+      'export class Client {',
+      '  get(code: number) {',
+      '    const request = http.createHttp()',
+      "    request.destroy()",
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).not.toContain('http-session-not-destroyed');
+  });
+
+  it('does not flag a bounded preference store that deletes', () => {
+    const rows = suspectsIn('history.ets', [
+      'export class HistoryStore {',
+      '  setItem(keyword: string) {',
+      '    if (this.getAll().length > 20) this.delItem(keyword)',
+      '    this.store.putSync(keyword, keyword)',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).not.toContain('unbounded-accumulation');
+  });
+});
