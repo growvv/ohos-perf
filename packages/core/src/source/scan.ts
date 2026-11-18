@@ -90,11 +90,31 @@ const NOT_A_SYMBOL = new Set([
  *
  * Length is preserved: every removed character becomes a space, so an index
  * into this string is an index into the original.
+ *
+ * ## Why regex literals are part of this
+ *
+ * `/url="([^"]+)"/i` holds two `"` characters that are not string delimiters.
+ * Reading the first as one opens a string that runs to the end of the line and
+ * then past it, and the method that follows is swallowed into the one before —
+ * the scanner reports `extractImage` running to line 303, and `extractTag`,
+ * the method the benchmark's root cause names, does not exist at all.
+ *
+ * Telling `/` apart from division needs the previous significant character:
+ * after a value (`)`, `]`, an identifier, a number, a string) a slash divides;
+ * after an operator, a keyword or an opening bracket it starts a regex.
  */
 function stripNoise(text: string): string {
   const out = text.split('');
   let i = 0;
   const n = text.length;
+  /** The last non-space character emitted, for the regex-or-division test. */
+  let previous = '';
+  const blank = (from: number, to: number): void => {
+    for (let at = from; at < to && at < n; at++) {
+      if (text[at] !== '\n') out[at] = ' ';
+    }
+  };
+
   while (i < n) {
     const ch = text[i]!;
     const next = text[i + 1];
@@ -106,18 +126,36 @@ function stripNoise(text: string): string {
       continue;
     }
     if (ch === '/' && next === '*') {
-      out[i] = ' ';
-      out[i + 1] = ' ';
+      const start = i;
       i += 2;
-      while (i < n && !(text[i] === '*' && text[i + 1] === '/')) {
-        if (text[i] !== '\n') out[i] = ' ';
+      while (i < n && !(text[i] === '*' && text[i + 1] === '/')) i += 1;
+      i = Math.min(n, i + 2);
+      blank(start, i);
+      continue;
+    }
+    if (ch === '/' && startsRegex(previous)) {
+      // Skip the body, honouring escapes and a character class where `/` does
+      // not close the literal.
+      const start = i;
+      i += 1;
+      let inClass = false;
+      while (i < n && text[i] !== '\n') {
+        if (text[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (text[i] === '[') inClass = true;
+        else if (text[i] === ']') inClass = false;
+        else if (text[i] === '/' && !inClass) {
+          i += 1;
+          break;
+        }
         i += 1;
       }
-      if (i < n) {
-        out[i] = ' ';
-        out[i + 1] = ' ';
-        i += 2;
-      }
+      // Flags.
+      while (i < n && /[a-z]/i.test(text[i]!)) i += 1;
+      blank(start, i);
+      previous = '/';
       continue;
     }
     if (ch === "'" || ch === '"' || ch === '`') {
@@ -139,11 +177,28 @@ function stripNoise(text: string): string {
         if (text[i] !== '\n') out[i] = ' ';
         i += 1;
       }
+      previous = quote;
       continue;
     }
+    if (ch.trim() !== '') previous = ch;
     i += 1;
   }
   return out.join('');
+}
+
+/**
+ * Whether a `/` after `previous` opens a regular expression rather than
+ * dividing.
+ *
+ * After a value — an identifier's last character, a closing bracket, a string
+ * or a regex — a slash divides. After an operator, a comma, an opening bracket
+ * or the start of a line it opens a regex. `return a / b` and
+ * `.match(/x/)` both fall out of this rule without a list of keywords.
+ */
+function startsRegex(previous: string): boolean {
+  if (previous === '') return true;
+  if (/[\w$)\]'"`]/.test(previous)) return false;
+  return true;
 }
 
 /** Per-line brace delta of an already-stripped text. */
@@ -162,6 +217,49 @@ function lineDeltas(stripped: string): number[] {
   return deltas;
 }
 
+/**
+ * A method whose parameter list wraps across lines.
+ *
+ * `async refreshAllFeeds(onProgress: (done: number, total: number) => void,`
+ * continues for two more lines before its body opens. The single-line matcher
+ * sees only the first line, whose parentheses never close, so it recognises no
+ * declaration — and then reads each parameter line as a field of the class.
+ * A whole method disappears and its parameters take its place.
+ */
+function matchWrappedMethod(
+  stripped: readonly string[],
+  start: number,
+): { name: string; braceLine: number } | undefined {
+  const first = stripped[start] ?? '';
+  const head = new RegExp(`^\\s*${DECORATOR_PREFIX}(?:${MODIFIERS})*([A-Za-z_$][\\w$]*)\\s*\\(`).exec(first);
+  if (head === null) return undefined;
+  const name = head[1]!;
+  if (NOT_A_SYMBOL.has(name)) return undefined;
+
+  let parens = 0;
+  const limit = Math.min(stripped.length, start + 20);
+  for (let index = start; index < limit; index++) {
+    const line = stripped[index] ?? '';
+    // On the first line, skip the name and the parenthesis that opens the list.
+    for (let at = index === start ? head[0].length - 1 : 0; at < line.length; at++) {
+      const ch = line[at];
+      if (ch === '(') parens += 1;
+      else if (ch === ')') parens -= 1;
+    }
+    if (parens > 0) continue;
+    if (parens < 0) return undefined;
+    // Closed on the line it opened on: not wrapped, and the single-line
+    // matcher already handles it.
+    if (index === start) return undefined;
+    const tail = line.slice(line.lastIndexOf(')') + 1);
+    if (/\s*(?::\s*[^{;]+)?\{/.test(tail)) return { name, braceLine: index };
+    // A return type may wrap too; the body opens on the next line.
+    if (/\s*(?::\s*[^{;]+)?\{/.test(stripped[index + 1] ?? '')) return { name, braceLine: index + 1 };
+    return undefined;
+  }
+  return undefined;
+}
+
 /** Scan one file's text. */
 export function scanSourceFile(path: string, text: string): SourceFile {
   const normalized = text.replace(/\r\n/g, '\n');
@@ -178,10 +276,16 @@ export function scanSourceFile(path: string, text: string): SourceFile {
   /** Open type scopes: the depth the scope opened at and its name. */
   const scopes: { depth: number; name: string; lineStart: number }[] = [];
   let depth = 0;
+  /** Continuation lines of a wrapped signature, already consumed. */
+  let skipUntil = -1;
 
   for (let index = 0; index < lines.length; index++) {
     const code = stripped[index] ?? '';
     const delta = deltas[index] ?? 0;
+    if (index <= skipUntil) {
+      depth += delta;
+      continue;
+    }
 
     // A type declaration opens a scope at the depth before its brace.
     const typeMatch = TYPE_DECL.exec(code);
@@ -201,6 +305,23 @@ export function scanSourceFile(path: string, text: string): SourceFile {
         let startLine = index + 1;
         while (startLine > 1 && DECORATOR.test(stripped[startLine - 2] ?? '')) startLine -= 1;
         found.push({ className: scopes[scopes.length - 1]!.name, symbol: name, lineStart: startLine, lineEnd: endLine });
+      } else if (method === null) {
+        // A signature whose parameter list wraps: the body opens several lines
+        // below the name, so the single-line matchers see a field-shaped line
+        // with no terminator and no declaration at all. Read it whole.
+        const wrapped = matchWrappedMethod(stripped, index);
+        if (wrapped !== undefined) {
+          const endLine = findBlockEnd(lines, stripped, wrapped.braceLine, deltas);
+          let startLine = index + 1;
+          while (startLine > 1 && DECORATOR.test(stripped[startLine - 2] ?? '')) startLine -= 1;
+          found.push({
+            className: scopes[scopes.length - 1]!.name,
+            symbol: wrapped.name,
+            lineStart: startLine,
+            lineEnd: endLine,
+          });
+          skipUntil = wrapped.braceLine;
+        }
       }
     }
 

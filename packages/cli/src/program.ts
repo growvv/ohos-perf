@@ -1,10 +1,12 @@
 import { Command } from 'commander';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   OhosPerfError,
   buildToolResult,
   renderToolResultFile,
   renderToolResultLine,
+  type CasePrompt,
   type Gesture,
   type HiprofilerPluginName,
 } from '@ohos-perf/core';
@@ -22,6 +24,7 @@ import {
   runGesture,
   runHap,
   runOptimization,
+  runSuspects,
   runQuery,
   runReport,
   runRender,
@@ -100,6 +103,44 @@ function targetOptionsOf(opts: EmulatorFlags): EmulatorTargetOptions {
     ...(opts.instancePath === undefined ? {} : { instancePath: opts.instancePath }),
     ...(opts.imageRoot === undefined ? {} : { imageRoot: opts.imageRoot }),
     ...(opts.emulator === undefined ? {} : { emulatorPath: opts.emulator }),
+  };
+}
+
+/**
+ * The prompt `suspects` ranks against, from a file or from flags.
+ *
+ * `--prompt` reads the same `prompt.json` shape the benchmark ships, so a
+ * caller can point at the file it already has. `--symptom` and `--scenario`
+ * are the same two fields for someone who has no file. Both forms produce the
+ * same value; a malformed file is an invocation error, not a scan failure.
+ */
+function readPrompt(opts: { prompt?: string; symptom?: string; scenario?: string }): CasePrompt | undefined {
+  if (opts.prompt !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(opts.prompt, 'utf8'));
+    } catch (err) {
+      throw new OhosPerfError(`cannot read prompt file ${opts.prompt}: ${safeMessage(err)}`, {
+        code: 'SUSPECTS_BAD_PROMPT',
+      });
+    }
+    if (parsed === null || typeof parsed !== 'object') {
+      throw new OhosPerfError(`prompt file is not an object: ${opts.prompt}`, { code: 'SUSPECTS_BAD_PROMPT' });
+    }
+    const record = parsed as Record<string, unknown>;
+    const scenarios = record.perf_scenarios;
+    return {
+      ...(typeof record.symptom === 'string' ? { symptom: record.symptom } : {}),
+      ...(typeof record.scenario === 'string' ? { scenario: record.scenario } : {}),
+      ...(Array.isArray(scenarios) && scenarios.every((entry) => typeof entry === 'string')
+        ? { perf_scenarios: scenarios as string[] }
+        : {}),
+    };
+  }
+  if (opts.symptom === undefined && opts.scenario === undefined) return undefined;
+  return {
+    ...(opts.symptom === undefined ? {} : { symptom: opts.symptom }),
+    ...(opts.scenario === undefined ? {} : { scenario: opts.scenario }),
   };
 }
 
@@ -630,6 +671,35 @@ A suspect citing a name this run never measured is marked ungrounded.`)
     .action(async (packagePath: string, opts: { json?: boolean }) => {
       emit(await runOptimization(deps, { packagePath }, { json: opts.json }));
     });
+
+  program
+    .command('suspects')
+    .description('scan an ArkTS source tree for performance defects, ranked')
+    .argument('<root>', 'project directory to scan')
+    .option('--prompt <file>', 'prompt.json with the reported symptom; narrows the ranking')
+    .option('--symptom <text>', 'the reported symptom, inline')
+    .option('--scenario <text>', 'the perf scenario list, comma separated')
+    .option('--out <dir>', 'write suspects.json to this directory')
+    .option('--json', 'print the report as JSON')
+    .action(
+      async (
+        root: string,
+        opts: { prompt?: string; symptom?: string; scenario?: string; out?: string; json?: boolean },
+      ) => {
+        const prompt = readPrompt(opts);
+        emit(
+          await runSuspects(
+            deps,
+            {
+              root,
+              ...(prompt === undefined ? {} : { prompt }),
+              ...(opts.out === undefined ? {} : { outDir: opts.out }),
+            },
+            { json: opts.json },
+          ),
+        );
+      },
+    );
 
   program
     .command('run')

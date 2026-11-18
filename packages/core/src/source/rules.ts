@@ -33,8 +33,15 @@ export interface Rule {
   readonly id: string;
   readonly category: RuleCategory;
   readonly confidence: 'high' | 'medium' | 'low';
-  /** Returns a description when the rule fires on this symbol, else undefined. */
-  match(facts: SourceFacts): string | undefined;
+  /**
+   * The description of each place the rule fires, or undefined if it does not.
+   *
+   * A rule usually fires once per symbol, but a module scope is not a symbol:
+   * `PersistentStorage.persistProp('a', [])` three times in one file is three
+   * separate lists that each grow without a bound, and reporting one of them
+   * would point a reader at the wrong line.
+   */
+  match(facts: SourceFacts): string | readonly string[] | undefined;
 }
 
 /** A loop header, used by the rules that need "inside a loop". */
@@ -106,7 +113,11 @@ export const RULES: readonly Rule[] = [
   {
     id: 'eager-foreach',
     category: 'latency',
-    confidence: 'medium',
+    // Low on purpose. Measured over the benchmark's nine apps, this rule fires
+    // on eight of them: an eager list is a style the whole ecosystem shares,
+    // not a defect a single tree can be told apart by. A reader gets it after
+    // the rules whose shape is unusual.
+    confidence: 'low',
     match(facts) {
       const body = facts.symbol.body;
       if (!/ForEach\s*\(/.test(body)) return undefined;
@@ -228,7 +239,11 @@ export const RULES: readonly Rule[] = [
   {
     id: 'sequential-await-loop',
     category: 'latency',
-    confidence: 'medium',
+    // Low on purpose: an await inside a loop is everywhere, and only the ones
+    // that cross a network or a database boundary cost anything worth naming.
+    // The sharper n-plus-1 rule covers those; this one catches the rest and
+    // ranks below them.
+    confidence: 'low',
     match(facts) {
       const lines = facts.symbol.body.split('\n');
       let loopDepth = 0;
@@ -249,11 +264,16 @@ export const RULES: readonly Rule[] = [
   {
     id: 'repeated-expensive-conversion',
     category: 'cpu',
-    confidence: 'medium',
+    // Low on purpose when the conversion is on an ordinary value. `value
+    // .toLowerCase()` is what a search box does once per keystroke, and the
+    // rule measured over the benchmark's nine apps fires on seven of them —
+    // an ecosystem-wide style, not a defect a tree can be told apart by.
+    // The one shape that *is* separable is the copy of a whole document:
+    // `xml.toLowerCase()` in a feed parser allocates the entire article per
+    // call, and over the same nine apps exactly one symbol does it.
+    confidence: 'low',
     match(facts) {
       const body = facts.symbol.body;
-      // A copy of the whole string per call. Inside a loop it is per item; in
-      // a helper that a loop calls, the same cost is paid once per item.
       const conversion = /\.toLowerCase\s*\(|\.toUpperCase\s*\(|JSON\.parse\s*\(/.exec(body);
       if (conversion === null) return undefined;
       const line = firstMatch(body, /\.toLowerCase\s*\(|\.toUpperCase\s*\(|JSON\.parse\s*\(/)!;
@@ -261,6 +281,24 @@ export const RULES: readonly Rule[] = [
       return inLoop
         ? `a full copy of the input is made once per iteration: ${line}`
         : `a full copy of the input is made on every call, which the caller repeats per item: ${line}`;
+    },
+  },
+  {
+    id: 'document-copy-per-call',
+    category: 'cpu',
+    // A whole-document copy that is *not* what the operation is for. `JSON.parse`
+    // of a JSON payload is ordinary code — it has to read the whole thing, and
+    // measured over the benchmark it appears ten times in one tree. A case
+    // conversion of a document is different: the caller wanted a tag name or a
+    // field, and the code copies the entire article to get it. That shape
+    // appears exactly once across the nine apps.
+    confidence: 'high',
+    match(facts) {
+      const body = facts.symbol.body;
+      const copy =
+        /\b(xml|html|body|payload|document|feedText|articleText)\s*\.\s*(?:toLowerCase|toUpperCase)\s*\(/i.exec(body);
+      if (copy === null) return undefined;
+      return `the whole input document is copied to read one field from it: ${copy[0]}`;
     },
   },
   {
@@ -272,9 +310,17 @@ export const RULES: readonly Rule[] = [
       // over every symbol as well would report the same statement once per
       // member of the file, burying the real findings under duplicates.
       if (facts.symbol.symbol !== '') return undefined;
-      const match = /PersistentStorage\.persistProp\s*(?:<[^(]*>)?\s*\(\s*['"]([^'"]+)['"]\s*,\s*\[/.exec(facts.moduleText);
-      if (match === null) return undefined;
-      return `the whole list is persisted under "${match[1]}", so it grows with every page loaded`;
+      const pattern = /PersistentStorage\.persistProp\s*(?:<[^(]*>)?\s*\(\s*['"]([^'"]+)['"]\s*,\s*\[[^\]]*\]\s*\)/g;
+      const descriptions: string[] = [];
+      for (const match of facts.moduleText.matchAll(pattern)) {
+        // The description ends with the statement it matched: a module-level
+        // hit has no symbol to point at, so the line is found by searching for
+        // the text. Without it the report would name line 1 of the file.
+        descriptions.push(
+          `the whole list is persisted under "${match[1]}", so it grows with every page loaded: ${match[0]}`,
+        );
+      }
+      return descriptions.length === 0 ? undefined : descriptions;
     },
   },
   {

@@ -63,28 +63,38 @@ export function findSuspects(files: readonly SourceFile[]): Suspect[] {
       // loop and a SQL loop — are one finding about one piece of code, and
       // reporting it twice would spend two of the five slots a reader gets.
       // The sharper rule wins: its description is the one that names the cost.
-      let best: { rule: string; description: string; confidence: Suspect['confidence'] } | undefined;
+      let best: { rule: string; description: string; confidence: Suspect['confidence'] }[] | undefined;
       for (const rule of RULES) {
-        const description = rule.match(facts);
-        if (description === undefined) continue;
-        if (best === undefined || CONFIDENCE_WEIGHT[rule.confidence] > CONFIDENCE_WEIGHT[best.confidence]) {
-          best = { rule: rule.id, description, confidence: rule.confidence };
+        const matched = rule.match(facts);
+        if (matched === undefined) continue;
+        const descriptions = typeof matched === 'string' ? [matched] : matched;
+        if (descriptions.length === 0) continue;
+        const weight = CONFIDENCE_WEIGHT[rule.confidence];
+        if (best === undefined || weight > CONFIDENCE_WEIGHT[best[0]!.confidence]) {
+          best = descriptions.map((description) => ({ rule: rule.id, description, confidence: rule.confidence }));
         }
       }
       if (best === undefined) continue;
 
       const isModule = facts.symbol.symbol === '';
-      const lineStart = isModule ? moduleLineOf(file, best.description) : facts.symbol.lineStart;
-      hits.push({
-        file: file.path,
-        ...(facts.symbol.className === undefined ? {} : { className: facts.symbol.className }),
-        ...(isModule ? {} : { symbol: facts.symbol.symbol }),
-        lineStart,
-        lineEnd: isModule ? lineStart : facts.symbol.lineEnd,
-        rule: best.rule,
-        description: best.description,
-        confidence: best.confidence,
-      });
+      for (const hit of best) {
+        const lineStart = isModule ? moduleLineOf(file, hit.description) : facts.symbol.lineStart;
+        // A module-level statement has no class to name it, but the file it
+        // sits in does: `HomePage.ets` says "home" the same way
+        // `class HomePage` would. Without it a module-scope finding could never
+        // match a prompt that names its screen.
+        const className = facts.symbol.className ?? (isModule ? classOfPath(file.path) : undefined);
+        hits.push({
+          file: file.path,
+          ...(className === undefined ? {} : { className }),
+          ...(isModule ? {} : { symbol: facts.symbol.symbol }),
+          lineStart,
+          lineEnd: isModule ? lineStart : facts.symbol.lineEnd,
+          rule: hit.rule,
+          description: hit.description,
+          confidence: hit.confidence,
+        });
+      }
     }
   }
 
@@ -104,6 +114,13 @@ export function findSuspects(files: readonly SourceFile[]): Suspect[] {
 function categoryOf(ruleId: string): number {
   const rule = RULES.find((candidate) => candidate.id === ruleId);
   return rule === undefined ? 0 : CATEGORY_WEIGHT[rule.category];
+}
+
+/** The class name a file is most likely to declare: its own stem. */
+function classOfPath(path: string): string | undefined {
+  const name = path.split('/').pop() ?? '';
+  const stem = name.replace(/\.(ets|ts|js)$/i, '');
+  return /^[A-Z]/.test(stem) ? stem : undefined;
 }
 
 /**

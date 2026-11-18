@@ -1,0 +1,15 @@
+{
+  "case": "ytmusic_search_no_debounce",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/pages/SearchPage.ets",
+      "class": "SearchPage",
+      "symbol": "build",
+      "line_start": 10,
+      "line_end": 110,
+      "description": "a request is issued on every keystroke, with no debounce: axios.get('http://127.0.0.1:18493/search', {"
+    }
+  ]
+}

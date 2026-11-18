@@ -1,0 +1,15 @@
+{
+  "case": "jingmo_sync_page_reimport",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "features/settings/src/main/ets/pages/SyncData.ets",
+      "class": "SyncData",
+      "symbol": "aboutToAppear",
+      "line_start": 18,
+      "line_end": 34,
+      "description": "a full copy of the input is made on every call, which the caller repeats per item: let wrapper: DataWrapper<ClassicPoem> = JSON.parse(data)"
+    }
+  ]
+}

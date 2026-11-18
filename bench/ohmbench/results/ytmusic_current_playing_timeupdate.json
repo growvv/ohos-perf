@@ -1,0 +1,15 @@
+{
+  "case": "ytmusic_current_playing_timeupdate",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/pages/CurrentPlaying.ets",
+      "class": "CurrentPlaying",
+      "symbol": "setAVPlayerCallback",
+      "line_start": 12,
+      "line_end": 63,
+      "description": "a high-frequency playback callback writes bound state, re-rendering the view: this.currentValue = time"
+    }
+  ]
+}

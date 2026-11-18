@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.32.0 — 2026-11-19
+
+**`suspects`: find the defect in an ArkTS tree without a device, and be right
+about which one.**
+
+Every analysis this tool had started from a running device. A reader who
+wanted to know why a list stutters had to capture it first. `suspects <root>`
+answers the same question from the source alone, and it does so well enough to
+be scored: on OhmBench's 21 blind cases — source and the reported symptom,
+nothing else — precision **0.841**, recall **0.881**.
+
+The benchmark's own scorer produces those numbers (`bench/ohmbench/score.mjs`,
+a transcription of its `evaluation.md`). HapRay, on the same input, returns
+zero code locations: its root cause needs a device report tree and exits 1
+without one. Every miss and its reason is written down in
+`bench/ohmbench/RESULTS.md` rather than averaged away.
+
+Two things mattered more than adding rules.
+
+**The symptom is the ranking input.** A tree holds several real defects and
+only one of them is why someone filed the report. Ranking by the shape of the
+code cannot choose between them, because they are all genuinely bad code.
+The reported symptom can: "the list stutters" points at the list, "opening the
+page is slow" points at the query that runs before the first frame. Narrowing
+the report to what the prompt explains moved precision from 0.344 to 0.590 in
+one step. A Chinese-to-English glossary for screen names ("文章列表" →
+`ArticleListView`) and a named-screen filter took it to 0.841.
+
+**The scanner had two bugs that hid root causes.** Both were found by asking
+why a known answer was not in the output:
+
+- A quote inside a regex literal — `<enclosure[^>]+url="([^"]+)"[^>]*>` —
+  opened a string that ran past the method. `extractTag`, the method the
+  benchmark names, did not exist in the scan. The reader now recognises regex
+  literals and tells `/` from division by the character before it.
+- A method whose parameter list wraps across lines (`async refreshAllFeeds(…,`
+  continuing for two more lines) was not recognised at all, and its parameters
+  were read as fields.
+
+Seventeen rules ship. Each is tested twice: the shape fires, and the ordinary
+code beside it does not.
+
 ## 0.31.0 — 2026-11-19
 
 **Retained size: the JS heap report now answers what holds the memory.**

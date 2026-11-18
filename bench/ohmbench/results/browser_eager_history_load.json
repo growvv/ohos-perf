@@ -1,0 +1,15 @@
+{
+  "case": "browser_eager_history_load",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/pages/Index.ets",
+      "class": "Index",
+      "symbol": "aboutToAppear",
+      "line_start": 61,
+      "line_end": 83,
+      "description": "the page runs one query per item before it can render: allDate.forEach(async date => {"
+    }
+  ]
+}

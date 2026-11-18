@@ -149,6 +149,8 @@ const VALUE_EXPORTS = [
   'CATEGORY_MAX_BYTES', 'TECH_RULES', 'matchHapRules', 'validateRules', 'EXCLUDE_PATTERNS',
   'analyzeHap', 'hapSection',
   'writeSceneMetadata', 'xpowerPlugin',
+  'scanSourceFile', 'scanSourceTree', 'findSuspects', 'rankSuspects', 'symptomCategories', 'RULES',
+  'buildSuspectsDocument', 'renderSuspectsText',
 ];
 
 // This test checks the built declarations, not src. `dist/` is gitignored, so

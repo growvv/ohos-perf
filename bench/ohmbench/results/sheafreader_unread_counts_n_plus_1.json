@@ -1,0 +1,33 @@
+{
+  "case": "sheafreader_unread_counts_n_plus_1",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/data/DatabaseManager.ets",
+      "class": "DatabaseManager",
+      "symbol": "insertArticle",
+      "line_start": 314,
+      "line_end": 340,
+      "description": "a duplicate insert is detected by letting the constraint fail and catching it: const result = await this.store.insert('articles', values);"
+    },
+    {
+      "rank": 2,
+      "file": "entry/src/main/ets/services/FeedService.ets",
+      "class": "FeedService",
+      "symbol": "getFeedsWithCounts",
+      "line_start": 191,
+      "line_end": 197,
+      "description": "one query per row, where a single grouped query would do: feed.unreadCount = await this.db.getUnreadCount(feed.id, -1);"
+    },
+    {
+      "rank": 3,
+      "file": "entry/src/main/ets/services/FeedService.ets",
+      "class": "FeedService",
+      "symbol": "getGroupsWithCounts",
+      "line_start": 199,
+      "line_end": 205,
+      "description": "one query per row, where a single grouped query would do: group.unreadCount = await this.db.getUnreadCount(-1, group.id);"
+    }
+  ]
+}

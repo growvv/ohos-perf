@@ -1,0 +1,15 @@
+{
+  "case": "weatherassistant_http_session_leak",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "alatus/src/main/ets/viewmodel/getWeatherUtil.ets",
+      "class": "getWeatherUtil",
+      "symbol": "getWeather",
+      "line_start": 11,
+      "line_end": 26,
+      "description": "an HTTP session is created per request and never destroyed: let request = http.createHttp();"
+    }
+  ]
+}

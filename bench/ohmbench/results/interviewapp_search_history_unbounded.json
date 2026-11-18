@@ -1,0 +1,15 @@
+{
+  "case": "interviewapp_search_history_unbounded",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "features/home/src/main/ets/utils/history.ets",
+      "class": "HistoryStore",
+      "symbol": "setItem",
+      "line_start": 19,
+      "line_end": 22,
+      "description": "every value is persisted under its own key and nothing caps the number of keys: this.store.putSync(keyword, keyword)"
+    }
+  ]
+}

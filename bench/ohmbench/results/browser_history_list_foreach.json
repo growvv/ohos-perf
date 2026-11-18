@@ -1,0 +1,15 @@
+{
+  "case": "browser_history_list_foreach",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/view/PagesDialog.ets",
+      "class": "PagesDialog",
+      "symbol": "build",
+      "line_start": 78,
+      "line_end": 101,
+      "description": "every row is built up front, including the ones off screen: ForEach(this.historyGroups, (group: HistoryGroup) => {"
+    }
+  ]
+}

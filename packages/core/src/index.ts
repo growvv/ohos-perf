@@ -202,8 +202,12 @@ export { scanSourceFile, scanSourceTree } from './source/scan';
 export type { SourceFile, SourceSymbol } from './source/scan';
 export { findSuspects } from './source/suspects';
 export type { Suspect } from './source/suspects';
+export { rankSuspects, symptomCategories } from './source/symptoms';
+export type { CasePrompt } from './source/symptoms';
 export { RULES } from './source/rules';
 export type { Rule, RuleCategory, SourceFacts } from './source/rules';
+export { buildSuspectsDocument, renderSuspectsText } from './source/report';
+export type { SuspectsDocument } from './source/report';
 export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';
 export {
   BUDGET_SCHEMA_VERSION,

@@ -1,0 +1,15 @@
+{
+  "case": "browser_history_delete_no_transaction",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/utils/RdbUtils.ets",
+      "class": "RdbUtils",
+      "symbol": "deleteAll",
+      "line_start": 167,
+      "line_end": 188,
+      "description": "a SQL statement runs once per iteration: await RdbUtils.getStore().executeSql(`DELETE FROM ${tableName} WHERE id = ${id}`)"
+    }
+  ]
+}

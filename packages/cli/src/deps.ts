@@ -69,6 +69,10 @@ import {
   hapSection,
   analyzeBinaries,
   extractBinaries,
+  scanSourceTree,
+  findSuspects,
+  rankSuspects,
+  buildSuspectsDocument,
   httpAgentModel,
   httpChatModel,
   llmChooser,
@@ -1591,6 +1595,26 @@ export function realDeps(
         probe: { command: '', stdout: '', stderr: '', code: 0 },
       }];
       return { analysis, capabilities };
+    },
+
+    async suspects(req) {
+      const files = scanSourceTree(req.root);
+      const found = findSuspects(files);
+      // The prompt narrows the ranking when the caller gives one; without it
+      // the confidence order stands, and every finding is reported.
+      const suspects = req.prompt === undefined ? found : rankSuspects(found, req.prompt);
+      const document = buildSuspectsDocument(
+        req.root,
+        files.length,
+        files.reduce((sum, file) => sum + file.symbols.length, 0),
+        suspects,
+        req.prompt,
+      );
+      if (req.outDir === undefined) return { document };
+      const outDir = resolve(req.outDir);
+      await mkdir(outDir, { recursive: true });
+      await writeFile(join(outDir, 'suspects.json'), `${JSON.stringify(document, null, 2)}\n`);
+      return { document, outDir, artifacts: ['suspects.json'] };
     },
 
     tools() {

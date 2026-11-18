@@ -44,6 +44,7 @@ export function cliDeps(overrides: Partial<CliDeps> = {}): CliDeps {
     symbols: notStubbed('symbols'),
     hap: notStubbed('hap'),
     opt: notStubbed('opt'),
+    suspects: notStubbed('suspects'),
     emulator: {
       list: async () => [],
       start: notStubbed('emulator.start'),

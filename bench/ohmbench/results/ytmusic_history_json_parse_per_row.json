@@ -1,0 +1,15 @@
+{
+  "case": "ytmusic_history_json_parse_per_row",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/pages/History.ets",
+      "class": "History",
+      "symbol": "build",
+      "line_start": 8,
+      "line_end": 88,
+      "description": "every row is built up front, including the ones off screen: ForEach(Array.from(this.history).reverse(), (item: string) => {"
+    }
+  ]
+}

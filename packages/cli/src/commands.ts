@@ -7,7 +7,8 @@ import {
   loadCases,
   OhosPerfError,
   parseScenario,
-  type BaselineComparison, type CapabilityState, type CreateEmulatorRequest,
+  renderSuspectsText,
+  type BaselineComparison, type CapabilityState, type CasePrompt, type CreateEmulatorRequest,
   type DeltaStatus,
   type EmulatorInstance, type EmulatorStartResult, type EmulatorStopResult, type Gesture,
   type GestureResult,
@@ -22,6 +23,7 @@ import {
   type GateResult,
   type GateVerdict,
   type RunResult, type Scenario,
+  type SuspectsDocument,
 } from '@ohos-perf/core';
 import { doctorReport, errorOf, failureLine, safeMessage, type DoctorDeps } from './doctor';
 
@@ -573,6 +575,28 @@ export interface OptOutput {
 }
 
 /**
+ * A request to scan an ArkTS source tree for performance defects.
+ *
+ * `root` is a project directory. `prompt` is the symptom the user reported;
+ * when given, the ranking uses it to drop findings that cannot explain it.
+ */
+export interface SuspectsRequest {
+  root: string;
+  prompt?: CasePrompt;
+  /** When set, `suspects.json` is written here. */
+  outDir?: string;
+}
+
+/** What the scan found: the document `suspects.json` carries. */
+export interface SuspectsOutput {
+  document: SuspectsDocument;
+  /** Present only when `--out` was given; the directory the caller named. */
+  outDir?: string;
+  /** Present only when `--out` was given; the artifact names, in order. */
+  artifacts?: string[];
+}
+
+/**
  * Where the emulator commands look for the binary and its state.
  *
  * Every field is optional so the core applies its own discovery order
@@ -660,6 +684,11 @@ export interface CliDeps {
    * Throws on any failure; the caller maps it to exit 1.
    */
   opt(req: OptRequest): Promise<OptOutput>;
+  /**
+   * Scan an ArkTS source tree for performance defects.
+   * Throws on any failure; the caller maps it to exit 1.
+   */
+  suspects(req: SuspectsRequest): Promise<SuspectsOutput>;
   /** HarmonyOS emulator lifecycle. Throws on any failure; the caller maps it to exit 1. */
   emulator: EmulatorDeps;
   /** Run a scenario. Throws on any failure; the caller maps it to exit 1. */
@@ -1711,6 +1740,33 @@ export async function runOptimization(
       }
     }
     return { stdout, stderr: '', exitCode: 0 };
+  } catch (err) {
+    return failureResult(err);
+  }
+}
+
+/**
+ * Scan an ArkTS tree and print the ranked suspects.
+ *
+ * A tree with no suspects is a result, not an error: the report says
+ * `suspects none` and exits 0, because "this code has none of the defects the
+ * rules know" is an answer. Exit 1 is reserved for a path that cannot be read.
+ */
+export async function runSuspects(
+  deps: CliDeps,
+  req: SuspectsRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  if (!existsSync(req.root) || !statSync(req.root).isDirectory()) {
+    return failureResult(
+      new OhosPerfError(`not a directory: ${req.root}`, { code: 'SUSPECTS_BAD_PATH' }),
+    );
+  }
+
+  try {
+    const result = await deps.suspects(req);
+    if (opts.json) return jsonResult(result.document);
+    return { stdout: renderSuspectsText(result.document), stderr: '', exitCode: 0 };
   } catch (err) {
     return failureResult(err);
   }

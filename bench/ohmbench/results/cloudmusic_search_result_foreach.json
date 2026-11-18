@@ -1,0 +1,15 @@
+{
+  "case": "cloudmusic_search_result_foreach",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/pages/search/SearchSongsList.ets",
+      "class": "SearchSongsList",
+      "symbol": "build",
+      "line_start": 44,
+      "line_end": 91,
+      "description": "every row is built up front, including the ones off screen: ForEach(this.songList, (item: Song) => {"
+    }
+  ]
+}

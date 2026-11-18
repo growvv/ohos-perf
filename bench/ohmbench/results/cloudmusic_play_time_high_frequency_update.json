@@ -1,0 +1,15 @@
+{
+  "case": "cloudmusic_play_time_high_frequency_update",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/common/utils/play/AVPlayerUtils.ets",
+      "class": "AVPlayerUtils",
+      "symbol": "play",
+      "line_start": 64,
+      "line_end": 90,
+      "description": "a high-frequency playback callback writes bound state, re-rendering the view: AppStorage.setOrCreate(StorageConstants.PLAY_TIME, time)"
+    }
+  ]
+}

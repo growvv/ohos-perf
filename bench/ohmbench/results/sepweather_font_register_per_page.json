@@ -1,0 +1,24 @@
+{
+  "case": "sepweather_font_register_per_page",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/pages/MainPage.ets",
+      "class": "MainPage",
+      "symbol": "aboutToAppear",
+      "line_start": 29,
+      "line_end": 40,
+      "description": "fonts are registered again on every visit to the page: font.registerFont({"
+    },
+    {
+      "rank": 2,
+      "file": "entry/src/main/ets/common/utils/PageTitleFont.ets",
+      "class": "PageTitleFont",
+      "symbol": null,
+      "line_start": 7,
+      "line_end": 7,
+      "description": "a new font family is registered per call, so every instance keeps its own copy: font.registerFont({ familyName: family, familySrc: $rawfile('DroidSansFallbackFull.ttf') });"
+    }
+  ]
+}

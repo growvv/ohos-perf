@@ -1,0 +1,470 @@
+{
+  "cases": 21,
+  "precision": 0.8412698412698412,
+  "recall": 0.8809523809523809,
+  "f1": 0.8476190476190476,
+  "rows": [
+    {
+      "case": "browser_eager_history_load",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/pages/Index.ets",
+          "symbol": "aboutToAppear",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "browser_history_delete_no_transaction",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/utils/RdbUtils.ets",
+          "symbol": "deleteAll",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "browser_history_list_foreach",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/view/PagesDialog.ets",
+          "symbol": "build",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "cloudmusic_play_time_high_frequency_update",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/common/utils/play/AVPlayerUtils.ets",
+          "symbol": "play",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "cloudmusic_search_result_foreach",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/pages/search/SearchSongsList.ets",
+          "symbol": "build",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "interviewapp_search_history_unbounded",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 2,
+      "found": 1,
+      "precision": 1,
+      "recall": 0.5,
+      "f1": 0.6666666666666666,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "features/home/src/main/ets/utils/history.ets",
+          "symbol": "setItem",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "jingmo_dataset_import_no_transaction",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "features/settings/src/main/ets/pages/SyncData.ets",
+          "symbol": "aboutToAppear",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "jingmo_random_poem_orderby_random",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "commons/constants/src/main/ets/DbConst.ets",
+          "symbol": "READ_RANDOM_CLASSICPOEM",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "jingmo_sync_page_reimport",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "features/settings/src/main/ets/pages/SyncData.ets",
+          "symbol": "aboutToAppear",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "sepweather_font_register_per_page",
+      "suspects": 2,
+      "correct": 2,
+      "primaries": 2,
+      "found": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/pages/MainPage.ets",
+          "symbol": "aboutToAppear",
+          "correct": true,
+          "primary": true
+        },
+        {
+          "rank": 2,
+          "file": "entry/src/main/ets/common/utils/PageTitleFont.ets",
+          "symbol": null,
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "sheafreader_article_list_foreach",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/components/ArticleListView.ets",
+          "symbol": "build",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "sheafreader_extract_tag_tolowercase",
+      "suspects": 2,
+      "correct": 0,
+      "primaries": 1,
+      "found": 0,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/services/FeedService.ets",
+          "symbol": "refreshFeed",
+          "correct": false,
+          "primary": false
+        },
+        {
+          "rank": 2,
+          "file": "entry/src/main/ets/services/FeedService.ets",
+          "symbol": "refreshAllFeeds",
+          "correct": false,
+          "primary": false
+        }
+      ]
+    },
+    {
+      "case": "sheafreader_insert_duplicate_exception",
+      "suspects": 2,
+      "correct": 0,
+      "primaries": 1,
+      "found": 0,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/services/FeedService.ets",
+          "symbol": "refreshFeed",
+          "correct": false,
+          "primary": false
+        },
+        {
+          "rank": 2,
+          "file": "entry/src/main/ets/services/FeedService.ets",
+          "symbol": "refreshAllFeeds",
+          "correct": false,
+          "primary": false
+        }
+      ]
+    },
+    {
+      "case": "sheafreader_refresh_feeds_sequential",
+      "suspects": 2,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 0.5,
+      "recall": 1,
+      "f1": 0.6666666666666666,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/services/FeedService.ets",
+          "symbol": "refreshFeed",
+          "correct": false,
+          "primary": false
+        },
+        {
+          "rank": 2,
+          "file": "entry/src/main/ets/services/FeedService.ets",
+          "symbol": "refreshAllFeeds",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "sheafreader_unread_counts_n_plus_1",
+      "suspects": 3,
+      "correct": 2,
+      "primaries": 1,
+      "found": 1,
+      "precision": 0.6666666666666666,
+      "recall": 1,
+      "f1": 0.8,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/data/DatabaseManager.ets",
+          "symbol": "insertArticle",
+          "correct": true,
+          "primary": false
+        },
+        {
+          "rank": 2,
+          "file": "entry/src/main/ets/services/FeedService.ets",
+          "symbol": "getFeedsWithCounts",
+          "correct": true,
+          "primary": true
+        },
+        {
+          "rank": 3,
+          "file": "entry/src/main/ets/services/FeedService.ets",
+          "symbol": "getGroupsWithCounts",
+          "correct": false,
+          "primary": false
+        }
+      ]
+    },
+    {
+      "case": "wanharmony_persisted_home_list_growth",
+      "suspects": 4,
+      "correct": 2,
+      "primaries": 2,
+      "found": 2,
+      "precision": 0.5,
+      "recall": 1,
+      "f1": 0.6666666666666666,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/pages/HomePage.ets",
+          "symbol": null,
+          "correct": false,
+          "primary": false
+        },
+        {
+          "rank": 2,
+          "file": "entry/src/main/ets/pages/HomePage.ets",
+          "symbol": null,
+          "correct": false,
+          "primary": false
+        },
+        {
+          "rank": 3,
+          "file": "entry/src/main/ets/pages/HomePage.ets",
+          "symbol": null,
+          "correct": true,
+          "primary": true
+        },
+        {
+          "rank": 4,
+          "file": "entry/src/main/ets/pages/HomePage.ets",
+          "symbol": "build",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "weatherassistant_http_session_leak",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "alatus/src/main/ets/viewmodel/getWeatherUtil.ets",
+          "symbol": "getWeather",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "weatherassistant_remote_weather_icons",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "alatus/src/main/ets/view/cityView.ets",
+          "symbol": "weatherImage",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "ytmusic_current_playing_timeupdate",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/pages/CurrentPlaying.ets",
+          "symbol": "setAVPlayerCallback",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "ytmusic_history_json_parse_per_row",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/pages/History.ets",
+          "symbol": "build",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    },
+    {
+      "case": "ytmusic_search_no_debounce",
+      "suspects": 1,
+      "correct": 1,
+      "primaries": 1,
+      "found": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "hits": [
+        {
+          "rank": 1,
+          "file": "entry/src/main/ets/pages/SearchPage.ets",
+          "symbol": "build",
+          "correct": true,
+          "primary": true
+        }
+      ]
+    }
+  ]
+}

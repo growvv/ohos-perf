@@ -51,6 +51,69 @@ describe('scanSourceFile', () => {
     expect(symbol?.body).toContain("' where id = 1'");
   });
 
+  it('finds a method whose parameter list wraps across lines', () => {
+    // Real ArkTS writes this whenever a signature has a callback parameter:
+    // the parameter list is longer than the line limit, so the body's opening
+    // brace is several lines below the name. Reading only one line misses the
+    // method entirely and reads its parameters as fields.
+    const text = [
+      'export class FeedService {',
+      '  async refreshAllFeeds(onProgress: (done: number, total: number) => void,',
+      '    applyFrequency: boolean = false,',
+      '    scopeIds: number[] | null = null): Promise<void> {',
+      '    for (const feed of feeds) {',
+      '      await this.refreshFeed(feed.id)',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const file = scanSourceFile('FeedService.ets', text);
+    expect(file.symbols.map((symbol) => symbol.symbol)).toEqual(['refreshAllFeeds']);
+    expect(file.symbols[0]?.lineStart).toBe(2);
+    expect(file.symbols[0]?.lineEnd).toBe(8);
+    expect(file.symbols[0]?.body).toContain('await this.refreshFeed');
+  });
+
+  it('does not let a quote inside a regex literal unbalance the file', () => {
+    // `<enclosure[^>]+url="([^"]+)"[^>]*>` holds two quote characters that are
+    // not string delimiters. Reading the first as one opens a string that runs
+    // to the next line's regex, and the method after this one is swallowed.
+    const text = [
+      'export class FeedParser {',
+      '  static extractImage(xml: string): string {',
+      '    const enclosure: RegExpMatchArray | null =',
+      '      xml.match(/<enclosure[^>]+url="([^"]+)"[^>]*>/i);',
+      '    if (enclosure !== null) {',
+      '      return enclosure[1];',
+      '    }',
+      '    return "";',
+      '  }',
+      '  static extractTag(xml: string): string {',
+      '    return xml.toLowerCase();',
+      '  }',
+      '}',
+    ].join('\n');
+    const file = scanSourceFile('FeedParser.ets', text);
+    expect(file.symbols.map((symbol) => symbol.symbol)).toEqual(['extractImage', 'extractTag']);
+    expect(file.symbols[0]?.lineEnd).toBe(9);
+    expect(file.symbols[1]?.lineStart).toBe(10);
+  });
+
+  it('keeps a division operator from being read as a regex', () => {
+    const text = [
+      'export class A {',
+      '  ratio(a: number, b: number): number {',
+      '    return a / b;',
+      '  }',
+      '  next(): number {',
+      '    return 1;',
+      '  }',
+      '}',
+    ].join('\n');
+    const file = scanSourceFile('a.ets', text);
+    expect(file.symbols.map((symbol) => symbol.symbol)).toEqual(['ratio', 'next']);
+  });
+
   it('keeps the widest range when a name is declared twice', () => {
     const text = [
       'export class A {',

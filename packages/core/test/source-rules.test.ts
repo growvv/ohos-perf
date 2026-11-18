@@ -142,12 +142,30 @@ describe('the remaining rules, one per defect shape the benchmark records', () =
   it('flags toLowerCase inside a per-item helper', () => {
     const rows = suspectsIn('P.ets', [
       'export class FeedParser {',
-      '  static extractTag(xml: string): string {',
-      '    return xml.toLowerCase()',
+      '  static normalizeTag(name: string): string {',
+      '    return name.toLowerCase()',
       '  }',
       '}',
     ].join('\n'));
     expect(rows.map((row) => row.rule)).toContain('repeated-expensive-conversion');
+  });
+
+  it('ranks a whole-document copy above a field conversion', () => {
+    // `xml.toLowerCase()` copies the entire article; `keyword.toLowerCase()`
+    // copies a search box's contents. Both are the same call, and only one of
+    // them is worth a reader's attention.
+    const rows = suspectsIn('P.ets', [
+      'export class FeedParser {',
+      '  static extractTag(xml: string): string {',
+      '    return xml.toLowerCase()',
+      '  }',
+      '  static search(keyword: string): string {',
+      '    return keyword.toLowerCase()',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toEqual(['document-copy-per-call', 'repeated-expensive-conversion']);
+    expect(rows[0]?.confidence).toBe('high');
   });
 
   it('flags an unbounded persistProp list', () => {
@@ -156,6 +174,21 @@ describe('the remaining rules, one per defect shape the benchmark records', () =
       'export struct HomePage {}',
     ].join('\n'));
     expect(rows.map((row) => row.rule)).toContain('persistent-storage-unbounded');
+  });
+
+  it('reports each persisted list on its own line, not line 1', () => {
+    // Three lists in one module scope are three separate findings. A single
+    // report at line 1 points a reader at the imports.
+    const rows = suspectsIn('Home.ets', [
+      "import { A } from './a'",
+      '',
+      'PersistentStorage.persistProp<Banner[]>("bannerList", [])',
+      'PersistentStorage.persistProp<Data[]>("homeTopList", [])',
+      'PersistentStorage.persistProp<Data[]>("homeList", [])',
+      'export struct HomePage {}',
+    ].join('\n'));
+    expect(rows.map((row) => row.lineStart)).toEqual([3, 4, 5]);
+    expect(rows[2]?.description).toContain('"homeList"');
   });
 
   it('flags an unbounded preference store', () => {

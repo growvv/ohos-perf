@@ -1,0 +1,24 @@
+{
+  "case": "sheafreader_insert_duplicate_exception",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/services/FeedService.ets",
+      "class": "FeedService",
+      "symbol": "refreshFeed",
+      "line_start": 90,
+      "line_end": 135,
+      "description": "each iteration waits for the previous one to finish: const id: number = await this.db.insertArticle(article);"
+    },
+    {
+      "rank": 2,
+      "file": "entry/src/main/ets/services/FeedService.ets",
+      "class": "FeedService",
+      "symbol": "refreshAllFeeds",
+      "line_start": 144,
+      "line_end": 184,
+      "description": "each iteration waits for the previous one to finish: outcome.inserted += await this.refreshFeed(due[index].id, outcome);"
+    }
+  ]
+}

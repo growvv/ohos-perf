@@ -1,0 +1,15 @@
+{
+  "case": "sheafreader_article_list_foreach",
+  "tool": "ohos-perf",
+  "suspects": [
+    {
+      "rank": 1,
+      "file": "entry/src/main/ets/components/ArticleListView.ets",
+      "class": "ArticleListView",
+      "symbol": "build",
+      "line_start": 593,
+      "line_end": 919,
+      "description": "every row is built up front, including the ones off screen: ForEach(this.store.articles, (article: Article) => {"
+    }
+  ]
+}
