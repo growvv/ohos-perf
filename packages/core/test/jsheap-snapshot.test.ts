@@ -667,6 +667,17 @@ describe('retained attribution', () => {
     expect(snapshot.nodeCount).toBe(12);
   });
 
+  it('refuses a ceiling that is not a non-negative integer', () => {
+    // A typo in the option would otherwise be echoed into the omission reason
+    // as "past the NaN-edge ceiling", which reads like a measurement.
+    for (const bad of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
+      expect(() => parseHeapSnapshot(container(), { maxGraphEdges: bad }))
+        .toThrow(/maxGraphEdges/);
+      expect(() => parseHeapSnapshot(container(), { maxGraphNodes: bad }))
+        .toThrow(/maxGraphNodes/);
+    }
+  });
+
   it('bounds the node count too, not only the edge count', () => {
     // A snapshot of many zero-edge nodes has no edges to trip the edge
     // ceiling, but the dominator working set is ~53 bytes a node: a file

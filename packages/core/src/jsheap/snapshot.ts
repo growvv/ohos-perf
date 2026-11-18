@@ -25,8 +25,7 @@
  * {@link computeDominators}). That is the price of retained size: on the 50 MB
  * fixture the reader peaked at 30.1 MB before it computed dominators and
  * 77.4 MB after, still below `JSON.parse`'s 106.7 MB. On the 9.4 MB fixture
- * the graph fits in the existing headroom and the peak did not move (12.3 MB
- * before, 12.7 MB after).
+ * the graph fits in the existing headroom: 12.3 MB before, 12.7 MB after.
  *
  * ## What is validated, and why it matters
  *
@@ -72,9 +71,15 @@ export interface ConstructorShare {
    * Sum of the **retained** size of every node of this name.
    *
    * Retained size is what the constructor holds: the bytes that become
-   * unreachable when its nodes are collected. It is always at least
-   * `selfSize` for a reachable node, and it is what a leak hunt asks about —
-   * an `Array` of a few hundred bytes can retain megabytes.
+   * unreachable when its nodes are collected. For a **reachable** node it is
+   * always at least that node's self size, and it is what a leak hunt asks
+   * about — an `Array` of a few hundred bytes can retain megabytes.
+   *
+   * It is per node, not per row: `selfSize` sums every node of the name,
+   * including ones the root cannot reach, while `retainedSize` counts only the
+   * reachable ones. A row of entirely unreachable nodes therefore reports
+   * `selfSize > 0` with `retainedSize: 0` — the bytes are in the heap, held by
+   * nothing.
    *
    * A node nested inside another node of the same name contributes to both
    * nodes' retained size, so a row can exceed the heap total. DevTools reports
@@ -610,6 +615,14 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
   // allocate gigabytes.
   const edgeLimit = options?.maxGraphEdges ?? MAX_GRAPH_EDGES;
   const nodeLimit = options?.maxGraphNodes ?? MAX_GRAPH_NODES;
+  // A typo must not become a measurement: `NaN` or `-1` would sail into the
+  // reason as "past the NaN-edge ceiling", which reads like a real bound.
+  if (!Number.isInteger(edgeLimit) || edgeLimit < 0) {
+    throw bad(`maxGraphEdges is ${edgeLimit}, which is not a non-negative integer`);
+  }
+  if (!Number.isInteger(nodeLimit) || nodeLimit < 0) {
+    throw bad(`maxGraphNodes is ${nodeLimit}, which is not a non-negative integer`);
+  }
   const buildGraph = header.edgeCount <= edgeLimit && header.nodeCount <= nodeLimit;
 
   // The dominator pass needs per-node facts it cannot re-derive from the

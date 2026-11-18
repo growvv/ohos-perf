@@ -10,9 +10,9 @@ analysis, and it was not cosmetic. Measured on a real 9.4 MB snapshot:
 | constructor | self size | retained size |
 |---|---|---|
 | `Array` | 0.62 MB | **3.78 MB** |
-| `Object` | 0.96 MB | **3.14 MB** |
-| `system / Context` | 0.07 MB | **0.49 MB** |
-| `Map` | not in the top six | **0.15 MB** |
+| `Object` | 0.96 MB | **3.35 MB** |
+| `system / Context` | 0.07 MB | **0.53 MB** |
+| `Map` | not in the top six | **0.29 MB** |
 
 Ranked by self size `Object` leads. Ranked by retained size `Array` leads and
 holds six times the bytes its own nodes account for, because it holds its
@@ -31,11 +31,21 @@ elements. A reader acting on the old metric optimized the wrong constructor.
   wrote at dump time; reachability is computed from the graph now. They can
   legitimately disagree, and the disagreement is what a leak hunt looks for, so
   they are two metrics and neither is asserted to be zero.
-- **A documented ceiling.** Past `MAX_GRAPH_EDGES` (20 million, roughly 4.5
-  million for a 100 MB snapshot) the graph is not built and the heap totals are
-  reported with `retained: { kind: 'omitted' }` naming the size — a stated gap,
-  not an out-of-memory kill with no report. `AnalyzeContext.jsheapMaxGraphEdges`
-  lets a constrained caller lower it.
+- **A documented ceiling, in both dimensions.** Past `MAX_GRAPH_EDGES` (20
+  million, roughly 4.5 million for a 100 MB snapshot) or `MAX_GRAPH_NODES`
+  (4 million) the graph is not built and the heap totals are reported with
+  `retained: { kind: 'omitted' }` naming both counts — a stated gap, not an
+  out-of-memory kill with no report. Edges alone were not a bound: the working
+  set is ~53 bytes a node, so five million zero-edge nodes tripped no edge
+  limit and still allocated 192 MB. `AnalyzeContext.jsheapMaxGraphEdges` lets a
+  constrained caller lower either.
+- **A weak edge is not a reference.** `edgeTypeNames` was parsed and never
+  read, so every `weak` edge entered the dominator graph as a strong one and a
+  `Map` that merely mentioned a payload looked like its owner. On a real
+  141 605-node snapshot 3 505 nodes' retained sizes were wrong, by up to
+  158 688 bytes each, and every row above them was inflated. Weak edges are
+  validated and counted in the heap total but not written into the graph;
+  `shortcut` stays strong, as DevTools keeps it.
 - **Corrupt numbers are refusals, not plausible trees.** A negative `to_node`
   divides evenly by the field count (`-6 % 6` is `-0`) and compares below
   `nodeCount`, so it used to pass as node `-1` and quietly drop a node from
@@ -47,7 +57,7 @@ elements. A reader acting on the old metric optimized the wrong constructor.
 - **The memory cost is measured, not assumed.** The graph is the price of
   retained size: the 50 MB fixture's peak moved from 30.1 MB to 77.4 MB, still
   below `JSON.parse`'s 106.7 MB. A second test pins that margin at the size a
-  real heap reaches; the 9.4 MB fixture did not move (12.7 MB).
+  real heap reaches; the 9.4 MB fixture moved 12.3 → 12.7 MB.
 
 **Breaking:** `HeapSnapshot.retainedByConstructor` is replaced by
 `retained: RetainedAnalysis`, a union of a `measured` arm carrying the rows and

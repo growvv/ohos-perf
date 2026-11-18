@@ -108,7 +108,7 @@ export class JsheapAnalyzer implements Analyzer {
           signals: {},
           explain: snapshot.retained.reason,
           drillDown: [],
-          key: 'jsheap:attribution-omitted',
+          key: 'jsheap:graph-too-large',
         }),
       );
       return { metrics, evidence: items };
