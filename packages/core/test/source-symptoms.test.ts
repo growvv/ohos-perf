@@ -99,3 +99,58 @@ describe('a prompt that names a screen', () => {
     expect(ranked[0]?.className).toBe('ArticleListView');
   });
 });
+
+describe('confidence outranks a shared name word', () => {
+  /*
+   * The shape that went wrong on OhmBench's feed-parser case. The symptom's
+   * "刷新" reaches `FeedService.refreshFeed` through the glossary, so a
+   * low-confidence sequential await on that method shares two prompt words
+   * while the high-confidence findings share none — `FeedParser` and
+   * `DatabaseManager` are not in the prompt at all. Narrowing by name first
+   * discarded both high-confidence findings and answered with the wrong one.
+   *
+   * The real fix, and the one this test pins: a name match must not promote a
+   * low-confidence finding over a high-confidence one.
+   */
+  const TREE = [
+    'export class FeedService {',
+    '  async refreshFeed(id: number): Promise<void> {',
+    '    for (let i = 0; i < ids.length; i++) {',
+    '      await this.db.insertArticle(articles[i]);',
+    '    }',
+    '  }',
+    '}',
+    'export class FeedParser {',
+    '  extractTag(xml: string, tag: string): string {',
+    "    const copy = xml.toLowerCase();",
+    "    return copy.slice(copy.indexOf('<' + tag));",
+    '  }',
+    '}',
+  ].join('\n');
+
+  it('keeps the high-confidence finding the name match would have dropped', () => {
+    const suspects = findSuspects([scanSourceFile('FeedService.ets', TREE)]);
+    const ranked = rankSuspects(suspects, {
+      symptom: '刷新订阅源时响应变慢。',
+      perf_scenarios: ['数据库读取', '网络结果渲染'],
+    });
+    expect(ranked.map((suspect) => suspect.rule)).toContain('document-copy-per-call');
+    expect(ranked[0]?.rule).not.toBe('sequential-await-loop');
+  });
+
+  it('still narrows to the name when nothing is high confidence', () => {
+    // The tier is `high` only. A tree with nothing high-confidence keeps its
+    // name match, because dropping to `medium` would narrow for no reason.
+    const onlyLow = [
+      'export struct ArticleListView {',
+      '  build() { List() { ForEach(this.rows, (row: Row) => { ListItem() { Text(row.t) } }) } }',
+      '}',
+      'export struct SettingsView {',
+      '  build() { List() { ForEach(this.rows, (row: Row) => { ListItem() { Text(row.t) } }) } }',
+      '}',
+    ].join('\n');
+    const suspects = findSuspects([scanSourceFile('ArticleListView.ets', onlyLow)]);
+    const ranked = rankSuspects(suspects, { symptom: '打开文章列表时响应变慢。', perf_scenarios: ['列表滑动'] });
+    expect(ranked.map((suspect) => suspect.className)).toEqual(['ArticleListView']);
+  });
+});

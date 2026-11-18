@@ -6,19 +6,28 @@
       "rank": 1,
       "file": "entry/src/main/ets/services/FeedService.ets",
       "class": "FeedService",
-      "symbol": "refreshFeed",
-      "line_start": 90,
-      "line_end": 135,
-      "description": "each iteration waits for the previous one to finish: const id: number = await this.db.insertArticle(article);"
+      "symbol": "getFeedsWithCounts",
+      "line_start": 186,
+      "line_end": 192,
+      "description": "one query per row, where a single grouped query would do: feed.unreadCount = await this.db.getUnreadCount(feed.id, -1);"
     },
     {
       "rank": 2,
       "file": "entry/src/main/ets/services/FeedService.ets",
       "class": "FeedService",
-      "symbol": "refreshAllFeeds",
-      "line_start": 144,
-      "line_end": 179,
-      "description": "each iteration waits for the previous one to finish: outcome.inserted += await this.refreshFeed(feeds[i].id, outcome);"
+      "symbol": "getGroupsWithCounts",
+      "line_start": 194,
+      "line_end": 200,
+      "description": "one query per row, where a single grouped query would do: group.unreadCount = await this.db.getUnreadCount(-1, group.id);"
+    },
+    {
+      "rank": 3,
+      "file": "entry/src/main/ets/utils/FeedParser.ets",
+      "class": "FeedParser",
+      "symbol": "extractTag",
+      "line_start": 179,
+      "line_end": 195,
+      "description": "the whole input document is copied to read one field from it: xml.toLowerCase("
     }
   ]
 }

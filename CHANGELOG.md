@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.32.1 — 2026-11-19
+
+**The ranking kept the wrong finding, and the docs said the case was
+impossible.**
+
+`suspects` found `FeedParser.extractTag` and `DatabaseManager.insertArticle`
+all along; the ranking threw them away. The symptom's "刷新" reaches
+`FeedService.refreshFeed` through the glossary, so a low-confidence
+`sequential-await-loop` on that method matched two prompt words, and the
+max-strength narrowing discarded everything that matched fewer — including
+the two high-confidence findings those cases are about. Confidence is now
+the first tier of the narrowing, and only when the tree holds a `high`
+finding at all: precision **0.857**, recall **0.929**, F1 0.871 on OhmBench's
+21 blind cases (was 0.841 / 0.881 / 0.848).
+
+`bench/ohmbench/RESULTS.md` had also claimed that
+`sheafreader_extract_tag_tolowercase` and
+`sheafreader_insert_duplicate_exception` have byte-identical blind input and
+that no detector could answer both. That is false — their `source.patch`
+files and trees differ, and so does the `scenario` line of their prompts. The
+claim is corrected, the one remaining miss is described as the ranking gap it
+is, and the six ranking variants that were measured and rejected are in the
+iteration ledger rather than only the one that shipped.
+
+The HapRay baseline is also recorded rather than reasoned: running its
+`root-cause` action over all 21 blind trees returns "未发现可用的性能信号产物"
+on every one, naming no file. It had been described as requiring a report
+tree and exiting 1 without one.
+
 ## 0.32.0 — 2026-11-19
 
 **`suspects`: find the defect in an ArkTS tree without a device, and be right
@@ -9,7 +38,7 @@ Every analysis this tool had started from a running device. A reader who
 wanted to know why a list stutters had to capture it first. `suspects <root>`
 answers the same question from the source alone, and it does so well enough to
 be scored: on OhmBench's 21 blind cases — source and the reported symptom,
-nothing else — precision **0.841**, recall **0.881**.
+nothing else — precision **0.857**, recall **0.929**.
 
 The benchmark's own scorer produces those numbers (`bench/ohmbench/score.mjs`,
 a transcription of its `evaluation.md`). HapRay, on the same input, returns
@@ -29,6 +58,17 @@ page is slow" points at the query that runs before the first frame. Narrowing
 the report to what the prompt explains moved precision from 0.344 to 0.590 in
 one step. A Chinese-to-English glossary for screen names ("文章列表" →
 `ArticleListView`) and a named-screen filter took it to 0.841.
+
+**Confidence outranks the name match.** A shared word in a screen name is
+weaker evidence than a rule's own confidence, and letting it decide alone
+promoted a low-confidence finding over a high-confidence one. In the
+feed-parser case "刷新" reached `FeedService.refreshFeed` through the
+glossary, so a low-confidence sequential await matched two prompt words and
+the max-strength narrowing discarded the whole-document copy in
+`FeedParser.extractTag` and the duplicate-insert in
+`DatabaseManager.insertArticle` — the two defects that case is about. The
+ranking now narrows to `high` confidence first, and only when the tree holds
+a `high` finding at all: precision 0.841 → 0.857, recall 0.881 → 0.929.
 
 **The scanner had two bugs that hid root causes.** Both were found by asking
 why a known answer was not in the output:

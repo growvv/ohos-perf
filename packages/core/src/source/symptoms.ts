@@ -367,13 +367,32 @@ export function rankSuspects(suspects: readonly Suspect[], prompt: CasePrompt): 
   const report = namedOnly.length > 0 ? namedOnly : explainedOnly;
   // Narrow to the strongest name match. The named screen is the question; a
   // finding on a different screen is an answer to a different question, however
-  // real the defect. The feed-parser case survives this because `extractTag` is
-  // a member of `FeedParser`, so it carries the class's name words too.
-  // The component kind the symptom names breaks a tie between two screens that
-  // share a domain noun: "文章列表" prefers `ArticleListView` to `ArticleReaderView`.
+  // real the defect. The component kind the symptom names breaks a tie between
+  // two screens that share a domain noun: "文章列表" prefers `ArticleListView`
+  // to `ArticleReaderView`.
+  //
+  // Confidence comes first, though.
+  //
+  // A rule's confidence is the tool's own estimate of how reliably its shape
+  // identifies a defect. Sharing a word with a screen name is weaker evidence
+  // than that, and letting the name decide alone promotes a low-confidence
+  // finding over a high-confidence one on the strength of one word. In the
+  // feed-parser case the symptom's "刷新" reaches `FeedService.refreshFeed`
+  // through the glossary, so a low-confidence `sequential-await-loop` matched
+  // two words and discarded the high-confidence whole-document copy in
+  // `FeedParser.extractTag` and the duplicate-insert in
+  // `DatabaseManager.insertArticle` — the two defects that case is about.
+  //
+  // Only `high` is a tier. A tree can hold nothing high-confidence and still
+  // have a real defect, and dropping to `medium` there would narrow a report
+  // for no reason; the name match then decides among the medium findings, which
+  // is what it was for. Measured on OhmBench: precision 0.841 -> 0.857,
+  // recall 0.881 -> 0.929.
   const strength = (suspect: Suspect): number => sharedWords(suspect) * 2 + kindMatch(suspect, kinds);
-  const best = Math.max(...report.map(strength));
-  const top = best > 0 ? report.filter((suspect) => strength(suspect) === best) : report;
+  const highOnly = report.filter((suspect) => suspect.confidence === 'high');
+  const tiered = highOnly.length > 0 ? highOnly : report;
+  const best = Math.max(...tiered.map(strength));
+  const top = best > 0 ? tiered.filter((suspect) => strength(suspect) === best) : tiered;
   const ordered = top
     .map((suspect, index) => ({
       suspect,

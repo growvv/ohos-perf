@@ -1,8 +1,8 @@
 {
   "cases": 21,
-  "precision": 0.8412698412698412,
-  "recall": 0.8809523809523809,
-  "f1": 0.8476190476190476,
+  "precision": 0.8571428571428571,
+  "recall": 0.9285714285714286,
+  "f1": 0.8714285714285714,
   "rows": [
     {
       "case": "browser_eager_history_load",
@@ -222,33 +222,40 @@
     },
     {
       "case": "sheafreader_extract_tag_tolowercase",
-      "suspects": 2,
-      "correct": 0,
+      "suspects": 3,
+      "correct": 1,
       "primaries": 1,
-      "found": 0,
-      "precision": 0,
-      "recall": 0,
-      "f1": 0,
+      "found": 1,
+      "precision": 0.3333333333333333,
+      "recall": 1,
+      "f1": 0.5,
       "hits": [
         {
           "rank": 1,
           "file": "entry/src/main/ets/services/FeedService.ets",
-          "symbol": "refreshFeed",
+          "symbol": "getFeedsWithCounts",
           "correct": false,
           "primary": false
         },
         {
           "rank": 2,
           "file": "entry/src/main/ets/services/FeedService.ets",
-          "symbol": "refreshAllFeeds",
+          "symbol": "getGroupsWithCounts",
           "correct": false,
           "primary": false
+        },
+        {
+          "rank": 3,
+          "file": "entry/src/main/ets/utils/FeedParser.ets",
+          "symbol": "extractTag",
+          "correct": true,
+          "primary": true
         }
       ]
     },
     {
       "case": "sheafreader_insert_duplicate_exception",
-      "suspects": 2,
+      "suspects": 1,
       "correct": 0,
       "primaries": 1,
       "found": 0,
@@ -259,14 +266,7 @@
         {
           "rank": 1,
           "file": "entry/src/main/ets/services/FeedService.ets",
-          "symbol": "refreshFeed",
-          "correct": false,
-          "primary": false
-        },
-        {
-          "rank": 2,
-          "file": "entry/src/main/ets/services/FeedService.ets",
-          "symbol": "refreshAllFeeds",
+          "symbol": "getGroupsWithCounts",
           "correct": false,
           "primary": false
         }
