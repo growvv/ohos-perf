@@ -37,8 +37,13 @@ export const MCP_INVALID_PARAMS = -32602;
 /** MCP-specific: the request named a protocol version this server does not speak. */
 export const MCP_UNSUPPORTED_VERSION = -32022;
 
-/** A JSON-RPC id: the spec allows a string or a number. */
-export type RequestId = string | number;
+/**
+ * A JSON-RPC id: the spec allows a string, a number, or `null`.
+ *
+ * `null` is the one an error response uses when the request it answers had no
+ * readable id — a document that did not parse — so the type has to admit it.
+ */
+export type RequestId = string | number | null;
 
 /** One parsed line: a request to answer, a notification to absorb, or garbage. */
 export type ParsedMessage =
@@ -51,7 +56,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isId(value: unknown): value is RequestId {
-  return typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
+  return value === null
+    || typeof value === 'string'
+    || (typeof value === 'number' && Number.isFinite(value));
 }
 
 /**
