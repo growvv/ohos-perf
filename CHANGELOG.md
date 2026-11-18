@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.28.0 — 2026-11-18
+
+**One envelope for every command.** An agent driving this CLI had to read a
+bare JSON document, an exit code and a stderr line, and infer the rest. Now
+`--machine-json` prints one versioned tool-result line and `--result-file
+<path>` writes the same document, on every command, with no per-command flag.
+
+- **The envelope.** `{schemaVersion, toolId, toolVersion, command, success,
+  exitCode, outputs: {payload}, error?}` — built by `buildToolResult` and
+  validated by `parseToolResult`, both exported from `@ohos-perf/core`.
+  `schemaVersion` is `"1.0"`; the envelope is camelCase to match this
+  package's own artifacts rather than HapRay's snake_case.
+- **`success` is derived, never accepted.** It is exactly `exitCode === 0`, so
+  a caller cannot describe a failed run as a successful one, and a reader never
+  has to decide which of the two fields to believe.
+- **Bad news is not a broken tool.** A `gate` verdict of fail is exit 2:
+  `success: false`, **no** `error`, `outputs.payload.status === 'fail'`. The
+  measurement ran. `error` is present only when the command could not run, and
+  its `code` is the token stderr prints first — including `CLI_USAGE` for
+  commander's own refusals, which is the one failure class that never reaches a
+  command.
+- **Validated on the way back in.** `parseToolResult` refuses an unknown
+  `schemaVersion`, another tool's `toolId`, and a `success` that contradicts
+  `exitCode`, naming the value. HapRay's `machine_output.py` only writes, so a
+  consumer cannot notice the contract changing under it.
+- **No default result file.** HapRay drops `hapray-tool-result.json` into the
+  report directory whether or not anyone asked; this CLI writes only where
+  `--result-file` says, so a scene directory a reader will diff stays clean.
+  Parent directories are created; a genuine write failure is
+  `TOOL_RESULT_BAD_PATH` and exit 1, never a success line beside a missing file.
+- **Typed codes for two paths that lacked them.** `caps` with no hdc now fails
+  as `DOCTOR_HDC_UNAVAILABLE` and `symbols` on an unknown library as
+  `SYMBOLS_NO_SUCH_LIBRARY`, so their stderr leads with a token a caller can
+  branch on. Both printed lines change accordingly.
+- **Help and version stay text.** `--help` and `--version` under
+  `--machine-json` print what they always printed: they are a request for
+  text, not a result.
+
+The parity ledger is unchanged — 38 ported, 0 partial, 0 missing, 1 out
+(`build`): HapRay ships this as a plugin manifest field, not an action, so it
+is not one of the 39 rows. 2327 unit tests (2299 + 28 skipped on a clean
+checkout); the device suite is unchanged.
+
 ## 0.27.0 — 2026-11-18
 
 **A root cause that knows what changed.** `root-cause` explained one run.

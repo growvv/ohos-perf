@@ -708,3 +708,28 @@ JSON:
 `--json` output is the same structure the library returns. Evidence is ordered
 by `(kind, window.startNs, id)`, so repeated runs over the same scene and the
 same query arguments are byte-identical.
+
+## Reading a result as an agent
+
+`--machine-json` replaces a command's output with one JSON line; `--result-file
+<path>` writes the same document to a file (parent directories are created).
+Both are global, so they go anywhere on the command line.
+
+- `schemaVersion` is `"1.0"` and `toolId` is `"ohos-perf"`. Refuse a document
+  whose values differ rather than reading it hopefully — `parseToolResult` in
+  `@ohos-perf/core` does exactly that check, and rejects a `success` flag that
+  contradicts its own `exitCode`.
+- `success` is exactly `exitCode === 0`. A `gate` verdict of `fail` is exit 2:
+  `success: false`, **no** `error`, and `outputs.payload.status === 'fail'`.
+  Never report that as the tool breaking — the measurement ran and the news is
+  bad.
+- `error` is present only when the command could not run. Its `code` is the
+  same token `stderr` prints first (`SCENE_NO_INPUT`, `CLI_USAGE`,
+  `TOOL_RESULT_BAD_PATH`), so quote the code, not the prose.
+- `outputs.payload` is the command's own document — the same object `--json`
+  prints. Artifacts are inside it (`files`, `outDir`); the envelope adds none.
+- There is no default result file. HapRay drops `hapray-tool-result.json` into
+  the report directory whether or not anyone asked; this CLI writes only where
+  `--result-file` says, so a scene directory stays clean.
+- `--help` and `--version` are not results: they print text even under
+  `--machine-json`.

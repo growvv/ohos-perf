@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P32 are complete**: 2305 tests (2294 unit, 11 in the device
+**P1 through P33 are complete**: 2338 tests (2327 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2266 passed, 28
+attached device are absent — `npm run test:unit` reports **2299 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2266 passed, 39 skipped**. With both fixtures present and a
+checkout is **2299 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -339,6 +339,7 @@ The HapRay parity series (one release per major item, so far):
 | P30 | row 39 completion | `collect --thermal` samples `hidumper -s ThermalService -a '-t'` into `thermal.jsonl` with each reading's raw value, inferred unit and normalized Celsius value; `analyze` reports start/end/peak/mean/rise per sensor, sample count, duration and median interval, with a missing capture a `no_data` naming `--thermal` instead of HapRay's silent `None`. Sensors come from the device, and a scenario step can request the capture | shipped in `0.25.0` |
 | P31 | beyond the inventory | `gate <budgets.json> <run>` judges a run against a versioned budget document — absolute `max`/`min` and `maxDelta`/`maxDeltaPct` against a baseline — with exit 2 for a violated or unmeasured budget and exit 1 for a gate that could not run. A metric the run never emitted is `missing`, never a pass, so a green build cannot mean an analyzer stopped running. HapRay's regression story stops at a chart a human reads | shipped in `0.26.0` |
 | P32 | beyond the inventory | `root-cause --baseline <run>` answers what changed between two runs: a deterministic movement of every metric (regressed / improved / unchanged / incomparable / gap) and of every evidence kind, rendered before the verdict and offered to the model, whose `metrics` citations are checked like evidence ids. A gap — a metric one run did not measure — is never an improvement, and the direction is the caller's baseline -> input rather than capture time. HapRay's multi-version page leaves the comparison to a human reading dropdowns and its root cause sees one run | shipped in `0.27.0` |
+| P33 | beyond the inventory | every command answers in one versioned envelope under `--machine-json` (one line on stdout) or `--result-file` (the same document on disk): `schemaVersion`, `toolId`, `command`, `success` derived from `exitCode`, the command's own payload, and the failure as a typed `error`. A `gate` verdict of fail is exit 2 with no `error` — the tool ran and the news is bad. `parseToolResult` validates on the way back in, which HapRay's write-only `machine_output.py` never does, and no result file is written unless asked | shipped in `0.28.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
@@ -1130,6 +1131,57 @@ always read as the app its own `scene.json` recorded. HapRay's multi-version
 page loads any report files and leaves the filtering to a human reading
 dropdowns, and its root cause reads a single run — there is no cross-run
 comparison of evidence anywhere in the tree.
+
+### Reading a result as a tool: `--machine-json` and `--result-file`
+
+Every command already has a `--json` document. An agent driving the CLI needs
+more than that: a version to check, a success flag it does not have to infer,
+and the failure as data rather than a stderr line.
+
+```bash
+ohos-perf analyze runs/latest --machine-json
+ohos-perf root-cause runs/latest --out out/ --result-file out/result.json
+```
+
+Both flags are global, so they go anywhere on the command line.
+`--machine-json` replaces the output with exactly one line; `--result-file`
+writes the same document to a file (parent directories are created) and leaves
+stdout as it was.
+
+```json
+{
+  "schemaVersion": "1.0",
+  "toolId": "ohos-perf",
+  "toolVersion": "0.28.0",
+  "command": "emulator.list",
+  "success": true,
+  "exitCode": 0,
+  "outputs": { "payload": { "instances": [] } }
+}
+```
+
+Three rules are load-bearing:
+
+- **`success` is exactly `exitCode === 0`.** It is derived, never accepted, so
+  a caller cannot describe a failed run as a successful one. `gate` is the case
+  that matters: a failed budget is exit 2, so the envelope says
+  `success: false` with **no** `error` — the measurement ran and the news is
+  bad. A reader that needs "did the tool run?" reads `error`; one that needs
+  "is the news good?" reads `outputs.payload`.
+- **`error` is present only when the command could not run**, and its `code` is
+  the same token stderr prints first. `CLI_USAGE` covers commander's own
+  refusals (a missing required option), which is the one class of failure that
+  never reaches a command.
+- **No default result file.** HapRay writes `hapray-tool-result.json` into the
+  report directory whether or not anyone asked, and a measurement tool must not
+  add a file to a scene a reader will diff. Here the file exists only where
+  `--result-file` says.
+
+The envelope is camelCase and versioned to match this package's own artifacts,
+and `parseToolResult` in `@ohos-perf/core` validates it on the way back in —
+unknown `schemaVersion`, another tool's `toolId`, and a `success` that
+contradicts `exitCode` are all refused, naming the value. HapRay's
+`machine_output.py` only writes.
 
 ## Budgets and the gate
 
