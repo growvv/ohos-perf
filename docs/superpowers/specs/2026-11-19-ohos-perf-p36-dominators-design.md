@@ -105,10 +105,14 @@ Measured 2026-11-19 on this machine, `packages/core/dist/index.js`:
 
 - The algorithm converges in **~70 rounds** on both fixtures (69 and 70), so
   the iterative form is not pathological on real heaps.
-- The graph in typed arrays costs ~12 MB at 861 k nodes / 2.27 M edges. That
-  is the price of retained size and it is why the *parse* still streams: the
-  graph is the only thing materialized, and only when retained size is asked
-  for.
+- The graph in typed arrays costs ~12 MB of adjacency at 861 k nodes / 2.27 M
+  edges — **but the adjacency is not the whole cost.** Measured end to end
+  after implementation, peak RSS on the 50 MB fixture moved 30.1 MB → 77.4 MB,
+  because the pass also holds postorder, reverse postorder, two DFS stacks,
+  predecessor CSR, idom and retained. The implementation's doc comment carries
+  the measured figure; the table above measures the adjacency alone. Still
+  below `JSON.parse`'s 106.7 MB, and the edge ceiling exists to bound exactly
+  this working set.
 - **Correctness pinned on a known graph** before any code: a five-node graph
   with two paths into node 3 (`0→1→3`, `0→2→3`) yields idom `[0,0,0,0,3]` and
   retained `[11111,10,100,11000,10000]`, matching hand-computed answers. A
