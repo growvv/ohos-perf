@@ -78,7 +78,11 @@ export class JsheapAnalyzer implements Analyzer {
     // shape of a leak, so its presence raises the severity — it is the one
     // finding no other capture in this package can produce.
     const items = [];
-    const largest = snapshot.retainedByConstructor[0];
+    // Task 3 reworks this item to report retained size. For now it reads the
+    // measured rows and keeps the self-size wording it had.
+    const largest = snapshot.retained.kind === 'measured'
+      ? snapshot.retained.byConstructor[0]
+      : undefined;
     if (largest !== undefined) {
       items.push(
         evidence({

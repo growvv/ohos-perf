@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { writeHeapSnapshot } from 'node:v8';
 import { readNumberArray, readSnapshotHeader, parseHeapSnapshot } from '../src/jsheap/snapshot';
+import type { ConstructorShare, HeapSnapshot } from '../src/jsheap/snapshot';
 
 /** A minimal but structurally real snapshot, in V8's own shape. */
 function document(overrides: Record<string, unknown> = {}): string {
@@ -224,10 +225,11 @@ describe('parseHeapSnapshot', () => {
     const snapshot = parseHeapSnapshot(heap());
     expect(snapshot.nodeCount).toBe(3);
     expect(snapshot.nodeCountByType.get('object')).toBe(2);
-    expect(snapshot.retainedByConstructor.find((row) => row.name === 'A'))
-      .toEqual({ name: 'A', selfSize: 64, count: 1 });
-    expect(snapshot.retainedByConstructor.find((row) => row.name === 'B'))
-      .toEqual({ name: 'B', selfSize: 32, count: 1 });
+    const measured = measuredRows(snapshot);
+    expect(measured.find((row) => row.name === 'A'))
+      .toEqual({ name: 'A', selfSize: 64, retainedSize: 64, count: 1 });
+    expect(measured.find((row) => row.name === 'B'))
+      .toEqual({ name: 'B', selfSize: 32, retainedSize: 32, count: 1 });
   });
 
   it('sums self size and counts detached nodes', () => {
@@ -240,7 +242,7 @@ describe('parseHeapSnapshot', () => {
     // `to_node` is node index * node_field_count (measured: 6 -> node 1).
     // Reading it as an index would attribute every edge to node 6.
     const snapshot = parseHeapSnapshot(heap());
-    expect(snapshot.retainedByConstructor.map((row) => row.name)).toEqual(['A', 'B']);
+    expect(measuredRows(snapshot).map((row) => row.name)).toEqual(['A', 'B']);
     expect(snapshot.nodeCountByType.get('object')).toBe(2);
   });
 
@@ -272,10 +274,17 @@ describe('parseHeapSnapshot', () => {
 
   it('ranks constructors by self size, ties broken by name', () => {
     const snapshot = parseHeapSnapshot(heap());
-    expect(snapshot.retainedByConstructor[0]!.name).toBe('A');
-    expect(snapshot.retainedByConstructor.map((row) => row.name)).toEqual(['A', 'B']);
+    expect(measuredRows(snapshot)[0]!.name).toBe('A');
+    expect(measuredRows(snapshot).map((row) => row.name)).toEqual(['A', 'B']);
   });
 });
+
+/** The measured constructor rows, asserting the analysis was not omitted. */
+function measuredRows(snapshot: HeapSnapshot): readonly ConstructorShare[] {
+  expect(snapshot.retained.kind).toBe('measured');
+  if (snapshot.retained.kind !== 'measured') throw new Error('unreachable');
+  return snapshot.retained.byConstructor;
+}
 
 /**
  * The reader's whole reason for existing is memory: a real app's snapshot is
@@ -347,6 +356,167 @@ describe('the reader is cheaper than a whole-document parse', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * Retained attribution materializes the graph, which costs memory the
+   * streaming parse did not. This pins that the reader still wins on a fixture
+   * large enough for the graph to dominate — the size a real app's heap is.
+   *
+   * Measured when this test was written: at 200 000 objects (a 50 MB snapshot)
+   * the reader peaks at 77.4 MB against `JSON.parse`'s 106.7 MB. The margin is
+   * ~28%, not the 3× it was before dominators, and that is the honest cost of
+   * retained size.
+   */
+  it('still beats a whole-document parse once the graph is materialized', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jsheap-mem-big-'));
+    try {
+      const file = join(dir, 'mem.heapsnapshot');
+      const keep: unknown[] = [];
+      for (let i = 0; i < 200_000; i++) keep.push({ i, s: `v-${i % 97}`, a: [i] });
+      writeHeapSnapshot(file);
+      expect(keep.length).toBe(200_000);
+
+      const probe = join(dir, 'probe.mjs');
+      writeFileSync(probe, `
+        import { readFileSync } from 'node:fs';
+        const [mode, file, moduleUrl] = process.argv.slice(2);
+        const { parseHeapSnapshot } = await import(moduleUrl);
+        const text = readFileSync(file, 'utf8');
+        const base = process.memoryUsage().rss;
+        let peak = base;
+        const timer = setInterval(() => {
+          const rss = process.memoryUsage().rss;
+          if (rss > peak) peak = rss;
+        }, 1);
+        if (mode === 'parse') {
+          const parsed = JSON.parse(text);
+          if (parsed.nodes.length === 0) throw new Error('empty');
+        } else if (parseHeapSnapshot(text).nodeCount === 0) {
+          throw new Error('empty');
+        }
+        peak = Math.max(peak, process.memoryUsage().rss);
+        clearInterval(timer);
+        console.log(peak - base);
+      `);
+      const moduleUrl = new URL('../dist/index.js', import.meta.url).href;
+      const peakOf = (mode: string): number => {
+        const run = spawnSync(process.execPath, [probe, mode, file, moduleUrl], {
+          encoding: 'utf8',
+        });
+        if (run.status !== 0) throw new Error(`${mode} probe failed: ${run.stderr}`);
+        return Number(run.stdout.trim());
+      };
+      expect(peakOf('scan')).toBeLessThan(peakOf('parse'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 120_000);
+});
+
+/**
+ * `root -> Array(self 8) -> 10 x Item(self 100 each)`, plus an optional
+ * orphan object nobody points at.
+ *
+ * Retained size answers a different question from self size: the Array's own
+ * bytes are 8, so a self-size ranking puts `Item` (1000) far ahead, while what
+ * the Array *holds* is 1008 bytes — which is what a leak hunt asks about. Self
+ * 8 rather than 0 is deliberate: at 0 the Array's retained size would tie
+ * `Item`'s and the ranking test could pass on the alphabetical tiebreak
+ * instead of on the property it claims to test.
+ *
+ * Node 0 is the root (hidden, one edge), node 1 the Array, nodes 2..11 the
+ * Items. Every record is `[type, name, id, self_size, edge_count,
+ * detachedness]` and every edge is `[type, name_or_index, to_node]` with
+ * `to_node` the node index times the node field count (6).
+ */
+function container(orphanSelfSize?: number): string {
+  const nodes: number[] = [0, 0, 1, 0, 1, 0, 3, 1, 2, 8, 10, 0];
+  for (let i = 0; i < 10; i++) nodes.push(3, 2, 3 + i, 100, 0, 0);
+  const edges: number[] = [2, 1, 6];
+  for (let i = 0; i < 10; i++) edges.push(2, i, (2 + i) * 6);
+  const strings = ['', 'Array', 'Item'];
+  let nodeCount = 12;
+  if (orphanSelfSize !== undefined) {
+    // Node 12, named `Orphan`, and no edge points at it.
+    nodes.push(3, 3, 99, orphanSelfSize, 0, 0);
+    strings.push('Orphan');
+    nodeCount = 13;
+  }
+  return JSON.stringify({
+    snapshot: {
+      meta: {
+        node_fields: ['type', 'name', 'id', 'self_size', 'edge_count', 'detachedness'],
+        node_types: [['hidden', 'array', 'string', 'object'], 'string', 'number', 'number', 'number', 'number'],
+        edge_fields: ['type', 'name_or_index', 'to_node'],
+        edge_types: [['context', 'element', 'property', 'internal', 'hidden', 'shortcut', 'weak'], 'string_or_number', 'node'],
+      },
+      node_count: nodeCount,
+      edge_count: 11,
+    },
+    nodes,
+    edges,
+    strings,
+  });
+}
+
+describe('retained attribution', () => {
+  it('attributes what a container holds to the container', () => {
+    const snapshot = parseHeapSnapshot(container());
+    expect(snapshot.retained.kind).toBe('measured');
+    if (snapshot.retained.kind !== 'measured') throw new Error('unreachable');
+    expect(snapshot.retained.byConstructor.find((row) => row.name === 'Array'))
+      .toEqual({ name: 'Array', selfSize: 8, retainedSize: 1008, count: 1 });
+    expect(snapshot.retained.byConstructor.find((row) => row.name === 'Item'))
+      .toEqual({ name: 'Item', selfSize: 1000, retainedSize: 1000, count: 10 });
+    expect(snapshot.retained.unreachableCount).toBe(0);
+  });
+
+  it('ranks by retained size, not self size', () => {
+    // By self size Item (1000) beats Array (8). By retained size Array holds
+    // 1008 and ranks first — the motivating difference, and not a tie, so the
+    // ordering cannot come from the name tiebreak.
+    const snapshot = parseHeapSnapshot(container());
+    if (snapshot.retained.kind !== 'measured') throw new Error('unreachable');
+    expect(snapshot.retained.byConstructor[0]!.name).toBe('Array');
+  });
+
+  it('gives a node the root cannot reach no retained size', () => {
+    // An object nothing points at is memory no one holds. It still counts in
+    // the heap total — it is in the file — but contributes no retained bytes.
+    const snapshot = parseHeapSnapshot(container(500));
+    if (snapshot.retained.kind !== 'measured') throw new Error('unreachable');
+    expect(snapshot.retained.unreachableCount).toBe(1);
+    expect(snapshot.totalSelfSize).toBe(1508);
+    expect(snapshot.retained.byConstructor.find((row) => row.name === 'Orphan'))
+      .toEqual({ name: 'Orphan', selfSize: 500, retainedSize: 0, count: 1 });
+  });
+
+  it('double-counts an object nested inside one of the same name, like DevTools', () => {
+    // `root -> Array(self 10) -> Array(self 20)`. One row sums both nodes'
+    // retained sizes (10 + 20 = 30 for the outer, 20 for the inner), so the
+    // row reports 50 against a heap of 30. DevTools does the same; the point
+    // of pinning it is that it is a stated property, not a surprise.
+    const text = JSON.stringify({
+      snapshot: {
+        meta: {
+          node_fields: ['type', 'name', 'id', 'self_size', 'edge_count', 'detachedness'],
+          node_types: [['hidden', 'array', 'string', 'object'], 'string', 'number', 'number', 'number', 'number'],
+          edge_fields: ['type', 'name_or_index', 'to_node'],
+          edge_types: [['context', 'element', 'property', 'internal', 'hidden', 'shortcut', 'weak'], 'string_or_number', 'node'],
+        },
+        node_count: 3,
+        edge_count: 2,
+      },
+      nodes: [0, 0, 1, 0, 1, 0, 3, 1, 2, 10, 1, 0, 3, 1, 3, 20, 0, 0],
+      edges: [2, 1, 6, 2, 2, 12],
+      strings: ['', 'Array'],
+    });
+    const snapshot = parseHeapSnapshot(text);
+    if (snapshot.retained.kind !== 'measured') throw new Error('unreachable');
+    expect(snapshot.retained.byConstructor)
+      .toEqual([{ name: 'Array', selfSize: 30, retainedSize: 50, count: 2 }]);
+    expect(snapshot.totalSelfSize).toBe(30);
   });
 });
 

@@ -10,10 +10,8 @@
  *
  * Measured on this machine, peak RSS above a baseline taken after the text is
  * read: a 9.4 MB snapshot parses into 19.6 MB with `JSON.parse`, and this
- * reader peaks at 12.3 MB; on a 50 MB snapshot, 106.5 MB against 30.1 MB. A
- * real HarmonyOS app's snapshot is tens to hundreds of megabytes, and the gap
- * widens with size, so the whole-document parse is the difference between a
- * measurement and an out-of-memory crash.
+ * reader peaks at 12.7 MB; on a 50 MB snapshot, 106.7 MB against 77.4 MB. A
+ * real HarmonyOS app's snapshot is tens to hundreds of megabytes.
  *
  * The header is parsed (it is small and bounded) and the string table is
  * parsed from its own slice. `nodes` and `edges` are **streamed**, never
@@ -21,6 +19,14 @@
  * `JSON.parse` allocates for them, so a scanner that built both arrays and
  * then aggregated measured *worse* than the parse it exists to replace
  * (29.6 MB against 19.6 MB on the 9.4 MB file). Only aggregates are retained.
+ *
+ * Retained attribution needs the whole graph — dominance is not a streaming
+ * property — so the graph is materialized as typed arrays (see
+ * {@link computeDominators}). That is the price of retained size: on the 50 MB
+ * fixture the reader peaked at 30.1 MB before it computed dominators and
+ * 77.4 MB after, still below `JSON.parse`'s 106.7 MB. On the 9.4 MB fixture
+ * the graph fits in the existing headroom and the peak did not move (12.3 MB
+ * before, 12.7 MB after).
  *
  * ## What is validated, and why it matters
  *
@@ -37,6 +43,7 @@
  */
 
 import { OhosPerfError } from '../errors';
+import { computeDominators } from './dominators';
 
 /** The layout and counts a snapshot declares about itself. */
 export interface HeapSnapshotHeader {
@@ -56,14 +63,49 @@ export interface HeapSnapshotHeader {
   readonly edgeFieldIndex: Readonly<Record<string, number>>;
 }
 
-/** One constructor's share of the heap, by self size. */
+/** One constructor's share of the heap, by self and retained size. */
 export interface ConstructorShare {
   readonly name: string;
   /** Sum of the `self_size` of every node of this name. */
   readonly selfSize: number;
+  /**
+   * Sum of the **retained** size of every node of this name.
+   *
+   * Retained size is what the constructor holds: the bytes that become
+   * unreachable when its nodes are collected. It is always at least
+   * `selfSize` for a reachable node, and it is what a leak hunt asks about —
+   * an `Array` of a few hundred bytes can retain megabytes.
+   *
+   * A node nested inside another node of the same name contributes to both
+   * nodes' retained size, so a row can exceed the heap total. DevTools reports
+   * the same figure and has the same property.
+   */
+  readonly retainedSize: number;
   /** How many nodes carry this name. */
   readonly count: number;
 }
+
+/**
+ * Retained attribution, or the measured reason it was not produced.
+ *
+ * A union rather than an empty list: "attribution was skipped because the
+ * graph is too large" and "no constructor retained anything" are different
+ * facts, and a caller that cannot tell them apart would report a heap with no
+ * holder as a healthy one.
+ */
+export type RetainedAnalysis =
+  | {
+      readonly kind: 'measured';
+      /** `object` and `closure` nodes grouped by name, largest retained first. */
+      readonly byConstructor: readonly ConstructorShare[];
+      /** Nodes the root cannot reach: in the file, held by nothing. */
+      readonly unreachableCount: number;
+    }
+  | {
+      readonly kind: 'omitted';
+      /** Why attribution was skipped, naming the size that triggered it. */
+      readonly reason: string;
+    };
 
 /**
  * A parsed snapshot: the aggregates a report reads.
@@ -83,14 +125,19 @@ export interface HeapSnapshot {
   /** How many nodes carry `detachedness === 2`. 0 when the field is absent. */
   readonly detachedCount: number;
   /**
-   * `object` and `closure` nodes grouped by name, largest first.
+   * What each constructor holds, by retained size — or why that was omitted.
    *
-   * This is **self** size, not retained size: a dominator-tree pass is a
-   * second algorithm with its own failure modes, and the top-N self-size list
-   * answers "which constructor holds the most bytes of its own" without one.
-   * Every consumer names it `selfSize` so no label claims retained size.
+   * Retained size comes from a dominator tree ({@link computeDominators}),
+   * which needs the whole graph: dominance is a property no single streaming
+   * pass can compute. The graph is compact — three `Int32Array`s and one
+   * `Float64Array` — so the parse itself still streams, and the string table
+   * is the only other large allocation.
+   *
+   * `selfSize` stays on each row because the two answer different questions:
+   * self size is what a constructor's own nodes cost, retained size is what
+   * they hold. A reader needs both to see which containers amplify.
    */
-  readonly retainedByConstructor: readonly ConstructorShare[];
+  readonly retained: RetainedAnalysis;
 }
 
 /** The fields this reader needs; a snapshot without one is refused. */
@@ -493,6 +540,7 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
   const typeAt = header.nodeFieldIndex['type']!;
   const nameAt = header.nodeFieldIndex['name']!;
   const selfSizeAt = header.nodeFieldIndex['self_size']!;
+  const edgeCountAt = header.nodeFieldIndex['edge_count']!;
   const detachedAt = header.nodeFieldIndex['detachedness'];
   const width = header.nodeFieldCount;
 
@@ -501,21 +549,37 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
   // against 18.3 MB on a 5.5 MB snapshot, measured) — the object graph was
   // exactly the cost the scan exists to avoid. Nothing here is retained per
   // node except the constructor groups, which are bounded by the number of
-  // distinct names, not by the number of nodes.
+  // distinct names, not by the number of nodes, and the typed arrays the
+  // dominator pass needs.
   const nodeCountByType = new Map<string, number>();
   const byName = new Map<string, { selfSize: number; count: number }>();
   let totalSelfSize = 0;
   let detachedCount = 0;
 
+  // The dominator pass needs per-node facts it cannot re-derive from the
+  // aggregates, so they are collected here while the text is already being
+  // read. Typed arrays, not objects: see the module doc.
+  const selfSizeOf = new Float64Array(header.nodeCount);
+  const edgeCountOf = new Int32Array(header.nodeCount);
+  const nameOf = new Int32Array(header.nodeCount);
+  /** 1 when the node is an `object` or `closure`, the types a row groups. */
+  const namedOf = new Uint8Array(header.nodeCount);
+
+  // One record buffer, reused. Allocating it per node was a per-node
+  // allocation of the very kind this reader exists to avoid.
+  const record = new Float64Array(width);
   for (let index = 0; index < header.nodeCount; index++) {
-    const record = new Float64Array(width);
     for (let slot = 0; slot < width; slot++) record[slot] = nodeCursor.next()!;
     const type = stringAt(header.nodeTypeNames, record[typeAt]!, `node ${index} type`);
     nodeCountByType.set(type, (nodeCountByType.get(type) ?? 0) + 1);
     const selfSize = record[selfSizeAt]!;
     totalSelfSize += selfSize;
+    selfSizeOf[index] = selfSize;
+    edgeCountOf[index] = record[edgeCountAt]!;
+    nameOf[index] = record[nameAt]!;
     if (detachedAt !== undefined && record[detachedAt] === 2) detachedCount += 1;
     if (type === 'object' || type === 'closure') {
+      namedOf[index] = 1;
       const name = stringAt(strings, record[nameAt]!, `node ${index} name`);
       const entry = byName.get(name);
       if (entry === undefined) byName.set(name, { selfSize, count: 1 });
@@ -526,21 +590,43 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
     }
   }
 
-  // Edges are validated and then discarded: nothing a report reads depends on
-  // them yet, and the only thing a bad one can do is mis-attribute, which is
-  // exactly what this refuses.
+  // The forward adjacency, in the same CSR layout `computeDominators` reads.
+  const outStart = new Int32Array(header.nodeCount + 1);
+  for (let i = 0; i < header.nodeCount; i++) {
+    outStart[i + 1] = outStart[i]! + edgeCountOf[i]!;
+  }
+  const targets = new Int32Array(header.edgeCount);
+
   const edgeWidth = header.edgeFieldCount;
   const toNodeAt = header.edgeFieldIndex['to_node']!;
-  const record = new Float64Array(edgeWidth);
+  const edgeRecord = new Float64Array(edgeWidth);
   for (let edge = 0; edge < header.edgeCount; edge++) {
-    for (let slot = 0; slot < edgeWidth; slot++) record[slot] = edgeCursor.next()!;
-    const toNode = record[toNodeAt]!;
+    for (let slot = 0; slot < edgeWidth; slot++) edgeRecord[slot] = edgeCursor.next()!;
+    const toNode = edgeRecord[toNodeAt]!;
     const target = toNode / width;
     if (toNode % width !== 0 || target >= header.nodeCount) {
       throw bad(
         `edge ${edge} points at to_node ${toNode}, past the end of ${header.nodeCount} nodes`,
       );
     }
+    targets[edge] = target;
+  }
+
+  const { idom, retained, reachableCount } = computeDominators({
+    nodeCount: header.nodeCount,
+    outStart,
+    targets,
+    selfSize: selfSizeOf,
+  });
+
+  // Retained bytes are attributed to the node's own constructor, and only for
+  // nodes the root reaches: an unreachable node's bytes are held by nothing,
+  // so adding them to a constructor row would invent a finding.
+  const byNameRetained = new Map<string, number>();
+  for (let index = 0; index < header.nodeCount; index++) {
+    if (idom[index] === -1 || namedOf[index] === 0) continue;
+    const name = stringAt(strings, nameOf[index]!, `node ${index} name`);
+    byNameRetained.set(name, (byNameRetained.get(name) ?? 0) + retained[index]!);
   }
 
   return {
@@ -549,7 +635,11 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
     nodeCountByType,
     totalSelfSize,
     detachedCount,
-    retainedByConstructor: rankConstructors(byName),
+    retained: {
+      kind: 'measured',
+      byConstructor: rankConstructors(byName, byNameRetained),
+      unreachableCount: header.nodeCount - reachableCount,
+    },
   };
 }
 
@@ -577,20 +667,28 @@ function readStringTable(text: string): readonly string[] {
 }
 
 /**
- * The constructor groups, largest self size first.
+ * The constructor rows, largest retained size first.
  *
- * Self size, not retained: a dominator pass is a second algorithm with its own
- * failure modes, and this list answers "which constructor holds the most bytes
- * of its own". Ties break on name so two runs on one file agree byte for byte.
- * The list is bounded to {@link TOP_CONSTRUCTORS} so a heap with half a
- * million distinct names keeps a flat memory profile — the groups are built in
- * the node pass and only the top are kept here.
+ * Ranked by **retained** size, because that is the question: what holds the
+ * memory. `selfSize` rides along on each row so a reader can see the
+ * difference — a container whose retained size dwarfs its self size is the
+ * actionable shape.
+ *
+ * Ties break on name so two runs on one file agree byte for byte. The list is
+ * bounded to {@link TOP_CONSTRUCTORS} so a heap with half a million distinct
+ * names keeps a flat memory profile.
  */
 function rankConstructors(
   byName: ReadonlyMap<string, { selfSize: number; count: number }>,
+  byNameRetained: ReadonlyMap<string, number>,
 ): readonly ConstructorShare[] {
   return [...byName.entries()]
-    .map(([name, share]) => ({ name, selfSize: share.selfSize, count: share.count }))
-    .sort((a, b) => (b.selfSize - a.selfSize) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map(([name, share]) => ({
+      name,
+      selfSize: share.selfSize,
+      retainedSize: byNameRetained.get(name) ?? 0,
+      count: share.count,
+    }))
+    .sort((a, b) => (b.retainedSize - a.retainedSize) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .slice(0, TOP_CONSTRUCTORS);
 }

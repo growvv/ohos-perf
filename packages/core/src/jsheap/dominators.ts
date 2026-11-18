@@ -81,13 +81,18 @@ export function computeDominators(graph: HeapGraph): Dominators {
   // --- Reverse postorder by an iterative DFS from the root. -----------------
   // `post` fills as each node's last successor is consumed, so reading it
   // backwards gives the reverse postorder the fixed point wants.
+  //
+  // `rpo` doubles as the visited set during the walk: it is filled with -1
+  // here and overwritten with the RPO number immediately after, so one array
+  // serves both jobs. On a large heap every array is 4 bytes a node and the
+  // working set is what the reader's memory claim rests on.
   const post = new Int32Array(nodeCount);
-  const visited = new Uint8Array(nodeCount);
+  const rpo = new Int32Array(nodeCount).fill(-1);
   const stackNode = new Int32Array(nodeCount);
   const stackEdge = new Int32Array(nodeCount);
   let postLen = 0;
   let sp = 0;
-  visited[0] = 1;
+  rpo[0] = 0;
   stackNode[0] = 0;
   stackEdge[0] = 0;
   sp = 1;
@@ -97,8 +102,8 @@ export function computeDominators(graph: HeapGraph): Dominators {
     if (outStart[v]! + k < outStart[v + 1]!) {
       stackEdge[sp - 1] = k + 1;
       const w = targets[outStart[v]! + k]!;
-      if (visited[w] === 0) {
-        visited[w] = 1;
+      if (rpo[w] === -1) {
+        rpo[w] = 0;
         stackNode[sp] = w;
         stackEdge[sp] = 0;
         sp++;
@@ -109,24 +114,33 @@ export function computeDominators(graph: HeapGraph): Dominators {
     }
   }
 
-  const order = new Int32Array(postLen);
-  for (let i = 0; i < postLen; i++) order[i] = post[postLen - 1 - i]!;
+  // Reverse `post` in place to get the reverse postorder. In place, not a
+  // second array: this is 4 bytes a node, and on a large heap an extra array
+  // is an extra allocation the graph does not need.
+  for (let i = 0, j = postLen - 1; i < j; i++, j--) {
+    const tmp = post[i]!;
+    post[i] = post[j]!;
+    post[j] = tmp;
+  }
+  const order = post.subarray(0, postLen);
 
-  const rpo = new Int32Array(nodeCount).fill(-1);
+  rpo.fill(-1);
   for (let i = 0; i < postLen; i++) rpo[order[i]!] = i;
 
   // --- Predecessors as CSR, so the fixed point can read them per node. ------
+  // `inCount` becomes the per-node write cursor after the prefix sum: the
+  // counts are dead once `inStart` holds them, so the same array serves both.
   const inCount = new Int32Array(nodeCount);
   for (let i = 0; i < targets.length; i++) inCount[targets[i]!]!++;
   const inStart = new Int32Array(nodeCount + 1);
   for (let i = 0; i < nodeCount; i++) inStart[i + 1] = inStart[i]! + inCount[i]!;
   const preds = new Int32Array(inStart[nodeCount]!);
-  const fill = new Int32Array(nodeCount);
+  inCount.fill(0);
   for (let v = 0; v < nodeCount; v++) {
     for (let k = outStart[v]!; k < outStart[v + 1]!; k++) {
       const w = targets[k]!;
-      preds[inStart[w]! + fill[w]!] = v;
-      fill[w] = fill[w]! + 1;
+      preds[inStart[w]! + inCount[w]!] = v;
+      inCount[w] = inCount[w]! + 1;
     }
   }
 
