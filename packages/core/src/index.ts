@@ -198,6 +198,8 @@ export { MAX_GRAPH_EDGES, MAX_GRAPH_NODES, parseHeapSnapshot, readNumberArray, r
 export type {
   ConstructorShare, HeapParseOptions, HeapSnapshot, HeapSnapshotHeader, RetainedAnalysis,
 } from './jsheap/snapshot';
+export { scanSourceFile, scanSourceTree } from './source/scan';
+export type { SourceFile, SourceSymbol } from './source/scan';
 export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';
 export {
   BUDGET_SCHEMA_VERSION,
