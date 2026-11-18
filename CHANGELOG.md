@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.31.0 — 2026-11-19
+
+**Retained size: the JS heap report now answers what holds the memory.**
+0.30.x reported self size and named the field accordingly, because a dominator
+pass is a second algorithm. That deferral was the largest gap left in the heap
+analysis, and it was not cosmetic. Measured on a real 9.4 MB snapshot:
+
+| constructor | self size | retained size |
+|---|---|---|
+| `Array` | 0.62 MB | **3.78 MB** |
+| `Object` | 0.96 MB | **3.14 MB** |
+| `system / Context` | 0.07 MB | **0.49 MB** |
+| `Map` | not in the top six | **0.15 MB** |
+
+Ranked by self size `Object` leads. Ranked by retained size `Array` leads and
+holds six times the bytes its own nodes account for, because it holds its
+elements. A reader acting on the old metric optimized the wrong constructor.
+
+- **A dominator tree** (`jsheap/dominators.ts`): iterative
+  Cooper–Harvey–Kennedy over a CSR graph in typed arrays. Measured 665 ms at
+  861 605 nodes / 2 268 808 edges, converging in ~70 rounds. Nothing recurses,
+  so a 100 000-deep object chain completes where a recursive walk would throw
+  `RangeError`.
+- **Two new `exact` metrics**: `jsheap.retained.largest.bytes` and
+  `jsheap.unreachable.count`. The `js_heap` evidence item names the largest
+  constructor by retained size and carries `selfSize` beside `retainedSize`, so
+  the amplification is visible rather than asserted.
+- **Unreachable is not detached.** `detachedness` is an annotation the embedder
+  wrote at dump time; reachability is computed from the graph now. They can
+  legitimately disagree, and the disagreement is what a leak hunt looks for, so
+  they are two metrics and neither is asserted to be zero.
+- **A documented ceiling.** Past `MAX_GRAPH_EDGES` (20 million, roughly 4.5
+  million for a 100 MB snapshot) the graph is not built and the heap totals are
+  reported with `retained: { kind: 'omitted' }` naming the size — a stated gap,
+  not an out-of-memory kill with no report. `AnalyzeContext.jsheapMaxGraphEdges`
+  lets a constrained caller lower it.
+- **The memory cost is measured, not assumed.** The graph is the price of
+  retained size: the 50 MB fixture's peak moved from 30.1 MB to 77.4 MB, still
+  below `JSON.parse`'s 106.7 MB. A second test pins that margin at the size a
+  real heap reaches; the 9.4 MB fixture did not move (12.7 MB).
+
+**Breaking:** `HeapSnapshot.retainedByConstructor` is replaced by
+`retained: RetainedAnalysis`, a union of a `measured` arm carrying the rows and
+the unreachable count and an `omitted` arm carrying a reason. A list could not
+express "attribution was skipped" without reading as "nothing retained
+anything".
+
+A node nested inside another node of the same name contributes to both rows, so
+a row can exceed the heap total. DevTools reports the same figure and has the
+same property; it is pinned by a test so it stays a stated property.
+
 ## 0.30.1 — 2026-11-18
 
 **The snapshot reader now actually beats `JSON.parse`, and the numbers say so.**

@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P35 are complete**: 2434 tests (2423 unit, 11 in the device
+**P1 through P36 are complete**: 2450 tests (2439 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — `npm install && npm run build`,
 with the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db`
-fixtures and any attached device absent — `npm run test:unit` reports **2395
+fixtures and any attached device absent — `npm run test:unit` reports **2411
 passed, 28 skipped (3 files)**, and all eleven device tests skip, so the
-combined clean checkout is **2406 passed, 39 skipped**. (Skip the build and 30
+combined clean checkout is **2422 passed, 39 skipped**. (Skip the build and 30
 files fail to resolve `@ohos-perf/core`, which is published as `dist`.) With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
@@ -251,7 +251,7 @@ Metric ids emitted by the analyzers:
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
 | `hilog.*` | hilog | `hilog.lines.count`, `hilog.rules.matched.count`, `hilog.rule.<name>.count` |
 | `coverage.*` | coverage ingestion | `coverage.lines.percent`, `coverage.lines.covered`, `coverage.functions.percent`, `coverage.branches.percent`, `coverage.files.count` |
-| `jsheap.*` | JS heap snapshot | `jsheap.total.bytes`, `jsheap.nodes.count`, `jsheap.detached.count`, `jsheap.objects.count` |
+| `jsheap.*` | JS heap snapshot | `jsheap.total.bytes`, `jsheap.nodes.count`, `jsheap.detached.count`, `jsheap.objects.count`, `jsheap.retained.largest.bytes`, `jsheap.unreachable.count` |
 | `redundant_file.*` | redundant-file I/O | `redundant_file.reads.count`, `redundant_file.files.used`, `redundant_file.files.unused` |
 | `thermal.*` | device thermal sensors | `thermal.<sensor>.start.celsius`, `thermal.<sensor>.peak.celsius`, `thermal.<sensor>.rise.celsius`, `thermal.interval.median.ms` |
 | `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` (animation labels live in `ui-diff.json`, not as metrics) |
@@ -312,11 +312,16 @@ under the app's data directory, and `-T` is a *thread* id (`hidumper -h`), so
 passing the pid there asked for a thread dump. What changed is that a scene
 carrying a snapshot is now analyzed: `analyze` reads `jsheap.heapsnapshot` and
 reports total heap, node count, detached count and object count as `exact`
-metrics, plus the largest constructor by self size. The reader streams the
+metrics, plus the largest constructor by **retained** size — the bytes that
+become unreachable when it is collected, from a dominator tree over the whole
+graph. Self size is carried beside it, because the two disagree sharply: on a
+real 9.4 MB snapshot `Array` holds 3.78 MB of its own 0.62 MB, and ranked by
+self size `Object` would lead instead. The reader streams the
 document instead of `JSON.parse`-ing it — one aggregate pass, nothing allocated
-per node and the two number arrays streamed rather than held: 12.3 MB peak
-against 19.6 MB for a full parse of the same 9.4 MB file, and 30.1 MB against
-106.5 MB on a 50 MB one, measured — and indexes every field from
+per node and the two number arrays streamed rather than held: 12.7 MB peak
+against 19.6 MB for a full parse of the same 9.4 MB file, and 77.4 MB against
+106.7 MB on a 50 MB one, measured, the larger figure including the dominator
+graph — and indexes every field from
 `snapshot.meta` rather than a
 hardcoded offset, and treats `to_node` as the node-slot offset V8 actually
 writes. A snapshot is a collector artifact, so it is read only when `scene.json`
@@ -362,6 +367,7 @@ The HapRay parity series (one release per major item, so far):
 | P33 | beyond the inventory | every command answers in one versioned envelope under `--machine-json` (one line on stdout) or `--result-file` (the same document on disk): `schemaVersion`, `toolId`, `command`, `success` derived from `exitCode`, the command's own payload, and the failure as a typed `error`. A `gate` verdict of fail is exit 2 with no `error` — the tool ran and the news is bad. `parseToolResult` validates on the way back in, which HapRay's write-only `machine_output.py` never does, and no result file is written unless asked | shipped in `0.28.0` |
 | P34 | beyond the inventory | `ohos-perf mcp` serves every command as an MCP tool over stdio: the tool list is derived from the commander program (one tool per leaf, `ohos-perf_<path>`, with that command's own options as its `inputSchema`), each call runs the command with `--machine-json` and returns the envelope as `structuredContent`, and the server answers both protocol eras — modern `2026-07-28` (`server/discover`, per-request `_meta`) and legacy `2025-11-25` (`initialize`) — so a client that predates the handshake change still works. `isError` means the command could not run, not that the news is bad. HapRay has no MCP surface at all | shipped in `0.29.0` |
 | P35 | beyond the inventory | `analyze` reads a scene's `jsheap.heapsnapshot` and reports the heap: total size, node count, detached count and object count as `exact` metrics, plus the largest constructor by self size. The reader streams the document instead of `JSON.parse`-ing it — one aggregate pass, nothing allocated per node and the two number arrays streamed rather than held: 12.3 MB peak against 19.6 MB for a full parse of the same 9.4 MB file, and 30.1 MB against 106.5 MB on a 50 MB one, measured — and indexes every field from `snapshot.meta` rather than a hardcoded offset, and treats `to_node` as the node-slot offset V8 writes; a snapshot is read only when `scene.json` declares the `jsheap` collector, and its absence is a `no_data` naming `--jsheap`. Also fixes the collector: `-T` is a thread id, and it was being passed the pid. HapRay captures the file and analyzes nothing | shipped in `0.30.1` |
+| P36 | beyond the inventory | retained size, which is the question a heap snapshot exists for: a dominator tree over the whole graph (iterative Cooper–Harvey–Kennedy, typed arrays only, 665 ms at 861 605 nodes / 2 268 808 edges) ranks constructors by what they **hold** rather than by their own bytes. Measured on a real 9.4 MB snapshot the ranking flips — `Array` self 0.62 MB / retained 3.78 MB leads, where self size puts `Object` (0.96 MB) first, and `system / Context` retains seven times its own size. `jsheap.retained.largest.bytes` and `jsheap.unreachable.count` join the metrics, the `js_heap` evidence names the largest retained holder and carries self size beside it, and unreachable nodes are counted separately from `detachedness` because an embedder annotation and a graph fact can legitimately disagree. A node nested inside another of the same name counts in both rows, as DevTools does. Past a documented 20-million-edge ceiling the graph is not built and the heap totals are reported with the omission named. The graph costs memory — the 50 MB fixture's peak moved 30.1 → 77.4 MB, still below `JSON.parse`'s 106.7 MB, pinned by a test | shipped in `0.31.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
