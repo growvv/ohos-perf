@@ -1192,7 +1192,7 @@ serves the same commands over stdio, so the agent gets the envelope as
 structured content:
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ohos-perf_analyze","arguments":{"scene":"runs/latest"}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ohos-perf_analyze","arguments":{"scene-dir":"runs/latest"}}}
 ```
 
 ```json
