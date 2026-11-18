@@ -59,6 +59,7 @@ import {
   renderFlamegraphSvg,
   FLAMEGRAPH_FILES,
   buildRootCauseDocument,
+  buildMovement,
   askRootCause,
   renderRootCauseMarkdown,
   rootCausePrompt,
@@ -104,7 +105,9 @@ import {
   type AgentModel,
   type ChatModel,
   type Evidence,
+  type Metric,
   type RootCauseDocument,
+  type RootCauseMovement,
   type Scene,
   type SceneLayout,
   type SceneMetadata,
@@ -712,6 +715,13 @@ interface RootCauseSource {
   device: string;
   window: TimeRange;
   evidence: Evidence[];
+  /** The run's metrics, for the movement; evidence alone cannot say what moved. */
+  metrics: Metric[];
+  /**
+   * Capture start from `scene.json` / `report.json`, when recorded. Copied into
+   * the movement so the document states it; never used to order the two runs.
+   */
+  startedAtNs?: number;
 }
 
 /** The bundle `root-cause.evidence.json` carries: what a model would be sent. */
@@ -719,6 +729,8 @@ interface RootCauseEvidenceBundle {
   schemaVersion: number;
   scene: RootCauseDocument['scene'];
   observations: RootCauseDocument['observations'];
+  /** The movement the model was shown, when a baseline was given. */
+  movement?: RootCauseMovement;
   /** The exact prompt text, so a reader can replay the turn by hand. */
   prompt: string;
 }
@@ -746,6 +758,40 @@ function rootCauseFromReport(file: string): RootCauseSource {
     device: model.scenario.device,
     window: model.scenario.window,
     evidence: model.sections.flatMap((section) => section.evidence),
+    metrics: model.sections.flatMap((section) => section.metrics),
+    ...(model.scenario.startedAtNs === undefined
+      ? {}
+      : { startedAtNs: model.scenario.startedAtNs }),
+  };
+}
+
+/**
+ * Load one side of a root-cause comparison.
+ *
+ * A directory with a `report.json` is a saved bundle and a `.json` path is one
+ * file of one; everything else is a scene, analyzed now with the same code
+ * `report` uses so the two commands can never disagree about what a capture
+ * measured. Shared by `input` and `--baseline` so the two sides can never be
+ * loaded by different rules.
+ */
+async function loadRootCauseSource(
+  open: (sceneDir: string, app?: string) => Promise<OpenedScene>,
+  input: string,
+  app: string | undefined,
+): Promise<RootCauseSource> {
+  const resolved = resolve(input);
+  if (resolved.endsWith('.json')
+    || (await isDirectory(resolved) && existsSync(join(resolved, 'report.json')))) {
+    return rootCauseFromReport(resolved.endsWith('.json') ? resolved : join(resolved, 'report.json'));
+  }
+  const detailed = await analyzeSceneDetailed(open, input, app);
+  return {
+    app: detailed.app.packageName,
+    device: detailed.device,
+    window: detailed.window,
+    evidence: detailed.run.result.evidence,
+    metrics: detailed.run.result.metrics,
+    ...(detailed.startedAtNs === undefined ? {} : { startedAtNs: detailed.startedAtNs }),
   };
 }
 
@@ -1277,22 +1323,41 @@ export function realDeps(
     },
 
     async rootCause(req) {
-      // A directory with a report.json is a saved bundle, and a `.json` path is
-      // one file of one. Everything else is a scene, analyzed now with the same
-      // code `report` uses so the two commands can never disagree about what a
-      // capture measured.
-      const input = resolve(req.input);
-      let source: RootCauseSource;
-      if (input.endsWith('.json') || (await isDirectory(input) && existsSync(join(input, 'report.json')))) {
-        source = rootCauseFromReport(input.endsWith('.json') ? input : join(input, 'report.json'));
-      } else {
-        const detailed = await analyzeSceneDetailed(openOfflineScene, req.input, req.app);
-        source = {
-          app: detailed.app.packageName,
-          device: detailed.device,
-          window: detailed.window,
-          evidence: detailed.run.result.evidence,
-        };
+      // Both sides load by the same rule, so a baseline cannot be read by a
+      // different loader than the input. The baseline is loaded first: a
+      // mismatch between the two apps is a refusal before anything is written
+      // or asked.
+      const source = await loadRootCauseSource(openOfflineScene, req.input, req.app);
+
+      let movement: RootCauseMovement | undefined;
+      if (req.baseline !== undefined) {
+        const baseline = await loadRootCauseSource(openOfflineScene, req.baseline, req.app);
+        if (baseline.app !== source.app) {
+          // `buildMovement` refuses this too, but with its own code. The CLI's
+          // error names the flag the user passed, so a terminal reader is told
+          // which file to look at.
+          throw new OhosPerfError(
+            `--baseline ${req.baseline} measures ${baseline.app}, but ${req.input}`
+              + ` measures ${source.app}; a movement is only comparable within one app`,
+            { code: 'ROOT_CAUSE_BAD_BASELINE' },
+          );
+        }
+        movement = buildMovement(
+          {
+            label: req.baseline,
+            app: baseline.app,
+            device: baseline.device,
+            ...(baseline.startedAtNs === undefined ? {} : { startedAtNs: baseline.startedAtNs }),
+            result: { metrics: baseline.metrics, evidence: baseline.evidence },
+          },
+          {
+            label: req.input,
+            app: source.app,
+            device: source.device,
+            ...(source.startedAtNs === undefined ? {} : { startedAtNs: source.startedAtNs }),
+            result: { metrics: source.metrics, evidence: source.evidence },
+          },
+        );
       }
 
       const document = buildRootCauseDocument({
@@ -1301,6 +1366,7 @@ export function realDeps(
         window: source.window,
         generator: { name: '@ohos-perf/core', version },
         evidence: source.evidence,
+        ...(movement === undefined ? {} : { movement }),
       });
 
       // `--offline` is a promise, not a hint: the model seam is not even
@@ -1324,6 +1390,7 @@ export function realDeps(
         schemaVersion: ROOT_CAUSE_SCHEMA_VERSION,
         scene: document.scene,
         observations: document.observations,
+        ...(document.movement === undefined ? {} : { movement: document.movement }),
         prompt: rootCausePrompt(document),
       };
       const artifacts: Array<[string, string]> = [

@@ -244,6 +244,40 @@ describe('command wiring', () => {
     expect(calls[0]!.offline).toBeUndefined();
   });
 
+  it('root-cause forwards --baseline, and omits it when it was not given', async () => {
+    const calls: Array<{ baseline?: string }> = [];
+    await parse(['root-cause', '/scene', '--out', '/out', '--baseline', '/before'], {
+      rootCause: async (req) => {
+        calls.push(req);
+        return {
+          document: buildRootCauseDocument({
+            app: 'a', device: 'd', window: { startNs: 0, endNs: 1 },
+            generator: { name: 'g', version: '1' },
+            evidence: [],
+          }),
+          outDir: '/out', files: [],
+        };
+      },
+    });
+    await parse(['root-cause', '/scene', '--out', '/out'], {
+      rootCause: async (req) => {
+        calls.push(req);
+        return {
+          document: buildRootCauseDocument({
+            app: 'a', device: 'd', window: { startNs: 0, endNs: 1 },
+            generator: { name: 'g', version: '1' },
+            evidence: [],
+          }),
+          outDir: '/out', files: [],
+        };
+      },
+    });
+    expect(calls[0]).toMatchObject({ baseline: '/before' });
+    // A key that is present but undefined is a different request from one the
+    // caller never named.
+    expect(calls[1]).not.toHaveProperty('baseline');
+  });
+
   it('root-cause requires --out before doing any work', async () => {
     const calls: unknown[] = [];
     const { error } = await parse(['root-cause', '/scene'], {

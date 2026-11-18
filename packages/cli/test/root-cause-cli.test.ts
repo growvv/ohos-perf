@@ -6,7 +6,9 @@ import { cliDeps } from './helpers/deps';
 import { runRootCauseCommand } from '../src/commands';
 import type { RootCauseOutput } from '../src/commands';
 import { buildRootCauseDocument } from '../../core/src/report/root-cause';
+import { buildMovement } from '../../core/src/report/movement';
 import type { Evidence } from '../../core/src/report/evidence';
+import type { Metric } from '../../core/src/report/metric';
 
 /*
  * P28 task 4 — `ohos-perf root-cause`.
@@ -150,6 +152,75 @@ describe('runRootCauseCommand', () => {
     );
     expect(result.stdout).toMatch(/ungrounded/i);
     expect(result.stdout).toContain('aboutToAppear');
+  });
+});
+
+describe('runRootCauseCommand — --baseline', () => {
+  const metric = (id: string, value: number): Metric => ({
+    id, value, unit: 'count', fidelity: 'exact',
+    provenance: { collector: 'hitrace', device: 'emu' },
+  });
+  const movement = buildMovement(
+    {
+      label: 'v1', app: 'com.demo', device: 'emu',
+      result: { metrics: [metric('frame.jank.rate', 10)], evidence: [] },
+    },
+    {
+      label: 'v2', app: 'com.demo', device: 'emu',
+      result: { metrics: [metric('frame.jank.rate', 15)], evidence: [] },
+    },
+  );
+  const moved = buildRootCauseDocument({
+    app: 'com.demo',
+    device: 'dev-1',
+    window: { startNs: 0, endNs: 2_000_000_000 },
+    generator: { name: '@ohos-perf/core', version: '0.27.0' },
+    evidence: [evidence({ id: 'ev-1', severity: 'critical', explain: 'frame 42 took 118.5 ms' })],
+    movement,
+  });
+
+  it('forwards --baseline to the seam', async () => {
+    let seen: unknown;
+    await runRootCauseCommand(
+      cliDeps({
+        async rootCause(req) {
+          seen = req;
+          return { document: moved, outDir: '/out', files: [] };
+        },
+      }),
+      { input: '/scene', outDir: '/out', baseline: '/before', offline: true },
+      {},
+    );
+    expect(seen).toMatchObject({ input: '/scene', outDir: '/out', baseline: '/before' });
+  });
+
+  it('prints a movement line naming both runs and the counts', async () => {
+    const result = await runRootCauseCommand(
+      cliDeps({ rootCause: async () => ({ document: moved, outDir: '/out', files: [] }) }),
+      { input: '/scene', outDir: '/out', baseline: '/before', offline: true },
+      {},
+    );
+    expect(result.stdout).toMatch(/movement\s+v1 → v2/);
+    expect(result.stdout).toMatch(/1 regressed/);
+  });
+
+  it('prints no movement line when there is no baseline', async () => {
+    const result = await runRootCauseCommand(
+      cliDeps({ rootCause: async () => ({ document, outDir: '/out', files: [] }) }),
+      { input: '/scene', outDir: '/out', offline: true },
+      {},
+    );
+    expect(result.stdout).not.toContain('movement');
+  });
+
+  it('keeps the movement in the --json document', async () => {
+    const result = await runRootCauseCommand(
+      cliDeps({ rootCause: async () => ({ document: moved, outDir: '/out', files: [] }) }),
+      { input: '/scene', outDir: '/out', baseline: '/before', offline: true },
+      { json: true },
+    );
+    const parsed = JSON.parse(result.stdout) as typeof moved;
+    expect(parsed.movement?.rows[0]?.id).toBe('frame.jank.rate');
   });
 });
 

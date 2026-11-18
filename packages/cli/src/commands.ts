@@ -437,6 +437,15 @@ export interface RootCauseRequest {
   /** A scene directory, or a `report.json` file / bundle directory. */
   input: string;
   outDir: string;
+  /**
+   * The run to compare against, of the same three kinds `input` accepts.
+   *
+   * The movement always runs baseline → input: `from` is this run and `to` is
+   * `input`, whatever the two capture times say. The direction is the
+   * caller's, because the question is "what changed since the release that was
+   * fine", not "what changed in chronological order".
+   */
+  baseline?: string;
   /** Never ask a model; write the deterministic report alone. */
   offline?: boolean;
   /** Which model client to use; the seam decides what names it knows. */
@@ -1224,6 +1233,18 @@ export async function runRootCauseCommand(
         ` (${totals.critical} critical, ${totals.warn} warn, ${totals.info} info)`,
     ];
     const analysis = document.analysis;
+    const movement = document.movement;
+    if (movement !== undefined) {
+      // The counts, not the verdict sentence: the verdict is already the
+      // document's first line in the Markdown, and a terminal reader wants the
+      // shape of the change before the prose.
+      lines.push(
+        `movement    ${movement.from.label} → ${movement.to.label}:`
+        + ` ${movement.totals.regressed} regressed,`
+        + ` ${movement.totals.improved} improved,`
+        + ` ${movement.totals.gaps} gaps`,
+      );
+    }
     if (analysis !== undefined) {
       const ungrounded = analysis.suspects.reduce(
         (sum, suspect) => sum + suspect.ungrounded.length, 0,

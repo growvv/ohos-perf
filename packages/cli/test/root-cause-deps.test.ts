@@ -75,6 +75,51 @@ function scene(): { root: string; sceneDir: string } {
   return { root, sceneDir: join(root, 'scene') };
 }
 
+/**
+ * A scene whose jank rate is decided by the fixture: `stuttered` flag-1 frames
+ * out of `rendered` actual frames, so the movement has a real number to compare.
+ *
+ * `metadata` writes a `scene.json`; without one the app resolves to `unknown`
+ * and the two runs are comparable by accident rather than by agreement.
+ */
+function jankScene(options: {
+  stuttered: number;
+  rendered: number;
+  app?: string;
+  startedAtNs?: number;
+}): { root: string; sceneDir: string } {
+  const root = mkdtempSync(join(tmpdir(), 'ohosperf-movement-'));
+  roots.push(root);
+  const sceneDir = join(root, 'scene');
+  mkdirSync(sceneDir);
+  const db = new DatabaseSync(join(sceneDir, 'trace.db'));
+  db.exec(`CREATE TABLE frame_slice(id INT, ts INT, vsync INT, ipid INT, itid INT,
+    callstack_id INT, dur INT, src TEXT, dst INT, type INT, type_desc TEXT,
+    flag INT, depth INT, frame_no INT)`);
+  const insert = db.prepare(
+    'INSERT INTO frame_slice VALUES (?, ?, ?, 17, 44, 0, 16000000, \'\', 0, 0, \'actural\', ?, 0, ?)',
+  );
+  for (let index = 0; index < options.rendered; index += 1) {
+    const flag = index < options.stuttered ? 1 : 0;
+    insert.run(index, 1000 + index, index, flag, index);
+  }
+  db.exec(`CREATE TABLE process(id INT, ipid INT, pid INT, name TEXT, start_ts INT,
+    switch_count INT, thread_count INT, slice_count INT, mem_count INT)`);
+  db.exec(`INSERT INTO process VALUES (0, 17, 17, 'com.demo', 0, 0, 1, 1, 0)`);
+  db.close();
+  if (options.app !== undefined) {
+    writeFileSync(join(sceneDir, 'scene.json'), JSON.stringify({
+      version: 1,
+      app: { packageName: options.app, processNames: [options.app] },
+      pids: [17],
+      deviceId: 'emu',
+      ...(options.startedAtNs === undefined ? {} : { startedAtNs: options.startedAtNs }),
+      capture: { startedAtMs: 0, durationMs: 1000, collectors: [] },
+    }));
+  }
+  return { root, sceneDir };
+}
+
 /** A model that returns a fixed answer and records the turns it saw. */
 function stubModel(answer: unknown): AgentModel & { turns: AgentTurn[] } {
   const turns: AgentTurn[] = [];
@@ -196,5 +241,132 @@ describe('realDeps().rootCause', () => {
     await expect(realDeps('0.23.0').rootCause({
       input: file, outDir: join(root, 'out'), offline: true,
     })).rejects.toThrow(/not a report document/);
+  });
+});
+
+describe('realDeps().rootCause — --baseline', () => {
+  it('writes the movement of two scenes, naming the metric that regressed', async () => {
+    // 1 of 4 frames stuttered (25%), then 2 of 4 (50%): the jank rate rose.
+    const before = jankScene({ stuttered: 1, rendered: 4, app: 'com.demo', startedAtNs: 1000 });
+    const after = jankScene({ stuttered: 2, rendered: 4, app: 'com.demo', startedAtNs: 2000 });
+    const result = await realDeps('0.27.0').rootCause({
+      input: after.sceneDir,
+      baseline: before.sceneDir,
+      outDir: join(after.root, 'out'),
+      offline: true,
+    });
+
+    const row = result.document.movement?.rows.find((entry) => entry.id === 'frame.jank.rate');
+    expect(row?.status).toBe('regressed');
+    expect(row?.from).toBe(25);
+    expect(row?.to).toBe(50);
+    // The artifact on disk is the same document, not a second rendering.
+    const written = JSON.parse(
+      readFileSync(join(result.outDir, 'root-cause.json'), 'utf8'),
+    ) as typeof result.document;
+    expect(written.movement?.rows).toEqual(result.document.movement?.rows);
+  });
+
+  it('accepts a baseline given as a saved report bundle', async () => {
+    const before = jankScene({ stuttered: 1, rendered: 4, app: 'com.demo', startedAtNs: 1000 });
+    const after = jankScene({ stuttered: 2, rendered: 4, app: 'com.demo', startedAtNs: 2000 });
+    const deps = realDeps('0.27.0');
+    const bundle = await deps.report({ sceneDir: before.sceneDir, outDir: join(before.root, 'bundle') });
+
+    const result = await deps.rootCause({
+      input: after.sceneDir,
+      baseline: join(before.root, 'bundle'),
+      outDir: join(after.root, 'out'),
+      offline: true,
+    });
+    expect(bundle.files).toContain('report.json');
+    expect(result.document.movement?.from.label).toContain('bundle');
+    expect(result.document.movement?.rows.some((row) => row.status === 'regressed')).toBe(true);
+  });
+
+  it('refuses a baseline for a different app before asking a model', async () => {
+    const before = jankScene({ stuttered: 1, rendered: 4, app: 'com.demo', startedAtNs: 1000 });
+    const after = jankScene({ stuttered: 2, rendered: 4, app: 'com.other', startedAtNs: 2000 });
+    process.env['OHOS_PERF_AGENT_BASE_URL'] = 'https://e.test/v1';
+    process.env['OHOS_PERF_AGENT_API_KEY'] = 'k';
+    let asked = false;
+    const model: AgentModel = {
+      async decide() {
+        asked = true;
+        return { done: true, reason: '{}' };
+      },
+    };
+
+    await expect(realDeps('0.27.0', { rootCauseModel: () => model }).rootCause({
+      input: after.sceneDir,
+      baseline: before.sceneDir,
+      outDir: join(after.root, 'out'),
+    })).rejects.toMatchObject({ code: 'ROOT_CAUSE_BAD_BASELINE' });
+    expect(asked).toBe(false);
+    // The message names both apps, so the reader can see which file is which.
+    await expect(realDeps('0.27.0').rootCause({
+      input: after.sceneDir,
+      baseline: before.sceneDir,
+      outDir: join(after.root, 'out2'),
+      offline: true,
+    })).rejects.toThrow(/com\.demo.*com\.other/);
+  });
+
+  it('reads the baseline as `from` even when it was captured later', async () => {
+    // `buildTrend` orders by start time; a movement must not, or a baseline
+    // captured later would silently invert every verdict.
+    const late = jankScene({ stuttered: 2, rendered: 4, app: 'com.demo', startedAtNs: 5000 });
+    const early = jankScene({ stuttered: 1, rendered: 4, app: 'com.demo', startedAtNs: 1000 });
+    const result = await realDeps('0.27.0').rootCause({
+      input: early.sceneDir,
+      baseline: late.sceneDir,
+      outDir: join(early.root, 'out'),
+      offline: true,
+    });
+    const row = result.document.movement?.rows.find((entry) => entry.id === 'frame.jank.rate');
+    expect(row?.from).toBe(50);
+    expect(row?.to).toBe(25);
+    expect(row?.status).toBe('improved');
+  });
+
+  it('never asks a model under --offline even with a baseline', async () => {
+    const before = jankScene({ stuttered: 1, rendered: 4, app: 'com.demo' });
+    const after = jankScene({ stuttered: 2, rendered: 4, app: 'com.demo' });
+    process.env['OHOS_PERF_AGENT_BASE_URL'] = 'https://e.test/v1';
+    process.env['OHOS_PERF_AGENT_API_KEY'] = 'k';
+    const model = stubModel({ summary: 's', suspects: [], caveats: [], needsMoreData: [] });
+
+    const result = await realDeps('0.27.0', { rootCauseModel: () => model }).rootCause({
+      input: after.sceneDir,
+      baseline: before.sceneDir,
+      outDir: join(after.root, 'out'),
+      offline: true,
+    });
+    expect(model.turns).toHaveLength(0);
+    expect(result.document.movement).toBeDefined();
+    expect(result.fellBackToOffline).toBeUndefined();
+  });
+
+  it('reports a metric the baseline did not measure as a gap, not an improvement', async () => {
+    // The baseline has no `process` table, so the binder analyzer cannot run
+    // there; its metrics must be gaps on that side, never a rise from zero.
+    const before = jankScene({ stuttered: 1, rendered: 4, app: 'com.demo' });
+    const after = jankScene({ stuttered: 2, rendered: 4, app: 'com.demo' });
+    const result = await realDeps('0.27.0').rootCause({
+      input: after.sceneDir,
+      baseline: before.sceneDir,
+      outDir: join(after.root, 'out'),
+      offline: true,
+    });
+    const { movement } = result.document;
+    expect(movement).toBeDefined();
+    for (const row of movement!.rows) {
+      if (row.status !== 'gap') continue;
+      expect(row.delta).toBeUndefined();
+      expect(row.gap?.reason).toContain(row.id);
+    }
+    // Nothing in this pair of scenes is an improvement: they differ only in
+    // how many frames stuttered.
+    expect(movement!.totals.improved).toBe(0);
   });
 });

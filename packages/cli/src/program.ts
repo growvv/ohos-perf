@@ -425,6 +425,7 @@ failure, never a pass.`)
     .description('rank a scene\'s measured evidence and explain it, with a model when one is configured')
     .argument('<input>', 'scene directory, report.json file, or a report bundle directory')
     .requiredOption('--out <dir>', 'output directory for root-cause.json, .md and .evidence.json')
+    .option('--baseline <input>', 'scene or report to compare against; the movement is always baseline -> input')
     .option('--offline', 'never ask a model; write the deterministic report alone')
     .option('--model <name>', 'model name to send; defaults to the configured one')
     .option('--app <packageName>', 'app package name, for evidence wording')
@@ -435,6 +436,7 @@ than failing: the ranked evidence is the report, and the model is an addition.
 A suspect citing a name this run never measured is marked ungrounded.`)
     .action(async (input: string, opts: {
       out: string;
+      baseline?: string;
       offline?: boolean;
       model?: string;
       app?: string;
@@ -446,6 +448,7 @@ A suspect citing a name this run never measured is marked ungrounded.`)
           {
             input,
             outDir: opts.out,
+            ...(opts.baseline === undefined ? {} : { baseline: opts.baseline }),
             ...(opts.offline === true ? { offline: true } : {}),
             ...(opts.model === undefined ? {} : { model: opts.model }),
             ...(opts.app === undefined ? {} : { app: opts.app }),
