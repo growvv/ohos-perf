@@ -128,6 +128,8 @@ const VALUE_EXPORTS = [
   'renderSummaryJson', 'summarizeReport', 'escapeHtml', 'FLAMEGRAPH_FILES',
   'renderFlamegraphSvg', 'renderFlamegraphHtml',
   'ROOT_CAUSE_SCHEMA_VERSION', 'buildRootCauseDocument', 'rankObservations',
+  'TOOL_ID', 'TOOL_RESULT_FILE', 'TOOL_RESULT_SCHEMA_VERSION', 'buildToolResult',
+  'parseToolResult', 'renderToolResultFile', 'renderToolResultLine',
   'PROMPT_EVIDENCE_LIMIT', 'ROOT_CAUSE_TURN', 'askRootCause', 'groundingVocabulary',
   'parseRootCauseAnswer', 'rootCausePrompt', 'ungroundedNames', 'renderRootCauseMarkdown',
   'readSceneMetadata',

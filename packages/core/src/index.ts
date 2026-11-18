@@ -481,3 +481,15 @@ export {
   ungroundedNames,
 } from './report/root-cause-model';
 export { renderRootCauseMarkdown } from './report/root-cause-markdown';
+
+// Machine-readable tool result (P33)
+export {
+  TOOL_ID,
+  TOOL_RESULT_FILE,
+  TOOL_RESULT_SCHEMA_VERSION,
+  buildToolResult,
+  parseToolResult,
+  renderToolResultFile,
+  renderToolResultLine,
+} from './machine/tool-result';
+export type { ToolResult, ToolResultError, ToolResultInput } from './machine/tool-result';
