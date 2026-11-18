@@ -36,6 +36,14 @@ elements. A reader acting on the old metric optimized the wrong constructor.
   reported with `retained: { kind: 'omitted' }` naming the size — a stated gap,
   not an out-of-memory kill with no report. `AnalyzeContext.jsheapMaxGraphEdges`
   lets a constrained caller lower it.
+- **Corrupt numbers are refusals, not plausible trees.** A negative `to_node`
+  divides evenly by the field count (`-6 % 6` is `-0`) and compares below
+  `nodeCount`, so it used to pass as node `-1` and quietly drop a node from
+  reachability. A negative `edge_count` walked the CSR prefix sum backwards and
+  wrote edges before the start of `targets`; counts that did not add up to
+  `edge_count` left zero-filled targets pointing at node 0. None of these moved
+  an array length, so the dominator tree stayed plausible and wrong. All four
+  are now named refusals, alongside a negative `self_size`.
 - **The memory cost is measured, not assumed.** The graph is the price of
   retained size: the 50 MB fixture's peak moved from 30.1 MB to 77.4 MB, still
   below `JSON.parse`'s 106.7 MB. A second test pins that margin at the size a

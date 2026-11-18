@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P36 are complete**: 2441 tests (2440 unit, 11 in the device
+**P1 through P36 are complete**: 2445 tests (2444 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — `npm install && npm run build`,
 with the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db`
-fixtures and any attached device absent — `npm run test:unit` reports **2412
+fixtures and any attached device absent — `npm run test:unit` reports **2416
 passed, 28 skipped (3 files)**, and all eleven device tests skip, so the
-combined clean checkout is **2423 passed, 39 skipped**. (Skip the build and 30
+combined clean checkout is **2427 passed, 39 skipped**. (Skip the build and 30
 files fail to resolve `@ohos-perf/core`, which is published as `dist`.) With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
