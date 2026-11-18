@@ -21,6 +21,12 @@ describe('buildCatalog', () => {
     expect(names).toEqual(['ohos-perf_analyze', 'ohos-perf_emulator_list']);
   });
 
+  it('maps a hyphen to an underscore, because a tool name is an identifier', () => {
+    // `ui-compare` is a command; `ohos-perf_ui-compare` is not an identifier a
+    // client can rely on, and the docs already say `ohos-perf_ui_compare`.
+    expect(toolName(['ui-compare'])).toBe('ohos-perf_ui_compare');
+  });
+
   it('flattens the path so the name is an identifier', () => {
     expect(toolName(['emulator', 'list'])).toBe('ohos-perf_emulator_list');
   });
@@ -65,7 +71,7 @@ describe('buildCatalog', () => {
     });
     expect(tool.inputSchema.required).toEqual(['library']);
     expect(tool.argv({ library: 'lib.so', addresses: ['a+0x1', 'b+0x2'] }))
-      .toEqual(['recover', 'lib.so', 'a+0x1', 'b+0x2']);
+      .toEqual(['recover', '--', 'lib.so', 'a+0x1', 'b+0x2']);
   });
 
   it('turns an option into an optional property, and a boolean into a flag', () => {
@@ -109,10 +115,28 @@ describe('buildCatalog', () => {
     expect(props['machineJson']).toBeUndefined();
   });
 
-  it('turns arguments into argv, options first so a negative positional is not a flag', () => {
+  it('separates positionals with -- so a value cannot become a flag', () => {
+    // Without the separator a positional is appended as a bare element and
+    // commander parses it: `{"scene-dir": "--result-file=/tmp/x.json"}` was
+    // consumed as the global `--result-file`, so a client-chosen string wrote
+    // a file. `--` ends option parsing, so everything after it is a value.
+    const tool = buildCatalog(sample())[0]!;
+    expect(tool.argv({ 'scene-dir': '--result-file=/tmp/x.json' }))
+      .toEqual(['analyze', '--', '--result-file=/tmp/x.json']);
+  });
+
+  it('puts a trailing flag before the separator, where it is still a flag', () => {
+    // The server appends `--machine-json`. After `--` it is a positional, so
+    // the command would run without the flag that produces the envelope.
+    const tool = buildCatalog(sample())[0]!;
+    expect(tool.argv({ 'scene-dir': '/scene', app: 'com.demo' }, ['--machine-json']))
+      .toEqual(['analyze', '--app', 'com.demo', '--machine-json', '--', '/scene']);
+  });
+
+  it('turns arguments into argv: flags, then --, then positionals', () => {
     const tool = buildCatalog(sample())[0]!;
     expect(tool.argv({ 'scene-dir': '/scene', app: 'com.demo' }))
-      .toEqual(['analyze', '--app', 'com.demo', '/scene']);
+      .toEqual(['analyze', '--app', 'com.demo', '--', '/scene']);
   });
 
   it('repeats an option that was given a list, instead of joining it', () => {
@@ -124,7 +148,7 @@ describe('buildCatalog', () => {
       .option('--out <dir>', 'output').option('--label <label>', 'a run label').action(() => {});
     const tool = buildCatalog(p)[0]!;
     expect(tool.argv({ reports: ['a.json', 'b.json'], out: 'o', label: ['first', 'second'] }))
-      .toEqual(['trend', '--out', 'o', '--label', 'first', '--label', 'second', 'a.json', 'b.json']);
+      .toEqual(['trend', '--out', 'o', '--label', 'first', '--label', 'second', '--', 'a.json', 'b.json']);
   });
 
   it('declares a repeatable option as an array, because commander cannot say so', () => {
@@ -142,7 +166,7 @@ describe('buildCatalog', () => {
 
   it('omits an option that was not supplied, rather than passing undefined', () => {
     const tool = buildCatalog(sample())[0]!;
-    expect(tool.argv({ 'scene-dir': '/scene' })).toEqual(['analyze', '/scene']);
+    expect(tool.argv({ 'scene-dir': '/scene' })).toEqual(['analyze', '--', '/scene']);
   });
 
   it('marks a scene reader read-only and a device driver not', () => {
@@ -150,6 +174,32 @@ describe('buildCatalog', () => {
     expect(analyze!.annotations).toEqual({
       readOnlyHint: true, destructiveHint: false, openWorldHint: false,
     });
+  });
+
+  it('does not call a command that writes files read-only', () => {
+    // `report --out` writes six artifacts. A client that skips its
+    // confirmation prompt on `readOnlyHint` would allow that write.
+    const p = new Command('ohos-perf').name('ohos-perf');
+    p.command('report').description('write a report').argument('<scene-dir>')
+      .requiredOption('--out <dir>', 'output').action(() => {});
+    p.command('analyze').description('read a scene').argument('<scene-dir>').action(() => {});
+    const tools = buildCatalog(p);
+    const report = tools.find((t) => t.name === 'ohos-perf_report')!;
+    const analyze = tools.find((t) => t.name === 'ohos-perf_analyze')!;
+    expect(report.annotations.readOnlyHint).toBe(false);
+    expect(analyze.annotations.readOnlyHint).toBe(true);
+  });
+
+  it('does not call a read-only emulator query destructive', () => {
+    const p = new Command('ohos-perf').name('ohos-perf');
+    const emulator = p.command('emulator').description('manage emulators');
+    emulator.command('list').description('list instances').action(() => {});
+    emulator.command('stop').description('stop one').argument('<name>').action(() => {});
+    const tools = buildCatalog(p);
+    const list = tools.find((t) => t.name === 'ohos-perf_emulator_list')!;
+    const stop = tools.find((t) => t.name === 'ohos-perf_emulator_stop')!;
+    expect(list.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });
+    expect(stop.annotations.destructiveHint).toBe(true);
   });
 
   it('sorts by name so a client prompt cache is stable', () => {

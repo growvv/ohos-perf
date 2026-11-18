@@ -30,6 +30,31 @@ envelope P33 defined — as data.
   becomes one flag per item instead of `String(['a','b'])`'s single `"a,b"`.
   Commander exposes no "is this repeatable" flag, so the catalog asks the
   option's own parser whether it returns a list.
+- **A value cannot become a flag.** Positionals are separated by `--`, so
+  `{"scene-dir": "--result-file=/tmp/x.json"}` is a path, not an option: before
+  this, a client-chosen string was consumed as the global `--result-file` and
+  wrote a file the client named. A value like `-5` is now a value too.
+- **The schema's types are enforced, not just its keys.** `{"procfs": "true"}`
+  is `-32602` naming the property and the type; before, the flag was silently
+  omitted and `collect` reported a capture missing a collector as a success.
+  An object where a string belongs is refused the same way, which also means a
+  value that cannot be stringified never reaches argv.
+- **Every request with an id is answered.** A throw anywhere in a call path is
+  `-32603` under that id; the stdio loop's stderr line is not an answer, and a
+  client waiting on an id waits forever.
+- **`initialize` negotiates instead of refusing.** A client on `2025-06-18` or
+  `2024-11-05` gets `2025-11-25` and continues — the handshake is the only
+  thing that changed. `-32022` is kept for a per-request `_meta` version the
+  server does not speak.
+- **`ping` is answered**, as both revisions require; a liveness probe that got
+  `-32601` could make a client drop the connection.
+- **`-32600` for a document that parsed but is not a request**, with its id
+  echoed. `-32700` is now only for bytes that were not JSON.
+- **Tool names are identifiers.** `ui-compare` is `ohos-perf_ui_compare`,
+  which is what the docs already said; the hyphen was the only one.
+- **The annotations tell the truth.** `report`, `render`, `trend`, `gate`,
+  `ui-compare` and `root-cause` write artifacts, so they are no longer
+  `readOnlyHint`; `emulator list` reads, so it is no longer `destructiveHint`.
 - **The schema is enforced.** `inputSchema` declares
   `additionalProperties: false`, so an undeclared argument is `-32602` naming
   it rather than a silent no-op: a one-letter `basline` would otherwise run a
@@ -65,7 +90,7 @@ envelope P33 defined — as data.
   out does.
 
 HapRay has no MCP surface at all, so this is beyond the inventory rather than a
-parity row. 2381 unit tests (2331 + 50 skipped on a clean checkout after `npm install && npm run build`); the device
+parity row. 2391 unit tests (2341 + 50 skipped on a clean checkout after `npm install && npm run build`); the device
 suite is unchanged.
 
 ## 0.28.0 — 2026-11-18

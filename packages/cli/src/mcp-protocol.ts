@@ -34,6 +34,8 @@ export const MCP_PARSE_ERROR = -32700;
 export const MCP_INVALID_REQUEST = -32600;
 export const MCP_METHOD_NOT_FOUND = -32601;
 export const MCP_INVALID_PARAMS = -32602;
+/** JSON-RPC 2.0: the server failed while handling a request it did accept. */
+export const MCP_INTERNAL_ERROR = -32603;
 /** MCP-specific: the request named a protocol version this server does not speak. */
 export const MCP_UNSUPPORTED_VERSION = -32022;
 
@@ -45,11 +47,18 @@ export const MCP_UNSUPPORTED_VERSION = -32022;
  */
 export type RequestId = string | number | null;
 
-/** One parsed line: a request to answer, a notification to absorb, or garbage. */
+/**
+ * One parsed line: a request to answer, a notification to absorb, or garbage.
+ *
+ * `id` on an invalid document is the id it carried, when that is readable —
+ * JSON-RPC distinguishes "could not parse" (`-32700`, no id) from "parsed but
+ * not a request" (`-32600`, id echoed), and a client waiting on that id gets
+ * an answer instead of silence.
+ */
 export type ParsedMessage =
   | { readonly kind: 'request'; readonly id: RequestId; readonly method: string; readonly params: Record<string, unknown> }
   | { readonly kind: 'notification'; readonly method: string; readonly params: Record<string, unknown> }
-  | { readonly kind: 'invalid'; readonly reason: string };
+  | { readonly kind: 'invalid'; readonly reason: string; readonly id?: RequestId };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -75,13 +84,15 @@ export function parseMessage(line: string): ParsedMessage {
   } catch {
     return { kind: 'invalid', reason: 'not JSON' };
   }
-  if (!isRecord(value) || value['jsonrpc'] !== '2.0') {
+  if (!isRecord(value)) {
     return { kind: 'invalid', reason: 'not a JSON-RPC 2.0 message' };
   }
+  // Parsed, but not a request: the id is still readable, so it is answered.
+  const readableId = isId(value['id']) ? value['id'] : undefined;
+  const invalid = { kind: 'invalid' as const, reason: 'not a JSON-RPC 2.0 message', ...(readableId === undefined ? {} : { id: readableId }) };
+  if (value['jsonrpc'] !== '2.0') return invalid;
   const method = value['method'];
-  if (typeof method !== 'string' || method === '') {
-    return { kind: 'invalid', reason: 'not a JSON-RPC 2.0 message' };
-  }
+  if (typeof method !== 'string' || method === '') return invalid;
   const rawParams = value['params'];
   const params = isRecord(rawParams) ? rawParams : {};
   const id = value['id'];

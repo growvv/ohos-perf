@@ -24,8 +24,20 @@ describe('parseMessage', () => {
     expect(parseMessage('{not json')).toEqual({ kind: 'invalid', reason: 'not JSON' });
   });
 
+  it('keeps a recoverable id when the document is JSON but not a request', () => {
+    // `-32700` means "I could not parse this"; `-32600` means "I parsed it and
+    // it is not a request". A document with an id still has an id to answer,
+    // so dropping it makes the client wait on a reply it could have had.
+    expect(parseMessage('{"jsonrpc":"2.0","id":5}')).toEqual({
+      kind: 'invalid', reason: 'not a JSON-RPC 2.0 message', id: 5,
+    });
+    expect(parseMessage('{"jsonrpc":"2.0","id":5}')).toMatchObject({ id: 5 });
+  });
+
   it('rejects a document that is not a JSON-RPC message', () => {
-    expect(parseMessage('{"id":1}')).toEqual({ kind: 'invalid', reason: 'not a JSON-RPC 2.0 message' });
+    // The id is carried when it is readable: a client that sent one gets an
+    // answer under it (-32600) rather than silence.
+    expect(parseMessage('{"id":1}')).toEqual({ kind: 'invalid', reason: 'not a JSON-RPC 2.0 message', id: 1 });
     expect(parseMessage('[]')).toEqual({ kind: 'invalid', reason: 'not a JSON-RPC 2.0 message' });
   });
 });

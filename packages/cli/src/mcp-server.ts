@@ -8,7 +8,9 @@
  */
 
 import {
+  MCP_INTERNAL_ERROR,
   MCP_INVALID_PARAMS,
+  MCP_INVALID_REQUEST,
   MCP_LEGACY_VERSION,
   MCP_METHOD_NOT_FOUND,
   MCP_PARSE_ERROR,
@@ -19,7 +21,7 @@ import {
   parseMessage,
   type RequestId,
 } from './mcp-protocol';
-import type { McpTool } from './mcp-catalog';
+import type { McpSchemaProperty, McpTool } from './mcp-catalog';
 
 /** One CLI invocation, as the server needs it: the three streams and a code. */
 export interface McpRunResult {
@@ -78,6 +80,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function firstStderrLine(stderr: string): string {
   const [first] = stderr.split('\n');
   return (first ?? '').trim();
+}
+
+/** Whether a supplied value has the type its schema declares. */
+function matchesType(value: unknown, property: McpSchemaProperty): boolean {
+  switch (property.type) {
+    case 'string':
+      return typeof value === 'string';
+    case 'boolean':
+      return typeof value === 'boolean';
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value);
+    case 'array':
+      return Array.isArray(value) && value.every((item) => typeof item === 'string');
+  }
+}
+
+/** The type, as a client should read it: `an array of strings`. */
+function describeType(property: McpSchemaProperty): string {
+  return property.type === 'array' ? 'an array of strings' : `a ${property.type}`;
+}
+
+/** The value's actual type, for the refusal message. */
+function describeValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return `a ${typeof value}`;
 }
 
 /** A thrown value as one line, for a message a client reads. */
@@ -148,8 +176,22 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         { tool: tool.name, known: Object.keys(tool.inputSchema.properties) },
       );
     }
+    // A value of the wrong type is not coerced: `{"procfs": "true"}` would
+    // otherwise omit the flag and report a capture without the collector the
+    // caller asked for as a success. A wrong measurement is worse than a
+    // refused call.
+    for (const [key, value] of Object.entries(supplied)) {
+      const property = tool.inputSchema.properties[key];
+      if (property === undefined || matchesType(value, property)) continue;
+      return fail(
+        id,
+        MCP_INVALID_PARAMS,
+        `${JSON.stringify(key)} must be ${describeType(property)}, not ${describeValue(value)}`,
+        { tool: tool.name, property: key, expected: property.type },
+      );
+    }
 
-    const argv = [...tool.argv(supplied), '--machine-json'];
+    const argv = tool.argv(supplied, ['--machine-json']);
     let run: McpRunResult;
     try {
       run = await options.run(argv);
@@ -205,7 +247,13 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     params: Record<string, unknown>,
   ): Promise<string> => {
     const version = requestedVersion(params);
-    if (version !== undefined && !MCP_SUPPORTED_VERSIONS.includes(version)) {
+    // `initialize` negotiates, it does not refuse: a client on 2025-06-18 can
+    // do everything this server offers, and the handshake is the only thing
+    // that changed. The answer names a version the server speaks, which is
+    // what the spec asks for. A per-request version is a claim about the
+    // request's own shape, so an unknown one there is an error.
+    const unknownVersion = version !== undefined && !MCP_SUPPORTED_VERSIONS.includes(version);
+    if (unknownVersion && method !== 'initialize') {
       return fail(id, MCP_UNSUPPORTED_VERSION, 'Unsupported protocol version', {
         supported: [...MCP_SUPPORTED_VERSIONS],
         requested: version,
@@ -214,10 +262,8 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 
     switch (method) {
       case 'initialize':
-        // Legacy handshake. The negotiated version is the client's when this
-        // server speaks it, which the check above has already established.
         return ok(id, {
-          protocolVersion: version ?? MCP_LEGACY_VERSION,
+          protocolVersion: MCP_SUPPORTED_VERSIONS.includes(version ?? '') ? version : MCP_LEGACY_VERSION,
           capabilities: CAPABILITIES,
           serverInfo: serverInfo(name, options.version),
         });
@@ -228,13 +274,17 @@ export function createMcpServer(options: McpServerOptions): McpServer {
           capabilities: CAPABILITIES,
           serverInfo: serverInfo(name, options.version),
         });
+      case 'ping':
+        // Both revisions require a prompt answer; a probe that gets -32601
+        // can make a client drop the connection.
+        return ok(id, { resultType: 'complete' });
       case 'tools/list':
         return ok(id, { resultType: 'complete', tools: toolList() });
       case 'tools/call':
         return callTool(id, params);
       default:
         return fail(id, MCP_METHOD_NOT_FOUND, `unknown method ${JSON.stringify(method)}`, {
-          supported: ['initialize', 'server/discover', 'tools/list', 'tools/call'],
+          supported: ['initialize', 'server/discover', 'ping', 'tools/list', 'tools/call'],
         });
     }
   };
@@ -243,13 +293,23 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     async handle(line: string): Promise<string | undefined> {
       const message = parseMessage(line);
       if (message.kind === 'invalid') {
-        // No id is recoverable from a document that did not parse, and
-        // JSON-RPC allows a null id for exactly this case.
-        return fail(null, MCP_PARSE_ERROR, message.reason);
+        // A document that did not parse has no id, and JSON-RPC allows a null
+        // one for exactly that case. One that parsed but is not a request
+        // still carries its id, and gets `-32600` under it.
+        return message.id === undefined
+          ? fail(null, MCP_PARSE_ERROR, message.reason)
+          : fail(message.id, MCP_INVALID_REQUEST, message.reason);
       }
       // A notification is answered with silence, by the spec.
       if (message.kind === 'notification') return undefined;
-      return dispatch(message.id, message.method, message.params);
+      try {
+        return await dispatch(message.id, message.method, message.params);
+      } catch (err) {
+        // Every path that can throw is inside a request that has an id, and a
+        // request with an id must be answered. The loop would otherwise print
+        // to stderr and move on, leaving the client on that id forever.
+        return fail(message.id, MCP_INTERNAL_ERROR, `the server could not answer: ${errorText(err)}`);
+      }
     },
   };
 }

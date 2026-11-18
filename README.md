@@ -35,7 +35,7 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P34 are complete**: 2392 tests (2381 unit, 11 in the device
+**P1 through P34 are complete**: 2402 tests (2391 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — `npm install && npm run build`,
 with the gitignored `spike/out/emu_big.db` and `spike/out/real_device.db`
@@ -1220,6 +1220,15 @@ structured content:
   `array` of `string`, and an array given to `--label` becomes one flag per
   item, so `trend` gets one label per report rather than the single value
   `"a,b"`.
+- **A value is never a flag.** Positionals sit after `--`, so a
+  `scene-dir` of `--result-file=/tmp/x` is a path the command will not find,
+  not an option the CLI obeys. Values are type-checked against the schema
+  (`{"procfs": "true"}` is refused, not silently dropped), and every request
+  with an id gets an answer — including one where the call path throws.
+- **`initialize` negotiates.** A client on `2025-06-18` is answered
+  `2025-11-25` and continues; `-32022` is only for a per-request version the
+  server does not speak. `ping` is answered, and a document that parsed but is
+  not a request is `-32600` under its own id.
 - **The schema is enforced, not just declared.** An argument the tool does not
   declare is `-32602` naming it, so `{"scene-dir": "/s", "basline": "/b"}` — one
   letter — is refused instead of silently running without a baseline and

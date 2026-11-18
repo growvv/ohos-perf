@@ -52,24 +52,43 @@ export interface McpTool {
   readonly description: string;
   readonly inputSchema: McpInputSchema;
   readonly annotations: McpAnnotations;
-  /** The CLI argv for these arguments, without `--machine-json`. */
-  readonly argv: (args: Record<string, unknown>) => string[];
+  /**
+   * The CLI argv for these arguments.
+   *
+   * `trailingFlags` are emitted before the `--` separator, because after it
+   * they would be positionals: the server's `--machine-json` is what produces
+   * the envelope, so it has to stay a flag.
+   */
+  readonly argv: (args: Record<string, unknown>, trailingFlags?: readonly string[]) => string[];
 }
 
 /**
- * Commands that only read a captured scene or a file on disk.
+ * Commands that change nothing outside this process.
  *
- * Named explicitly rather than inferred: "does this touch a device" is not
- * visible in a command's options, and guessing from a `--target` flag would
- * miss `collect` (whose `--target` is optional) and mislabel `gesture`.
+ * A hint a client may act on by skipping its confirmation prompt, so it has to
+ * mean what it says: `report`, `render`, `trend`, `gate`, `ui-compare` and
+ * `root-cause` all take `--out` and write artifacts, and a read-only hint on
+ * those would let a write through without asking. Named explicitly rather than
+ * inferred: "does this touch a device" is not visible in a command's options,
+ * and guessing from a `--target` flag would miss `collect` (whose `--target`
+ * is optional) and mislabel `gesture`.
  */
 const READ_ONLY = new Set([
-  'analyze', 'caps', 'compare', 'doctor', 'gate', 'hap', 'opt',
-  'query', 'render', 'report', 'root-cause', 'tools', 'trend', 'ui-compare',
+  'analyze', 'caps', 'compare', 'doctor', 'hap', 'opt', 'query', 'tools',
+  'emulator-list',
 ]);
 
-/** Commands that act on a device, or on something outside this process. */
-const ACTS_ON_DEVICE = new Set(['agent', 'collect', 'explore', 'gesture', 'run', 'emulator']);
+/**
+ * Commands that act on a device, or on something outside this process.
+ *
+ * A group name covers its leaves, so `emulator` alone would mark
+ * `emulator list` destructive; the read-only leaves are named here and the
+ * group is not.
+ */
+const ACTS_ON_DEVICE = new Set([
+  'agent', 'collect', 'explore', 'gesture', 'run',
+  'emulator-start', 'emulator-stop', 'emulator-create',
+]);
 
 /**
  * Options a tool call never exposes.
@@ -80,9 +99,15 @@ const ACTS_ON_DEVICE = new Set(['agent', 'collect', 'explore', 'gesture', 'run',
  */
 const HIDDEN_OPTIONS = new Set(['json', 'machineJson', 'resultFile', 'help', 'version']);
 
-/** `['emulator', 'list']` -> `ohos-perf_emulator_list`. */
+/**
+ * `['emulator', 'list']` -> `ohos-perf_emulator_list`.
+ *
+ * A hyphen becomes an underscore because the result is a tool *name* — an
+ * identifier a client stores and calls — and `ui-compare` is the one command
+ * with one in it.
+ */
 export function toolName(path: readonly string[]): string {
-  return `ohos-perf_${path.join('_')}`;
+  return `ohos-perf_${path.map((part) => part.replaceAll('-', '_')).join('_')}`;
 }
 
 /** A commander option's long name without the dashes. */
@@ -157,8 +182,11 @@ function schemaOf(command: Command): McpInputSchema {
  * negative coordinate) is not read as a flag; `--` is not needed here because
  * the value is passed as a single argv element.
  */
-function argvOf(command: Command, path: readonly string[]): (args: Record<string, unknown>) => string[] {
-  return (args) => {
+function argvOf(
+  command: Command,
+  path: readonly string[],
+): (args: Record<string, unknown>, trailingFlags?: readonly string[]) => string[] {
+  return (args, trailingFlags = []) => {
     const argv = [...path];
     for (const option of command.options) {
       const key = optionKey(option);
@@ -175,15 +203,23 @@ function argvOf(command: Command, path: readonly string[]): (args: Record<string
         argv.push(`--${key}`);
       }
     }
+    const positionals: string[] = [];
     for (const argument of command.registeredArguments) {
       const value = args[argumentKey(argument)];
       if (value === undefined) continue;
       if (argument.variadic && Array.isArray(value)) {
-        for (const item of value) argv.push(String(item));
+        for (const item of value) positionals.push(String(item));
       } else {
-        argv.push(String(value));
+        positionals.push(String(value));
       }
     }
+    // `--` before the positionals, because a positional is parsed by commander
+    // like any other element: `{"scene-dir": "--result-file=/tmp/x.json"}` was
+    // consumed as the global `--result-file` and wrote a file the client chose.
+    // After `--` every element is a value. A command with no positionals gets
+    // no separator — there is nothing for it to protect.
+    argv.push(...trailingFlags);
+    if (positionals.length > 0) argv.push('--', ...positionals);
     return argv;
   };
 }
@@ -198,13 +234,19 @@ function describe(command: Command): string {
   return parts.filter((part) => part !== '').join(' ');
 }
 
-/** The annotations for one command, from the two sets above. */
+/**
+ * The annotations for one command, from the two sets above.
+ *
+ * Both the group (`emulator`) and the flattened leaf (`emulator-stop`) are
+ * asked, so a set can name a whole group or one leaf of it.
+ */
 function annotationsOf(path: readonly string[]): McpAnnotations {
-  const top = path[0] ?? '';
+  const keys = [path[0] ?? '', path.join('-')];
+  const acts = keys.some((key) => ACTS_ON_DEVICE.has(key));
   return {
-    readOnlyHint: READ_ONLY.has(top),
-    destructiveHint: ACTS_ON_DEVICE.has(top),
-    openWorldHint: ACTS_ON_DEVICE.has(top),
+    readOnlyHint: keys.some((key) => READ_ONLY.has(key)),
+    destructiveHint: acts,
+    openWorldHint: acts,
   };
 }
 

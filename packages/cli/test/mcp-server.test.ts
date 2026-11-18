@@ -55,7 +55,7 @@ describe('createMcpServer — tools/call', () => {
     }));
     const { result } = JSON.parse(out!);
     // `--machine-json` is what makes the answer one envelope.
-    expect(seen[0]).toEqual(['analyze', '/scene', '--machine-json']);
+    expect(seen[0]).toEqual(['analyze', '--machine-json', '--', '/scene']);
     expect(result.isError).toBe(false);
     expect(result.structuredContent.command).toBe('analyze');
     expect(result.structuredContent.outputs.payload).toEqual({ metrics: [] });
@@ -109,6 +109,21 @@ describe('createMcpServer — tools/call', () => {
     }));
     expect(JSON.parse(out!).error).toMatchObject({ code: -32602 });
     expect(JSON.parse(out!).error.message).toContain('ohos-perf_nope');
+  });
+
+  it('refuses a value of the wrong type, naming the property and the type', async () => {
+    // `{"procfs": "true"}` is a string, so the flag is silently omitted and
+    // the capture runs without a collector the caller asked for — reported as
+    // success. A wrong measurement is worse than a refused call.
+    const s = server(async () => ({ stdout: envelope(), stderr: '', code: 0 }));
+    const out = await s.handle(JSON.stringify({
+      jsonrpc: '2.0', id: 18, method: 'tools/call',
+      params: { _meta: MODERN_META, name: 'ohos-perf_analyze', arguments: { 'scene-dir': ['/a', '/b'] } },
+    }));
+    const answer = JSON.parse(out!);
+    expect(answer.error.code).toBe(-32602);
+    expect(answer.error.message).toContain('scene-dir');
+    expect(answer.error.message).toContain('string');
   });
 
   it('refuses an argument the schema does not declare, naming it', async () => {
@@ -167,6 +182,20 @@ describe('createMcpServer — the two eras', () => {
     expect(result.capabilities.tools).toBeDefined();
   });
 
+  it('negotiates an older initialize down instead of refusing it', async () => {
+    // A deployed client on 2025-06-18 is fully capable of `tools/list` and
+    // `tools/call`; the handshake is the only thing that changed. The spec's
+    // answer to an unknown requested version is a version the server speaks,
+    // so the client continues rather than failing to connect.
+    const out = await server(async () => ({ stdout: '', stderr: '', code: 0 })).handle(JSON.stringify({
+      jsonrpc: '2.0', id: 19, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'c', version: '1' } },
+    }));
+    const { result } = JSON.parse(out!);
+    expect(result.protocolVersion).toBe('2025-11-25');
+    expect(result.capabilities.tools).toBeDefined();
+  });
+
   it('refuses an unknown protocol version with the supported list', async () => {
     const out = await server(async () => ({ stdout: '', stderr: '', code: 0 })).handle(JSON.stringify({
       jsonrpc: '2.0', id: 11, method: 'tools/list',
@@ -210,6 +239,27 @@ describe('createMcpServer — the two eras', () => {
     expect(answer.error.message).toContain('toString');
   });
 
+  it('answers an object where a string belongs, instead of dropping the id', async () => {
+    // JSON can carry an object with no primitive conversion, and `String()`
+    // on it throws. The type check refuses it before argv is built, which is
+    // the answer — the point of the case is that the id comes back at all:
+    // the stdio loop prints to stderr and moves on, so a throw in the call
+    // path would leave the client waiting on that id forever.
+    const s = server(async () => ({ stdout: envelope(), stderr: '', code: 0 }));
+    const out = await s.handle(JSON.stringify({
+      jsonrpc: '2.0', id: 17, method: 'tools/call',
+      params: {
+        _meta: MODERN_META,
+        name: 'ohos-perf_analyze',
+        arguments: { 'scene-dir': { toString: null, valueOf: null } },
+      },
+    }));
+    const answer = JSON.parse(out!);
+    expect(answer.id).toBe(17);
+    expect(answer.error.code).toBe(-32602);
+    expect(answer.error.message).toContain('scene-dir');
+  });
+
   it('answers a call the runner could not start, instead of dropping the id', async () => {
     // The CLI is spawned per call, so a spawn failure is a real path: a bad
     // entry script, a fork limit, an antivirus lock. If `handle` threw, the
@@ -224,6 +274,15 @@ describe('createMcpServer — the two eras', () => {
     expect(answer.id).toBe(14);
     expect(answer.result.isError).toBe(true);
     expect(answer.result.content[0].text).toContain('spawn EAGAIN');
+  });
+
+  it('answers ping, which both revisions require', async () => {
+    // A liveness probe that gets -32601 may make a client disconnect: the
+    // spec says the receiver must respond promptly.
+    const out = await server(async () => ({ stdout: '', stderr: '', code: 0 }))
+      .handle(JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'ping', params: { _meta: MODERN_META } }));
+    const { result } = JSON.parse(out!);
+    expect(result.resultType).toBe('complete');
   });
 
   it('refuses an unknown method', async () => {
