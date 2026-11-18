@@ -151,12 +151,22 @@ const TOP_CONSTRUCTORS = 20;
  * The largest graph this reader will build, in edges.
  *
  * Retained attribution needs the whole graph in memory, and that is the one
- * place this reader is not streaming: 4 bytes an edge for the forward
- * adjacency, 4 for the reverse, plus ~12 bytes a node for the working arrays.
- * At this ceiling that is roughly 160 MB of edges alone, on top of the text
- * and the string table.
+ * place this reader is not streaming. The cost is **two** dimensions, and both
+ * are bounded:
  *
- * The number is a budget, not a measurement of what fits: a real HarmonyOS
+ * - **edges**: 4 bytes forward adjacency plus 4 reverse (the predecessor CSR
+ *   `computeDominators` builds), so 8 bytes an edge — 160 MB at this ceiling.
+ * - **nodes**: `computeDominators` holds `post`, `rpo`, the two DFS stacks,
+ *   `inCount`, `inStart`, `idom` (7 × 4 bytes) and `retained` (8) = 36 bytes,
+ *   and the reader adds `selfSizeOf` (8), `edgeCountOf`/`nameOf` (8) and
+ *   `namedOf` (1) = 17, for ~53 bytes a node.
+ *
+ * At 20 M edges and the 4 M nodes that implies, that is ~210 MB of node arrays
+ * on top of the edge arrays. The edge ceiling alone is not a memory bound — a
+ * file of many zero-edge nodes trips no edge limit — which is why
+ * {@link MAX_GRAPH_NODES} exists beside it.
+ *
+ * The numbers are a budget, not a measurement of what fits: a real HarmonyOS
  * snapshot is tens to hundreds of megabytes, and a 100 MB one holds about
  * 4.5 million edges. Twenty million leaves headroom for a large app while
  * keeping a runaway dump from turning an analysis into an out-of-memory kill
@@ -164,10 +174,22 @@ const TOP_CONSTRUCTORS = 20;
  */
 export const MAX_GRAPH_EDGES = 20_000_000;
 
+/**
+ * The largest graph this reader will build, in nodes.
+ *
+ * The node dimension of the same budget: at ~53 bytes a node this is ~210 MB.
+ * Sized so that a real snapshot's node count never reaches it — a 100 MB
+ * HarmonyOS heap is under a million nodes — while a file that declares tens of
+ * millions of zero-edge nodes is refused rather than allocated.
+ */
+export const MAX_GRAPH_NODES = 4_000_000;
+
 /** How `parseHeapSnapshot` may be constrained. */
 export interface HeapParseOptions {
   /** Lower (or raise) the edge ceiling; see {@link MAX_GRAPH_EDGES}. */
   readonly maxGraphEdges?: number;
+  /** Lower (or raise) the node ceiling; see {@link MAX_GRAPH_NODES}. */
+  readonly maxGraphNodes?: number;
 }
 
 function bad(message: string): OhosPerfError {
@@ -582,8 +604,13 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
   // The ceiling is decided here, before any per-node array is allocated: the
   // point of the ceiling is to bound memory, so allocating 14.6 MB of arrays
   // the omitted path never reads would defeat it.
+  //
+  // Both dimensions, because the working set is ~53 bytes a node *and* 8 an
+  // edge: a file of many zero-edge nodes trips no edge ceiling and would still
+  // allocate gigabytes.
   const edgeLimit = options?.maxGraphEdges ?? MAX_GRAPH_EDGES;
-  const buildGraph = header.edgeCount <= edgeLimit;
+  const nodeLimit = options?.maxGraphNodes ?? MAX_GRAPH_NODES;
+  const buildGraph = header.edgeCount <= edgeLimit && header.nodeCount <= nodeLimit;
 
   // The dominator pass needs per-node facts it cannot re-derive from the
   // aggregates, so they are collected here while the text is already being
@@ -706,7 +733,7 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
         kind: 'omitted',
         reason:
           `the graph has ${header.nodeCount} nodes and ${header.edgeCount} edges,` +
-          ` past the ${edgeLimit}-edge ceiling;` +
+          ` past the ${edgeLimit}-edge / ${nodeLimit}-node ceiling;` +
           ' heap totals are reported without retained attribution',
       },
     };

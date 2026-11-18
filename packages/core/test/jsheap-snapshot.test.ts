@@ -659,10 +659,26 @@ describe('retained attribution', () => {
     expect(snapshot.retained.kind).toBe('omitted');
     if (snapshot.retained.kind !== 'omitted') throw new Error('unreachable');
     expect(snapshot.retained.reason).toMatch(/11 edges/);
-    expect(snapshot.retained.reason).toMatch(/5-edge ceiling/);
+    expect(snapshot.retained.reason).toMatch(/5-edge/);
     // Both counts, so a reader can tell how far past the ceiling the file is
     // without opening it: 12 nodes and 11 edges, refused at 5.
     expect(snapshot.retained.reason).toMatch(/12 nodes/);
+    expect(snapshot.totalSelfSize).toBe(1008);
+    expect(snapshot.nodeCount).toBe(12);
+  });
+
+  it('bounds the node count too, not only the edge count', () => {
+    // A snapshot of many zero-edge nodes has no edges to trip the edge
+    // ceiling, but the dominator working set is ~53 bytes a node: a file
+    // declaring 50 million of them would allocate gigabytes with the guard
+    // reporting itself satisfied. The ceiling is a memory bound, so it bounds
+    // both dimensions.
+    const snapshot = parseHeapSnapshot(container(), { maxGraphNodes: 5 });
+    expect(snapshot.retained.kind).toBe('omitted');
+    if (snapshot.retained.kind !== 'omitted') throw new Error('unreachable');
+    expect(snapshot.retained.reason).toMatch(/12 nodes/);
+    expect(snapshot.retained.reason).toMatch(/5-node ceiling/);
+    // The cheap aggregates are still exact.
     expect(snapshot.totalSelfSize).toBe(1008);
     expect(snapshot.nodeCount).toBe(12);
   });
