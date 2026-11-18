@@ -13,6 +13,7 @@ import { FrameLoadAnalyzer } from './frame-load';
 import { FrameAnalyzer } from './frames';
 import { GcAnalyzer } from './gc';
 import { HilogAnalyzer } from './hilog';
+import { JsheapAnalyzer } from './jsheap';
 import { MemoryAnalyzer } from './memory';
 import { MemoryMeasureAnalyzer } from './mem-measure';
 import { NativeMemoryAnalyzer } from './native-memory';
@@ -250,6 +251,7 @@ export function defaultAnalyzers(): Analyzer[] {
     new UiAnalyzer(),
     new RedundantFileAnalyzer(),
     new CoverageAnalyzer(),
+    new JsheapAnalyzer(),
     new ThermalAnalyzer(),
   ];
 }

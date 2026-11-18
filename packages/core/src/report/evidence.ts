@@ -26,6 +26,7 @@ export type EvidenceKind =
   | 'unresolved_symbol'
   | 'redundant_file'
   | 'coverage'
+  | 'js_heap'
   | 'optimization'
   | 'thermal';
 

@@ -110,6 +110,16 @@ export interface AnalyzeContext {
    */
   coverage?: string;
   /**
+   * The raw `jsheap.heapsnapshot` a scene carried, when it did.
+   *
+   * Captured by `collect --jsheap`, which needs a debug-signed or profilerable
+   * app. The analyzer parses it into heap metrics and reports `no_data` with a
+   * reason when it is absent, rather than a zero-byte heap — the device route
+   * is unavailable on the hardware measured so far, so a scene is the only way
+   * in and its absence has to be visible.
+   */
+  jsheap?: string;
+  /**
    * The scene's flattened UI tree, when it carried a `ui.json`. The `ui`
    * analyzer decides from what it is given rather than declaring `ui.tree` as a
    * requirement: a scene can carry a dump captured on a different device, and a

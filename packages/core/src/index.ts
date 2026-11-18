@@ -191,6 +191,11 @@ export type {
 } from './report/movement';
 export { CoverageAnalyzer, parseCoverageReport } from './analyze/coverage';
 export type { CoverageCounts, CoverageFile, CoverageRatio, CoverageReport } from './analyze/coverage';
+export { JsheapAnalyzer } from './analyze/jsheap';
+export { parseHeapSnapshot, readNumberArray, readSnapshotHeader } from './jsheap/snapshot';
+export type {
+  ConstructorShare, HeapNode, HeapSnapshot, HeapSnapshotHeader,
+} from './jsheap/snapshot';
 export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';
 export {
   BUDGET_SCHEMA_VERSION,
