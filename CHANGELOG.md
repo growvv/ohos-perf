@@ -34,13 +34,28 @@ bare JSON document, an exit code and a stderr line, and infer the rest. Now
   as `DOCTOR_HDC_UNAVAILABLE` and `symbols` on an unknown library as
   `SYMBOLS_NO_SUCH_LIBRARY`, so their stderr leads with a token a caller can
   branch on. Both printed lines change accordingly.
+- **Every refusal is a typed result.** The validation paths that used to
+  return a stderr line alone now carry a code, so `success: false` is never
+  indistinguishable from a crash: `TREND_TOO_FEW_REPORTS`, `HAP_BAD_PATH`,
+  `OPT_BAD_PATH`, `SCENARIO_BOTH_INPUTS`, `SCENARIO_BAD_ROUNDS`,
+  `SCENARIO_BAD_ONLY`, `AGENT_EMPTY_TASK`, `EMULATOR_FLAGS_REQUIRED`,
+  `CASES_INDEX_BAD_PATH`, `COLLECT_PLUGINS_WITHOUT_HIPROFILER`,
+  `COLLECT_THERMAL_INTERVAL_WITHOUT_THERMAL`, and `UITEST_BAD_GESTURE` for a
+  bad coordinate, velocity, key or text. Their stderr lines lead with the code.
+- **`agent` keeps its exit code under `--json`.** Only a verified walk is 0;
+  an unverified, refused or exhausted run is 1 in both output forms. Before,
+  the JSON branch defaulted to 0, so `--machine-json` reported a failed walk as
+  a successful tool result.
+- **A usage error prints once.** Commander writes its own message; the entry
+  point no longer repeats it, and its `(outputHelp)` placeholder no longer
+  leaks for the `help` subcommand or a bare group.
 - **Help and version stay text.** `--help` and `--version` under
   `--machine-json` print what they always printed: they are a request for
   text, not a result.
 
 The parity ledger is unchanged — 38 ported, 0 partial, 0 missing, 1 out
 (`build`): HapRay ships this as a plugin manifest field, not an action, so it
-is not one of the 39 rows. 2327 unit tests (2299 + 28 skipped on a clean
+is not one of the 39 rows. 2336 unit tests (2308 + 28 skipped on a clean
 checkout); the device suite is unchanged.
 
 ## 0.27.0 — 2026-11-18
