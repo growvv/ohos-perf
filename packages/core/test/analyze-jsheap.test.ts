@@ -82,7 +82,24 @@ describe('JsheapAnalyzer', () => {
     const result = await new JsheapAnalyzer().run(context({ jsheap: heap() }));
     const item = result.evidence.find((e) => e.kind === 'js_heap');
     expect(item?.explain).toContain('A');
-    expect(item?.signals).toMatchObject({ constructor: 'A', selfSize: 64 });
+    expect(item?.signals).toMatchObject({ constructor: 'A', selfSize: 64, retainedSize: 64 });
+  });
+
+  it('reports the largest retained holder and the unreachable count', async () => {
+    const result = await new JsheapAnalyzer().run(context({ jsheap: heap() }));
+    const byId = new Map(result.metrics.map((m) => [m.id, m.value]));
+    // Both objects are held only by the root, so each retains its own bytes.
+    expect(byId.get('jsheap.retained.largest.bytes')).toBe(64);
+    expect(byId.get('jsheap.unreachable.count')).toBe(0);
+  });
+
+  it('names the largest constructor by retained size and says so', async () => {
+    const result = await new JsheapAnalyzer().run(context({ jsheap: heap() }));
+    const item = result.evidence.find((e) => e.kind === 'js_heap');
+    expect(item?.explain).toContain('retained');
+    expect(item?.signals).toMatchObject({
+      constructor: 'A', selfSize: 64, retainedSize: 64,
+    });
   });
 
   it('warns when the snapshot holds detached nodes', async () => {

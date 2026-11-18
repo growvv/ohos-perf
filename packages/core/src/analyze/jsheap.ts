@@ -11,6 +11,21 @@
  * are `exact`: nothing sits between the snapshot and the metric but this
  * package's own parser, so calling them approximate would understate them.
  *
+ * ## What it measures
+ *
+ * Self size answers "how many bytes is this node", which is not the question a
+ * heap snapshot exists for: an `Array` holding ten megabytes of objects has a
+ * self size of a few hundred bytes. **Retained** size — the bytes that become
+ * unreachable when the node is collected — is, and it comes from a dominator
+ * tree ({@link computeDominators}). The headline evidence names the largest
+ * retained holder; `selfSize` rides along so the amplification is visible.
+ *
+ * `jsheap.unreachable.count` is reported separately from
+ * `jsheap.detached.count` because they are different facts: `detachedness` is
+ * an annotation the embedder wrote at dump time, reachability is computed from
+ * the graph now. They can legitimately disagree, and that disagreement is
+ * exactly what a leak hunt looks for.
+ *
  * ## Why it requires no capability
  *
  * `js.heap` is unavailable in the device matrix for a measured reason
@@ -78,11 +93,35 @@ export class JsheapAnalyzer implements Analyzer {
     // shape of a leak, so its presence raises the severity — it is the one
     // finding no other capture in this package can produce.
     const items = [];
-    // Task 3 reworks this item to report retained size. For now it reads the
-    // measured rows and keeps the self-size wording it had.
-    const largest = snapshot.retained.kind === 'measured'
-      ? snapshot.retained.byConstructor[0]
-      : undefined;
+    if (snapshot.retained.kind === 'omitted') {
+      // The graph was too large to attribute. The heap totals above are still
+      // exact — the file was read — so this is a stated gap, not a failure.
+      items.push(
+        evidence({
+          kind: 'js_heap',
+          severity: 'info',
+          subject: { process: ctx.app.packageName },
+          window: ctx.window,
+          signals: { totalSelfSize: snapshot.totalSelfSize, nodes: snapshot.nodeCount },
+          explain: snapshot.retained.reason,
+          drillDown: [],
+          key: 'jsheap:attribution-omitted',
+        }),
+      );
+      return { metrics, evidence: items };
+    }
+
+    // Retained size is what a constructor holds, which is the question a heap
+    // snapshot exists to answer: an Array of a few hundred bytes can retain
+    // megabytes. Self size rides along on the same evidence so a reader can
+    // see the amplification rather than having to trust the ranking.
+    const rows = snapshot.retained.byConstructor;
+    const largest = rows[0];
+    metrics.push(
+      make('jsheap.retained.largest.bytes', largest?.retainedSize ?? 0, 'bytes'),
+      make('jsheap.unreachable.count', snapshot.retained.unreachableCount, 'count'),
+    );
+
     if (largest !== undefined) {
       items.push(
         evidence({
@@ -93,13 +132,14 @@ export class JsheapAnalyzer implements Analyzer {
           signals: {
             constructor: largest.name,
             selfSize: largest.selfSize,
+            retainedSize: largest.retainedSize,
             count: largest.count,
             detachedCount: snapshot.detachedCount,
             totalSelfSize: snapshot.totalSelfSize,
           },
           explain:
-            `${largest.name} holds the largest self size at ${largest.selfSize} bytes` +
-            ` across ${largest.count} nodes` +
+            `${largest.name} retains the largest share: ${largest.retainedSize} bytes of` +
+            ` retained size across ${largest.count} nodes (self size ${largest.selfSize} bytes)` +
             (snapshot.detachedCount > 0
               ? `; ${snapshot.detachedCount} node(s) are detached`
               : ''),
