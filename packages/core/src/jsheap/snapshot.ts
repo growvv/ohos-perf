@@ -679,7 +679,8 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
       retained: {
         kind: 'omitted',
         reason:
-          `the graph has ${header.edgeCount} edges, past the ${edgeLimit}-edge ceiling;` +
+          `the graph has ${header.nodeCount} nodes and ${header.edgeCount} edges,` +
+          ` past the ${edgeLimit}-edge ceiling;` +
           ' heap totals are reported without retained attribution',
       },
     };

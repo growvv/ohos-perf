@@ -566,6 +566,9 @@ describe('retained attribution', () => {
     if (snapshot.retained.kind !== 'omitted') throw new Error('unreachable');
     expect(snapshot.retained.reason).toMatch(/11 edges/);
     expect(snapshot.retained.reason).toMatch(/5-edge ceiling/);
+    // Both counts, so a reader can tell how far past the ceiling the file is
+    // without opening it: 12 nodes and 11 edges, refused at 5.
+    expect(snapshot.retained.reason).toMatch(/12 nodes/);
     expect(snapshot.totalSelfSize).toBe(1008);
     expect(snapshot.nodeCount).toBe(12);
   });
