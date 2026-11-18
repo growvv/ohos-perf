@@ -316,6 +316,12 @@ describe.skipIf(!distExists)('cli entry point', () => {
 });
 
 /*
+ * Both blocks below are guarded by `distExists` like the one above: a clean
+ * checkout has no `dist/`, and an unguarded block fails thirteen tests there
+ * instead of skipping them, which would make the documented clean-checkout
+ * count a lie. Measured on a fresh `git clone` + `npm install`.
+ */
+/*
  * P33 task 4 — the contract from the built binary.
  *
  * A commander usage error never reaches an action, so the envelope cannot be
@@ -323,7 +329,7 @@ describe.skipIf(!distExists)('cli entry point', () => {
  * and still knows argv. Help is deliberately not a result — an agent asking
  * for it wants the text.
  */
-describe('tool-result contract from the built binary', () => {
+describe.skipIf(!distExists)('tool-result contract from the built binary', () => {
   it('prints one envelope for a missing required option', () => {
     const r = run(['root-cause', '--machine-json']);
     expect(r.status).toBe(1);
@@ -422,7 +428,7 @@ describe('tool-result contract from the built binary', () => {
  * that called `handle()` directly would not prove the command is reachable or
  * that nothing else writes to stdout.
  */
-describe('mcp over stdio', () => {
+describe.skipIf(!distExists)('mcp over stdio', () => {
   const MODERN = {
     'io.modelcontextprotocol/protocolVersion': '2026-07-28',
     'io.modelcontextprotocol/clientCapabilities': {},
