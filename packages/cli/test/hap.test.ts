@@ -204,7 +204,7 @@ describe('runHap', () => {
       { packagePath: packageFile() },
       {},
     );
-    expect(r).toEqual({ stdout: '', stderr: 'HAP_CRC_MISMATCH: bad entry\n', exitCode: 1 });
+    expect(r).toMatchObject({ stdout: '', stderr: 'HAP_CRC_MISMATCH: bad entry\n', exitCode: 1 });
   });
 
   it('names the refusal code a typed failure carries', async () => {
@@ -222,7 +222,7 @@ describe('runHap', () => {
       { packagePath: packageFile() },
       {},
     );
-    expect(r).toEqual({
+    expect(r).toMatchObject({
       stdout: '',
       stderr: 'HAP_CRC_MISMATCH: archive entry "a.txt" fails its CRC check\n',
       exitCode: 1,

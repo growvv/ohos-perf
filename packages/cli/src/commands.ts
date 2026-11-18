@@ -23,7 +23,7 @@ import {
   type GateVerdict,
   type RunResult, type Scenario,
 } from '@ohos-perf/core';
-import { doctorReport, failureLine, safeMessage, type DoctorDeps } from './doctor';
+import { doctorReport, errorOf, failureLine, safeMessage, type DoctorDeps } from './doctor';
 
 /**
  * The pure CLI layer.
@@ -42,6 +42,16 @@ export interface CliResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /**
+   * The command's structured answer, when it has one.
+   *
+   * `--json` renders it to stdout; `--machine-json` wraps it in the
+   * tool-result envelope. Present only in the branch that produced it, so a
+   * human-mode run carries no payload and nothing is computed twice.
+   */
+  result?: unknown;
+  /** The failure, when the command could not produce an answer. */
+  error?: { code?: string; message: string };
 }
 
 /** The narrow view of the capability probe that `caps` needs. */
@@ -692,6 +702,21 @@ function json(value: unknown): string {
   return JSON.stringify(value, null, 2) + '\n';
 }
 
+/** A successful `--json` answer: the payload is both stdout and `result`. */
+export function jsonResult(payload: unknown, exitCode = 0): CliResult {
+  return { stdout: json(payload), stderr: '', exitCode, result: payload };
+}
+
+/**
+ * A failure: the one stderr line, plus the same code and message as data.
+ *
+ * Exported because `program.ts` builds the same shape for a result file it
+ * could not write — a failure is a failure whichever layer produced it.
+ */
+export function failureResult(err: unknown, exitCode = 1): CliResult {
+  return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode, error: errorOf(err) };
+}
+
 /**
  * Check the toolchain.
  *
@@ -705,7 +730,7 @@ export async function runDoctor(
   const report = await doctorReport(deps.doctor, opts.target);
   const exitCode = report.hdc.ok ? 0 : 1;
 
-  if (opts.json) return { stdout: json(report), stderr: '', exitCode };
+  if (opts.json) return jsonResult(report, exitCode);
 
   let stdout = '';
   if (report.hdc.ok) {
@@ -749,12 +774,15 @@ export async function runCaps(
 ): Promise<CliResult> {
   const report = await deps.capsReport(opts.target);
   if (!report.hdcOk) {
-    return { stdout: '', stderr: `hdc unavailable: ${report.hdcError}\n`, exitCode: 1 };
+    return failureResult(new OhosPerfError(
+      `hdc unavailable: ${report.hdcError ?? 'unknown reason'}`,
+      { code: 'DOCTOR_HDC_UNAVAILABLE' },
+    ));
   }
   let stdout: string;
   if (opts.json) {
     // The machine contract stays a bare array; `probeError` is human-only.
-    stdout = json(report.capabilities);
+    return jsonResult(report.capabilities);
   } else if (report.probeError !== undefined) {
     // A failed probe is not "no capabilities": say what actually happened.
     stdout = `capabilities unavailable: ${report.probeError}\n`;
@@ -777,7 +805,7 @@ export async function runAnalyze(
 ): Promise<CliResult> {
   try {
     const result = await deps.analyze(sceneDir, opts.app);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
 
     const metrics = result.metrics
       .map((metric) => `${metric.id}  ${metric.value} ${metric.unit} (${metric.fidelity})\n`)
@@ -786,7 +814,7 @@ export async function runAnalyze(
     const summary = `evidence  ${result.evidence.length} items (jank: ${jank})\n`;
     return { stdout: metrics + summary, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -809,7 +837,7 @@ export async function runCollect(
 ): Promise<CliResult> {
   try {
     const result = await deps.collect(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
 
     let stdout = `scene  ${result.sceneDir}\n`;
     if (result.collectors.length > 0) {
@@ -831,7 +859,7 @@ export async function runCollect(
     if (result.soDir !== undefined) stdout += `symbols  ${result.soDir}\n`;
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -873,10 +901,10 @@ export async function runGesture(
 ): Promise<CliResult> {
   try {
     const result = await deps.gesture(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
     return { stdout: `${gestureSummary(req.gesture)} accepted\n`, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -894,14 +922,14 @@ export async function runQuery(
 ): Promise<CliResult> {
   try {
     const result = await deps.query(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
 
     const summary = `${result.query}  ${result.rows.length}/${result.total} rows` +
       `${result.truncated ? ' (truncated)' : ''}\n`;
     const rows = result.rows.map((row) => JSON.stringify(row) + '\n').join('');
     return { stdout: summary + rows, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -935,7 +963,7 @@ export async function runCompare(
 ): Promise<CliResult> {
   try {
     const comparison = await deps.compare(req);
-    if (opts.json) return { stdout: json(comparison), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(comparison);
 
     const rows = comparison.rows.map((row) => {
       const pct = row.deltaPct === undefined ? '' : `  (${row.deltaPct}%)`;
@@ -945,7 +973,7 @@ export async function runCompare(
       .join(', ');
     return { stdout: rows.join('') + `totals  ${totals}\n`, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -972,7 +1000,7 @@ export async function runGate(
     const output = await deps.gate(req);
     const exitCode = output.result.status === 'pass' ? 0 : 2;
 
-    if (opts.json) return { stdout: json(output.result), stderr: '', exitCode };
+    if (opts.json) return jsonResult(output.result, exitCode);
 
     const lines = output.result.verdicts.map((verdict) => `${verdictLine(verdict)}\n`);
     const { totals } = output.result;
@@ -985,7 +1013,7 @@ export async function runGate(
     }
     return { stdout: lines.join(''), stderr: '', exitCode };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1051,7 +1079,7 @@ export async function runUiCompare(
 ): Promise<CliResult> {
   try {
     const result = await deps.uiCompare(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
 
     const lines: string[] = [];
     if (result.tree === null) {
@@ -1085,7 +1113,7 @@ export async function runUiCompare(
     lines.push(`wrote  ${result.files.join(', ')} in ${result.outDir}\n`);
     return { stdout: lines.join(''), stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1108,7 +1136,7 @@ export async function runReport(
 ): Promise<CliResult> {
   try {
     const result = await deps.report(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
 
     const sections =
       result.sections.degraded === 0
@@ -1133,7 +1161,7 @@ export async function runReport(
       exitCode: 0,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1176,7 +1204,7 @@ export async function runTrend(
         path: report.path,
       })),
     });
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
 
     const order =
       result.orderedBy === 'startedAtNs'
@@ -1196,7 +1224,7 @@ export async function runTrend(
       exitCode: 0,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1221,7 +1249,7 @@ export async function runRootCauseCommand(
 ): Promise<CliResult> {
   try {
     const result = await deps.rootCause(req);
-    if (opts.json) return { stdout: json(result.document), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result.document);
 
     const { document } = result;
     const { totals } = document.summary;
@@ -1269,7 +1297,7 @@ export async function runRootCauseCommand(
       exitCode: 0,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1293,7 +1321,7 @@ export async function runExplore(
 ): Promise<CliResult> {
   try {
     const result = await deps.explore(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
 
     const order = result.strategy === 'random'
       ? `random (seed ${result.seed ?? 0})`
@@ -1330,7 +1358,7 @@ export async function runExplore(
       exitCode: 0,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1378,7 +1406,7 @@ export async function runAgentCommand(
   try {
     const result = await deps.agent(req);
     if (opts.json) {
-      return { stdout: json(result), stderr: AGENT_RISK_WARNING, exitCode: 0 };
+      return { ...jsonResult(result), stderr: AGENT_RISK_WARNING };
     }
 
     const { transcript, device } = result;
@@ -1408,7 +1436,7 @@ export async function runAgentCommand(
       exitCode: transcript.status === 'completed' ? 0 : 1,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1433,12 +1461,15 @@ export async function runSymbolRecovery(
   opts: { json?: boolean },
 ): Promise<CliResult> {
   if (!existsSync(req.library)) {
-    return { stdout: '', stderr: `symbols: no such library: ${req.library}\n`, exitCode: 1 };
+    return failureResult(new OhosPerfError(
+      `symbols: no such library: ${req.library}`,
+      { code: 'SYMBOLS_NO_SUCH_LIBRARY' },
+    ));
   }
 
   try {
     const result = await deps.symbols(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
 
     const lines = [
       `library  ${result.library}`,
@@ -1467,7 +1498,7 @@ export async function runSymbolRecovery(
 
     return { stdout: `${lines.join('\n')}\n`, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1487,7 +1518,7 @@ export async function runRender(
 ): Promise<CliResult> {
   try {
     const result = await deps.render(req);
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
     return {
       stdout:
         `report  ${result.outDir}/report.html\n` +
@@ -1499,7 +1530,7 @@ export async function runRender(
       exitCode: 0,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1525,11 +1556,7 @@ export async function runHap(
     if (opts.json) {
       // The document `hap.json` writes, plus the capability row. The caller's
       // `outDir` stays out: it belongs to the invocation, not the package.
-      return {
-        stdout: json({ analysis: result.analysis, capabilities: result.capabilities }),
-        stderr: '',
-        exitCode: 0,
-      };
+      return jsonResult({ analysis: result.analysis, capabilities: result.capabilities });
     }
 
     const analysis = result.analysis;
@@ -1563,7 +1590,7 @@ export async function runHap(
     }
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1637,11 +1664,7 @@ export async function runOptimization(
   try {
     const result = await deps.opt(req);
     if (opts.json) {
-      return {
-        stdout: json({ analysis: result.analysis, capabilities: result.capabilities }),
-        stderr: '',
-        exitCode: 0,
-      };
+      return jsonResult({ analysis: result.analysis, capabilities: result.capabilities });
     }
 
     const analysis = result.analysis;
@@ -1670,8 +1693,7 @@ export async function runOptimization(
     }
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}
-`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1716,8 +1738,7 @@ export async function runScenarioCommand(
     }
     scenario = parseScenario(text);
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}
-`, exitCode: 1 };
+    return failureResult(err);
   }
 
   try {
@@ -1731,11 +1752,7 @@ export async function runScenarioCommand(
       ...(input.keepGoing === true ? { keepGoing: true } : {}),
     });
     if (opts.json) {
-      return {
-        stdout: json(result),
-        stderr: '',
-        exitCode: result.status === 'failed' ? 1 : 0,
-      };
+      return jsonResult(result, result.status === 'failed' ? 1 : 0);
     }
 
     const ok = result.steps.filter((step) => step.status === 'ok').length;
@@ -1757,8 +1774,7 @@ export async function runScenarioCommand(
       exitCode: result.status === 'failed' ? 1 : 0,
     };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}
-`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1805,7 +1821,7 @@ async function runCases(
   try {
     loads = loadCases(discoverCases(input.casesDir!, input.filter));
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 
   const outcomes: CaseOutcome[] = [];
@@ -1868,7 +1884,7 @@ async function runCases(
   const failed = outcomes.filter((entry) => entry.status === 'failed').length;
   const exitCode = failed === 0 ? 0 : 1;
   if (opts.json) {
-    return { stdout: `${JSON.stringify(index, null, 2)}\n`, stderr: '', exitCode };
+    return jsonResult(index, exitCode);
   }
 
   const lines = outcomes.map((entry) => {
@@ -1903,7 +1919,7 @@ function firstFailure(result: RunResult): string | undefined {
 export function runTools(deps: CliDeps, opts: { json?: boolean }): CliResult {
   try {
     const tools = deps.tools();
-    if (opts.json) return { stdout: json(tools), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(tools);
 
     const lines = tools.map((tool) => {
       const args = tool.args
@@ -1913,7 +1929,7 @@ export function runTools(deps: CliDeps, opts: { json?: boolean }): CliResult {
     });
     return { stdout: lines.join(''), stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1949,7 +1965,7 @@ export async function runEmulatorList(
 ): Promise<CliResult> {
   try {
     const instances = await deps.emulator.list(targetsOf(opts));
-    if (opts.json) return { stdout: json({ instances }), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult({ instances });
     if (instances.length === 0) return { stdout: 'no emulator instances\n', stderr: '', exitCode: 0 };
 
     const rows = instances.map((instance) => [
@@ -1969,7 +1985,7 @@ export async function runEmulatorList(
     const body = [header, ...rows].map((cells) => line(cells) + '\n').join('');
     return { stdout: body, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -1990,14 +2006,14 @@ export async function runEmulatorStart(
       ...targetsOf(opts),
       ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
     });
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
     const line = result.alreadyRunning
       ? `${result.name} was already running on ${result.target}\n`
       : `${result.name} started on ${result.target}` +
         ` (booted in ${Math.round(result.waitedMs / 1000)}s)\n`;
     return { stdout: line, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -2015,13 +2031,13 @@ export async function runEmulatorStop(
 ): Promise<CliResult> {
   try {
     const result = await deps.emulator.stop(name, targetsOf(opts));
-    if (opts.json) return { stdout: json(result), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(result);
     const line = result.wasRunning
       ? `${result.name} stopped\n`
       : `${result.name} was not running\n`;
     return { stdout: line, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 
@@ -2039,12 +2055,12 @@ export async function runEmulatorCreate(
 ): Promise<CliResult> {
   try {
     const instance = await deps.emulator.create(req);
-    if (opts.json) return { stdout: json(instance), stderr: '', exitCode: 0 };
+    if (opts.json) return jsonResult(instance);
     const line = `Created ${instance.name} (${req.deviceType}, ${req.osVersion})` +
       ` at ${instance.instancePath}\n`;
     return { stdout: line, stderr: '', exitCode: 0 };
   } catch (err) {
-    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+    return failureResult(err);
   }
 }
 

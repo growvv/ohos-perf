@@ -89,6 +89,20 @@ export function failureLine(err: unknown): string {
   return safeMessage(err);
 }
 
+/**
+ * The failure as data: the code a caller branches on, and the message it prints.
+ *
+ * The same two facts {@link failureLine} renders as one line, kept separate so
+ * the tool-result envelope can carry them as fields. An untyped throw gets no
+ * code — inventing one would make `error.code` a guess rather than a token.
+ */
+export function errorOf(err: unknown): { code?: string; message: string } {
+  return {
+    ...(err instanceof OhosPerfError && err.code !== undefined ? { code: err.code } : {}),
+    message: safeMessage(err),
+  };
+}
+
 function message(err: unknown): string {
   return safeMessage(err);
 }

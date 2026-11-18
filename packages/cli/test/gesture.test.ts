@@ -50,7 +50,7 @@ describe('runGesture rendering', () => {
     ];
     for (const [gesture, line] of cases) {
       const r = await runGesture(deps({ gesture, output: 'No Error' }), { gesture }, {});
-      expect(r).toEqual({ stdout: line, stderr: '', exitCode: 0 });
+      expect(r).toMatchObject({ stdout: line, stderr: '', exitCode: 0 });
     }
   });
 
@@ -64,6 +64,6 @@ describe('runGesture rendering', () => {
     const d = deps();
     d.gesture = async () => { throw new Error('uitest not present on device'); };
     const r = await runGesture(d, { gesture: { action: 'key', key: 'Home' } }, {});
-    expect(r).toEqual({ stdout: '', stderr: 'uitest not present on device\n', exitCode: 1 });
+    expect(r).toMatchObject({ stdout: '', stderr: 'uitest not present on device\n', exitCode: 1 });
   });
 });

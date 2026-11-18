@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { cliDeps } from './helpers/deps';
-import type { CapabilityState } from '@ohos-perf/core';
+import { OhosPerfError, type CapabilityState } from '@ohos-perf/core';
 import {
-  runAnalyze, runCaps, runCollect, runDoctor,
-  type CliDeps, type DoctorDeps,
+  runAnalyze, runCaps, runCollect, runDoctor, runEmulatorList, runEmulatorStart,
+  runGate, runTools,
+  type CliDeps, type CliResult, type DoctorDeps,
 } from '../src/commands';
 
 const okDevice = {
@@ -292,7 +293,7 @@ describe('runCollect', () => {
 
   it('prints the scene path in human mode', async () => {
     const r = await runCollect(deps({ collect: async () => output }), req, {});
-    expect(r).toEqual({ stdout: 'scene  /abs/scene1\n', stderr: '', exitCode: 0 });
+    expect(r).toMatchObject({ stdout: 'scene  /abs/scene1\n', stderr: '', exitCode: 0 });
   });
 
   it('prints the scene and device as JSON in --json mode', async () => {
@@ -415,6 +416,73 @@ describe('runCollect', () => {
       req,
       { json: true },
     );
-    expect(r).toEqual({ stdout: '', stderr: 'no device attached\n', exitCode: 1 });
+    expect(r).toMatchObject({ stdout: '', stderr: 'no device attached\n', exitCode: 1 });
+  });
+});
+
+/*
+ * P33 task 2 — every command carries its payload and its failure.
+ *
+ * `--json` prints the payload; `--machine-json` wraps it. The envelope can only
+ * be as complete as these two fields, so a command that forgets one shows up
+ * here rather than as a payload-less envelope in a user's pipeline.
+ */
+describe('CliResult carries the structured answer', () => {
+  it('jsonResult returns the payload as stdout and as result', async () => {
+    const r = await runAnalyze(deps(), '/scene', { json: true });
+    expect(r.result).toEqual({ metrics: [], evidence: [] });
+    expect(JSON.parse(r.stdout)).toEqual(r.result);
+    expect(r.error).toBeUndefined();
+  });
+
+  it('keeps a command\'s own exit code beside its payload', async () => {
+    const r = await runGate(deps({ gate: async () => ({
+      result: { name: 'b', status: 'fail', verdicts: [], totals: { pass: 0, fail: 1, missing: 0 } },
+      files: [],
+    }) }), { budget: 'b.json', input: '/scene' }, { json: true });
+    expect(r.exitCode).toBe(2);
+    expect(r.result).toMatchObject({ status: 'fail' });
+    expect(r.error).toBeUndefined();
+  });
+
+  it('a failure carries the typed code and the message, and no result', async () => {
+    const r = await runAnalyze(
+      deps({ analyze: async () => { throw new OhosPerfError('nothing to ingest', { code: 'SCENE_NO_INPUT' }); } }),
+      '/scene',
+      { json: true },
+    );
+    expect(r.exitCode).toBe(1);
+    expect(r.result).toBeUndefined();
+    expect(r.error).toEqual({ code: 'SCENE_NO_INPUT', message: 'nothing to ingest' });
+    expect(r.stderr).toBe('SCENE_NO_INPUT: nothing to ingest\n');
+  });
+
+  it('a failure with no code still names the message', async () => {
+    const r = await runAnalyze(
+      deps({ analyze: async () => { throw new Error('plain'); } }), '/scene', {},
+    );
+    expect(r.error).toEqual({ message: 'plain' });
+    expect(r.stderr).toBe('plain\n');
+  });
+
+  it('every command with a --json branch returns a result in that branch', async () => {
+    const cases: Array<[string, () => Promise<CliResult>]> = [
+      ['caps', async () => runCaps(deps(), { json: true })],
+      ['tools', async () => runTools(deps(), { json: true })],
+      ['emulator.list', async () => runEmulatorList(deps(), { json: true })],
+      ['emulator.start', async () => runEmulatorStart(
+        deps({
+          emulator: {
+            ...cliDeps().emulator,
+            start: async () => ({ name: 'e', target: 't1', alreadyRunning: false, waitedMs: 0 }),
+          },
+        }),
+        'e',
+        { json: true },
+      )],
+    ];
+    for (const [name, run] of cases) {
+      expect((await run()).result, name).toBeDefined();
+    }
   });
 });

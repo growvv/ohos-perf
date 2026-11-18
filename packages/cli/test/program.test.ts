@@ -128,7 +128,7 @@ describe('command wiring', () => {
     const { emitted } = await parse(['compare', 'base', 'cur'], {
       compare: async () => { throw new Error('cannot read base'); },
     });
-    expect(emitted[0]).toEqual({ stdout: '', stderr: 'cannot read base\n', exitCode: 1 });
+    expect(emitted[0]).toMatchObject({ stdout: '', stderr: 'cannot read base\n', exitCode: 1 });
   });
 
   it('gate forwards the budget, input, --baseline, --out and --json', async () => {
@@ -342,7 +342,11 @@ describe('command wiring', () => {
       capsReport: async () => ({ hdcOk: false, hdcError: 'no hdc', capabilities: [] }),
     });
     expect(emitted).toHaveLength(1);
-    expect(emitted[0]).toEqual({ stdout: '', stderr: 'hdc unavailable: no hdc\n', exitCode: 1 });
+    // The code leads, like every other typed failure: it is the token a caller
+    // branches on, and this path used to print the message alone.
+    expect(emitted[0]).toMatchObject({
+      stdout: '', stderr: 'DOCTOR_HDC_UNAVAILABLE: hdc unavailable: no hdc\n', exitCode: 1,
+    });
   });
 
   it('analyze forwards the scene directory and --app', async () => {

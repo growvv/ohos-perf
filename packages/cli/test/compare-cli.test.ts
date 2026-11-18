@@ -71,7 +71,7 @@ describe('runCompare', () => {
       { baseline: 'a.json', current: 'b.json' },
       {},
     );
-    expect(r).toEqual({ stdout: '', stderr: 'cannot read a.json\n', exitCode: 1 });
+    expect(r).toMatchObject({ stdout: '', stderr: 'cannot read a.json\n', exitCode: 1 });
   });
 
   it('reports an empty comparison as the totals line alone', async () => {

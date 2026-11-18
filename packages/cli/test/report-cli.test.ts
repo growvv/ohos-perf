@@ -76,7 +76,7 @@ describe('runReport', () => {
       { sceneDir: 'scene1', outDir: '/reports/run1' },
       {},
     );
-    expect(r).toEqual({ stdout: '', stderr: 'cannot open scene1\n', exitCode: 1 });
+    expect(r).toMatchObject({ stdout: '', stderr: 'cannot open scene1\n', exitCode: 1 });
   });
 });
 

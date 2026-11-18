@@ -41,7 +41,7 @@ describe('runQuery', () => {
     const result = { query: 'frames.all', rows: [{ id: 1 }], total: 3, truncated: true };
     const r = await runQuery(deps({ query: async () => result }),
       { sceneDir: 'scene1', name: 'frames.all' }, { json: true });
-    expect(r).toEqual({ stdout: JSON.stringify(result, null, 2) + '\n', stderr: '', exitCode: 0 });
+    expect(r).toMatchObject({ stdout: JSON.stringify(result, null, 2) + '\n', stderr: '', exitCode: 0 });
   });
 
   it('prints a summary line and one compact JSON row per line', async () => {
@@ -59,7 +59,7 @@ describe('runQuery', () => {
     const r = await runQuery(
       deps({ query: async () => { throw new Error('boom'); } }),
       { sceneDir: 'scene1', name: 'frames.all' }, { json: true });
-    expect(r).toEqual({ stdout: '', stderr: 'boom\n', exitCode: 1 });
+    expect(r).toMatchObject({ stdout: '', stderr: 'boom\n', exitCode: 1 });
   });
 });
 
