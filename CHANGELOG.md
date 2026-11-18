@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.30.0 — 2026-11-18
+
+**The captured JS heap is analyzed, not just saved.** HapRay's row 20 asks the
+device for a `.heapsnapshot`, pulls it, and stops — on both sides of the
+inventory a heap is a file a person opens in DevEco Studio, and no report
+mentions it exists. `analyze` now reads it.
+
+- **A snapshot reader that does not parse the whole document.** A `.heapsnapshot`
+  is a small header, two flat number arrays and a string table. `JSON.parse` of
+  a 5.5 MB snapshot costs 17.6 MB of objects (measured), and a real app's is
+  tens to hundreds of megabytes, so the header is parsed from its own bounded
+  slice and `nodes`/`edges` are scanned digit by digit into a `Float64Array`.
+- **The layout comes from the file, never from an offset.** V8's field list has
+  changed (`detachedness` was added), so every field is located through
+  `snapshot.meta.node_fields` / `edge_fields`. A missing field this reader needs
+  is a refusal naming it; a missing `detachedness` is not, and the detached
+  metric is then simply absent rather than counting every node as attached.
+- **`to_node` is a node-slot offset**, `index * node_field_count`, not an index.
+  Reading it as an index mis-attributes every edge; a value past the end of
+  `nodes` is a typed refusal naming the edge and the value.
+- **Truncation is a refusal, not a partial heap.** Both array lengths are
+  checked against the header's counts before anything is read, so a dump killed
+  mid-write cannot be reported as a complete heap.
+- **Four `exact` metrics and one evidence item.** `jsheap.total.bytes`,
+  `jsheap.nodes.count`, `jsheap.detached.count`, `jsheap.objects.count`, plus
+  the largest constructor by self size — with the detached count raising its
+  severity, because a detached node is the shape of a leak and no other capture
+  in this package can show one. The evidence names `selfSize`, not retained
+  size: a dominator pass is a separate algorithm and no label here claims it.
+- **A scene without a snapshot gets a `no_data` naming `--jsheap`.** `js.heap`
+  stays unavailable in the device matrix for a reason that is now measured, not
+  inferred: on the Mate 60, with a debug-signed app running,
+  `hidumper --mem-jsheap <pid>` exits 0 and writes no file anywhere under the
+  app's data directory.
+- **The collector was asking for the wrong thing.** `hidumper -h` documents
+  `--mem-jsheap pid [-T tid]` — `-T` is a *thread* id, and the collector passed
+  the pid. It now dumps the whole process heap.
+- **Only a declared capture is read.** A snapshot is a collector artifact, so
+  `analyze` reads `jsheap.heapsnapshot` only when `scene.json` lists the
+  `jsheap` collector; a file an earlier capture left behind is not reported as
+  this scene's heap.
+
+The parser is checked against a snapshot this engine writes, and against a
+whole-document `JSON.parse` of the same bytes: same total, same type counts.
+
 ## 0.29.0 — 2026-11-18
 
 **Every command is an MCP tool.** An agent with an MCP client should not have
