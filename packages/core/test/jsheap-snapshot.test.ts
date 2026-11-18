@@ -518,6 +518,19 @@ describe('retained attribution', () => {
       .toEqual([{ name: 'Array', selfSize: 30, retainedSize: 50, count: 2 }]);
     expect(snapshot.totalSelfSize).toBe(30);
   });
+
+  it('omits attribution, naming the size, when the graph is past the ceiling', () => {
+    // The fixture has 11 edges and a 5-edge ceiling, so the graph is refused.
+    // The cheap aggregates are still exact — the heap was read, only the
+    // attribution is omitted.
+    const snapshot = parseHeapSnapshot(container(), { maxGraphEdges: 5 });
+    expect(snapshot.retained.kind).toBe('omitted');
+    if (snapshot.retained.kind !== 'omitted') throw new Error('unreachable');
+    expect(snapshot.retained.reason).toMatch(/11 edges/);
+    expect(snapshot.retained.reason).toMatch(/5-edge ceiling/);
+    expect(snapshot.totalSelfSize).toBe(1008);
+    expect(snapshot.nodeCount).toBe(12);
+  });
 });
 
 /**

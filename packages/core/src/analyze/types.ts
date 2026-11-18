@@ -120,6 +120,16 @@ export interface AnalyzeContext {
    */
   jsheap?: string;
   /**
+   * An edge ceiling for the snapshot's dominator graph, overriding the
+   * reader's default ({@link MAX_GRAPH_EDGES}).
+   *
+   * Retained attribution materializes the graph, so a constrained caller — one
+   * analysing on a small device or alongside other work — can lower the
+   * ceiling and still get the heap totals. Past the ceiling the analysis
+   * reports the size and omits attribution rather than risking an OOM.
+   */
+  jsheapMaxGraphEdges?: number;
+  /**
    * The scene's flattened UI tree, when it carried a `ui.json`. The `ui`
    * analyzer decides from what it is given rather than declaring `ui.tree` as a
    * requirement: a scene can carry a dump captured on a different device, and a

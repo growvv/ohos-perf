@@ -81,7 +81,7 @@ const VALUE_EXPORTS = [
   'EmulatorLifecycle', 'EmulatorNotFoundError',
   'PARITY_ROWS', 'paritySummary', 'parseRedundantFile', 'RedundantFileAnalyzer', 'JsheapCollector', 'readJsheapSnapshot', 'buildDepGraph', 'compareScenes', 'renderScenesComparison', 'sortSteps', 'buildTrend', 'renderTrendHtml', 'renderTrendJson', 'trendRunFromReport', 'buildMovement', 'BUNDLE_RENDERED_FILES', 'renderBundle', 'CoverageAnalyzer', 'parseCoverageReport', 'evaluateExpectation', 'explore', 'deviceExplorationHost',
   'recoverSymbols', 'symbolIndex', 'functionAt', 'addressOfOffset', 'measureNaming', 'normaliseName', 'explorationDevice', 'hashPageShape', 'hashTree', 'planNextAction', 'runAgent', 'replayAgent', 'agentPrompt', 'parseDecision', 'renderTree',
-  'JsheapAnalyzer', 'parseHeapSnapshot', 'readNumberArray', 'readSnapshotHeader', 'computeDominators',
+  'JsheapAnalyzer', 'parseHeapSnapshot', 'readNumberArray', 'readSnapshotHeader', 'computeDominators', 'MAX_GRAPH_EDGES',
   'describeDecision', 'irreversibleReason', 'IRREVERSIBLE_PATTERNS', 'GUI_TURN', 'httpAgentModel', 'httpChatModel', 'readAgentConfig',
   'explorationPrompt', 'llmChooser', 'parseStrategyAnswer',
   'BUDGET_SCHEMA_VERSION', 'parseBudgetDocument', 'deltaBudgetIds', 'evaluateGate', 'renderGateJson',

@@ -70,7 +70,7 @@ export class JsheapAnalyzer implements Analyzer {
       };
     }
 
-    const snapshot = parseHeapSnapshot(text);
+    const snapshot = parseHeapSnapshot(text, { maxGraphEdges: ctx.jsheapMaxGraphEdges });
     const provenance = {
       collector: 'scene:jsheap.heapsnapshot',
       table: 'js_heap_nodes',

@@ -194,9 +194,9 @@ export type { CoverageCounts, CoverageFile, CoverageRatio, CoverageReport } from
 export { JsheapAnalyzer } from './analyze/jsheap';
 export { computeDominators } from './jsheap/dominators';
 export type { Dominators, HeapGraph } from './jsheap/dominators';
-export { parseHeapSnapshot, readNumberArray, readSnapshotHeader } from './jsheap/snapshot';
+export { MAX_GRAPH_EDGES, parseHeapSnapshot, readNumberArray, readSnapshotHeader } from './jsheap/snapshot';
 export type {
-  ConstructorShare, HeapSnapshot, HeapSnapshotHeader, RetainedAnalysis,
+  ConstructorShare, HeapParseOptions, HeapSnapshot, HeapSnapshotHeader, RetainedAnalysis,
 } from './jsheap/snapshot';
 export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';
 export {

@@ -102,6 +102,18 @@ describe('JsheapAnalyzer', () => {
     });
   });
 
+  it('reports the heap totals without attribution when the graph is too large', async () => {
+    const result = await new JsheapAnalyzer().run(
+      context({ jsheap: heap(), jsheapMaxGraphEdges: 1 }),
+    );
+    const ids = result.metrics.map((m) => m.id);
+    expect(ids).toContain('jsheap.total.bytes');
+    expect(ids).not.toContain('jsheap.retained.largest.bytes');
+    expect(ids).not.toContain('jsheap.unreachable.count');
+    expect(result.evidence.find((e) => e.kind === 'js_heap')?.explain)
+      .toMatch(/too large|attribution/i);
+  });
+
   it('warns when the snapshot holds detached nodes', async () => {
     // A detached node is memory the app can no longer reach and has not yet
     // freed — the shape of a leak, and the one thing a heap snapshot answers

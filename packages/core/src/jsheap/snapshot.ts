@@ -147,6 +147,29 @@ const REQUIRED_EDGE_FIELDS = ['type', 'name_or_index', 'to_node'] as const;
 /** How many constructors the top list keeps. */
 const TOP_CONSTRUCTORS = 20;
 
+/**
+ * The largest graph this reader will build, in edges.
+ *
+ * Retained attribution needs the whole graph in memory, and that is the one
+ * place this reader is not streaming: 4 bytes an edge for the forward
+ * adjacency, 4 for the reverse, plus ~12 bytes a node for the working arrays.
+ * At this ceiling that is roughly 160 MB of edges alone, on top of the text
+ * and the string table.
+ *
+ * The number is a budget, not a measurement of what fits: a real HarmonyOS
+ * snapshot is tens to hundreds of megabytes, and a 100 MB one holds about
+ * 4.5 million edges. Twenty million leaves headroom for a large app while
+ * keeping a runaway dump from turning an analysis into an out-of-memory kill
+ * with no report.
+ */
+export const MAX_GRAPH_EDGES = 20_000_000;
+
+/** How `parseHeapSnapshot` may be constrained. */
+export interface HeapParseOptions {
+  /** Lower (or raise) the edge ceiling; see {@link MAX_GRAPH_EDGES}. */
+  readonly maxGraphEdges?: number;
+}
+
 function bad(message: string): OhosPerfError {
   return new OhosPerfError(message, { code: 'JSHEAP_BAD_SNAPSHOT' });
 }
@@ -516,7 +539,7 @@ function stringAt(strings: readonly string[], index: number, where: string): str
  * to mis-attribute every edge; it is validated here so a corrupt value is a
  * refusal rather than a silently wrong aggregate.
  */
-export function parseHeapSnapshot(text: string): HeapSnapshot {
+export function parseHeapSnapshot(text: string, options?: HeapParseOptions): HeapSnapshot {
   const header = readSnapshotHeader(text);
   const nodeCursor = numberCursor(text, 'nodes');
   const edgeCursor = numberCursor(text, 'edges');
@@ -591,11 +614,17 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
   }
 
   // The forward adjacency, in the same CSR layout `computeDominators` reads.
+  // Past the ceiling it is not built at all: the edges are still validated —
+  // a corrupt one must still be a refusal — but nothing is retained for them.
+  const edgeLimit = options?.maxGraphEdges ?? MAX_GRAPH_EDGES;
+  const buildGraph = header.edgeCount <= edgeLimit;
   const outStart = new Int32Array(header.nodeCount + 1);
-  for (let i = 0; i < header.nodeCount; i++) {
-    outStart[i + 1] = outStart[i]! + edgeCountOf[i]!;
+  if (buildGraph) {
+    for (let i = 0; i < header.nodeCount; i++) {
+      outStart[i + 1] = outStart[i]! + edgeCountOf[i]!;
+    }
   }
-  const targets = new Int32Array(header.edgeCount);
+  const targets = buildGraph ? new Int32Array(header.edgeCount) : undefined;
 
   const edgeWidth = header.edgeFieldCount;
   const toNodeAt = header.edgeFieldIndex['to_node']!;
@@ -609,7 +638,23 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
         `edge ${edge} points at to_node ${toNode}, past the end of ${header.nodeCount} nodes`,
       );
     }
-    targets[edge] = target;
+    if (targets !== undefined) targets[edge] = target;
+  }
+
+  if (targets === undefined) {
+    return {
+      header,
+      nodeCount: header.nodeCount,
+      nodeCountByType,
+      totalSelfSize,
+      detachedCount,
+      retained: {
+        kind: 'omitted',
+        reason:
+          `the graph has ${header.edgeCount} edges, past the ${edgeLimit}-edge ceiling;` +
+          ' heap totals are reported without retained attribution',
+      },
+    };
   }
 
   const { idom, retained, reachableCount } = computeDominators({
