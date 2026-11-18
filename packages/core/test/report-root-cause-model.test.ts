@@ -12,8 +12,10 @@ import {
   ungroundedNames,
 } from '../src/report/root-cause-model';
 import { OhosPerfError } from '../src/errors';
+import { buildMovement } from '../src/report/movement';
 import type { AgentModel, AgentTurn } from '../src/scenario/agent';
 import type { Evidence } from '../src/report/evidence';
+import type { Metric } from '../src/report/metric';
 
 /*
  * P28 task 2 — the model turn, and the check on what it says.
@@ -125,7 +127,7 @@ describe('parseRootCauseAnswer', () => {
       JSON.stringify({
         summary: 'the main thread stalls on a long frame',
         suspects: [{
-          evidenceIds: ['ev-jank'],
+          evidenceIds: ['ev-jank'], metrics: [],
           rootCause: 'frame 42 is over budget',
           fix: 'split the work',
           confidence: 'high',
@@ -146,7 +148,7 @@ describe('parseRootCauseAnswer', () => {
       JSON.stringify({
         summary: 's',
         suspects: [{
-          evidenceIds: ['ev-jank', 'ev-made-up'],
+          evidenceIds: ['ev-jank', 'ev-made-up'], metrics: [],
           rootCause: 'r', fix: 'f', confidence: 'medium',
         }],
         caveats: [], needsMoreData: [],
@@ -165,7 +167,7 @@ describe('parseRootCauseAnswer', () => {
       JSON.stringify({
         summary: 's',
         suspects: [{
-          evidenceIds: ['nothing-here'],
+          evidenceIds: ['nothing-here'], metrics: [],
           rootCause: 'r', fix: 'f', confidence: 'low',
         }],
         caveats: [], needsMoreData: [],
@@ -206,8 +208,8 @@ describe('parseRootCauseAnswer', () => {
       JSON.stringify({
         summary: 's',
         suspects: [
-          { evidenceIds: ['ev-jank'], rootCause: 'first', fix: 'f', confidence: 'high' },
-          { evidenceIds: ['ev-thread'], rootCause: 'second', fix: 'f', confidence: 'low' },
+          { evidenceIds: ['ev-jank'], metrics: [], rootCause: 'first', fix: 'f', confidence: 'high' },
+          { evidenceIds: ['ev-thread'], metrics: [], rootCause: 'second', fix: 'f', confidence: 'low' },
         ],
         caveats: [], needsMoreData: [],
       }),
@@ -253,7 +255,7 @@ describe('ungroundedNames', () => {
 
   it('flags a symbol the run never measured', () => {
     const suspect: RootCauseSuspect = {
-      rank: 1, evidenceIds: ['ev-jank'], rootCause: 'aboutToAppear is slow',
+      rank: 1, evidenceIds: ['ev-jank'], metrics: [], rootCause: 'aboutToAppear is slow',
       fix: 'f', confidence: 'high', ungrounded: [],
     };
     expect(ungroundedNames(suspect, vocabulary)).toContain('aboutToAppear');
@@ -261,7 +263,7 @@ describe('ungroundedNames', () => {
 
   it('does not flag a name the evidence carried', () => {
     const suspect: RootCauseSuspect = {
-      rank: 1, evidenceIds: ['ev-jank'], rootCause: 'worker-3 wakes too often',
+      rank: 1, evidenceIds: ['ev-jank'], metrics: [], rootCause: 'worker-3 wakes too often',
       fix: 'f', confidence: 'high', ungrounded: [],
     };
     expect(ungroundedNames(suspect, vocabulary)).toEqual([]);
@@ -271,7 +273,7 @@ describe('ungroundedNames', () => {
     // Measured defect: "Re-run" and "app-level" were reported as ungrounded
     // claims. A hyphen is how English is written, not how code is named.
     const suspect: RootCauseSuspect = {
-      rank: 1, evidenceIds: ['ev-jank'],
+      rank: 1, evidenceIds: ['ev-jank'], metrics: [],
       rootCause: 'Re-run the capture with app-level probes enabled',
       fix: 'use an end-to-end capture', confidence: 'high', ungrounded: [],
     };
@@ -281,9 +283,143 @@ describe('ungroundedNames', () => {
   it('ignores ordinary prose, so the check is about names and not words', () => {
     // A naive check would flag "the frame took 118.5 ms" for every word.
     const suspect: RootCauseSuspect = {
-      rank: 1, evidenceIds: ['ev-jank'],
+      rank: 1, evidenceIds: ['ev-jank'], metrics: [],
       rootCause: 'the frame took too long because the main thread was busy',
       fix: 'move the work off the main thread', confidence: 'high', ungrounded: [],
+    };
+    expect(ungroundedNames(suspect, vocabulary)).toEqual([]);
+  });
+});
+
+describe('the model turn over a movement', () => {
+  const metric = (id: string, value: number): Metric => ({
+    id,
+    value,
+    unit: 'count',
+    fidelity: 'exact',
+    provenance: { collector: 'hitrace', device: 'emu' },
+  });
+  const movement = buildMovement(
+    {
+      label: 'v1', app: 'com.demo', device: 'emu',
+      result: {
+        metrics: [metric('frame.jank.rate', 10), metric('frame.fps', 50)],
+        // `degraded_capability` is a kind the observations below never carry:
+        // it reaches the vocabulary only through the movement.
+        evidence: [...items, evidence({ id: 'ev-degraded', kind: 'degraded_capability', signals: {} })],
+      },
+    },
+    {
+      label: 'v2', app: 'com.demo', device: 'emu',
+      result: { metrics: [metric('frame.jank.rate', 15), metric('frame.fps', 60)], evidence: [] },
+    },
+  );
+  const moved: RootCauseDocument = buildRootCauseDocument({
+    app: 'com.demo', device: 'dev-1',
+    window: { startNs: 0, endNs: 2_000_000_000 },
+    generator: { name: '@ohos-perf/core', version: '0.27.0' },
+    evidence: items,
+    movement,
+  });
+
+  it('carries both labels, the movement verdict and the moved ids into the prompt', () => {
+    const prompt = rootCausePrompt(moved);
+    expect(prompt).toContain('v1 → v2');
+    expect(prompt).toContain(movement.verdict);
+    expect(prompt).toContain('frame.jank.rate');
+    expect(prompt).toMatch(/"metrics"/);
+  });
+
+  it('leaves the movement out of a prompt built without one', () => {
+    // A model told to cite moved metrics when no baseline was given would be
+    // asked for something the run cannot provide.
+    const prompt = rootCausePrompt(doc);
+    expect(prompt).not.toContain('What moved');
+    expect(prompt).not.toMatch(/"metrics"/);
+  });
+
+  it('keeps a moved metric id the model cited', () => {
+    const analysis = parseRootCauseAnswer(
+      JSON.stringify({
+        summary: 's',
+        suspects: [{
+          evidenceIds: ['ev-jank'], metrics: ['frame.jank.rate'],
+          rootCause: 'r', fix: 'f', confidence: 'high',
+        }],
+        caveats: [], needsMoreData: [],
+      }),
+      moved,
+      'm',
+    );
+    expect(analysis.suspects[0]!.metrics).toEqual(['frame.jank.rate']);
+    expect(analysis.suspects[0]!.ungrounded).toEqual([]);
+  });
+
+  it('records a metric id that did not move as ungrounded', () => {
+    const analysis = parseRootCauseAnswer(
+      JSON.stringify({
+        summary: 's',
+        suspects: [{
+          evidenceIds: [], metrics: ['frame.jank.rate', 'frame.made.up'],
+          rootCause: 'r', fix: 'f', confidence: 'low',
+        }],
+        caveats: [], needsMoreData: [],
+      }),
+      moved,
+      'm',
+    );
+    expect(analysis.suspects[0]!.metrics).toEqual(['frame.jank.rate']);
+    expect(analysis.suspects[0]!.ungrounded).toEqual(['frame.made.up']);
+  });
+
+  it('records every cited metric as ungrounded when no movement exists', () => {
+    const analysis = parseRootCauseAnswer(
+      JSON.stringify({
+        summary: 's',
+        suspects: [{
+          evidenceIds: ['ev-jank'], metrics: ['frame.jank.rate'],
+          rootCause: 'r', fix: 'f', confidence: 'low',
+        }],
+        caveats: [], needsMoreData: [],
+      }),
+      doc,
+      'm',
+    );
+    expect(analysis.suspects[0]!.metrics).toEqual([]);
+    expect(analysis.suspects[0]!.ungrounded).toEqual(['frame.jank.rate']);
+  });
+
+  it('treats a non-array metrics field as no citations', () => {
+    const analysis = parseRootCauseAnswer(
+      JSON.stringify({
+        summary: 's',
+        suspects: [{ evidenceIds: ['ev-jank'], metrics: 'frame.jank.rate', rootCause: 'r', fix: 'f', confidence: 'low' }],
+        caveats: [], needsMoreData: [],
+      }),
+      moved,
+      'm',
+    );
+    expect(analysis.suspects[0]!.metrics).toEqual([]);
+    expect(analysis.suspects[0]!.ungrounded).toEqual([]);
+  });
+
+  it('adds moved metric ids, finding kinds and run labels to the vocabulary', () => {
+    const vocabulary = groundingVocabulary(moved);
+    expect(vocabulary.has('frame.jank.rate')).toBe(true);
+    expect(vocabulary.has('jank')).toBe(true);
+    expect(vocabulary.has('v1')).toBe(true);
+    expect(vocabulary.has('v2')).toBe(true);
+  });
+
+  it('does not flag a finding kind the movement counted as a name', () => {
+    // A movement row for `degraded_capability` is identifier-shaped, and a
+    // suspect quoting it is repeating what the second run reported. The kind
+    // has to reach the vocabulary from the movement as well as the observations.
+    const vocabulary = groundingVocabulary(moved);
+    const suspect: RootCauseSuspect = {
+      rank: 1, evidenceIds: ['ev-jank'], metrics: [],
+      rootCause: 'the degraded_capability rows dropped between v1 and v2',
+      fix: 'f', confidence: 'high', ungrounded: [],
     };
     expect(ungroundedNames(suspect, vocabulary)).toEqual([]);
   });
@@ -293,7 +429,7 @@ describe('askRootCause', () => {
   it('calls the model exactly once and attaches its analysis', async () => {
     const model = stub({
       summary: 'main thread stalls',
-      suspects: [{ evidenceIds: ['ev-jank'], rootCause: 'long frame', fix: 'split', confidence: 'high' }],
+      suspects: [{ evidenceIds: ['ev-jank'], metrics: [], rootCause: 'long frame', fix: 'split', confidence: 'high' }],
       caveats: [], needsMoreData: [],
     });
     const result = await askRootCause(model, doc, { model: 'test-model' });
@@ -309,7 +445,7 @@ describe('askRootCause', () => {
     const model = stub({
       summary: 's',
       suspects: [{
-        evidenceIds: ['ev-jank'],
+        evidenceIds: ['ev-jank'], metrics: [],
         rootCause: 'aboutToAppear rebuilds the list',
         fix: 'memoize', confidence: 'medium',
       }],

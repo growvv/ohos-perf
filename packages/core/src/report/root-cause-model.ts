@@ -31,6 +31,9 @@ import type {
 /** The most evidence items a prompt carries, most urgent first. */
 export const PROMPT_EVIDENCE_LIMIT = 40;
 
+/** The most movement rows a prompt carries, worst first. */
+export const PROMPT_MOVEMENT_LIMIT = 20;
+
 const BAD_RESPONSE = 'ROOT_CAUSE_BAD_RESPONSE';
 
 function badResponse(message: string): OhosPerfError {
@@ -38,22 +41,67 @@ function badResponse(message: string): OhosPerfError {
 }
 
 /** The answer shape, stated literally: a model that invents a key fails here. */
-const ANSWER_SHAPE = [
-  '{',
-  '  "summary": "one sentence naming the dominant cause",',
-  '  "suspects": [',
-  '    {',
-  '      "evidenceIds": ["the ids you reasoned from"],',
-  '      "rootCause": "1-2 sentences",',
-  '      "fix": "what to change",',
-  '      "confidence": "high | medium | low",',
-  '      "triggerChain": "optional: A -> B -> C"',
-  '    }',
-  '  ],',
-  '  "caveats": ["what limits this conclusion"],',
-  '  "needsMoreData": ["what would raise confidence"]',
-  '}',
-].join('\n');
+/**
+ * The answer shape, stated literally: a model that invents a key fails here.
+ *
+ * `metrics` appears only when a movement does. A model asked for moved metric
+ * ids with no baseline to compare against would have to invent the movement it
+ * is asked to explain.
+ */
+function answerShape(withMetrics: boolean): string {
+  return [
+    '{',
+    '  "summary": "one sentence naming the dominant cause",',
+    '  "suspects": [',
+    '    {',
+    '      "evidenceIds": ["the ids you reasoned from"],',
+    ...(withMetrics ? ['      "metrics": ["the moved metric ids you attribute the change to"],'] : []),
+    '      "rootCause": "1-2 sentences",',
+    '      "fix": "what to change",',
+    '      "confidence": "high | medium | low",',
+    '      "triggerChain": "optional: A -> B -> C"',
+    '    }',
+    '  ],',
+    '  "caveats": ["what limits this conclusion"],',
+    '  "needsMoreData": ["what would raise confidence"]',
+    '}',
+  ].join('\n');
+}
+
+/**
+ * The movement, as the prompt states it.
+ *
+ * A moved metric is a fact with a direction and a size, so it is rendered the
+ * same way the Markdown table states it: the id, the status in our own words,
+ * both values, and the percentage when there is one. The model is asked to cite
+ * these ids in `metrics`, which {@link parseRootCauseAnswer} checks exactly like
+ * an evidence citation — a suspect that attributes a change to a metric nobody
+ * measured is marked, not printed as measured.
+ */
+function movementLines(document: RootCauseDocument): string[] {
+  const movement = document.movement;
+  if (movement === undefined) return [];
+  const rows = movement.rows.slice(0, PROMPT_MOVEMENT_LIMIT);
+  const omitted = movement.rows.length - rows.length;
+  const lines = rows.map((row) => {
+    const pct = row.deltaPct === undefined ? '' : ` (${row.deltaPct}%)`;
+    const change = row.status === 'gap'
+      ? `gap: ${row.gap?.reason ?? 'not measured'}`
+      : `${String(row.from)} -> ${String(row.to)}${pct}`;
+    return `- [${row.id}] ${row.status} ${change}`;
+  });
+  const findings = movement.evidence
+    .map((row) => `${row.kind} ${row.from}->${row.to}`)
+    .join(', ');
+  return [
+    '',
+    `What moved (${movement.from.label} -> ${movement.to.label}):`,
+    movement.verdict,
+    ...(lines.length === 0 ? ['(no metric was measured in either run)'] : lines),
+    ...(omitted <= 0 ? [] : [`(${omitted} lower-ranked movement rows omitted)`]),
+    ...(findings === '' ? [] : [`findings by kind: ${findings}`]),
+  ];
+}
 
 /**
  * The prompt for one root-cause turn.
@@ -78,6 +126,7 @@ export function rootCausePrompt(document: RootCauseDocument): string {
       + (signals === '' ? '' : ` {${signals}}`);
   });
 
+  const hasMovement = document.movement !== undefined;
   return [
     'You are explaining the measured performance evidence for one app run.',
     'Every observation below was produced by an analyzer in this package; the',
@@ -90,12 +139,16 @@ export function rootCausePrompt(document: RootCauseDocument): string {
     'Observations:',
     ...(lines.length === 0 ? ['(none)'] : lines),
     ...(omitted <= 0 ? [] : [`(${omitted} lower-severity observations omitted)`]),
+    ...movementLines(document),
     '',
     'Answer with one JSON object and nothing else:',
-    ANSWER_SHAPE,
+    answerShape(hasMovement),
     '',
     'Rules:',
     '- Cite only ids that appear above; an id you invent is rejected and recorded.',
+    ...(hasMovement
+      ? ['- Cite a moved metric id in "metrics" only when it appears in the movement above.']
+      : []),
     '- Name a file, symbol, library or thread only if it appears above.',
     '- If the evidence does not support a cause, say so in caveats rather than guessing.',
   ].join('\n');
@@ -190,6 +243,7 @@ export function parseRootCauseAnswer(
   }
   const record = asRecord(parsed, 'answer');
   const known = new Set(document.observations.map((item) => item.evidenceId));
+  const knownMetrics = new Set((document.movement?.rows ?? []).map((row) => row.id));
 
   const rawSuspects = record['suspects'];
   const suspects: RootCauseSuspect[] = [];
@@ -201,13 +255,20 @@ export function parseRootCauseAnswer(
     const cited = strings(suspect['evidenceIds']);
     const evidenceIds = cited.filter((id) => known.has(id));
     const ungrounded = cited.filter((id) => !known.has(id));
+    // A metric citation is checked against the movement, not the observations:
+    // "this metric moved" is a claim about the second run, and only the
+    // movement can support it. With no movement every citation is ungrounded.
+    const citedMetrics = strings(suspect['metrics']);
+    const metrics = citedMetrics.filter((id) => knownMetrics.has(id));
+    const ungroundedMetrics = citedMetrics.filter((id) => !knownMetrics.has(id));
     suspects.push({
       rank: suspects.length + 1,
       evidenceIds,
+      metrics,
       rootCause: text(suspect['rootCause']),
       fix: text(suspect['fix']),
       confidence: confidenceOf(suspect['confidence']),
-      ungrounded,
+      ungrounded: [...ungrounded, ...ungroundedMetrics],
       ...(text(suspect['triggerChain']) === '' ? {} : { triggerChain: text(suspect['triggerChain']) }),
     });
   }
@@ -243,6 +304,16 @@ export function groundingVocabulary(document: RootCauseDocument): Set<string> {
     }
     vocabulary.add(item.kind);
     for (const token of identifierTokens(item.explain)) vocabulary.add(token);
+  }
+  // The movement is the second half of what this run measured: its metric ids,
+  // the finding kinds it counted and the labels of the two runs are all names
+  // the document itself carries, so a suspect quoting one is not inventing it.
+  const movement = document.movement;
+  if (movement !== undefined) {
+    vocabulary.add(movement.from.label);
+    vocabulary.add(movement.to.label);
+    for (const row of movement.rows) vocabulary.add(row.id);
+    for (const row of movement.evidence) vocabulary.add(row.kind);
   }
   return vocabulary;
 }

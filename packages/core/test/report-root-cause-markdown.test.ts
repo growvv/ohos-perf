@@ -56,7 +56,7 @@ describe('renderRootCauseMarkdown', () => {
       analysis: {
         model: 'test-model', summary: 'the main thread stalls',
         suspects: [{
-          rank: 1, evidenceIds: ['ev-jank'], rootCause: 'long frame', fix: 'split the work',
+          rank: 1, evidenceIds: ['ev-jank'], metrics: [], rootCause: 'long frame', fix: 'split the work',
           confidence: 'high', ungrounded: [],
         }],
         caveats: [], needsMoreData: [],
@@ -75,7 +75,7 @@ describe('renderRootCauseMarkdown', () => {
       analysis: {
         model: 'test-model', summary: 's',
         suspects: [{
-          rank: 1, evidenceIds: ['ev-jank'], rootCause: 'long frame', fix: 'split',
+          rank: 1, evidenceIds: ['ev-jank'], metrics: [], rootCause: 'long frame', fix: 'split',
           confidence: 'high', ungrounded: [],
         }],
         caveats: [], needsMoreData: [],
@@ -93,7 +93,7 @@ describe('renderRootCauseMarkdown', () => {
       analysis: {
         model: 'm', summary: 's',
         suspects: [{
-          rank: 1, evidenceIds: [], rootCause: 'aboutToAppear rebuilds the list',
+          rank: 1, evidenceIds: [], metrics: [], rootCause: 'aboutToAppear rebuilds the list',
           fix: 'memoize', confidence: 'medium', ungrounded: ['aboutToAppear'],
         }],
         caveats: [], needsMoreData: [],

@@ -63,6 +63,12 @@ export interface RootCauseSuspect {
   rank: number;
   /** The evidence ids the model cited that this run actually produced. */
   evidenceIds: string[];
+  /**
+   * Moved metric ids the model attributes the change to. Checked against the
+   * movement's own rows: an id that did not move is not a measured change, so
+   * it is recorded in {@link ungrounded} instead of being presented as one.
+   */
+  metrics: string[];
   rootCause: string;
   fix: string;
   confidence: 'high' | 'medium' | 'low';

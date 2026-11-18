@@ -44,7 +44,7 @@ const withAnalysis = {
     model: 'test-model',
     summary: 'the main thread stalls',
     suspects: [{
-      rank: 1, evidenceIds: ['ev-1'], rootCause: 'long frame', fix: 'split',
+      rank: 1, evidenceIds: ['ev-1'], metrics: [], rootCause: 'long frame', fix: 'split',
       confidence: 'high' as const, ungrounded: [],
     }],
     caveats: [],
