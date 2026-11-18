@@ -20,6 +20,14 @@ envelope P33 defined — as data.
   --machine-json` and returns what came back, so an MCP answer is byte-identical
   to the shell answer. Nothing re-implements a command or reshapes a payload;
   this module is a transport.
+- **The schema is enforced.** `inputSchema` declares
+  `additionalProperties: false`, so an undeclared argument is `-32602` naming
+  it rather than a silent no-op: a one-letter `basline` would otherwise run a
+  comparison with no baseline and report success, and the agent would read a
+  measurement it never asked for.
+- **A call that cannot start still answers.** A spawn failure is
+  `isError: true` with the message, not a dropped request id — a client waiting
+  on an id it never hears back about hangs, which is worse than an error.
 - **`isError` is the tool, not the news.** A call fails as `isError: true` only
   when the command could not run — no envelope on stdout, or an envelope with
   `error`. A failed `gate` is `isError: false` with
@@ -47,7 +55,7 @@ envelope P33 defined — as data.
   out does.
 
 HapRay has no MCP surface at all, so this is beyond the inventory rather than a
-parity row. 2375 unit tests (2325 + 50 skipped on a clean checkout); the device
+parity row. 2376 unit tests (2326 + 50 skipped on a clean checkout); the device
 suite is unchanged.
 
 ## 0.28.0 — 2026-11-18

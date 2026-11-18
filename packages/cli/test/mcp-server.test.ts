@@ -111,6 +111,22 @@ describe('createMcpServer — tools/call', () => {
     expect(JSON.parse(out!).error.message).toContain('ohos-perf_nope');
   });
 
+  it('refuses an argument the schema does not declare, naming it', async () => {
+    // The schema says `additionalProperties: false`. A server that only
+    // *declares* that and does not enforce it is worse than one that declares
+    // nothing: `{"scene-dir": "/s", "basline": "/b"}` (one letter) would run
+    // without a baseline and report success, and the agent would read a
+    // measurement it never asked for.
+    const s = server(async () => ({ stdout: envelope(), stderr: '', code: 0 }));
+    const out = await s.handle(JSON.stringify({
+      jsonrpc: '2.0', id: 15, method: 'tools/call',
+      params: { _meta: MODERN_META, name: 'ohos-perf_analyze', arguments: { 'scene-dir': '/s', basline: '/b' } },
+    }));
+    const answer = JSON.parse(out!);
+    expect(answer.error.code).toBe(-32602);
+    expect(answer.error.message).toContain('basline');
+  });
+
   it('refuses arguments that are not an object', async () => {
     const out = await server(async () => ({ stdout: '', stderr: '', code: 0 })).handle(JSON.stringify({
       jsonrpc: '2.0', id: 7, method: 'tools/call',

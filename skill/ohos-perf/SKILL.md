@@ -747,6 +747,9 @@ serves the same commands over stdio, one JSON-RPC 2.0 message per line:
 - `tools/call` takes `{name, arguments}` and returns the envelope from the
   section above as `structuredContent` — the same document `--machine-json`
   prints, not a summary of it. Read it exactly as you would read the line.
+- An argument the tool does not declare is refused with `-32602` naming it,
+  so check the `inputSchema` rather than guessing a flag name: a typo is an
+  error, never a silently ignored option.
 - `isError` means the command could not run. A failed `gate` is
   `isError: false` with `structuredContent.outputs.payload.status === 'fail'`;
   report it as bad news, never as a broken tool.

@@ -35,7 +35,7 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P34 are complete**: 2386 tests (2375 unit, 11 in the device
+**P1 through P34 are complete**: 2387 tests (2376 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
@@ -1212,6 +1212,10 @@ structured content:
 - **A tool call is a CLI run.** The server spawns `ohos-perf <command>
   --machine-json` and returns what came back, so an MCP answer is byte-identical
   to the shell answer. Nothing re-implements a command.
+- **The schema is enforced, not just declared.** An argument the tool does not
+  declare is `-32602` naming it, so `{"scene-dir": "/s", "basline": "/b"}` — one
+  letter — is refused instead of silently running without a baseline and
+  reporting success.
 - **`isError` means the command could not run**, matching the envelope's
   `error`. A failed `gate` is `isError: false` with
   `structuredContent.outputs.payload.status === "fail"`: the measurement ran

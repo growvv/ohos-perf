@@ -132,8 +132,21 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     if (args !== undefined && !isRecord(args)) {
       return fail(id, MCP_INVALID_PARAMS, 'tools/call "arguments" must be an object');
     }
+    const supplied = isRecord(args) ? args : {};
+    // The schema promises `additionalProperties: false`, so an undeclared key
+    // is a client mistake, not a hint to ignore. `{"basline": "/b"}` (one
+    // letter) would otherwise run without a baseline and report success.
+    const unknown = Object.keys(supplied).filter((key) => !(key in tool.inputSchema.properties));
+    if (unknown.length > 0) {
+      return fail(
+        id,
+        MCP_INVALID_PARAMS,
+        `unknown argument${unknown.length === 1 ? '' : 's'} ${unknown.map((key) => JSON.stringify(key)).join(', ')}`,
+        { tool: tool.name, known: Object.keys(tool.inputSchema.properties) },
+      );
+    }
 
-    const argv = [...tool.argv(isRecord(args) ? args : {}), '--machine-json'];
+    const argv = [...tool.argv(supplied), '--machine-json'];
     let run: McpRunResult;
     try {
       run = await options.run(argv);
