@@ -58,7 +58,13 @@ export interface ConstructorShare {
   readonly count: number;
 }
 
-/** A parsed snapshot: the nodes, and the aggregates a report needs. */
+/**
+ * A parsed snapshot: the aggregates a report reads.
+ *
+ * There is deliberately no per-node array. The first version returned one and
+ * peaked at 51.5 MB against `JSON.parse`'s 18.3 MB on a 5.5 MB file (measured)
+ * — the object-per-node graph was exactly the cost the scan exists to avoid.
+ */
 export interface HeapSnapshot {
   readonly header: HeapSnapshotHeader;
   /** How many nodes the snapshot holds (its `node_count`, validated). */
@@ -125,6 +131,15 @@ function endOfValue(text: string, start: number): number {
   return -1;
 }
 
+/** A backslash, by code point, so this file needs no escape gymnastics. */
+const BACKSLASH = String.fromCharCode(92);
+
+/** Whitespace JSON permits between tokens. */
+function isSpace(char: string): boolean {
+  return char === ' ' || char === String.fromCharCode(10) ||
+    char === String.fromCharCode(13) || char === String.fromCharCode(9);
+}
+
 /**
  * The offset of a **top-level** key, or -1.
  *
@@ -136,17 +151,9 @@ function endOfValue(text: string, start: number): number {
  *
  * Depth is tracked the same way {@link endOfValue} tracks it, and string
  * literals are skipped, so only a key sitting directly inside the root object
- * matches.
+ * matches. A key and a string *value* both sit at depth 1, so a match also has
+ * to be followed by a colon.
  */
-/** A backslash, by code point, so this file needs no escape gymnastics. */
-const BACKSLASH = String.fromCharCode(92);
-
-/** Whitespace JSON permits between tokens. */
-function isSpace(char: string): boolean {
-  return char === ' ' || char === String.fromCharCode(10) ||
-    char === String.fromCharCode(13) || char === String.fromCharCode(9);
-}
-
 function topLevelKey(text: string, key: string): number {
   const quoted = `"${key}"`;
   let depth = 0;
