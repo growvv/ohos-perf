@@ -1470,7 +1470,7 @@ UX 评分 / “预计节省”等商业指标（都不是测量值）、从安�
 `--hiperf --so-dir <目录>` 可让设备在转换时直接符号化；`report` 会额外写出
 `flamegraph.svg` 与 `flamegraph.html`。
 
-根因报告：`ohos-perf root-cause <场景目录|report.json> --out <目录>` 把分析已经产出的
+根因报告：`ohos-perf root-cause <场景目录|report.json> --out <目录> [--baseline <输入>]` 把分析已经产出的
 证据变成一份人读的报告，产物是 `root-cause.json`（带 schema 版本的类型化文档）、
 `root-cause.md`（结论、按严重度排序的观测、以及可选的模型分析）与
 `root-cause.evidence.json`（模型实际会收到的提示词，可手工重放）。**确定性的那一半就是
@@ -1486,6 +1486,19 @@ UX 评分 / “预计节省”等商业指标（都不是测量值）、从安�
 标识符）。这两道检查都是字面检查而非语义判断，这个边界会写明。用本机网关实测时正是这两道
 检查暴露了自身的两个缺陷：它把分析器自己打印的 `ui.json`、`startedAtNs`、`thread_state`
 判为捏造，又因为含连字符把 "Re-run"、"app-level" 判为名字。
+
+跨轮根因：`root-cause <本轮> --baseline <上一轮>` 回答“这次回退是哪一项变化引起的”。
+`buildMovement` 把两次运行的指标与证据计数合成一份 `movement`：每个指标一行
+（`regressed` / `improved` / `unchanged` / `incomparable` / `gap`），外加两边各证据种类的
+计数。三条规则是硬性的：**缺口不是变化**——某次运行没有测到、或测到的是被跳过的分析器写下的
+降级零值的指标，是 `gap`，带原因、没有增量，因此消失的 jank 率永远不会被读成“从 12% 改善到 0”；
+`*.degraded` 代理指标不算行，只计数。**方向由调用者决定**——`from` 永远是 `--baseline`，
+`to` 永远是输入，与采集时间无关；`trend` 按 `startedAtNs` 排序是因为它的横轴就是时间，
+移动若照做，基线晚于输入时每个判定都会被悄悄反转。**零基线没有百分比**——基线为 0 时
+只给增量、不给 `deltaPct`，不会把 `Infinity` 写进 JSON。移动段渲染在结论之前，也进入模型提示词；
+suspect 新增的 `metrics` 引用会像证据 id 一样对照移动行核对，没有移动块时任何指标引用都记为
+`ungrounded`。两个不同应用的运行在询问模型之前被拒绝并点名（`ROOT_CAUSE_BAD_BASELINE`）。
+HapRay 的多版本页把比较留给人在下拉框里挑，它的根因只看一次运行，整棵树里没有跨运行的证据对比。
 
 `--hiperf` 需要可调试应用，空闲应用产生 `samples: 0` 也是一次有效采集，CLI 会明确
 打印 `hiperf 0` 而不是省略。`compare` 把每个指标标为 improved / regressed /
