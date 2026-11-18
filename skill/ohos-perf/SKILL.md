@@ -250,6 +250,35 @@ scenario step can list `thermal` in `capture.collectors`.
   sensor-name order. Evidence signals carry the original sensor name, so use
   those when quoting one.
 
+## Budgets and the gate
+
+When the user asks whether a change is acceptable — "did this fix regress
+anything", "is this ready to merge", "check it against our budget" — run
+`ohos-perf gate <budgets.json> <run> [--baseline <run>] --json` after
+`analyze`. It judges a run against a versioned budget document and exits `0`
+(all passed), `2` (a budget failed **or** a metric it names was not measured)
+or `1` (the gate could not run).
+
+- **Exit 2 is a verdict, not an error.** Report the failing metric, its value
+  and the bound. Exit 1 means the gate itself could not run — a malformed
+  document, an unreadable input, a delta budget with no `--baseline` — and the
+  message names the JSON path or the flag to fix.
+- **`missing` is a failure.** A metric the run never emitted, a degraded
+  proxy and a percentage against a zero baseline all come back `missing` with
+  a reason. Never describe a `missing` verdict as "passed" or as "no change":
+  say the metric was not measured and quote the reason.
+- **Bounds.** `max`/`min` are absolute limits in the metric's own unit;
+  `maxDelta`/`maxDeltaPct` are limits on movement from `--baseline`, and a
+  negative delta limit means the metric must fall by at least that much. One
+  bound per entry, one entry per metric id.
+- A budget document is data from outside the package: validate it with
+  `parseBudgetDocument` before trusting it, and never invent a bound the user
+  did not write. If they ask for a budget the run cannot satisfy, show the
+  measured value and let them decide.
+- `--out <dir>` writes `gate.json` (two-space JSON, same convention as
+  `analyze --json`); `--json` prints the same document and still exits 2 when
+  a budget failed, so read the code and the document together.
+
 ## Scenarios
 
 `ohos-perf run` answers "what happens when the user does this" — a sequence

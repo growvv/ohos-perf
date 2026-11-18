@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.26.0 — 2026-11-18
+
+**A budget that fails a build on a metric nobody measured.** `compare` says
+what moved between two runs; a budget says how much movement is allowed, and
+the new `gate` command turns that into an exit code a CI job reads. HapRay has
+no threshold, verdict or exit code anywhere in its tree at the pinned
+revision — its regression story is a chart a person reads.
+
+- **The document.** `gate budgets.json <scene-dir|analyze.json> [--baseline
+  <input>] [--out <dir>] [--json]` reads a versioned JSON document with one
+  bound per metric id: `max`/`min` absolute limits in the metric's own unit,
+  `maxDelta`/`maxDeltaPct` on movement from the baseline (a negative delta
+  limit is legal — the metric must fall). It is validated whole before a scene
+  is opened: an unknown key, a duplicate metric id, an entry with zero or two
+  bounds, and a delta budget with no baseline each name the JSON path.
+- **Not measured is not a pass.** A metric the run never emitted, a degraded
+  proxy, a non-numeric value and a percentage against a zero baseline are all
+  `missing` — the gate fails and the verdict says why. A green build can no
+  longer mean an analyzer stopped running.
+- **Exit codes.** `0` every budget passed, `2` a budget failed or was not
+  measurable, `1` the gate could not run. `--json` still exits 2 on a
+  violation; `--out` writes `gate.json`.
+- **Library.** `parseBudgetDocument`, `deltaBudgetIds`, `evaluateGate` and
+  `renderGateJson` are exported from `@ohos-perf/core`, so a test harness can
+  gate without a subprocess.
+
+The parity ledger is unchanged — 38 ported, 0 partial, 0 missing, 1 out
+(`build`) — because a budget is a capability the inventory does not contain.
+2224 unit tests; the device suite is unchanged.
+
 ## 0.25.0 — 2026-11-18
 
 **Thermal capture and analysis close the parity ledger's last missing row.**

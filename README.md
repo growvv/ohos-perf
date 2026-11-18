@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P30 are complete**: 2191 tests (2180 unit, 11 in the device
+**P1 through P31 are complete**: 2235 tests (2224 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2152 passed, 28
+attached device are absent — `npm run test:unit` reports **2196 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2152 passed, 39 skipped**. With both fixtures present and a
+checkout is **2196 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -337,6 +337,7 @@ The HapRay parity series (one release per major item, so far):
 | P28 | row 36 | `root-cause <scene-dir\|report.json>` ranks the measured evidence by our own severities, states a verdict from the highest finding, and optionally asks a model for suspects — which must cite evidence ids and name only what the run measured, or the claim is marked ungrounded. `--offline` writes the report with no endpoint; a missing endpoint falls back to it and says so | shipped in `0.23.0` |
 | P29 | row 38 completion | `explore --model` lets a model choose each step among the elements the dump offered: an answer naming an unoffered element, scroll or back when unavailable, or a non-JSON reply is a recorded refusal and the deterministic order takes that step. Page identity is a structural digest, not a second model call, so `navigated`/`updated`/`no change` are measured; the walk scrolls and goes back within per-screen caps, and irreversible targets are never offered to a model | shipped in `0.24.0` |
 | P30 | row 39 completion | `collect --thermal` samples `hidumper -s ThermalService -a '-t'` into `thermal.jsonl` with each reading's raw value, inferred unit and normalized Celsius value; `analyze` reports start/end/peak/mean/rise per sensor, sample count, duration and median interval, with a missing capture a `no_data` naming `--thermal` instead of HapRay's silent `None`. Sensors come from the device, and a scenario step can request the capture | shipped in `0.25.0` |
+| P31 | beyond the inventory | `gate <budgets.json> <run>` judges a run against a versioned budget document — absolute `max`/`min` and `maxDelta`/`maxDeltaPct` against a baseline — with exit 2 for a violated or unmeasured budget and exit 1 for a gate that could not run. A metric the run never emitted is `missing`, never a pass, so a green build cannot mean an analyzer stopped running. HapRay's regression story stops at a chart a human reads | shipped in `0.26.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
@@ -1080,6 +1081,57 @@ the same `OHOS_PERF_AGENT_*` (or `GLM_*`) variables `agent` reads. The client
 takes a *turn shape* — prompt and answer parser as one value — because a
 root-cause answer is JSON prose with citations, and the GUI agent's parser
 would reject it for having neither an `action` nor a `done`.
+
+## Budgets and the gate
+
+`compare` says what moved between two runs. A budget says how much a movement
+is allowed, and `gate` turns that into an exit code a CI job can read.
+
+```bash
+ohos-perf gate budgets.json <scene-dir|analyze.json> [--baseline <input>] [--out <dir>] [--json]
+```
+
+A budget document is versioned data, committed beside the code it gates:
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "open-app",
+  "budgets": [
+    { "id": "frame.jank.rate", "max": 5 },
+    { "id": "frame.fps", "min": 55 },
+    { "id": "frame.avg.duration", "maxDeltaPct": 5 }
+  ]
+}
+```
+
+Exactly one bound per entry: `max`/`min` are absolute limits in the metric's
+own unit, `maxDelta`/`maxDeltaPct` are limits on the movement from `--baseline`
+(and a negative delta limit is legal — it says the metric must fall by at
+least that much). The document is validated whole before a scene is opened: an
+unknown key, a duplicate metric id, an entry with zero or two bounds, and a
+delta budget with no `--baseline` are all errors that name the JSON path, so a
+budget typo never fails after a two-minute capture.
+
+**A metric that was not measured is a failure.** This is the whole design. A
+metric the run never emitted is `missing`, a degraded proxy is `missing`, and a
+percentage against a zero baseline is `missing` — none of them pass. A gate
+that goes green because an analyzer stopped running, or because a capability
+was absent on the device, is worse than no gate at all. The verdict line
+carries the reason, so the build output says "the run emitted no
+`thermal.samples.count`" rather than pointing at a threshold.
+
+Exit codes: `0` every budget passed, `2` a budget failed or a metric it names
+was not measured, `1` the gate could not run (a bad document, an unreadable
+input, a delta budget with no baseline). `2` is a verdict and `1` is an error;
+a CI job that conflated them would swallow its own misconfiguration. `--json`
+still exits 2 on a violation, because the verdict is the artifact and the code
+is how a shell reads it; `--out` writes `gate.json` alongside it.
+
+HapRay's regression story at its pinned revision is `PerfMulti.vue`: a page
+that draws a line per metric across whatever reports a person selects, with no
+threshold, no verdict and no exit code anywhere in the tree. A budget is the
+same measurement turned into a claim a job can check.
 
 ## Model-guided exploration
 
