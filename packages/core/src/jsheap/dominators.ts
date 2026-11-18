@@ -37,7 +37,12 @@
  *
  * P35 measured that an object per node cost more memory than `JSON.parse` of
  * the whole document (51.5 MB against 18.3 MB). The graph is therefore three
- * `Int32Array`s and one `Float64Array`: about 12 MB at 861 k nodes, measured.
+ * `Int32Array`s and one `Float64Array` — about 12 MB of adjacency at 861 k
+ * nodes — and the pass needs a working set on top of it: postorder, reverse
+ * postorder, the two DFS stacks, predecessor CSR, idom and retained. Measured
+ * end to end, peak RSS on the 50 MB fixture moved 30.1 MB → 77.4 MB, so the
+ * real cost is the working set, not the graph alone. It is still below
+ * `JSON.parse`'s 106.7 MB.
  */
 
 /** The graph dominance is computed over. */
