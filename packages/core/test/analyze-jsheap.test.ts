@@ -110,8 +110,21 @@ describe('JsheapAnalyzer', () => {
     expect(ids).toContain('jsheap.total.bytes');
     expect(ids).not.toContain('jsheap.retained.largest.bytes');
     expect(ids).not.toContain('jsheap.unreachable.count');
-    expect(result.evidence.find((e) => e.kind === 'js_heap')?.explain)
-      .toMatch(/too large|attribution/i);
+    expect(result.evidence[0]!.explain).toMatch(/too large|attribution/i);
+  });
+
+  it('reports the omitted attribution as a gap, not a finding', async () => {
+    // A root-cause report that opens with "the graph is past the ceiling" has
+    // told the reader nothing about performance. The totals are real metrics,
+    // so they carry the measurement; the omission itself is a `no_data`, which
+    // is what `isGap` recognizes and the verdict skips.
+    const result = await new JsheapAnalyzer().run(
+      context({ jsheap: heap(), jsheapMaxGraphEdges: 1 }),
+    );
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]!.kind).toBe('no_data');
+    expect(result.evidence[0]!.signals).toEqual({});
+    expect(result.evidence[0]!.explain).toMatch(/2 nodes and 2 edges|edges/);
   });
 
   it('warns when the snapshot holds detached nodes', async () => {

@@ -96,13 +96,16 @@ export class JsheapAnalyzer implements Analyzer {
     if (snapshot.retained.kind === 'omitted') {
       // The graph was too large to attribute. The heap totals above are still
       // exact — the file was read — so this is a stated gap, not a failure.
+      // It is a `no_data` with no signals: the totals are the metrics, and a
+      // root-cause report that opened with "past the ceiling" would have told
+      // the reader nothing about performance.
       items.push(
         evidence({
-          kind: 'js_heap',
+          kind: 'no_data',
           severity: 'info',
           subject: { process: ctx.app.packageName },
           window: ctx.window,
-          signals: { totalSelfSize: snapshot.totalSelfSize, nodes: snapshot.nodeCount },
+          signals: {},
           explain: snapshot.retained.reason,
           drillDown: [],
           key: 'jsheap:attribution-omitted',
