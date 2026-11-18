@@ -315,3 +315,34 @@ describe('the reader is cheaper than a whole-document parse', () => {
     }
   });
 });
+
+/**
+ * Top-level keys are found by depth, not by the first occurrence of their
+ * quoted name.
+ *
+ * A `.heapsnapshot`'s string table holds arbitrary app strings, and one of
+ * them can be `nodes` or `edges` — the very names this reader looks up. The
+ * first version used `text.indexOf('"nodes"')`, so a table entry with that
+ * name, emitted before the array, made the reader parse the wrong span and
+ * refuse a legitimate file. V8 happens to write `strings` last, which is why
+ * every real snapshot passed; a reordered or hand-built one did not.
+ */
+describe('a key name inside the string table', () => {
+  /** `strings` first, and its second entry is the literal `nodes`. */
+  const text = [
+    '{"strings":["","nodes"],',
+    '"snapshot":{"meta":{',
+    '"node_fields":["type","name","id","self_size","edge_count"],',
+    '"node_types":[["hidden","object"],"string","number","number","number"],',
+    '"edge_fields":["type","name_or_index","to_node"],',
+    '"edge_types":[["property"],"string_or_number","node"]},',
+    '"node_count":1,"edge_count":0},',
+    '"nodes":[1,1,1,16,0],"edges":[]}',
+  ].join('');
+
+  it('does not mistake the table entry for the array', () => {
+    const snapshot = parseHeapSnapshot(text);
+    expect(snapshot.nodeCount).toBe(1);
+    expect(snapshot.totalSelfSize).toBe(16);
+  });
+});

@@ -126,6 +126,59 @@ function endOfValue(text: string, start: number): number {
 }
 
 /**
+ * The offset of a **top-level** key, or -1.
+ *
+ * `text.indexOf('"nodes"')` is not that: a `.heapsnapshot`'s string table
+ * holds arbitrary app strings, and one of them can be `nodes` or `edges` — the
+ * names this reader looks up. V8 writes `strings` last, so every real snapshot
+ * passed, but a reordered or hand-built document had its array read from the
+ * wrong span and was refused as truncated.
+ *
+ * Depth is tracked the same way {@link endOfValue} tracks it, and string
+ * literals are skipped, so only a key sitting directly inside the root object
+ * matches.
+ */
+/** A backslash, by code point, so this file needs no escape gymnastics. */
+const BACKSLASH = String.fromCharCode(92);
+
+/** Whitespace JSON permits between tokens. */
+function isSpace(char: string): boolean {
+  return char === ' ' || char === String.fromCharCode(10) ||
+    char === String.fromCharCode(13) || char === String.fromCharCode(9);
+}
+
+function topLevelKey(text: string, key: string): number {
+  const quoted = `"${key}"`;
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (char === BACKSLASH) i++;
+      else if (char === '"') {
+        inString = false;
+        // A string closing at depth 1 is a key position. A key and a string
+        // value both sit at depth 1, and only a key is followed by a colon.
+        const start = i - quoted.length + 1;
+        if (depth === 1 && start >= 0 && text.startsWith(quoted, start)) {
+          let j = i + 1;
+          while (j < text.length && isSpace(text[j]!)) j++;
+          if (text[j] === ':') return start;
+        }
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '{' || char === '[') depth++;
+    else if (char === '}' || char === ']') depth--;
+  }
+  return -1;
+}
+
+/**
  * The `snapshot` block, parsed.
  *
  * Only this slice goes through `JSON.parse`: it is the layout and the counts,
@@ -133,7 +186,7 @@ function endOfValue(text: string, start: number): number {
  * large.
  */
 function snapshotBlock(text: string): Record<string, unknown> {
-  const key = text.indexOf('"snapshot"');
+  const key = topLevelKey(text, 'snapshot');
   if (key === -1) throw bad('no "snapshot" block in the document');
   const open = text.indexOf('{', key);
   if (open === -1) throw bad('the "snapshot" key is not followed by an object');
@@ -237,7 +290,7 @@ function isNumberChar(char: string): boolean {
  */
 export function readNumberArray(text: string, key: string): Float64Array {
   const label = `"${key}"`;
-  const at = text.indexOf(label);
+  const at = topLevelKey(text, key);
   if (at === -1) throw bad(`no ${label} array in the document`);
   const open = text.indexOf('[', at + label.length);
   if (open === -1) throw bad(`the ${label} key is not followed by an array`);
@@ -374,7 +427,7 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
 
 /** The `strings` table, parsed from its own slice. */
 function readStringTable(text: string): readonly string[] {
-  const key = text.indexOf('"strings"');
+  const key = topLevelKey(text, 'strings');
   if (key === -1) throw bad('no "strings" array in the document');
   const open = text.indexOf('[', key);
   if (open === -1) throw bad('the "strings" key is not followed by an array');
