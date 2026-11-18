@@ -579,14 +579,21 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
   let totalSelfSize = 0;
   let detachedCount = 0;
 
+  // The ceiling is decided here, before any per-node array is allocated: the
+  // point of the ceiling is to bound memory, so allocating 14.6 MB of arrays
+  // the omitted path never reads would defeat it.
+  const edgeLimit = options?.maxGraphEdges ?? MAX_GRAPH_EDGES;
+  const buildGraph = header.edgeCount <= edgeLimit;
+
   // The dominator pass needs per-node facts it cannot re-derive from the
   // aggregates, so they are collected here while the text is already being
-  // read. Typed arrays, not objects: see the module doc.
-  const selfSizeOf = new Float64Array(header.nodeCount);
-  const edgeCountOf = new Int32Array(header.nodeCount);
-  const nameOf = new Int32Array(header.nodeCount);
+  // read. Typed arrays, not objects: see the module doc. Absent when the
+  // graph is omitted, so the node loop below skips writing them.
+  const selfSizeOf = buildGraph ? new Float64Array(header.nodeCount) : undefined;
+  const edgeCountOf = buildGraph ? new Int32Array(header.nodeCount) : undefined;
+  const nameOf = buildGraph ? new Int32Array(header.nodeCount) : undefined;
   /** 1 when the node is an `object` or `closure`, the types a row groups. */
-  const namedOf = new Uint8Array(header.nodeCount);
+  const namedOf = buildGraph ? new Uint8Array(header.nodeCount) : undefined;
 
   // One record buffer, reused. Allocating it per node was a per-node
   // allocation of the very kind this reader exists to avoid.
@@ -597,12 +604,14 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
     nodeCountByType.set(type, (nodeCountByType.get(type) ?? 0) + 1);
     const selfSize = record[selfSizeAt]!;
     totalSelfSize += selfSize;
-    selfSizeOf[index] = selfSize;
-    edgeCountOf[index] = record[edgeCountAt]!;
-    nameOf[index] = record[nameAt]!;
+    if (selfSizeOf !== undefined) {
+      selfSizeOf[index] = selfSize;
+      edgeCountOf![index] = record[edgeCountAt]!;
+      nameOf![index] = record[nameAt]!;
+    }
     if (detachedAt !== undefined && record[detachedAt] === 2) detachedCount += 1;
     if (type === 'object' || type === 'closure') {
-      namedOf[index] = 1;
+      if (namedOf !== undefined) namedOf[index] = 1;
       const name = stringAt(strings, record[nameAt]!, `node ${index} name`);
       const entry = byName.get(name);
       if (entry === undefined) byName.set(name, { selfSize, count: 1 });
@@ -616,12 +625,10 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
   // The forward adjacency, in the same CSR layout `computeDominators` reads.
   // Past the ceiling it is not built at all: the edges are still validated —
   // a corrupt one must still be a refusal — but nothing is retained for them.
-  const edgeLimit = options?.maxGraphEdges ?? MAX_GRAPH_EDGES;
-  const buildGraph = header.edgeCount <= edgeLimit;
-  const outStart = new Int32Array(header.nodeCount + 1);
+  const outStart = new Int32Array(buildGraph ? header.nodeCount + 1 : 0);
   if (buildGraph) {
     for (let i = 0; i < header.nodeCount; i++) {
-      outStart[i + 1] = outStart[i]! + edgeCountOf[i]!;
+      outStart[i + 1] = outStart[i]! + edgeCountOf![i]!;
     }
   }
   const targets = buildGraph ? new Int32Array(header.edgeCount) : undefined;
@@ -661,7 +668,7 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
     nodeCount: header.nodeCount,
     outStart,
     targets,
-    selfSize: selfSizeOf,
+    selfSize: selfSizeOf!,
   });
 
   // Retained bytes are attributed to the node's own constructor, and only for
@@ -669,8 +676,8 @@ export function parseHeapSnapshot(text: string, options?: HeapParseOptions): Hea
   // so adding them to a constructor row would invent a finding.
   const byNameRetained = new Map<string, number>();
   for (let index = 0; index < header.nodeCount; index++) {
-    if (idom[index] === -1 || namedOf[index] === 0) continue;
-    const name = stringAt(strings, nameOf[index]!, `node ${index} name`);
+    if (idom[index] === -1 || namedOf![index] === 0) continue;
+    const name = stringAt(strings, nameOf![index]!, `node ${index} name`);
     byNameRetained.set(name, (byNameRetained.get(name) ?? 0) + retained[index]!);
   }
 

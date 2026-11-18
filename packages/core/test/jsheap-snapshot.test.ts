@@ -531,6 +531,15 @@ describe('retained attribution', () => {
     expect(snapshot.totalSelfSize).toBe(1008);
     expect(snapshot.nodeCount).toBe(12);
   });
+
+  it('still refuses a corrupt edge when attribution is omitted', () => {
+    // The ceiling skips the *graph*, not the validation: a snapshot whose
+    // to_node points past the node array is corrupt whatever the ceiling is,
+    // and reporting it as a readable heap would hide the corruption.
+    const corrupt = container().replace('"edges":[2,1,6', '"edges":[2,1,999');
+    expect(() => parseHeapSnapshot(corrupt, { maxGraphEdges: 1 }))
+      .toThrow(/to_node 999/);
+  });
 });
 
 /**
