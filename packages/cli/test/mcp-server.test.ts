@@ -179,6 +179,22 @@ describe('createMcpServer — the two eras', () => {
     expect(JSON.parse(after!).result.tools).toHaveLength(2);
   });
 
+  it('answers a call the runner could not start, instead of dropping the id', async () => {
+    // The CLI is spawned per call, so a spawn failure is a real path: a bad
+    // entry script, a fork limit, an antivirus lock. If `handle` threw, the
+    // stdio loop would print to stderr and answer nothing — and the client
+    // would wait on that id until it gave up.
+    const s = server(async () => { throw new Error('spawn EAGAIN'); });
+    const out = await s.handle(JSON.stringify({
+      jsonrpc: '2.0', id: 14, method: 'tools/call',
+      params: { _meta: MODERN_META, name: 'ohos-perf_analyze', arguments: { 'scene-dir': '/s' } },
+    }));
+    const answer = JSON.parse(out!);
+    expect(answer.id).toBe(14);
+    expect(answer.result.isError).toBe(true);
+    expect(answer.result.content[0].text).toContain('spawn EAGAIN');
+  });
+
   it('refuses an unknown method', async () => {
     const out = await server(async () => ({ stdout: '', stderr: '', code: 0 })).handle(JSON.stringify({
       jsonrpc: '2.0', id: 13, method: 'resources/list', params: { _meta: MODERN_META },

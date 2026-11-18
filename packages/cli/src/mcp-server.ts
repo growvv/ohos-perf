@@ -80,6 +80,12 @@ function firstStderrLine(stderr: string): string {
   return (first ?? '').trim();
 }
 
+/** A thrown value as one line, for a message a client reads. */
+function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 /** `serverInfo` — the same shape in both eras. */
 function serverInfo(name: string, version: string): Record<string, unknown> {
   return { name, version };
@@ -128,7 +134,18 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
 
     const argv = [...tool.argv(isRecord(args) ? args : {}), '--machine-json'];
-    const run = await options.run(argv);
+    let run: McpRunResult;
+    try {
+      run = await options.run(argv);
+    } catch (err) {
+      // The process could not even start. The id still has to be answered:
+      // a dropped id leaves the client waiting on a reply that never comes.
+      return ok(id, {
+        resultType: 'complete',
+        isError: true,
+        content: [{ type: 'text', text: `the command could not be started: ${errorText(err)}` }],
+      });
+    }
     let envelope: Record<string, unknown>;
     try {
       const parsed: unknown = JSON.parse(run.stdout);
