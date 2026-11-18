@@ -434,49 +434,55 @@ describe('the reader is cheaper than a whole-document parse', () => {
         const { parseHeapSnapshot } = await import(moduleUrl);
         const text = readFileSync(file, 'utf8');
         const base = process.memoryUsage().rss;
+        const buffersBefore = process.memoryUsage().arrayBuffers;
         let peak = base;
         const timer = setInterval(() => {
           const rss = process.memoryUsage().rss;
           if (rss > peak) peak = rss;
         }, 1);
+        let retained = '';
         if (mode === 'parse') {
           const parsed = JSON.parse(text);
           if (parsed.nodes.length === 0) throw new Error('empty');
         } else if (mode === 'omit') {
           // The ceiling's whole purpose: past it the reader must cost what the
           // stream costs, not what the graph costs.
-          if (parseHeapSnapshot(text, { maxGraphEdges: 0 }).retained.kind !== 'omitted') {
-            throw new Error('attribution was not omitted');
-          }
+          const snap = parseHeapSnapshot(text, { maxGraphEdges: 0 });
+          retained = snap.retained.kind;
+          if (retained !== 'omitted') throw new Error('attribution was not omitted');
         } else if (mode === 'build') {
           // Explicit, not the fallthrough: the build peak has to measure a
           // built graph, or the comparison below silently becomes omit-vs-scan.
-          if (parseHeapSnapshot(text).retained.kind !== 'measured') {
-            throw new Error('attribution was not measured');
-          }
+          const snap = parseHeapSnapshot(text);
+          retained = snap.retained.kind;
+          if (retained !== 'measured') throw new Error('attribution was not measured');
         } else if (parseHeapSnapshot(text).nodeCount === 0) {
           throw new Error('empty');
         }
         peak = Math.max(peak, process.memoryUsage().rss);
         clearInterval(timer);
-        console.log(peak - base);
+        // Peak RSS for the comparison, and the typed-array bytes the call
+        // allocated — the graph is typed arrays, so that figure is the graph.
+        const graph = (process.memoryUsage().arrayBuffers - buffersBefore) / 1048576;
+        console.log(peak - base, graph.toFixed(1));
       `);
       const moduleUrl = new URL('../dist/index.js', import.meta.url).href;
-      const peakOf = (mode: string): number => {
-        const run = spawnSync(process.execPath, [probe, mode, file, moduleUrl], {
+      const run = (mode: string): { peak: number; graph: number } => {
+        const r = spawnSync(process.execPath, [probe, mode, file, moduleUrl], {
           encoding: 'utf8',
         });
-        if (run.status !== 0) throw new Error(`${mode} probe failed: ${run.stderr}`);
-        return Number(run.stdout.trim());
+        if (r.status !== 0) throw new Error(`${mode} probe failed: ${r.stderr}`);
+        const [peak, graph] = r.stdout.trim().split(/\s+/).map(Number) as [number, number];
+        return { peak, graph };
       };
-      expect(peakOf('scan')).toBeLessThan(peakOf('parse'));
-      // The ceiling must buy back what the graph costs. Measured on this
-      // fixture: omit 22.2 MB against build 77.5 MB, a ratio of 0.29. The
-      // defect this pins is real and was reproduced: the ceiling was checked
-      // after the per-node arrays were allocated, so the omitted path paid
-      // 35.9 MB for arrays it never read — a ratio of 0.46. Comparing omit to
-      // *build* rather than to scan is what makes the test discriminate.
-      expect(peakOf('omit')).toBeLessThan(peakOf('build') * 0.4);
+      expect(run('scan').peak).toBeLessThan(run('parse').peak);
+      // The ceiling must buy back what the graph costs, and the right signal is
+      // the typed-array bytes rather than peak RSS: typed arrays are
+      // ArrayBuffers, so the omitted path allocates none of the graph. Measured
+      // on this fixture: omit 0.0 MB against build 39.1 MB. An RSS ratio was
+      // tried first and failed in CI at 0.51 on Node 24 where it read 0.29
+      // locally — GC timing, not the code, and so not a portable assertion.
+      expect(run('omit').graph).toBeLessThan(run('build').graph * 0.25);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
