@@ -136,7 +136,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     // The schema promises `additionalProperties: false`, so an undeclared key
     // is a client mistake, not a hint to ignore. `{"basline": "/b"}` (one
     // letter) would otherwise run without a baseline and report success.
-    const unknown = Object.keys(supplied).filter((key) => !(key in tool.inputSchema.properties));
+    // `Object.hasOwn`, not `in`: `'toString' in properties` is true through
+    // the prototype chain, so a membership test with `in` would accept a name
+    // no schema ever declared and report a validation it did not perform.
+    const unknown = Object.keys(supplied).filter((key) => !Object.hasOwn(tool.inputSchema.properties, key));
     if (unknown.length > 0) {
       return fail(
         id,

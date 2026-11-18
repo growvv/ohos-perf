@@ -65,7 +65,7 @@ envelope P33 defined — as data.
   out does.
 
 HapRay has no MCP surface at all, so this is beyond the inventory rather than a
-parity row. 2380 unit tests (2330 + 50 skipped on a clean checkout after `npm install && npm run build`); the device
+parity row. 2381 unit tests (2331 + 50 skipped on a clean checkout after `npm install && npm run build`); the device
 suite is unchanged.
 
 ## 0.28.0 — 2026-11-18

@@ -195,6 +195,21 @@ describe('createMcpServer — the two eras', () => {
     expect(JSON.parse(after!).result.tools).toHaveLength(2);
   });
 
+  it('refuses an inherited key, which is not a property the tool declares', async () => {
+    // `'toString' in properties` is true through the prototype chain, so a
+    // membership test with `in` accepts names no schema ever declared. The
+    // call is harmless — nothing reads the key — but the check would then be
+    // reporting a validation it did not perform.
+    const s = server(async () => ({ stdout: envelope(), stderr: '', code: 0 }));
+    const out = await s.handle(JSON.stringify({
+      jsonrpc: '2.0', id: 16, method: 'tools/call',
+      params: { _meta: MODERN_META, name: 'ohos-perf_analyze', arguments: { 'scene-dir': '/s', toString: 'x' } },
+    }));
+    const answer = JSON.parse(out!);
+    expect(answer.error.code).toBe(-32602);
+    expect(answer.error.message).toContain('toString');
+  });
+
   it('answers a call the runner could not start, instead of dropping the id', async () => {
     // The CLI is spawned per call, so a spawn failure is a real path: a bad
     // entry script, a fork limit, an antivirus lock. If `handle` threw, the
