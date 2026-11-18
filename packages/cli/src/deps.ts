@@ -635,14 +635,14 @@ async function analyzeScene(
  * them but no other field is accepted, because `analyze --json` is the
  * contract and anything else is an input this command did not produce.
  */
-function readAnalysisFile(path: string): AnalyzeResult {
+function readAnalysisFile(path: string, code = 'COMPARE_BAD_INPUT'): AnalyzeResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch (err) {
     throw new OhosPerfError(
       `cannot read analysis ${path}: ${safeMessage(err)}`,
-      { code: 'COMPARE_BAD_INPUT', cause: err },
+      { code, cause: err },
     );
   }
   if (
@@ -654,7 +654,7 @@ function readAnalysisFile(path: string): AnalyzeResult {
     throw new OhosPerfError(
       `analysis ${path} has no metrics/evidence arrays;` +
         ' pass a scene directory or the output of `ohos-perf analyze --json`',
-      { code: 'COMPARE_BAD_INPUT' },
+      { code },
     );
   }
   return parsed as AnalyzeResult;
@@ -1087,9 +1087,17 @@ export function realDeps(
       }
 
       const load = async (input: string): Promise<AnalyzeResult> =>
-        (await isDirectory(input) ? analyzeScene(openOfflineScene, input) : readAnalysisFile(input));
+        (await isDirectory(input)
+          ? analyzeScene(openOfflineScene, input)
+          : readAnalysisFile(input, 'GATE_BAD_INPUT'));
       const current = await load(req.input);
-      const baseline = req.baseline === undefined ? undefined : await load(req.baseline);
+      // Only a delta budget consumes a baseline: analyzing a second scene for
+      // a document with absolute bounds would cost a capture's worth of work
+      // and could fail on a path nothing needed.
+      const baseline =
+        needingBaseline.length === 0 || req.baseline === undefined
+          ? undefined
+          : await load(req.baseline);
 
       const result = evaluateGate(doc, current, baseline);
       if (req.outDir === undefined) return { result, files: [] };

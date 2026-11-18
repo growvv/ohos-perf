@@ -77,6 +77,42 @@ describe('runGate', () => {
     );
   });
 
+  it('prints a missing maxDeltaPct budget with the upper-bound operator', async () => {
+    // A percentage budget says "must not rise more than", so the operator on
+    // the line is `<=`. Printing `>=` told the reader the opposite direction.
+    const gate = result([
+      verdict({
+        id: 'frame.count',
+        status: 'missing',
+        bound: { kind: 'maxDeltaPct', limit: 10 },
+        reason: 'a percentage of a zero frame.count baseline is undefined',
+      }),
+    ]);
+    const r = await runGate(deps({ gate: async () => ({ result: gate, files: [] }) }), req, {});
+    expect(r.stdout).toContain('frame.count  <= 10%  missing  a percentage of a zero frame.count baseline is undefined\n');
+  });
+
+  it('renders a min budget and a failing delta with the right operators', async () => {
+    const gate = result([
+      verdict({ id: 'frame.fps', status: 'fail', value: 50, excess: 5, bound: { kind: 'min', limit: 55 } }),
+      verdict({
+        id: 'frame.avg.duration',
+        status: 'fail',
+        value: 18,
+        baseline: 16,
+        excess: 1,
+        bound: { kind: 'maxDelta', limit: 1 },
+      }),
+    ]);
+    const r = await runGate(deps({ gate: async () => ({ result: gate, files: [] }) }), req, {});
+    expect(r.stdout).toBe(
+      'frame.fps  50 >= 55  fail  (5 past)\n' +
+        'frame.avg.duration  16 -> 18 (+2) <= 1  fail  (1 past)\n' +
+        'totals  pass 0, fail 2, missing 0\n' +
+        'gate  open-app  fail\n',
+    );
+  });
+
   it('renders a delta bound with its baseline', async () => {
     const gate = result([
       verdict({

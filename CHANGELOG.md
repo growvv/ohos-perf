@@ -14,7 +14,8 @@ revision — its regression story is a chart a person reads.
   `maxDelta`/`maxDeltaPct` on movement from the baseline (a negative delta
   limit is legal — the metric must fall). It is validated whole before a scene
   is opened: an unknown key, a duplicate metric id, an entry with zero or two
-  bounds, and a delta budget with no baseline each name the JSON path.
+  bounds, and a delta budget with no baseline each name the JSON path — the
+  missing-baseline error names the budget ids and the flag to add.
 - **Not measured is not a pass.** A metric the run never emitted, a degraded
   proxy, a non-numeric value and a percentage against a zero baseline are all
   `missing` — the gate fails and the verdict says why. A green build can no
@@ -28,7 +29,7 @@ revision — its regression story is a chart a person reads.
 
 The parity ledger is unchanged — 38 ported, 0 partial, 0 missing, 1 out
 (`build`) — because a budget is a capability the inventory does not contain.
-2224 unit tests; the device suite is unchanged.
+2234 unit tests; the device suite is unchanged.
 
 ## 0.25.0 — 2026-11-18
 

@@ -155,6 +155,25 @@ describe('computeFaultTree', () => {
     expect(signals.Audio).toEqual(ZERO_AUDIO);
     expect(signals.av_codec.BroadcastControlInstructions).toBe(0);
   });
+
+  it('marks the perf_sample counters degraded when that table is absent', async () => {
+    // A zero from a table that does not exist is not a measured zero: a gate
+    // reading `fault.Audio.AudioPlayCb` as exact 0 would pass a budget on
+    // data the run never collected.
+    const result = await new FaultTreeAnalyzer().run({
+      ...makeCtx('emu-test', true),
+      frames: new FrameQuery(noPerfDb),
+      processes: new ProcessQuery(noPerfDb),
+      db: noPerfDb,
+    });
+    const byId = new Map(result.metrics.map((m) => [m.id, m]));
+    const audio = byId.get('fault.Audio.AudioPlayCb')!;
+    expect(audio.value).toBe(0);
+    expect(audio.fidelity).toBe('proxy');
+    expect(audio.degraded?.reason).toMatch(/perf_sample/);
+    // The callstack-sourced counters are unaffected.
+    expect(byId.get('fault.arkui.animator')!.fidelity).toBe('exact');
+  });
 });
 
 function makeCtx(

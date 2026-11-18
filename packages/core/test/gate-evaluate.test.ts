@@ -145,6 +145,18 @@ describe('evaluateGate', () => {
     });
   });
 
+  it('treats NaN and Infinity as not numeric rather than judging them', () => {
+    // `typeof NaN === 'number'`, so a value the analyzer could not compute
+    // would otherwise fail with an `excess` of NaN — a verdict with no number
+    // behind it, and `null` once serialized.
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = evaluateGate(doc([{ id: 'x', max: 5 }]), run([metricOf('x', value)]));
+      expect(result.verdicts[0]).toMatchObject({ status: 'missing' });
+      expect(result.verdicts[0]!.reason).toContain('not numeric');
+      expect(result.verdicts[0]!.excess).toBeUndefined();
+    }
+  });
+
   it('refuses to compute a percentage against a zero baseline', () => {
     const result = evaluateGate(
       doc([{ id: 'frame.count', maxDeltaPct: 10 }]),
@@ -222,6 +234,57 @@ describe('evaluateGate', () => {
       run([metricOf('x', 0.1 + 0.2)]),
     );
     expect(result.verdicts[0]!.excess).toBe(0.2);
+  });
+
+  /*
+   * Binary floating point makes an exactly-compliant value land a hair over
+   * its bound: 11 of 20 frames is 55.00000000000001, and 16.8 against 16 is a
+   * 5.000000000000004% rise. A gate that failed those would fail a build that
+   * met its budget, and the diagnostic would read "(0 past)" — a number that
+   * contradicts the verdict.
+   */
+  it('passes a max bound whose value is over only by floating-point noise', () => {
+    const result = evaluateGate(
+      doc([{ id: 'frame.jank.rate', max: 55 }]),
+      run([metricOf('frame.jank.rate', (11 / 20) * 100)]),
+    );
+    expect(result.verdicts[0]).toMatchObject({ status: 'pass' });
+  });
+
+  it('passes a min bound whose value is under only by floating-point noise', () => {
+    const result = evaluateGate(
+      doc([{ id: 'x', min: 0.1 }]),
+      run([metricOf('x', 1 - 0.9)]),
+    );
+    expect(result.verdicts[0]).toMatchObject({ status: 'pass' });
+  });
+
+  it('passes a maxDelta bound that is over only by floating-point noise', () => {
+    const result = evaluateGate(
+      doc([{ id: 'x', maxDelta: 0.1 }]),
+      run([metricOf('x', 0.4)]),
+      run([metricOf('x', 0.3)]),
+    );
+    expect(result.verdicts[0]).toMatchObject({ status: 'pass' });
+  });
+
+  it('passes a maxDeltaPct bound that is over only by floating-point noise', () => {
+    const result = evaluateGate(
+      doc([{ id: 'frame.avg.duration', maxDeltaPct: 5 }]),
+      run([metricOf('frame.avg.duration', 16.8)]),
+      run([metricOf('frame.avg.duration', 16)]),
+    );
+    expect(result.verdicts[0]).toMatchObject({ status: 'pass' });
+  });
+
+  it('still fails a value that is genuinely over the bound', () => {
+    // The tolerance must not swallow a real violation: 55.0001% is over 55.
+    const result = evaluateGate(
+      doc([{ id: 'frame.jank.rate', max: 55 }]),
+      run([metricOf('frame.jank.rate', 55.0001)]),
+    );
+    expect(result.verdicts[0]).toMatchObject({ status: 'fail' });
+    expect(result.verdicts[0]!.excess).toBeGreaterThan(0);
   });
 });
 

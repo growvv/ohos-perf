@@ -35,13 +35,13 @@ stage as a typed seam and makes three promises:
 
 ## Status
 
-**P1 through P31 are complete**: 2235 tests (2224 unit, 11 in the device
+**P1 through P31 are complete**: 2245 tests (2234 unit, 11 in the device
 project), two workspace typechecks and two builds, all green on the declared
 minimum Node (`22.13.0`). On a clean checkout — where the gitignored
 `spike/out/emu_big.db` and `spike/out/real_device.db` fixtures and any
-attached device are absent — `npm run test:unit` reports **2196 passed, 28
+attached device are absent — `npm run test:unit` reports **2206 passed, 28
 skipped (3 files)**, and all eleven device tests skip, so the combined clean
-checkout is **2196 passed, 39 skipped**. With both fixtures present and a
+checkout is **2206 passed, 39 skipped**. With both fixtures present and a
 device attached every test runs.
 The fixture-dependent suites are `e2e-offline`, `drilldown-e2e`,
 `parity-hapray`, `analyze-thread-wakeup`, `query-binder-startup`,
@@ -116,10 +116,10 @@ Implemented today:
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
   plus the degraded-metric engine that skips analyzers whose inputs are absent
 - `ohos-perf` CLI: `doctor`, `caps`, `collect`, `analyze`, `query`, `tools`,
-  `compare`, `ui-compare`, `report`, `render`, `trend`, `hap`,
-  `gesture {click,swipe,key,input,text}`, `explore <app>`, `agent <app> <task>`,
-  `symbols recover <lib.so>`, `emulator {list,start,stop,create}`,
-  `run <scenario.json> | --cases <dir>`
+  `compare`, `gate`, `ui-compare`, `report`, `render`, `trend`, `root-cause`,
+  `hap`, `opt`, `gesture {click,swipe,key,input,text}`, `explore <app>`,
+  `agent <app> <task>`, `symbols recover <lib.so>`,
+  `emulator {list,start,stop,create}`, `run <scenario.json> | --cases <dir>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
   instance to its `hdc` TCP target so `collect --target` can use it
@@ -1110,8 +1110,9 @@ own unit, `maxDelta`/`maxDeltaPct` are limits on the movement from `--baseline`
 (and a negative delta limit is legal — it says the metric must fall by at
 least that much). The document is validated whole before a scene is opened: an
 unknown key, a duplicate metric id, an entry with zero or two bounds, and a
-delta budget with no `--baseline` are all errors that name the JSON path, so a
-budget typo never fails after a two-minute capture.
+delta budget with no `--baseline` are all errors that name the JSON path (or,
+for the missing baseline, the budget ids and the flag to add), so a budget typo
+never fails after a two-minute capture.
 
 **A metric that was not measured is a failure.** This is the whole design. A
 metric the run never emitted is `missing`, a degraded proxy is `missing`, and a

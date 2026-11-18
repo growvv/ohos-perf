@@ -16,6 +16,22 @@ function provenance(ctx: AnalyzeContext, rows: number) {
 }
 
 /**
+ * A rate whose denominator is zero is not a measurement of zero.
+ *
+ * An expect-only window, or a process class that rendered nothing, still lets
+ * the analyzer divide — and the honest arithmetic result is 0 — but labelling
+ * that zero `exact` makes it indistinguishable from a measured zero. A gate
+ * reading it would pass a `max` budget on a number the run never computed, so
+ * the metric is a `proxy` and names the missing denominator.
+ */
+function zeroDenominator(reason: string): Pick<Metric, 'fidelity' | 'degraded'> {
+  return {
+    fidelity: 'proxy',
+    degraded: { reason, fallback: 'no measured rate' },
+  };
+}
+
+/**
  * HapRay's 60 Hz budget in nanoseconds.
  *
  * The comparison is done in integer nanoseconds rather than milliseconds so a
@@ -364,21 +380,27 @@ export class FrameAnalyzer implements Analyzer {
         value: rendered.length > 0 ? (stuttered.length / rendered.length) * 100 : 0,
         unit: '%',
         provenance: prov,
-        fidelity: 'exact',
+        ...(rendered.length > 0
+          ? { fidelity: 'exact' as const }
+          : zeroDenominator('no rendered frames, so the jank rate has no denominator')),
       }),
       metric({
         id: 'frame.empty.rate',
         value: actual.length > 0 ? (empty.length / actual.length) * 100 : 0,
         unit: '%',
         provenance: prov,
-        fidelity: 'exact',
+        ...(actual.length > 0
+          ? { fidelity: 'exact' as const }
+          : zeroDenominator('no actual frames, so the empty-frame rate has no denominator')),
       }),
       metric({
         id: 'frame.avg.duration',
         value: meanDurationMs(rendered),
         unit: 'ms',
         provenance: prov,
-        fidelity: 'exact',
+        ...(rendered.length > 0
+          ? { fidelity: 'exact' as const }
+          : zeroDenominator('no rendered frames, so there is no duration to average')),
       }),
       metric({
         id: 'frame.fps',
@@ -386,7 +408,9 @@ export class FrameAnalyzer implements Analyzer {
         unit: 'fps',
         provenance: prov,
         // Whole-span average, not HapRay's 1s sliding-window average.
-        fidelity: 'approximate',
+        ...(spanNs > 0
+          ? { fidelity: 'approximate' as const }
+          : zeroDenominator('no actual frames, so there is no frame span to divide by')),
       }),
     ];
 
@@ -466,7 +490,11 @@ export class FrameAnalyzer implements Analyzer {
               : 0,
           unit: '%',
           provenance: prov,
-          fidelity: 'exact',
+          ...(renderedByClass[processClass] > 0
+            ? { fidelity: 'exact' as const }
+            : zeroDenominator(
+                `no rendered ${processClass} frames, so the stutter rate has no denominator`,
+              )),
         }),
       ]),
     );

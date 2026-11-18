@@ -392,13 +392,30 @@ function computeFaultTreeDetailed(
   return { signals, rows };
 }
 
-/** Every metric this analyzer emits; order is fixed, the caller re-sorts by id. */
+/**
+ * Every metric this analyzer emits; order is fixed, the caller re-sorts by id.
+ *
+ * `perf_sample` counters are `proxy` when the table is absent: the collector
+ * returns 0 for a missing table (as HapRay's caught exception does), and a
+ * zero from a table that was never ingested is not a measured zero. Labelling
+ * it `exact` would let a gate pass a `max` budget on data the run never had.
+ */
 function faultMetrics(
   signals: FaultTreeSignals,
   rows: Map<string, number>,
   ctx: AnalyzeContext,
+  perfSamplePresent: boolean,
 ): Metric[] {
   const s = signals;
+  const perfSample = perfSamplePresent
+    ? { fidelity: 'exact' as const }
+    : {
+        fidelity: 'proxy' as const,
+        degraded: {
+          reason: 'perf_sample is absent, so this counter was never measured',
+          fallback: '0',
+        },
+      };
   const specs: Array<{ id: string; value: number; unit: MetricUnit; table: string }> = [
     { id: 'fault.arkui.animator', value: s.arkui.animator, unit: 'count', table: 'callstack' },
     {
@@ -498,7 +515,7 @@ function faultMetrics(
       id: spec.id,
       value: spec.value,
       unit: spec.unit,
-      fidelity: 'exact',
+      ...(spec.table === 'perf_sample' ? perfSample : { fidelity: 'exact' as const }),
       provenance: {
         collector: 'hitrace+streamer',
         table: spec.table,
@@ -812,20 +829,21 @@ export class FaultTreeAnalyzer implements Analyzer {
     const { signals, rows } = computeFaultTreeDetailed(ctx.db, {
       appPids: ctx.app.pids,
     });
+    const perfSamplePresent = hasTable(ctx.db, 'perf_sample');
 
     // An unidentified app has no pids to scope the app-invoke counters to, so
     // those zeros are not measurements. Keep the render-service metrics (whose
     // queries never used appPids) computed exactly as today, drop every
     // app-scoped metric, and report the cause instead of a confident zero.
     if (ctx.app.pids.length === 0) {
-      const metrics = faultMetrics(signals, rows, ctx).filter((m) =>
+      const metrics = faultMetrics(signals, rows, ctx, perfSamplePresent).filter((m) =>
         m.id.startsWith('fault.RS.'),
       );
       metrics.sort(byMetricId);
       return { metrics, evidence: [noAppPidEvidence(ctx)] };
     }
 
-    const metrics = faultMetrics(signals, rows, ctx);
+    const metrics = faultMetrics(signals, rows, ctx, perfSamplePresent);
     const evidenceItems = faultEvidence(signals, ctx);
 
     // The binder section is derived, not read from a shared file, so it is

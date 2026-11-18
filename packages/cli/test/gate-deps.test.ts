@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { parseBudgetDocument, renderGateJson } from '@ohos-perf/core';
+import { renderGateJson } from '@ohos-perf/core';
 import { realDeps } from '../src/deps';
 
 /*
@@ -86,8 +86,38 @@ describe('gate seam', () => {
     const analysis = await realDeps().analyze(sceneDir);
     const baselineFile = join(root, 'baseline.json');
     writeFileSync(baselineFile, JSON.stringify(analysis));
-    const out = await realDeps().gate({ budget, input: sceneDir, baseline: baselineFile });
-    expect(out.result.verdicts[0]!.status).not.toBe('missing');
+
+    // Baseline as a file, current as a scene.
+    const fromScene = await realDeps().gate({ budget, input: sceneDir, baseline: baselineFile });
+    expect(fromScene.result.verdicts[0]!.status).not.toBe('missing');
+
+    // Current as a file, baseline as a scene.
+    const currentFile = join(root, 'current.json');
+    writeFileSync(currentFile, JSON.stringify(analysis));
+    const fromFile = await realDeps().gate({ budget, input: currentFile, baseline: sceneDir });
+    expect(fromFile.result.verdicts[0]!.status).not.toBe('missing');
+  });
+
+  it('names a bad analysis file GATE_BAD_INPUT, not COMPARE_BAD_INPUT', async () => {
+    const root = tempRoot();
+    const budget = writeBudget(root, [{ id: 'frame.count', max: 1000 }]);
+    const bad = join(root, 'bad.json');
+    writeFileSync(bad, '{"metrics": 3}');
+    await expect(realDeps().gate({ budget, input: bad })).rejects.toMatchObject({
+      code: 'GATE_BAD_INPUT',
+    });
+  });
+
+  it('does not read --baseline when the document has no delta budget', async () => {
+    const root = tempRoot();
+    const budget = writeBudget(root, [{ id: 'frame.count', max: 1e9 }]);
+    // A path that does not exist: an absolute-only document must not need it.
+    const out = await realDeps().gate({
+      budget,
+      input: sceneWithTrace(root),
+      baseline: join(root, 'absent.json'),
+    });
+    expect(out.result.verdicts[0]!.status).toBe('pass');
   });
 
   it('writes gate.json containing exactly renderGateJson(result)', async () => {
@@ -97,7 +127,10 @@ describe('gate seam', () => {
     const outDir = join(root, 'out');
     const out = await realDeps().gate({ budget, input: sceneDir, outDir });
     expect(out.files).toEqual(['gate.json']);
-    expect(readFileSync(join(outDir, 'gate.json'), 'utf8')).toBe(renderGateJson(out.result));
+    const written = readFileSync(join(outDir, 'gate.json'), 'utf8');
+    expect(written).toBe(renderGateJson(out.result));
+    // The artifact round-trips: what a consumer parses is the same document.
+    expect(JSON.parse(written)).toEqual(out.result);
   });
 
   it('rejects a malformed document with the path that failed', async () => {
@@ -114,13 +147,5 @@ describe('gate seam', () => {
     await expect(
       realDeps().gate({ budget: join(root, 'absent.json'), input: sceneWithTrace(root) }),
     ).rejects.toMatchObject({ code: 'BUDGET_BAD_DOCUMENT' });
-  });
-
-  it('parses the document it writes against its own schema', () => {
-    // Guard against the fixture drifting from the validator.
-    expect(() =>
-      parseBudgetDocument({ schemaVersion: 1, name: 'x', budgets: [{ id: 'a', max: 1 }] }),
-    ).not.toThrow();
-    expect(existsSync(join(tmpdir(), 'never-created'))).toBe(false);
   });
 });

@@ -40,13 +40,39 @@ export interface GateResult {
   readonly totals: { readonly pass: number; readonly fail: number; readonly missing: number };
 }
 
-/** Round to 3 decimals so a percentage is byte-stable across platforms. */
-function round3(value: number): number {
-  return Math.round(value * 1000) / 1000;
+/**
+ * Round to 3 decimals so a percentage is byte-stable across platforms, but
+ * never round a real excess down to zero: a verdict of `fail` with `(0 past)`
+ * tells the reader the gate contradicted itself.
+ */
+function excess(value: number): number {
+  const rounded = Math.round(value * 1000) / 1000;
+  return rounded === 0 && value > 0 ? value : rounded;
+}
+
+/**
+ * The slack a comparison allows.
+ *
+ * Binary floating point makes an exactly-compliant value land a hair over its
+ * bound: 11 stuttered of 20 rendered frames is `55.00000000000001`, and 16.8
+ * against 16 ms is a `5.000000000000004`% rise. Without slack a run that met
+ * its budget fails the build, which is the worst failure a gate can have. The
+ * slack is relative to the bound and far below any measurement's resolution,
+ * so a genuine violation (55.0001 against 55) still fails.
+ */
+function tolerance(limit: number): number {
+  return 1e-9 * Math.max(1, Math.abs(limit));
 }
 
 function isNumeric(metric: Metric | undefined): metric is Metric & { value: number } {
-  return metric !== undefined && typeof metric.value === 'number';
+  // `typeof NaN === 'number'`: a value the analyzer could not compute is not a
+  // measurement, and judging it would produce a verdict with no number behind
+  // it (and `null` once serialized).
+  return (
+    metric !== undefined &&
+    typeof metric.value === 'number' &&
+    Number.isFinite(metric.value)
+  );
 }
 
 /** Why a metric cannot be judged at all, or `undefined` when it can. */
@@ -55,6 +81,9 @@ function unavailable(metric: Metric | undefined, id: string): string | undefined
   if (metric.degraded !== undefined) return `${id} is degraded: ${metric.degraded.reason}`;
   if (typeof metric.value !== 'number') {
     return `${id} is not numeric (${typeof metric.value})`;
+  }
+  if (!Number.isFinite(metric.value)) {
+    return `${id} is not numeric (${String(metric.value)})`;
   }
   return undefined;
 }
@@ -79,14 +108,14 @@ function judge(
   const value = current.value;
 
   if (bound.kind === 'max') {
-    return value <= bound.limit
+    return value <= bound.limit + tolerance(bound.limit)
       ? { id, status: 'pass', value, bound }
-      : { id, status: 'fail', value, bound, excess: round3(value - bound.limit) };
+      : { id, status: 'fail', value, bound, excess: excess(value - bound.limit) };
   }
   if (bound.kind === 'min') {
-    return value >= bound.limit
+    return value >= bound.limit - tolerance(bound.limit)
       ? { id, status: 'pass', value, bound }
-      : { id, status: 'fail', value, bound, excess: round3(bound.limit - value) };
+      : { id, status: 'fail', value, bound, excess: excess(bound.limit - value) };
   }
 
   // Delta bounds: the baseline is required, and a percentage of zero is not a
@@ -110,9 +139,16 @@ function judge(
 
   if (bound.kind === 'maxDelta') {
     const delta = value - base;
-    return delta <= bound.limit
+    return delta <= bound.limit + tolerance(bound.limit)
       ? { id, status: 'pass', value, baseline: base, bound }
-      : { id, status: 'fail', value, baseline: base, bound, excess: round3(delta - bound.limit) };
+      : {
+          id,
+          status: 'fail',
+          value,
+          baseline: base,
+          bound,
+          excess: excess(delta - bound.limit),
+        };
   }
 
   // `maxDeltaPct`: divide by the magnitude, so -100 -> -90 reads as a 10% fall
@@ -126,9 +162,16 @@ function judge(
     };
   }
   const pct = ((value - base) / Math.abs(base)) * 100;
-  return pct <= bound.limit
+  return pct <= bound.limit + tolerance(bound.limit)
     ? { id, status: 'pass', value, baseline: base, bound }
-    : { id, status: 'fail', value, baseline: base, bound, excess: round3(pct - bound.limit) };
+    : {
+        id,
+        status: 'fail',
+        value,
+        baseline: base,
+        bound,
+        excess: excess(pct - bound.limit),
+      };
 }
 
 /**

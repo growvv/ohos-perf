@@ -204,6 +204,17 @@ describe('FrameAnalyzer', () => {
       expect(noData).toHaveLength(1);
       expect(noData[0].explain).toMatch(/expect/i);
       expect(noData[0].signals.expectFrames).toBe(2);
+
+      // A zero with no denominator is not a measurement: a gate that reads
+      // `frame.jank.rate` as exact 0 would pass a budget on data the run
+      // never had. Each derived rate says so on the metric itself.
+      for (const id of ['frame.jank.rate', 'frame.empty.rate', 'frame.avg.duration', 'frame.fps']) {
+        const m = r.metrics.find((x) => x.id === id)!;
+        expect(m.fidelity, id).toBe('proxy');
+        expect(m.degraded?.reason, id).toMatch(/no .*(rendered|actual) frames/i);
+      }
+      // Counts are real counts even when the answer is zero.
+      expect(r.metrics.find((m) => m.id === 'frame.count')!.fidelity).toBe('exact');
     } finally {
       expectOnly.close();
     }

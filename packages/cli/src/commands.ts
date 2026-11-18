@@ -980,15 +980,19 @@ export async function runGate(
   }
 }
 
+/** The operator a bound's line shows; a percentage budget is still an upper bound. */
+function operatorOf(kind: GateVerdict['bound']['kind']): '<=' | '>=' {
+  return kind === 'min' ? '>=' : '<=';
+}
+
 /** `3.2 <= 5`, `16 -> 17 (+5%) <= 5%`, or the reason a metric was not judged. */
 function verdictLine(verdict: GateVerdict): string {
   const { id, bound } = verdict;
   const show = (value: number): string => String(value);
+  const op = operatorOf(bound.kind);
 
   if (verdict.status === 'missing') {
     const limit = bound.kind === 'maxDeltaPct' ? `${show(bound.limit)}%` : show(bound.limit);
-    const op =
-      bound.kind === 'max' || bound.kind === 'maxDelta' ? '<=' : '>=';
     return `${id}  ${op} ${limit}  missing  ${verdict.reason ?? ''}`;
   }
 
@@ -1000,7 +1004,10 @@ function verdictLine(verdict: GateVerdict): string {
     judged = `${show(value)} >= ${show(bound.limit)}`;
   } else if (bound.kind === 'maxDelta') {
     const base = verdict.baseline ?? 0;
-    judged = `${show(base)} -> ${show(value)} (${signed(value - base)}) <= ${show(bound.limit)}`;
+    // The delta is rounded like `excess`: raw subtraction prints
+    // `+0.8000000000000007` for 16 -> 16.8.
+    const delta = Math.round((value - base) * 1000) / 1000;
+    judged = `${show(base)} -> ${show(value)} (${signed(delta)}) <= ${show(bound.limit)}`;
   } else {
     const base = verdict.baseline ?? 0;
     const pct = base === 0 ? 0 : Math.round(((value - base) / Math.abs(base)) * 1000) / 10;
