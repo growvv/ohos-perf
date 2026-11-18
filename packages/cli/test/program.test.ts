@@ -2,10 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { cliDeps } from './helpers/deps';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CommanderError } from 'commander';
 import { buildRootCauseDocument } from '../../core/src/report/root-cause';
+import { OhosPerfError } from '@ohos-perf/core';
 import type { CliDeps, CliResult } from '../src/commands';
 import { buildProgram } from '../src/program';
 
@@ -954,5 +955,135 @@ describe('run wiring', () => {
     });
     expect(emitted[0].exitCode).toBe(1);
     expect(emitted[0].stdout).toMatch(/failed  open/);
+  });
+});
+
+/*
+ * P33 task 3 — the tool-result envelope.
+ *
+ * The two flags are global, so they work on every command without being
+ * declared 25 times. `--machine-json` forces the command's own `--json` (the
+ * envelope wraps a payload, and a human summary is not one), and `--result-file`
+ * writes the same document without changing what stdout carries.
+ */
+describe('--machine-json and --result-file', () => {
+  function machineHarness(overrides: Partial<CliDeps> = {}) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const emitted: CliResult[] = [];
+    const files: Array<{ path: string; contents: string }> = [];
+    const program = buildProgram(deps(overrides), {
+      writeOut: (t) => out.push(t),
+      writeErr: (t) => err.push(t),
+      emit: (r) => emitted.push(r),
+      writeFile: (path, contents) => files.push({ path, contents }),
+    }, { exitOverride: true });
+    return { program, out, err, emitted, files };
+  }
+
+  async function run(argv: string[], overrides: Partial<CliDeps> = {}) {
+    const h = machineHarness(overrides);
+    try {
+      await h.program.parseAsync(['node', 'ohos-perf', ...argv]);
+    } catch {
+      // `exitOverride` throws on a non-zero exit; the emitted result is what
+      // the assertions read.
+    }
+    return h;
+  }
+
+  it('replaces the bare payload with one envelope line on stdout', async () => {
+    const { emitted } = await run(['analyze', '/scene', '--machine-json']);
+    const lines = emitted[0]!.stdout.split('\n').filter((line) => line !== '');
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      schemaVersion: '1.0',
+      toolId: 'ohos-perf',
+      toolVersion: manifest.version,
+      command: 'analyze',
+      success: true,
+      exitCode: 0,
+      outputs: { payload: { metrics: [], evidence: [] } },
+    });
+  });
+
+  it('names a nested command with dots', async () => {
+    const { emitted } = await run(['emulator', 'list', '--machine-json']);
+    expect(JSON.parse(emitted[0]!.stdout).command).toBe('emulator.list');
+  });
+
+  it('prints one envelope even when --json is also given', async () => {
+    const { emitted } = await run(['analyze', '/scene', '--json', '--machine-json']);
+    expect(emitted[0]!.stdout.trim().split('\n')).toHaveLength(1);
+    expect(JSON.parse(emitted[0]!.stdout).outputs.payload).toBeDefined();
+  });
+
+  it('wraps a failure with its code and keeps the exit code', async () => {
+    const { emitted } = await run(['analyze', '/scene', '--machine-json'], {
+      analyze: async () => { throw new OhosPerfError('nothing to ingest', { code: 'SCENE_NO_INPUT' }); },
+    });
+    const envelope = JSON.parse(emitted[0]!.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.exitCode).toBe(1);
+    expect(envelope.error).toEqual({ code: 'SCENE_NO_INPUT', message: 'nothing to ingest' });
+    expect(envelope.outputs).toEqual({});
+    expect(emitted[0]!.exitCode).toBe(1);
+  });
+
+  it('reports a gate verdict as an unsuccessful exit with no error', async () => {
+    const { emitted } = await run(['gate', 'b.json', '/scene', '--machine-json'], {
+      gate: async () => ({
+        result: { name: 'b', status: 'fail', verdicts: [], totals: { pass: 0, fail: 1, missing: 0 } },
+        files: [],
+      }),
+    });
+    const envelope = JSON.parse(emitted[0]!.stdout);
+    expect(envelope.exitCode).toBe(2);
+    expect(envelope.success).toBe(false);
+    expect(envelope.error).toBeUndefined();
+    expect(envelope.outputs.payload.status).toBe('fail');
+  });
+
+  it('writes the envelope to --result-file and leaves stdout as the --json document', async () => {
+    const { emitted, files } = await run(['analyze', '/scene', '--json', '--result-file', 'r.json']);
+    expect(files).toHaveLength(1);
+    expect(files[0]!.path).toBe(resolve('r.json'));
+    const written = JSON.parse(files[0]!.contents);
+    expect(written.command).toBe('analyze');
+    expect(written.outputs.payload).toEqual({ metrics: [], evidence: [] });
+    expect(JSON.parse(emitted[0]!.stdout)).toEqual({ metrics: [], evidence: [] });
+  });
+
+  it('writes the file and prints one line when both flags are given', async () => {
+    const { emitted, files } = await run(['analyze', '/scene', '--machine-json', '--result-file', 'r.json']);
+    expect(files).toHaveLength(1);
+    expect(JSON.parse(emitted[0]!.stdout)).toEqual(JSON.parse(files[0]!.contents));
+  });
+
+  it('fails the command when the result file cannot be written, naming the path', async () => {
+    // A success line beside a file that was not written is the failure mode
+    // this test exists for: the exit code has to say so.
+    const out: string[] = [];
+    const emitted: CliResult[] = [];
+    const program = buildProgram(deps(), {
+      writeOut: (t) => out.push(t),
+      writeErr: () => {},
+      emit: (r) => emitted.push(r),
+      writeFile: () => { throw new Error('EACCES: permission denied'); },
+    }, { exitOverride: true });
+    try {
+      await program.parseAsync(['node', 'ohos-perf', 'analyze', '/scene', '--result-file', 'r.json']);
+    } catch {
+      // exitOverride
+    }
+    expect(emitted[0]!.exitCode).toBe(1);
+    expect(emitted[0]!.stderr).toContain('r.json');
+    expect(emitted[0]!.error?.code).toBe('TOOL_RESULT_BAD_PATH');
+  });
+
+  it('changes nothing for a run without either flag', async () => {
+    const { emitted, files } = await run(['analyze', '/scene', '--json']);
+    expect(files).toHaveLength(0);
+    expect(JSON.parse(emitted[0]!.stdout)).toEqual({ metrics: [], evidence: [] });
   });
 });

@@ -1,5 +1,13 @@
 import { Command } from 'commander';
-import type { Gesture, HiprofilerPluginName } from '@ohos-perf/core';
+import { resolve } from 'node:path';
+import {
+  OhosPerfError,
+  buildToolResult,
+  renderToolResultFile,
+  renderToolResultLine,
+  type Gesture,
+  type HiprofilerPluginName,
+} from '@ohos-perf/core';
 import {
   runAnalyze,
   runCaps,
@@ -27,6 +35,7 @@ import {
   runUiCompare,
   safeMessage,
   failureLine,
+  failureResult,
   type CliDeps,
   type CliResult,
   type EmulatorTargetOptions,
@@ -53,6 +62,15 @@ export interface ProgramIo {
   writeOut(text: string): void;
   writeErr(text: string): void;
   emit(result: CliResult): void;
+  /**
+   * Write the tool-result file. Injected so tests never touch the disk.
+   *
+   * Optional: twenty-odd test harnesses build this object, and a required
+   * member would turn every one of them red for a path they never take. When
+   * it is absent, `--result-file` is a `TOOL_RESULT_BAD_PATH` failure rather
+   * than a silent no-op.
+   */
+  writeFile?(path: string, contents: string): void;
 }
 
 export interface ProgramOptions {
@@ -103,6 +121,78 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .description('Performance analysis for OpenHarmony devices and captured traces')
     .version(deps.version);
 
+  // Global, so they work on every command without being declared 25 times.
+  // `--machine-json` is the envelope form of `--json`: the payload has to be
+  // the structured answer, so the hook asks the command for it rather than
+  // twenty-five branches each remembering to.
+  program
+    .option('--machine-json', 'print one tool-result envelope line on stdout instead of the command output')
+    .option('--result-file <path>', 'write the tool-result envelope to this file');
+
+  /** The command whose action is running; set by `preAction`, read by `emit`. */
+  let active: Command | undefined;
+
+  program.hook('preAction', (_self, action) => {
+    active = action;
+    if ((action.optsWithGlobals() as { machineJson?: boolean }).machineJson === true) {
+      action.setOptionValue('json', true);
+    }
+  });
+
+  /** `analyze`, `emulator.list` — the path a consumer branches on. */
+  const commandPath = (command: Command): string => {
+    const parts: string[] = [];
+    for (let node: Command | null = command; node !== null && node.parent !== null; node = node.parent) {
+      parts.unshift(node.name());
+    }
+    return parts.join('.');
+  };
+
+  /**
+   * Wrap a result in the tool-result envelope, when the caller asked for one.
+   *
+   * `--result-file` writes the document and leaves stdout alone; `--machine-json`
+   * replaces stdout with one line. With neither flag this returns the result
+   * untouched, so the human path is byte-identical to before.
+   *
+   * A result file that cannot be written is a failure of the invocation, not a
+   * warning: a success line beside a file that does not exist is the one
+   * outcome a caller must never have to discover by checking.
+   */
+  const finish = (command: Command, result: CliResult): CliResult => {
+    const globals = command.optsWithGlobals() as { machineJson?: boolean; resultFile?: string };
+    if (globals.machineJson !== true && globals.resultFile === undefined) return result;
+    const envelope = buildToolResult({
+      toolVersion: deps.version,
+      command: commandPath(command),
+      exitCode: result.exitCode,
+      ...(result.result === undefined ? {} : { payload: result.result }),
+      ...(result.error === undefined ? {} : { error: result.error }),
+    });
+    if (globals.resultFile !== undefined) {
+      const path = resolve(globals.resultFile);
+      try {
+        if (io.writeFile === undefined) {
+          throw new Error('no file writer is wired for this invocation');
+        }
+        io.writeFile(path, renderToolResultFile(envelope));
+      } catch (err) {
+        return failureResult(new OhosPerfError(
+          `could not write the tool result to ${path}: ${safeMessage(err)}`,
+          { code: 'TOOL_RESULT_BAD_PATH' },
+        ));
+      }
+    }
+    return globals.machineJson === true
+      ? { ...result, stdout: renderToolResultLine(envelope) }
+      : result;
+  };
+
+  /** `io.emit` plus the envelope, for every action in this program. */
+  const emit = (result: CliResult): void => {
+    io.emit(active === undefined ? result : finish(active, result));
+  };
+
   program
     .command('doctor')
     .description('check the hdc/trace_streamer toolchain and the attached device')
@@ -112,7 +202,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       // `doctor` probes through the same injected deps as `caps`; when a
       // target is named, the device half of its report must honour it or the
       // report describes a different device than the one asked about.
-      io.emit(await runDoctor(deps, opts));
+      emit(await runDoctor(deps, opts));
     });
 
   program
@@ -121,7 +211,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--target <id>', 'probe this hdc target instead of the first connected one')
     .option('--json', 'print the capabilities as JSON')
     .action(async (opts: { target?: string; json?: boolean }) => {
-      io.emit(await runCaps(deps, opts));
+      emit(await runCaps(deps, opts));
     });
 
   program
@@ -131,7 +221,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--app <packageName>', 'app package name, for evidence wording')
     .option('--json', 'print the analysis result as JSON')
     .action(async (sceneDir: string, opts: { app?: string; json?: boolean }) => {
-      io.emit(await runAnalyze(deps, sceneDir, opts));
+      emit(await runAnalyze(deps, sceneDir, opts));
     });
 
   program
@@ -194,7 +284,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       try {
         durationMs = parseDurationSeconds(opts.duration);
       } catch (err) {
-        io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+        emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
         return;
       }
 
@@ -202,7 +292,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       // without `--hiprofiler` would capture through hitrace and quietly drop
       // the user's request.
       if (opts.plugins !== undefined && opts.hiprofiler !== true) {
-        io.emit({
+        emit({
           stdout: '',
           stderr: 'invalid --plugins: --hiprofiler is required\n',
           exitCode: 1,
@@ -213,7 +303,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       // `--hiperf` there is no perf capture to symbolize, so accepting it would
       // run a capture that quietly drops the user's request.
       if (opts.soDir !== undefined && opts.hiperf !== true) {
-        io.emit({
+        emit({
           stdout: '',
           stderr: 'invalid --so-dir: --hiperf is required\n',
           exitCode: 1,
@@ -223,7 +313,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
       // The interval only means something to a thermal capture; accepting it
       // alone would run a capture that quietly drops the user's request.
       if (opts.thermalInterval !== undefined && opts.thermal !== true) {
-        io.emit({
+        emit({
           stdout: '',
           stderr: 'invalid --thermal-interval: --thermal is required\n',
           exitCode: 1,
@@ -240,7 +330,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
               intervalMs: parseThermalIntervalSeconds(opts.thermalInterval),
             };
           } catch (err) {
-            io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+            emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
             return;
           }
         }
@@ -253,7 +343,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
             ? {}
             : { plugins: parsePluginList(opts.plugins) };
         } catch (err) {
-          io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+          emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
           return;
         }
       }
@@ -269,7 +359,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         opts.jsheap === true ||
         (hiprofilerRequest?.plugins?.includes('nativehook') ?? false);
       if (needsApp && (opts.app === undefined || opts.app === '')) {
-        io.emit({
+        emit({
           stdout: '',
           stderr: 'missing --app: --procfs, --cold-start, --hiperf, --jsheap and the' +
             ' nativehook plugin require an application package name\n',
@@ -278,7 +368,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         return;
       }
 
-      io.emit(await runCollect(deps, {
+      emit(await runCollect(deps, {
         ...(opts.app === undefined ? {} : { app: opts.app }),
         durationMs,
         out: opts.out,
@@ -318,10 +408,10 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
         args = opts.args === undefined ? undefined : parseQueryArgs(opts.args);
         limit = opts.limit === undefined ? undefined : parseLimit(opts.limit);
       } catch (err) {
-        io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+        emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
         return;
       }
-      io.emit(await runQuery(deps, {
+      emit(await runQuery(deps, {
         sceneDir,
         name,
         ...(opts.app !== undefined ? { app: opts.app } : {}),
@@ -337,7 +427,7 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .argument('<current>', 'scene directory or `analyze --json` file')
     .option('--json', 'print the comparison as JSON')
     .action(async (baseline: string, current: string, opts: { json?: boolean }) => {
-      io.emit(await runCompare(deps, { baseline, current }, { json: opts.json }));
+      emit(await runCompare(deps, { baseline, current }, { json: opts.json }));
     });
 
   program
@@ -357,7 +447,7 @@ failure, never a pass.`)
       out?: string;
       json?: boolean;
     }) => {
-      io.emit(
+      emit(
         await runGate(
           deps,
           {
@@ -379,7 +469,7 @@ failure, never a pass.`)
     .requiredOption('--out <dir>', 'output directory for ui-diff.json/html and marked PNGs')
     .option('--json', 'print the comparison as JSON')
     .action(async (a: string, b: string, opts: { out: string; json?: boolean }) => {
-      io.emit(await runUiCompare(deps, { a, b, outDir: opts.out }, { json: opts.json }));
+      emit(await runUiCompare(deps, { a, b, outDir: opts.out }, { json: opts.json }));
     });
 
   program
@@ -395,7 +485,7 @@ failure, never a pass.`)
         sceneDir: string,
         opts: { out: string; app?: string; baseline?: string; json?: boolean },
       ) => {
-        io.emit(
+        emit(
           await runReport(
             deps,
             {
@@ -417,7 +507,7 @@ failure, never a pass.`)
     .requiredOption('--out <dir>', 'output directory for the re-rendered artifacts')
     .option('--json', 'print the artifact manifest as JSON')
     .action(async (report: string, opts: { out: string; json?: boolean }) => {
-      io.emit(await runRender(deps, { report, outDir: opts.out }, { json: opts.json }));
+      emit(await runRender(deps, { report, outDir: opts.out }, { json: opts.json }));
     });
 
   program
@@ -442,7 +532,7 @@ A suspect citing a name this run never measured is marked ungrounded.`)
       app?: string;
       json?: boolean;
     }) => {
-      io.emit(
+      emit(
         await runRootCauseCommand(
           deps,
           {
@@ -470,7 +560,7 @@ A suspect citing a name this run never measured is marked ungrounded.`)
     )
     .option('--json', 'print the trend manifest as JSON')
     .action(async (reports: string[], opts: { out: string; label?: string[]; json?: boolean }) => {
-      io.emit(
+      emit(
         await runTrend(
           deps,
           {
@@ -492,7 +582,7 @@ A suspect citing a name this run never measured is marked ungrounded.`)
     .option('--out <dir>', 'write hap.json and hap.html to this directory')
     .option('--json', 'print the analysis as JSON')
     .action(async (packagePath: string, opts: { out?: string; json?: boolean }) => {
-      io.emit(
+      emit(
         await runHap(
           deps,
           {
@@ -512,7 +602,7 @@ A suspect citing a name this run never measured is marked ungrounded.`)
     .argument('<package>', 'path to a .hap, .hsp, .zip or .so file')
     .option('--json', 'print the analysis as JSON')
     .action(async (packagePath: string, opts: { json?: boolean }) => {
-      io.emit(await runOptimization(deps, { packagePath }, { json: opts.json }));
+      emit(await runOptimization(deps, { packagePath }, { json: opts.json }));
     });
 
   program
@@ -552,11 +642,11 @@ A suspect citing a name this run never measured is marked ungrounded.`)
         }
         only = opts.only === undefined ? undefined : parseOnly(opts.only);
       } catch (err) {
-        io.emit({ stdout: '', stderr: `${failureLine(err)}
+        emit({ stdout: '', stderr: `${failureLine(err)}
 `, exitCode: 1 });
         return;
       }
-      io.emit(await runScenarioCommand(deps, {
+      emit(await runScenarioCommand(deps, {
         scenarioPath: scenarioPath ?? '',
         outDir: opts.out,
         ...(opts.cases === undefined ? {} : { casesDir: opts.cases }),
@@ -608,10 +698,10 @@ instead.`)
           seed = parseMaxSteps(opts.seed);
         }
       } catch (err) {
-        io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+        emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
         return;
       }
-      io.emit(
+      emit(
         await runExplore(
           deps,
           {
@@ -654,10 +744,10 @@ walk, and prefer a test account or a disposable build.`)
       try {
         maxSteps = parseMaxSteps(opts.maxSteps);
       } catch (err) {
-        io.emit({ stdout: '', stderr: `${failureLine(err)}\\n`, exitCode: 1 });
+        emit({ stdout: '', stderr: `${failureLine(err)}\\n`, exitCode: 1 });
         return;
       }
-      io.emit(
+      emit(
         await runAgentCommand(
           deps,
           {
@@ -688,7 +778,7 @@ walk, and prefer a test account or a disposable build.`)
       model?: string;
       json?: boolean;
     }) => {
-      io.emit(
+      emit(
         await runSymbolRecovery(
           deps,
           {
@@ -707,7 +797,7 @@ walk, and prefer a test account or a disposable build.`)
     .description('list the named drill-down queries an agent can call')
     .option('--json', 'print the query definitions as JSON')
     .action((opts: { json?: boolean }) => {
-      io.emit(runTools(deps, opts));
+      emit(runTools(deps, opts));
     });
   /**
    * Add the emulator location options to one subcommand.
@@ -733,7 +823,7 @@ walk, and prefer a test account or a disposable build.`)
       .description('list emulator instances and the target each one owns')
       .option('--json', 'print the instances as JSON'),
   ).action(async (opts: EmulatorFlags & { json?: boolean }) => {
-    io.emit(await runEmulatorList(deps, {
+    emit(await runEmulatorList(deps, {
       ...targetOptionsOf(opts),
       ...(opts.json === undefined ? {} : { json: opts.json }),
     }));
@@ -766,7 +856,7 @@ walk, and prefer a test account or a disposable build.`)
         const message = reason.startsWith('expected a positive number of seconds')
           ? '--timeout must be greater than 0 (a positive number of seconds, e.g. 30)'
           : reason;
-        io.emit({
+        emit({
           stdout: '',
           stderr: `invalid --timeout ${JSON.stringify(timeout)}: ${message}\n`,
           exitCode: 1,
@@ -774,7 +864,7 @@ walk, and prefer a test account or a disposable build.`)
         return;
       }
     }
-    io.emit(await runEmulatorStart(deps, name, {
+    emit(await runEmulatorStart(deps, name, {
       ...targetOptionsOf(opts),
       ...(timeoutMs === undefined ? {} : { timeoutMs }),
       ...(json === undefined ? {} : { json }),
@@ -788,7 +878,7 @@ walk, and prefer a test account or a disposable build.`)
       .argument('<name>', 'emulator instance name')
       .option('--json', 'print the result as JSON'),
   ).action(async (name: string, opts: EmulatorFlags & { json?: boolean }) => {
-    io.emit(await runEmulatorStop(deps, name, {
+    emit(await runEmulatorStop(deps, name, {
       ...targetOptionsOf(opts),
       ...(opts.json === undefined ? {} : { json: opts.json }),
     }));
@@ -818,7 +908,7 @@ walk, and prefer a test account or a disposable build.`)
     // before the action, which would break the CLI-wide failure contract
     // (one message on stderr, an emitted exit-1 result).
     if (opts.deviceType === undefined || opts.osVersion === undefined) {
-      io.emit({
+      emit({
         stdout: '',
         stderr: '--device-type and --os-version are required\n',
         exitCode: 1,
@@ -842,10 +932,10 @@ walk, and prefer a test account or a disposable build.`)
       memoryGb = number('--memory', opts.memory);
       storageGb = number('--storage', opts.storage);
     } catch (err) {
-      io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+      emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
       return;
     }
-    io.emit(await runEmulatorCreate(deps, {
+    emit(await runEmulatorCreate(deps, {
       name,
       deviceType: opts.deviceType,
       osVersion: opts.osVersion,
@@ -883,10 +973,10 @@ walk, and prefer a test account or a disposable build.`)
     try {
       gesture = build();
     } catch (err) {
-      io.emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
+      emit({ stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 });
       return;
     }
-    io.emit(await runGesture(deps, {
+    emit(await runGesture(deps, {
       gesture,
       ...(opts.target === undefined ? {} : { target: opts.target }),
     }, { json: opts.json }));
