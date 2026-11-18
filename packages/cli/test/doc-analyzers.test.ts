@@ -42,6 +42,7 @@ const TOKENS: Record<string, { phrase: string; prefix?: string }> = {
   hilog: { phrase: 'device log', prefix: 'hilog.*' },
   'redundant-file': { phrase: 'redundant-file', prefix: 'redundant_file.*' },
   coverage: { phrase: 'coverage ingestion', prefix: 'coverage.*' },
+  jsheap: { phrase: 'JS heap snapshot', prefix: 'jsheap.*' },
   thermal: { phrase: 'thermal', prefix: 'thermal.*' },
   ui: { phrase: 'UI tree', prefix: 'ui.*' },
 };

@@ -1870,3 +1870,75 @@ describe('realDeps().analyze with a supplied coverage report', () => {
     }
   });
 });
+
+describe('realDeps().analyze with a supplied heap snapshot', () => {
+  /** Two objects of 64 and 32 bytes under the root, one detached. */
+  function heap(): string {
+    return JSON.stringify({
+      snapshot: {
+        meta: {
+          node_fields: ['type', 'name', 'id', 'self_size', 'edge_count', 'detachedness'],
+          node_types: [
+            ['hidden', 'array', 'string', 'object'],
+            'string', 'number', 'number', 'number', 'number',
+          ],
+          edge_fields: ['type', 'name_or_index', 'to_node'],
+          edge_types: [
+            ['context', 'element', 'property', 'internal', 'hidden', 'shortcut', 'weak'],
+            'string_or_number', 'node',
+          ],
+        },
+        node_count: 3,
+        edge_count: 2,
+      },
+      nodes: [0, 0, 1, 0, 2, 0, 3, 1, 2, 64, 0, 2, 3, 2, 3, 32, 0, 1],
+      edges: [2, 1, 6, 2, 2, 12],
+      strings: ['', 'A', 'B'],
+    });
+  }
+
+  it('analyzes a scene\'s snapshot and reports the heap', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-cli--heap-'));
+    try {
+      createTraceDb(join(root, 'trace.db'));
+      writeFileSync(join(root, 'jsheap.heapsnapshot'), heap());
+      const result = await realDeps('0.0.0').analyze(root);
+      const total = result.metrics.find((m) => m.id === 'jsheap.total.bytes') as
+        | { value: number | string; fidelity: string; provenance: { collector: string } }
+        | undefined;
+      expect(total?.value).toBe(96);
+      expect(total?.fidelity).toBe('exact');
+      expect(total?.provenance.collector).toBe('scene:jsheap.heapsnapshot');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a snapshot the scene descriptor does not declare', async () => {
+    // A `jsheap.heapsnapshot` left by an earlier capture must not be reported
+    // as this scene's heap: `scene.json` is the authority on what ran.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-cli--staleheap-'));
+    try {
+      createTraceDb(join(root, 'trace.db'));
+      writeFileSync(join(root, 'jsheap.heapsnapshot'), heap());
+      writeFileSync(
+        join(root, 'scene.json'),
+        JSON.stringify({
+          schemaVersion: '1',
+          app: { packageName: 'com.demo', processNames: ['com.demo'] },
+          pids: [1],
+          capture: { startedAtMs: 0, durationMs: 1000, collectors: ['hitrace'] },
+        }),
+      );
+      const result = await realDeps('0.0.0').analyze(root);
+      expect(result.metrics.some((m) => m.id.startsWith('jsheap.'))).toBe(false);
+      const noData = result.evidence.find(
+        (item) => item.kind === 'no_data' &&
+          (item as unknown as { explain: string }).explain.includes('jsheap.heapsnapshot'),
+      );
+      expect(noData).toBeDefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

@@ -450,6 +450,13 @@ interface OpenedScene {
    * and never produces it.
    */
   coverage?: string;
+  /**
+   * The scene's raw `jsheap.heapsnapshot`, when it carried one. Captured by
+   * `collect --jsheap`, which needs a debug-signed or profilerable app; this
+   * package reads and analyzes it, and a scene without one degrades with a
+   * reason rather than reporting a zero-byte heap.
+   */
+  jsheap?: string;
 }
 
 /** True when `path` exists and is a directory (a scene, not an `analyze --json` file). */
@@ -491,6 +498,7 @@ function analyzeContext(opened: OpenedScene) {
     ...(opened.thermal === undefined ? {} : { thermal: opened.thermal }),
     ...(opened.redundantFile === undefined ? {} : { redundantFile: opened.redundantFile }),
     ...(opened.coverage === undefined ? {} : { coverage: opened.coverage }),
+    ...(opened.jsheap === undefined ? {} : { jsheap: opened.jsheap }),
     ...(opened.metadata !== undefined ? { metadata: opened.metadata } : {}),
     app: opened.app,
     // The whole database: a CLI run has no capture window to honour.
@@ -981,6 +989,12 @@ export function realDeps(
       const coverage = existsSync(layout.coverageFile)
         ? readFileSync(layout.coverageFile, 'utf8')
         : undefined;
+      // A heap snapshot *is* a collector artifact, so unlike coverage it is
+      // gated on the descriptor: a file an earlier `--jsheap` capture left in
+      // this directory must not be reported as this scene's heap.
+      const jsheap = declared('jsheap') && existsSync(layout.jsheapFile)
+        ? readFileSync(layout.jsheapFile, 'utf8')
+        : undefined;
       const hilog = hilogText === undefined
         ? undefined
         : parseHilogText(hilogText, {
@@ -1040,6 +1054,7 @@ export function realDeps(
         ...(thermal === undefined ? {} : { thermal }),
         ...(redundantFile === undefined ? {} : { redundantFile }),
         ...(coverage === undefined ? {} : { coverage }),
+        ...(jsheap === undefined ? {} : { jsheap }),
       };
     } catch (err) {
       scene.close();

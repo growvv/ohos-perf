@@ -9,7 +9,7 @@
 A TypeScript toolkit for HarmonyOS performance analysis. It turns an attached device
 into structured, evidence-backed data: capability probing, ten collectors,
 `trace_streamer` ingest, typed queries over the resulting SQLite
-databases, twenty-two analyzers, metrics with provenance, an evidence graph,
+databases, twenty-three analyzers, metrics with provenance, an evidence graph,
 baseline comparison, and a CLI designed to be called by agents.
 
 - Website: <https://growvv.github.io/ohos-perf/>
@@ -111,7 +111,8 @@ Implemented today:
   (`rs_skip.*`), folded flamegraph stacks (`flamegraph.*`), symbol statistics
   with the unresolved share (`symbol.*`), ArkUI component reuse
   (`components.*`), the device log rules (`hilog.*`), cold-start redundant-file
-  I/O (`redundant_file.*`), thermal sensor statistics (`thermal.*`) and the UI
+  I/O (`redundant_file.*`), JS heap snapshot analysis (`jsheap.*`), thermal
+  sensor statistics (`thermal.*`) and the UI
   tree and screenshot (`ui.*`), driven by an offline capability matrix derived
   from table presence
 - `Metric` / `Evidence` models with provenance, fidelity and drill-down ids,
@@ -250,6 +251,7 @@ Metric ids emitted by the analyzers:
 | `components.*` | component reuse | `components.reuse.rate`, `components.top.name` |
 | `hilog.*` | hilog | `hilog.lines.count`, `hilog.rules.matched.count`, `hilog.rule.<name>.count` |
 | `coverage.*` | coverage ingestion | `coverage.lines.percent`, `coverage.lines.covered`, `coverage.functions.percent`, `coverage.branches.percent`, `coverage.files.count` |
+| `jsheap.*` | JS heap snapshot | `jsheap.total.bytes`, `jsheap.nodes.count`, `jsheap.detached.count`, `jsheap.objects.count` |
 | `redundant_file.*` | redundant-file I/O | `redundant_file.reads.count`, `redundant_file.files.used`, `redundant_file.files.unused` |
 | `thermal.*` | device thermal sensors | `thermal.<sensor>.start.celsius`, `thermal.<sensor>.peak.celsius`, `thermal.<sensor>.rise.celsius`, `thermal.interval.median.ms` |
 | `ui.*` | UI tree and screenshot | `ui.nodes.count`, `ui.nodes.clickable`, `ui.tree.depth.max`, `ui.screenshot.width`, `ui.screenshot.dhash` (animation labels live in `ui-diff.json`, not as metrics) |
@@ -270,8 +272,8 @@ their tests pin the parser, aggregation and marker fallback instead, and no
 parity is claimed for them.
 
 Measured on the two recorded traces with `analyze <scene> --app <pkg> --json`,
-`analyze` reports 81 metrics and 100 evidence items on `emu_big` (20.8 MB,
-`pbench.baseline`) and 80 metrics and 186 evidence items on `real_device`
+`analyze` reports 81 metrics and 101 evidence items on `emu_big` (20.8 MB,
+`pbench.baseline`) and 80 metrics and 187 evidence items on `real_device`
 (13.1 MB, `erviceAbility:1`). Four of the older analyzers report real numbers
 there: `vsync.signals.count` 60 with `vsync.periods.count` 7 and
 `vsync.anomaly.rate` 101.67 on `emu_big` (160 / 0 / 0 on `real_device`),
@@ -299,10 +301,24 @@ that `bjc` writes — the same document HapRay's own HTML template renders — a
 report its line, function and branch counts as `approximate`, with the file
 named as their source. HapRay returns `None` when the report is absent, so its
 section silently disappears and "not measured" reads as "0% covered"; here the
-absence is a `no_data` item that says so. `js.heap` stays unavailable even on a device whose hiprofiler can run
-the memory plugin: nothing in this package consumes the `js_heap_*` tables, and
-the measured `hidumper --mem-jsheap` route needs a debug-signed or profilerable
-app, which the release apps on the Mate 60 are not.
+absence is a `no_data` item that says so.
+
+The JS heap is the one capability whose *capture* exists and whose *analysis*
+HapRay never had. `collect --jsheap` still asks the device for a
+`.heapsnapshot`, and `js.heap` still reports unavailable — for a reason that is
+now measured rather than inferred: on the Mate 60, with a debug-signed app
+running, `hidumper --mem-jsheap <pid>` exits 0 and writes no file anywhere
+under the app's data directory, and `-T` is a *thread* id (`hidumper -h`), so
+passing the pid there asked for a thread dump. What changed is that a scene
+carrying a snapshot is now analyzed: `analyze` reads `jsheap.heapsnapshot` and
+reports total heap, node count, detached count and object count as `exact`
+metrics, plus the largest constructor by self size. The reader streams the
+document instead of `JSON.parse`-ing it (a 5.5 MB snapshot costs 17.6 MB of
+parsed objects, measured), indexes every field from `snapshot.meta` rather than
+a hardcoded offset, and treats `to_node` as the node-slot offset V8 actually
+writes. A snapshot is a collector artifact, so it is read only when `scene.json`
+declares the `jsheap` collector — a file an earlier capture left behind is not
+reported as this scene's heap. HapRay captures the file and analyzes nothing.
 
 ## Roadmap
 
