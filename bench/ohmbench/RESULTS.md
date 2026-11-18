@@ -26,7 +26,8 @@ against all 21 blind trees (`bench/ohmbench/hapray/probe.py`, at rev
 > 未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db /
 > so_file_load.json 等）。
 
-No report names a `.ets` file. Its `static` action takes a HAP and reports
+No report names a `.ets` file. The 21 bodies are in
+`bench/ohmbench/hapray/results.json`. Its `static` action takes a HAP and reports
 only SO/resource inventory, so it cannot name a source line either. On the
 same blind input — source, `prompt.json`, `testcase/`, no `groundtruth.json`,
 no `fix.patch`, no git history — HapRay finds nothing to match, so any recall
