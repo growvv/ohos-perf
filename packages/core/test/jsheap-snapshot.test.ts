@@ -375,6 +375,18 @@ describe('the reader is cheaper than a whole-document parse', () => {
         if (mode === 'parse') {
           const parsed = JSON.parse(text);
           if (parsed.nodes.length === 0) throw new Error('empty');
+        } else if (mode === 'omit') {
+          // The ceiling's whole purpose: past it the reader must cost what the
+          // stream costs, not what the graph costs.
+          if (parseHeapSnapshot(text, { maxGraphEdges: 0 }).retained.kind !== 'omitted') {
+            throw new Error('attribution was not omitted');
+          }
+        } else if (mode === 'build') {
+          // Explicit, not the fallthrough: the build peak has to measure a
+          // built graph, or the comparison below silently becomes omit-vs-scan.
+          if (parseHeapSnapshot(text).retained.kind !== 'measured') {
+            throw new Error('attribution was not measured');
+          }
         } else if (parseHeapSnapshot(text).nodeCount === 0) {
           throw new Error('empty');
         }
@@ -430,6 +442,18 @@ describe('the reader is cheaper than a whole-document parse', () => {
         if (mode === 'parse') {
           const parsed = JSON.parse(text);
           if (parsed.nodes.length === 0) throw new Error('empty');
+        } else if (mode === 'omit') {
+          // The ceiling's whole purpose: past it the reader must cost what the
+          // stream costs, not what the graph costs.
+          if (parseHeapSnapshot(text, { maxGraphEdges: 0 }).retained.kind !== 'omitted') {
+            throw new Error('attribution was not omitted');
+          }
+        } else if (mode === 'build') {
+          // Explicit, not the fallthrough: the build peak has to measure a
+          // built graph, or the comparison below silently becomes omit-vs-scan.
+          if (parseHeapSnapshot(text).retained.kind !== 'measured') {
+            throw new Error('attribution was not measured');
+          }
         } else if (parseHeapSnapshot(text).nodeCount === 0) {
           throw new Error('empty');
         }
@@ -446,6 +470,13 @@ describe('the reader is cheaper than a whole-document parse', () => {
         return Number(run.stdout.trim());
       };
       expect(peakOf('scan')).toBeLessThan(peakOf('parse'));
+      // The ceiling must buy back what the graph costs. Measured on this
+      // fixture: omit 22.2 MB against build 77.5 MB, a ratio of 0.29. The
+      // defect this pins is real and was reproduced: the ceiling was checked
+      // after the per-node arrays were allocated, so the omitted path paid
+      // 35.9 MB for arrays it never read — a ratio of 0.46. Comparing omit to
+      // *build* rather than to scan is what makes the test discriminate.
+      expect(peakOf('omit')).toBeLessThan(peakOf('build') * 0.4);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
