@@ -194,7 +194,7 @@ export type { CoverageCounts, CoverageFile, CoverageRatio, CoverageReport } from
 export { JsheapAnalyzer } from './analyze/jsheap';
 export { parseHeapSnapshot, readNumberArray, readSnapshotHeader } from './jsheap/snapshot';
 export type {
-  ConstructorShare, HeapNode, HeapSnapshot, HeapSnapshotHeader,
+  ConstructorShare, HeapSnapshot, HeapSnapshotHeader,
 } from './jsheap/snapshot';
 export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';
 export {

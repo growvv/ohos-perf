@@ -59,7 +59,7 @@ export class JsheapAnalyzer implements Analyzer {
     const provenance = {
       collector: 'scene:jsheap.heapsnapshot',
       table: 'js_heap_nodes',
-      rows: snapshot.nodes.length,
+      rows: snapshot.nodeCount,
       device: ctx.deviceId,
     };
     const make = (id: string, value: number, unit: Metric['unit']): Metric =>
@@ -67,7 +67,7 @@ export class JsheapAnalyzer implements Analyzer {
 
     const metrics: Metric[] = [
       make('jsheap.total.bytes', snapshot.totalSelfSize, 'bytes'),
-      make('jsheap.nodes.count', snapshot.nodes.length, 'count'),
+      make('jsheap.nodes.count', snapshot.nodeCount, 'count'),
       make('jsheap.detached.count', snapshot.detachedCount, 'count'),
       make('jsheap.objects.count', snapshot.nodeCountByType.get('object') ?? 0, 'count'),
     ];

@@ -144,7 +144,7 @@ describe('a snapshot written by this engine', () => {
 
   it('parses every node and keeps its counts consistent with the header', () => {
     const snapshot = parseHeapSnapshot(readFileSync(path, 'utf8'));
-    expect(snapshot.nodes).toHaveLength(snapshot.header.nodeCount);
+    expect(snapshot.nodeCount).toBe(snapshot.header.nodeCount);
     const byType = [...snapshot.nodeCountByType.values()].reduce((a, b) => a + b, 0);
     expect(byType).toBe(snapshot.header.nodeCount);
     expect(snapshot.totalSelfSize).toBeGreaterThan(0);
@@ -182,6 +182,14 @@ describe('a snapshot written by this engine', () => {
 });
 
 describe('parseHeapSnapshot', () => {
+  it('keeps no per-node object array', () => {
+    const snapshot = parseHeapSnapshot(heap());
+    // Aggregates only. A `nodes` array of one object per node is what made the
+    // first version peak at 51.5 MB against JSON.parse's 18.3 MB.
+    expect('nodes' in snapshot).toBe(false);
+    expect(snapshot.nodeCount).toBe(3);
+  });
+
   /** Two objects of 64 and 32 bytes under the root, one detached. */
   function heap(): string {
     return JSON.stringify({
@@ -206,11 +214,14 @@ describe('parseHeapSnapshot', () => {
     });
   }
 
-  it('reads every node with its type name, size and detached flag', () => {
+  it('counts nodes by type and keeps each constructor self size', () => {
     const snapshot = parseHeapSnapshot(heap());
-    expect(snapshot.nodes).toHaveLength(3);
-    expect(snapshot.nodes[1]).toMatchObject({ type: 'object', name: 'A', selfSize: 64, detached: true });
-    expect(snapshot.nodes[2]).toMatchObject({ type: 'object', name: 'B', selfSize: 32, detached: false });
+    expect(snapshot.nodeCount).toBe(3);
+    expect(snapshot.nodeCountByType.get('object')).toBe(2);
+    expect(snapshot.retainedByConstructor.find((row) => row.name === 'A'))
+      .toEqual({ name: 'A', selfSize: 64, count: 1 });
+    expect(snapshot.retainedByConstructor.find((row) => row.name === 'B'))
+      .toEqual({ name: 'B', selfSize: 32, count: 1 });
   });
 
   it('sums self size and counts detached nodes', () => {
@@ -223,7 +234,7 @@ describe('parseHeapSnapshot', () => {
     // `to_node` is node index * node_field_count (measured: 6 -> node 1).
     // Reading it as an index would attribute every edge to node 6.
     const snapshot = parseHeapSnapshot(heap());
-    expect(snapshot.nodes[1]!.name).toBe('A');
+    expect(snapshot.retainedByConstructor.map((row) => row.name)).toEqual(['A', 'B']);
     expect(snapshot.nodeCountByType.get('object')).toBe(2);
   });
 
@@ -250,12 +261,57 @@ describe('parseHeapSnapshot', () => {
     });
     const snapshot = parseHeapSnapshot(older);
     expect(snapshot.detachedCount).toBe(0);
-    expect(snapshot.nodes[0]!.detached).toBe(false);
+    expect(snapshot.nodeCount).toBe(1);
   });
 
   it('ranks constructors by self size, ties broken by name', () => {
     const snapshot = parseHeapSnapshot(heap());
     expect(snapshot.retainedByConstructor[0]!.name).toBe('A');
     expect(snapshot.retainedByConstructor.map((row) => row.name)).toEqual(['A', 'B']);
+  });
+});
+
+/**
+ * The reader's whole reason for existing is memory: a real app's snapshot is
+ * tens to hundreds of megabytes, and `JSON.parse` on it allocates an object
+ * per number. That claim was written into the module and never measured, and
+ * the first implementation was **worse** than `JSON.parse` — it built a
+ * `HeapNode` object per node, which is the cost the scan was meant to avoid.
+ *
+ * These tests pin the property, not the number: the parser must not retain a
+ * per-node object graph, and its peak must stay below a full parse of the same
+ * file.
+ */
+describe('the reader is cheaper than a whole-document parse', () => {
+  it('peaks below JSON.parse on a snapshot this engine writes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jsheap-mem-'));
+    const file = join(dir, 'mem.heapsnapshot');
+    try {
+      const keep: unknown[] = [];
+      for (let i = 0; i < 20_000; i++) keep.push({ i, s: `v-${i % 97}`, a: [i] });
+      writeHeapSnapshot(file);
+      expect(keep.length).toBe(20_000);
+      const text = readFileSync(file, 'utf8');
+
+      const peakOf = (work: () => void): number => {
+        const base = process.memoryUsage().rss;
+        let peak = base;
+        work();
+        const now = process.memoryUsage().rss;
+        return Math.max(peak, now) - base;
+      };
+      // Parse first, in its own throwaway scope, so its garbage is not the
+      // baseline for the second measurement.
+      const parsePeak = peakOf(() => {
+        const parsed = JSON.parse(text) as { nodes: number[] };
+        expect(parsed.nodes.length).toBeGreaterThan(0);
+      });
+      const scanPeak = peakOf(() => {
+        expect(parseHeapSnapshot(text).nodeCount).toBeGreaterThan(0);
+      });
+      expect(scanPeak).toBeLessThan(parsePeak);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

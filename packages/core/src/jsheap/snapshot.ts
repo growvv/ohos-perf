@@ -49,17 +49,6 @@ export interface HeapSnapshotHeader {
   readonly edgeFieldIndex: Readonly<Record<string, number>>;
 }
 
-/** One node, resolved out of the flat arrays. */
-export interface HeapNode {
-  /** Its index in the snapshot (not its `id`). */
-  readonly index: number;
-  readonly type: string;
-  readonly name: string;
-  readonly selfSize: number;
-  readonly edgeCount: number;
-  readonly detached: boolean;
-}
-
 /** One constructor's share of the heap, by self size. */
 export interface ConstructorShare {
   readonly name: string;
@@ -72,7 +61,8 @@ export interface ConstructorShare {
 /** A parsed snapshot: the nodes, and the aggregates a report needs. */
 export interface HeapSnapshot {
   readonly header: HeapSnapshotHeader;
-  readonly nodes: readonly HeapNode[];
+  /** How many nodes the snapshot holds (its `node_count`, validated). */
+  readonly nodeCount: number;
   /** How many nodes of each type. */
   readonly nodeCountByType: ReadonlyMap<string, number>;
   /** Sum of every node's `self_size`. */
@@ -329,38 +319,43 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
   const typeAt = header.nodeFieldIndex['type']!;
   const nameAt = header.nodeFieldIndex['name']!;
   const selfSizeAt = header.nodeFieldIndex['self_size']!;
-  const edgeCountAt = header.nodeFieldIndex['edge_count']!;
   const detachedAt = header.nodeFieldIndex['detachedness'];
+  const width = header.nodeFieldCount;
 
-  const parsed: HeapNode[] = [];
+  // One pass, aggregates only. The first version built a `HeapNode` object per
+  // node and was *more* expensive than `JSON.parse` on the same file (51.5 MB
+  // against 18.3 MB on a 5.5 MB snapshot, measured) — the object graph was
+  // exactly the cost the scan exists to avoid. Nothing here is retained per
+  // node except the constructor groups, which are bounded by the number of
+  // distinct names, not by the number of nodes.
   const nodeCountByType = new Map<string, number>();
+  const byName = new Map<string, { selfSize: number; count: number }>();
   let totalSelfSize = 0;
   let detachedCount = 0;
 
   for (let index = 0; index < header.nodeCount; index++) {
-    const base = index * header.nodeFieldCount;
+    const base = index * width;
     const type = stringAt(header.nodeTypeNames, nodes[base + typeAt]!, `node ${index} type`);
-    const name = stringAt(strings, nodes[base + nameAt]!, `node ${index} name`);
-    const selfSize = nodes[base + selfSizeAt]!;
-    const detached = detachedAt !== undefined && nodes[base + detachedAt] === 2;
-    parsed.push({
-      index,
-      type,
-      name,
-      selfSize,
-      edgeCount: nodes[base + edgeCountAt]!,
-      detached,
-    });
     nodeCountByType.set(type, (nodeCountByType.get(type) ?? 0) + 1);
+    const selfSize = nodes[base + selfSizeAt]!;
     totalSelfSize += selfSize;
-    if (detached) detachedCount += 1;
+    if (detachedAt !== undefined && nodes[base + detachedAt] === 2) detachedCount += 1;
+    if (type === 'object' || type === 'closure') {
+      const name = stringAt(strings, nodes[base + nameAt]!, `node ${index} name`);
+      const entry = byName.get(name);
+      if (entry === undefined) byName.set(name, { selfSize, count: 1 });
+      else {
+        entry.selfSize += selfSize;
+        entry.count += 1;
+      }
+    }
   }
 
   const toNodeAt = header.edgeFieldIndex['to_node']!;
   for (let edge = 0; edge < header.edgeCount; edge++) {
     const toNode = edges[edge * header.edgeFieldCount + toNodeAt]!;
-    const target = toNode / header.nodeFieldCount;
-    if (toNode % header.nodeFieldCount !== 0 || target >= header.nodeCount) {
+    const target = toNode / width;
+    if (toNode % width !== 0 || target >= header.nodeCount) {
       throw bad(
         `edge ${edge} points at to_node ${toNode}, past the end of ${header.nodeCount} nodes`,
       );
@@ -369,11 +364,11 @@ export function parseHeapSnapshot(text: string): HeapSnapshot {
 
   return {
     header,
-    nodes: parsed,
+    nodeCount: header.nodeCount,
     nodeCountByType,
     totalSelfSize,
     detachedCount,
-    retainedByConstructor: rankConstructors(parsed),
+    retainedByConstructor: rankConstructors(byName),
   };
 }
 
@@ -401,25 +396,18 @@ function readStringTable(text: string): readonly string[] {
 }
 
 /**
- * `object` and `closure` nodes grouped by name, largest self size first.
+ * The constructor groups, largest self size first.
  *
  * Self size, not retained: a dominator pass is a second algorithm with its own
  * failure modes, and this list answers "which constructor holds the most bytes
  * of its own". Ties break on name so two runs on one file agree byte for byte.
  * The list is bounded to {@link TOP_CONSTRUCTORS} so a heap with half a
- * million distinct names keeps a flat memory profile.
+ * million distinct names keeps a flat memory profile — the groups are built in
+ * the node pass and only the top are kept here.
  */
-function rankConstructors(nodes: readonly HeapNode[]): readonly ConstructorShare[] {
-  const byName = new Map<string, { selfSize: number; count: number }>();
-  for (const node of nodes) {
-    if (node.type !== 'object' && node.type !== 'closure') continue;
-    const entry = byName.get(node.name);
-    if (entry === undefined) byName.set(node.name, { selfSize: node.selfSize, count: 1 });
-    else {
-      entry.selfSize += node.selfSize;
-      entry.count += 1;
-    }
-  }
+function rankConstructors(
+  byName: ReadonlyMap<string, { selfSize: number; count: number }>,
+): readonly ConstructorShare[] {
   return [...byName.entries()]
     .map(([name, share]) => ({ name, selfSize: share.selfSize, count: share.count }))
     .sort((a, b) => (b.selfSize - a.selfSize) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))

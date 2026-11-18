@@ -8,10 +8,13 @@ inventory a heap is a file a person opens in DevEco Studio, and no report
 mentions it exists. `analyze` now reads it.
 
 - **A snapshot reader that does not parse the whole document.** A `.heapsnapshot`
-  is a small header, two flat number arrays and a string table. `JSON.parse` of
-  a 5.5 MB snapshot costs 17.6 MB of objects (measured), and a real app's is
-  tens to hundreds of megabytes, so the header is parsed from its own bounded
-  slice and `nodes`/`edges` are scanned digit by digit into a `Float64Array`.
+  is a small header, two flat number arrays and a string table. The header is
+  parsed from its own bounded slice and `nodes`/`edges` are scanned digit by
+  digit into a `Float64Array`, so nothing per node is ever allocated: the whole
+  document goes through one aggregate pass and only the constructor groups
+  survive it. Measured on a 5.5 MB snapshot this peaks at 14.3 MB against 18.3
+  MB for `JSON.parse` — a real app's is tens to hundreds of megabytes, where
+  the object-per-number cost is what a whole-document parse cannot pay.
 - **The layout comes from the file, never from an offset.** V8's field list has
   changed (`detachedness` was added), so every field is located through
   `snapshot.meta.node_fields` / `edge_fields`. A missing field this reader needs
