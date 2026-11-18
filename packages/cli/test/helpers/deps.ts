@@ -33,6 +33,7 @@ export function cliDeps(overrides: Partial<CliDeps> = {}): CliDeps {
     query: async () => ({ query: 'frames.all', rows: [], total: 0, truncated: false }),
     tools: () => [],
     compare: notStubbed('compare'),
+    gate: notStubbed('gate'),
     uiCompare: notStubbed('ui-compare'),
     report: notStubbed('report'),
     trend: notStubbed('trend'),

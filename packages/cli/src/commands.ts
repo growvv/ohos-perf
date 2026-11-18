@@ -19,6 +19,8 @@ import {
   type RecoveryResult,
   type HiprofilerPluginName, type NamedQueryInfo, type NamedQueryResult,
   type RootCauseDocument,
+  type GateResult,
+  type GateVerdict,
   type RunResult, type Scenario,
 } from '@ohos-perf/core';
 import { doctorReport, failureLine, safeMessage, type DoctorDeps } from './doctor';
@@ -353,6 +355,25 @@ export interface UiCompareRequest {
   outDir: string;
 }
 
+/** A `gate` invocation: a budget document, the run to judge, and its baseline. */
+export interface GateRequest {
+  /** Path to the versioned budget document. */
+  budget: string;
+  /** Scene directory or `analyze --json` file to judge. */
+  input: string;
+  /** Scene directory or `analyze --json` file for the delta bounds. */
+  baseline?: string;
+  /** When given, `gate.json` is written here. */
+  outDir?: string;
+}
+
+/** What the gate judged and, when asked, what it wrote. */
+export interface GateOutput {
+  result: GateResult;
+  outDir?: string;
+  files: string[];
+}
+
 /** What `ui-compare` wrote and what it found. */
 export interface UiCompareOutput {
   outDir: string;
@@ -578,6 +599,12 @@ export interface CliDeps {
   tools(): NamedQueryInfo[];
   /** Compare two analyses. Throws on any failure; the caller maps it to exit 1. */
   compare(req: CompareRequest): Promise<BaselineComparison>;
+  /**
+   * Judge a run against a budget document. Throws on any failure — a bad
+   * document, an unreadable input, a delta budget with no baseline — which the
+   * caller maps to exit 1; a violated budget is a *result*, not an error.
+   */
+  gate(req: GateRequest): Promise<GateOutput>;
   /** Compare two captures by UI tree and screenshot, writing the diff bundle. */
   uiCompare(req: UiCompareRequest): Promise<UiCompareOutput>;
   /** Analyze a scene and write the report bundle. Throws on any failure. */
@@ -911,6 +938,82 @@ export async function runCompare(
   } catch (err) {
     return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
   }
+}
+
+/**
+ * Judge a run against a versioned budget document.
+ *
+ * The exit code is the contract a CI job reads, and it is deliberately not
+ * the usual 0/1: `0` everything passed, `2` the gate ran and a budget was
+ * violated or could not be measured, `1` the gate could not run at all. A job
+ * that conflated the last two would either swallow a broken budget document or
+ * fail the build on its own misconfiguration.
+ *
+ * `missing` is a failure, not a skip: a metric the run never emitted is
+ * exactly the case where a green build would be a lie. `--json` still exits 2
+ * on a violated budget, because the verdict is the artifact and the code is
+ * how a shell reads it.
+ */
+export async function runGate(
+  deps: CliDeps,
+  req: GateRequest,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  try {
+    const output = await deps.gate(req);
+    const exitCode = output.result.status === 'pass' ? 0 : 2;
+
+    if (opts.json) return { stdout: json(output.result), stderr: '', exitCode };
+
+    const lines = output.result.verdicts.map((verdict) => `${verdictLine(verdict)}\n`);
+    const { totals } = output.result;
+    lines.push(`totals  pass ${totals.pass}, fail ${totals.fail}, missing ${totals.missing}\n`);
+    lines.push(`gate  ${output.result.name}  ${output.result.status}\n`);
+    for (const file of output.files) {
+      // Forward slash, like `trend` and `report`: the path is a label in a
+      // terminal, and a Windows backslash there reads as an escape.
+      lines.push(`artifact  ${output.outDir ?? ''}/${file}\n`);
+    }
+    return { stdout: lines.join(''), stderr: '', exitCode };
+  } catch (err) {
+    return { stdout: '', stderr: `${failureLine(err)}\n`, exitCode: 1 };
+  }
+}
+
+/** `3.2 <= 5`, `16 -> 17 (+5%) <= 5%`, or the reason a metric was not judged. */
+function verdictLine(verdict: GateVerdict): string {
+  const { id, bound } = verdict;
+  const show = (value: number): string => String(value);
+
+  if (verdict.status === 'missing') {
+    const limit = bound.kind === 'maxDeltaPct' ? `${show(bound.limit)}%` : show(bound.limit);
+    const op =
+      bound.kind === 'max' || bound.kind === 'maxDelta' ? '<=' : '>=';
+    return `${id}  ${op} ${limit}  missing  ${verdict.reason ?? ''}`;
+  }
+
+  const value = verdict.value ?? 0;
+  let judged: string;
+  if (bound.kind === 'max') {
+    judged = `${show(value)} <= ${show(bound.limit)}`;
+  } else if (bound.kind === 'min') {
+    judged = `${show(value)} >= ${show(bound.limit)}`;
+  } else if (bound.kind === 'maxDelta') {
+    const base = verdict.baseline ?? 0;
+    judged = `${show(base)} -> ${show(value)} (${signed(value - base)}) <= ${show(bound.limit)}`;
+  } else {
+    const base = verdict.baseline ?? 0;
+    const pct = base === 0 ? 0 : Math.round(((value - base) / Math.abs(base)) * 1000) / 10;
+    judged = `${show(base)} -> ${show(value)} (${signed(pct)}% <= ${show(bound.limit)}%)`;
+  }
+
+  const past = verdict.excess === undefined ? '' : `  (${show(verdict.excess)} past)`;
+  return `${id}  ${judged}  ${verdict.status}${past}`;
+}
+
+/** `+5` / `-3` / `0`, so a movement reads as one whether it rose or fell. */
+function signed(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 /**

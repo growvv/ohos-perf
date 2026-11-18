@@ -5,6 +5,7 @@ import {
   runCaps,
   runCollect,
   runCompare,
+  runGate,
   runDoctor,
   runEmulatorCreate,
   runEmulatorList,
@@ -337,6 +338,37 @@ export function buildProgram(deps: CliDeps, io: ProgramIo, opts: ProgramOptions 
     .option('--json', 'print the comparison as JSON')
     .action(async (baseline: string, current: string, opts: { json?: boolean }) => {
       io.emit(await runCompare(deps, { baseline, current }, { json: opts.json }));
+    });
+
+  program
+    .command('gate')
+    .description('judge a run against a versioned budget document; exit 2 when a budget fails')
+    .argument('<budget>', 'budget document (JSON)')
+    .argument('<input>', 'scene directory or `analyze --json` file to judge')
+    .option('--baseline <input>', 'scene directory or `analyze --json` file for delta budgets')
+    .option('--out <dir>', 'write gate.json to this directory')
+    .option('--json', 'print the gate result as JSON')
+    .addHelpText('after', `
+Exit codes: 0 every budget passed, 2 a budget failed or a metric it names was
+not measured, 1 the gate could not run. A metric the run never emitted is a
+failure, never a pass.`)
+    .action(async (budget: string, input: string, opts: {
+      baseline?: string;
+      out?: string;
+      json?: boolean;
+    }) => {
+      io.emit(
+        await runGate(
+          deps,
+          {
+            budget,
+            input,
+            ...(opts.baseline === undefined ? {} : { baseline: opts.baseline }),
+            ...(opts.out === undefined ? {} : { outDir: opts.out }),
+          },
+          { json: opts.json },
+        ),
+      );
     });
 
   program

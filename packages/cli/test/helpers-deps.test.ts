@@ -16,6 +16,7 @@ import type { CliDeps } from '../src/commands';
 /** The seams a command test must stub itself, with the name they report. */
 const UNSTUBBED: ReadonlyArray<readonly [string, () => Promise<unknown>]> = [
   ['compare', () => cliDeps().compare({ baseline: 'a', current: 'b' })],
+  ['gate', () => cliDeps().gate({ budget: 'b', input: 'i' })],
   ['ui-compare', () => cliDeps().uiCompare({ a: 'a', b: 'b', outDir: 'o' })],
   ['report', () => cliDeps().report({ sceneDir: 's', outDir: 'o' })],
   ['trend', () => cliDeps().trend({ reports: [], outDir: 'o' })],

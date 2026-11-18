@@ -65,7 +65,7 @@ describe('--help', () => {
     const text = out.join('');
     for (const name of [
       'doctor', 'caps', 'collect', 'analyze', 'query', 'tools', 'compare', 'report', 'render', 'trend',
-      'run', 'ui-compare', 'explore', 'agent', 'opt', 'symbols', 'root-cause',
+      'run', 'ui-compare', 'gate', 'explore', 'agent', 'opt', 'symbols', 'root-cause',
     ]) {
       expect(text).toContain(name);
     }
@@ -128,6 +128,36 @@ describe('command wiring', () => {
       compare: async () => { throw new Error('cannot read base'); },
     });
     expect(emitted[0]).toEqual({ stdout: '', stderr: 'cannot read base\n', exitCode: 1 });
+  });
+
+  it('gate forwards the budget, input, --baseline, --out and --json', async () => {
+    const calls: unknown[] = [];
+    const result = {
+      name: 'open-app',
+      status: 'pass' as const,
+      verdicts: [],
+      totals: { pass: 0, fail: 0, missing: 0 },
+    };
+    const { emitted } = await parse(
+      ['gate', 'b.json', 'scene', '--baseline', 'base', '--out', '/out', '--json'],
+      { gate: async (req) => { calls.push(req); return { result, outDir: '/out', files: [] }; } },
+    );
+    expect(calls).toEqual([{ budget: 'b.json', input: 'scene', baseline: 'base', outDir: '/out' }]);
+    expect(JSON.parse(emitted[0].stdout)).toEqual(result);
+  });
+
+  it('gate omits an absent baseline and output directory rather than passing undefined', async () => {
+    const calls: unknown[] = [];
+    await parse(['gate', 'b.json', 'scene'], {
+      gate: async (req) => {
+        calls.push(req);
+        return {
+          result: { name: 'g', status: 'pass', verdicts: [], totals: { pass: 0, fail: 0, missing: 0 } },
+          files: [],
+        };
+      },
+    });
+    expect(calls).toEqual([{ budget: 'b.json', input: 'scene' }]);
   });
 
   it('ui-compare forwards both directories, --out and --json', async () => {

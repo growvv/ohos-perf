@@ -34,6 +34,11 @@ import {
   readHilogText,
   readThermalRecords,
   parseHilogText,
+  deltaBudgetIds,
+  evaluateGate,
+  parseBudgetDocument,
+  renderGateJson,
+  type BudgetDocument,
   analyzeHap,
   buildReport,
   buildTrend,
@@ -656,6 +661,45 @@ function readAnalysisFile(path: string): AnalyzeResult {
 }
 
 /**
+ * Read and validate a budget document.
+ *
+ * A read failure and a parse failure are both `BUDGET_BAD_DOCUMENT`, but the
+ * message keeps them apart: one names the path that could not be read, the
+ * other the JSON path that failed validation. `parseBudgetDocument` owns the
+ * second kind; this function adds the file it came from.
+ */
+function readBudgetFile(path: string): BudgetDocument {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (err) {
+    throw new OhosPerfError(
+      `cannot read budget document ${path}: ${safeMessage(err)}`,
+      { code: 'BUDGET_BAD_DOCUMENT', cause: err },
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new OhosPerfError(
+      `budget document ${path} is not valid JSON: ${safeMessage(err)}`,
+      { code: 'BUDGET_BAD_DOCUMENT', cause: err },
+    );
+  }
+  try {
+    return parseBudgetDocument(parsed);
+  } catch (err) {
+    // Re-throw with the file named, keeping the validator's code and path.
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new OhosPerfError(`${path}: ${detail}`, {
+      code: err instanceof OhosPerfError ? err.code : 'BUDGET_BAD_DOCUMENT',
+      cause: err,
+    });
+  }
+}
+
+/**
  * The measured inputs a root-cause document is built from.
  *
  * Both input kinds converge here: a scene is analyzed with the same code
@@ -1026,6 +1070,34 @@ export function realDeps(
           : readAnalysisFile(input));
       const [baseline, current] = await Promise.all([load(req.baseline), load(req.current)]);
       return compareResults(baseline, current);
+    },
+
+    async gate(req) {
+      // The document is read and validated first: a budget typo must fail
+      // before a scene is opened, and a delta budget with no baseline is a
+      // document-level mistake the caller can fix without re-measuring.
+      const doc = readBudgetFile(req.budget);
+      const needingBaseline = deltaBudgetIds(doc);
+      if (needingBaseline.length > 0 && req.baseline === undefined) {
+        throw new OhosPerfError(
+          `budget ${doc.name} has delta budgets but no baseline was given: ` +
+            `${needingBaseline.join(', ')}; pass --baseline <scene-dir|analyze.json>`,
+          { code: 'GATE_BASELINE_REQUIRED' },
+        );
+      }
+
+      const load = async (input: string): Promise<AnalyzeResult> =>
+        (await isDirectory(input) ? analyzeScene(openOfflineScene, input) : readAnalysisFile(input));
+      const current = await load(req.input);
+      const baseline = req.baseline === undefined ? undefined : await load(req.baseline);
+
+      const result = evaluateGate(doc, current, baseline);
+      if (req.outDir === undefined) return { result, files: [] };
+
+      const outDir = resolve(req.outDir);
+      await mkdir(outDir, { recursive: true });
+      await writeFile(join(outDir, 'gate.json'), renderGateJson(result));
+      return { result, outDir, files: ['gate.json'] };
     },
 
     async uiCompare(req) {
