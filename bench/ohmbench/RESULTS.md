@@ -87,7 +87,7 @@ applying each case's `source.patch` to the upstream tree.
 | ytmusic_history_json_parse_per_row | 1.00 | 1.00 | 1/1 | 1/1 |
 | ytmusic_search_no_debounce | 1.00 | 1.00 | 1/1 | 1/1 |
 
-Fifteen of 21 cases are perfect. Five of the six imperfect ones are on
+Fifteen of 21 cases are perfect. Four of the six imperfect ones are on
 `sheafreader`, where five cases share one source tree.
 
 ## Every miss, and why
