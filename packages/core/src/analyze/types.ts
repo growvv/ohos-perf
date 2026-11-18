@@ -130,6 +130,13 @@ export interface AnalyzeContext {
    */
   jsheapMaxGraphEdges?: number;
   /**
+   * A node ceiling for the same graph, overriding {@link MAX_GRAPH_NODES}.
+   *
+   * The working set is ~53 bytes a node, so nodes are the other half of the
+   * memory bound: a snapshot of many zero-edge nodes trips no edge ceiling.
+   */
+  jsheapMaxGraphNodes?: number;
+  /**
    * The scene's flattened UI tree, when it carried a `ui.json`. The `ui`
    * analyzer decides from what it is given rather than declaring `ui.tree` as a
    * requirement: a scene can carry a dump captured on a different device, and a
