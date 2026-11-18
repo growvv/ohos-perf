@@ -218,11 +218,16 @@ function findBlockEnd(
 ): number {
   const delta = deltas[start] ?? 0;
   if (delta <= 0) {
-    // No block opened on this line: a field. Run to the terminating ';'.
+    // No block opened on this line: a field. Run to the terminating ';'. A
+    // field with no semicolon (ArkTS allows the last member to omit it) runs
+    // until the depth would go negative — the line that closes its class.
+    let depth = 0;
     for (let index = start; index < lines.length; index++) {
       if ((stripped[index] ?? '').includes(';')) return index + 1;
+      depth += deltas[index] ?? 0;
+      if (depth < 0) return index;
     }
-    return start + 1;
+    return lines.length;
   }
   let depth = 0;
   for (let index = start; index < lines.length; index++) {

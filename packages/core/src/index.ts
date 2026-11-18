@@ -200,6 +200,10 @@ export type {
 } from './jsheap/snapshot';
 export { scanSourceFile, scanSourceTree } from './source/scan';
 export type { SourceFile, SourceSymbol } from './source/scan';
+export { findSuspects } from './source/suspects';
+export type { Suspect } from './source/suspects';
+export { RULES } from './source/rules';
+export type { Rule, RuleCategory, SourceFacts } from './source/rules';
 export { ThermalAnalyzer, thermalSensorSlug } from './analyze/thermal';
 export {
   BUDGET_SCHEMA_VERSION,
