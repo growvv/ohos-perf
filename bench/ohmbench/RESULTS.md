@@ -338,6 +338,8 @@ selector and how many nodes were on screen — measured, not inferred:
 | `sheafreader_unread_counts_n_plus_1` | measured `text="Journal 1 article 1"` | needs feeds subscribed |
 | `interviewapp_search_history_unbounded` | measured `hint="请输入关键词"` | needs search history |
 | `ytmusic_history_json_parse_per_row` | measured `text="Listening Track 1000"` | needs 1 000 history entries |
+| `weatherassistant_http_session_leak` | setup `text="深圳市"` | needs a saved city |
+| `weatherassistant_remote_weather_icons` | measured `text="深圳市"` (in `verify`) | needs a saved city |
 | `cloudmusic_*` (×2) | install | permission refused, see above |
 
 `jingmo_sync_page_reimport` **did run**, and it is the one case whose
