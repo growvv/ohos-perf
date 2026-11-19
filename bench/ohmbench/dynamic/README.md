@@ -28,6 +28,14 @@ Every path is an argument, and no script runs from inside a case tree: the
 trees are untrusted data and `build.py` is the only script that invokes a build
 tool with one as its working directory.
 
+The run record also feeds the site: `node bench/ohmbench/site-dynamic.mjs
+<run-root>/dynamic.json site/dynamic.json` turns it into the table the
+benchmark page renders under "The same cases, run on a device", so no number
+on that page is typed in by hand. The generator reads `captured` when the
+record has it and falls back to "metrics exist" for a sweep written before
+that field existed — a scene on disk is not proof it was analyzed, because
+`run.mjs` before 0.33.2 only analyzed a run whose status was `ok`.
+
 ## What each step does, and what it cannot do
 
 **`build.py`** runs `ohpm install` then `hvigorw assembleHap` in each tree. The
