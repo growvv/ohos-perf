@@ -1,0 +1,326 @@
+{
+  "summary": {
+    "cases": 21,
+    "ranClean": 5,
+    "captured": 5,
+    "critical": 3
+  },
+  "cases": [
+    {
+      "id": "browser_eager_history_load",
+      "status": "ok",
+      "windowSeconds": 15,
+      "captured": true,
+      "metrics": 83,
+      "degraded": 12,
+      "evidence": 17,
+      "verdict": "warn: 被频繁唤醒但立即进入等待，典型无效调度。 (and 30 other observations, 15 of them gaps in the capture)",
+      "bytes": 18289408,
+      "stoppedAt": null
+    },
+    {
+      "id": "browser_history_delete_no_transaction",
+      "status": "failed",
+      "windowSeconds": 20,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 1806,
+      "stoppedAt": {
+        "phase": "setup",
+        "description": "tap text=\"清除浏览记录\"",
+        "error": "UI target not found: text=\"清除浏览记录\" (0 of 67 nodes matched)"
+      }
+    },
+    {
+      "id": "browser_history_list_foreach",
+      "status": "failed",
+      "windowSeconds": 20,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 237199334,
+      "stoppedAt": {
+        "phase": "measured",
+        "description": "wait text=\"Article\"",
+        "error": "UI target not found: text=\"Article\" (0 of 72 nodes matched)"
+      }
+    },
+    {
+      "id": "cloudmusic_play_time_high_frequency_update",
+      "status": "failed",
+      "windowSeconds": 70,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 1496,
+      "stoppedAt": {
+        "phase": "setup",
+        "description": "wait text=\"发现\"",
+        "error": "UI target not found: text=\"发现\" (0 of 72 nodes matched)"
+      }
+    },
+    {
+      "id": "cloudmusic_search_result_foreach",
+      "status": "failed",
+      "windowSeconds": 480,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 1455,
+      "stoppedAt": {
+        "phase": "setup",
+        "description": "wait text=\"音乐云盘\"",
+        "error": "UI target not found: text=\"音乐云盘\" (0 of 72 nodes matched)"
+      }
+    },
+    {
+      "id": "interviewapp_search_history_unbounded",
+      "status": "failed",
+      "windowSeconds": 900,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 206528477,
+      "stoppedAt": {
+        "phase": "measured",
+        "description": "wait hint=\"请输入关键词\"",
+        "error": "UI target not found: hint=\"请输入关键词\" (0 of 65 nodes matched)"
+      }
+    },
+    {
+      "id": "jingmo_dataset_import_no_transaction",
+      "status": "ok",
+      "windowSeconds": 120,
+      "captured": true,
+      "metrics": 83,
+      "degraded": 12,
+      "evidence": 21,
+      "verdict": "critical: low-frequency VSync period: 3 intervals, 5.0Hz average, 596.7ms long (vsync 14610..14616, severity high) (and 35 other observations, 16 of them gaps in the capture)",
+      "bytes": 142155722,
+      "stoppedAt": null
+    },
+    {
+      "id": "jingmo_random_poem_orderby_random",
+      "status": "failed",
+      "windowSeconds": 360,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 1831,
+      "stoppedAt": {
+        "phase": "setup",
+        "description": "wait text=\"山水诗 [1-9][0-9]*\"",
+        "error": "UI target not found: text=\"山水诗 [1-9][0-9]*\" (0 of 54 nodes matched)"
+      }
+    },
+    {
+      "id": "jingmo_sync_page_reimport",
+      "status": "ok",
+      "windowSeconds": 180,
+      "captured": true,
+      "metrics": 83,
+      "degraded": 12,
+      "evidence": 55,
+      "verdict": "critical: low-frequency VSync period: 4 intervals, 6.6Hz average, 607.8ms long (vsync 15003..15011, severity high) (and 69 other observations, 16 of them gaps in the capture)",
+      "bytes": 136276043,
+      "stoppedAt": null
+    },
+    {
+      "id": "sepweather_font_register_per_page",
+      "status": "failed",
+      "windowSeconds": 30,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 109663243,
+      "stoppedAt": {
+        "phase": "measured",
+        "description": null,
+        "error": "workload took 315.16s, exceeding the 30.00s capture window"
+      }
+    },
+    {
+      "id": "sheafreader_article_list_foreach",
+      "status": "failed",
+      "windowSeconds": 120,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 1526,
+      "stoppedAt": {
+        "phase": "setup",
+        "description": "wait text=\"300 (?:篇|articles)\"",
+        "error": "UI target not found: text=\"300 (?:篇|articles)\" (0 of 59 nodes matched)"
+      }
+    },
+    {
+      "id": "sheafreader_extract_tag_tolowercase",
+      "status": "failed",
+      "windowSeconds": 90,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 1483,
+      "stoppedAt": {
+        "phase": "setup",
+        "description": "wait text=\"Journal 1 article 1\"",
+        "error": "UI target not found: text=\"Journal 1 article 1\" (0 of 59 nodes matched)"
+      }
+    },
+    {
+      "id": "sheafreader_insert_duplicate_exception",
+      "status": "failed",
+      "windowSeconds": 90,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 1522,
+      "stoppedAt": {
+        "phase": "setup",
+        "description": "wait text=\"Journal 1 article 1\"",
+        "error": "UI target not found: text=\"Journal 1 article 1\" (0 of 59 nodes matched)"
+      }
+    },
+    {
+      "id": "sheafreader_refresh_feeds_sequential",
+      "status": "failed",
+      "windowSeconds": 60,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 105447443,
+      "stoppedAt": {
+        "phase": "measured",
+        "description": "wait type=\"Button\", bounds=\"[195,326][296,427]\", enabled=\"true\"",
+        "error": "UI target not found: type=\"Button\", bounds=\"[195,326][296,427]\", enabled=\"true\" (0 of 59 nodes matched)"
+      }
+    },
+    {
+      "id": "sheafreader_unread_counts_n_plus_1",
+      "status": "failed",
+      "windowSeconds": 120,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 115112554,
+      "stoppedAt": {
+        "phase": "verify",
+        "description": "wait text=\"Journal 1 article 1\"",
+        "error": "UI target not found: text=\"Journal 1 article 1\" (0 of 59 nodes matched)"
+      }
+    },
+    {
+      "id": "wanharmony_persisted_home_list_growth",
+      "status": "failed",
+      "windowSeconds": 60,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 495167067,
+      "stoppedAt": {
+        "phase": "measured",
+        "description": null,
+        "error": "workload took 100.83s, exceeding the 60.00s capture window"
+      }
+    },
+    {
+      "id": "weatherassistant_http_session_leak",
+      "status": "failed",
+      "windowSeconds": 1200,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 1841,
+      "stoppedAt": {
+        "phase": "setup",
+        "description": "wait text=\"深圳市\"",
+        "error": "uitest dumpLayout did not report \"DumpLayout saved\" (exit 0: DumpLayout failed:Wait for subscribe uitest.broadcast.command.reply timeout)"
+      }
+    },
+    {
+      "id": "weatherassistant_remote_weather_icons",
+      "status": "failed",
+      "windowSeconds": 25,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 21160957,
+      "stoppedAt": {
+        "phase": "verify",
+        "description": "wait text=\"深圳市\"",
+        "error": "uitest produced no output at /data/local/tmp/ohosperf_ui.json (file is empty); ls -l output: -rw-r--r-- 1 shell shell 0 2026-11-19 18:55 /data/local/tmp/ohosperf_ui.json"
+      }
+    },
+    {
+      "id": "ytmusic_current_playing_timeupdate",
+      "status": "ok",
+      "windowSeconds": 70,
+      "captured": true,
+      "metrics": 81,
+      "degraded": 13,
+      "evidence": 704,
+      "verdict": "warn: com.example.myapplication frame at vsync 28391 drew nothing (flag 2, dur 0.1ms) and no buffer was submitted for it (and 718 other observations, 16 of them gaps in the capture)",
+      "bytes": 311003487,
+      "stoppedAt": null
+    },
+    {
+      "id": "ytmusic_history_json_parse_per_row",
+      "status": "failed",
+      "windowSeconds": 60,
+      "captured": false,
+      "metrics": null,
+      "degraded": null,
+      "evidence": null,
+      "verdict": null,
+      "bytes": 158486853,
+      "stoppedAt": {
+        "phase": "measured",
+        "description": "wait text=\"Listening Track 1000\"",
+        "error": "UI target not found: text=\"Listening Track 1000\" (0 of 18 nodes matched)"
+      }
+    },
+    {
+      "id": "ytmusic_search_no_debounce",
+      "status": "ok",
+      "windowSeconds": 60,
+      "captured": true,
+      "metrics": 81,
+      "degraded": 12,
+      "evidence": 121,
+      "verdict": "critical: low-frequency VSync period: 5 intervals, 3.0Hz average, 1687.8ms long (vsync 29409..29419, severity high) (and 135 other observations, 16 of them gaps in the capture)",
+      "bytes": 119367854,
+      "stoppedAt": null
+    }
+  ]
+}
