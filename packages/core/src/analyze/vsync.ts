@@ -259,7 +259,7 @@ export class VsyncAnalyzer implements Analyzer {
   readonly requires: CapabilityId[] = ['render.vsync'];
 
   async run(ctx: AnalyzeContext): Promise<AnalyzeResult> {
-    const ipids = resolveAppIpids(ctx.processes, ctx.app.pids);
+    const ipids = resolveAppIpids(ctx.processes, ctx.app);
     const all = ctx.frames.all(ctx.window);
     const frames = ipids.length === 0 ? [] : all.filter((frame) => ipids.includes(frame.ipid));
 

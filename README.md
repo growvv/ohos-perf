@@ -121,7 +121,8 @@ Implemented today:
   `compare`, `gate`, `ui-compare`, `report`, `render`, `trend`, `root-cause`,
   `hap`, `opt`, `gesture {click,swipe,key,input,text}`, `explore <app>`,
   `agent <app> <task>`, `symbols recover <lib.so>`,
-  `emulator {list,start,stop,create}`, `run <scenario.json> | --cases <dir>`
+  `emulator {list,start,stop,create}`, `run <scenario.json> | --cases <dir>`,
+  `workload <plan.workload.json>`
 - emulator lifecycle: `EmulatorClient` (spawn + parse) and `EmulatorLifecycle`
   (state + waiting) drive DevEco's `Emulator.exe`, attributing each running
   instance to its `hdc` TCP target so `collect --target` can use it
@@ -131,6 +132,12 @@ Implemented today:
   after it, always — writing one scene per (round, step) plus `steps.json`,
   `testInfo.json` and `pids.json`. A failed action fails the step and keeps
   its scene; `--keep-going` continues, and the exit code is 1 either way.
+- external workloads: `ohos-perf workload plan.workload.json` runs a plan in
+  the vocabulary HapRay's `PerfTestCase` publishes — `setup`, `measured`,
+  `verify` — with the harness's own stop-then-launch preamble, capturing the
+  `measured` phase into an ordinary scene. The plan is validated whole before
+  a device is resolved, and a measured action that fails still finishes the
+  capture, because the trace is a record of what happened.
 - selector-driven steps: a ten-kind selector language over the captured UI
   tree, `tap`/`tapText` with scroll-to-find, `swipeArea` inside a component,
   `inputInto`, and a per-step `expect` block evaluated against a fresh dump —
@@ -370,6 +377,7 @@ The HapRay parity series (one release per major item, so far):
 | P36 | beyond the inventory | retained size, which is the question a heap snapshot exists for: a dominator tree over the whole graph (iterative Cooper–Harvey–Kennedy, typed arrays only, 665 ms at 861 605 nodes / 2 268 808 edges) ranks constructors by what they **hold** rather than by their own bytes. Measured on a real 9.4 MB snapshot the ranking flips — `Array` self 0.62 MB / retained 3.78 MB leads, where self size puts `Object` (0.96 MB) first, and `system / Context` retains seven times its own size. `jsheap.retained.largest.bytes` and `jsheap.unreachable.count` join the metrics, the `js_heap` evidence names the largest retained holder and carries self size beside it, and unreachable nodes are counted separately from `detachedness` because an embedder annotation and a graph fact can legitimately disagree. A node nested inside another of the same name counts in both rows, as DevTools does. Past a documented ceiling (20 million edges or 4 million nodes — the working set is ~53 bytes a node, so edges alone were not a memory bound) the graph is not built and the heap totals are reported with the omission named. A `weak` edge is not a reference: it is validated and counted in the heap total but kept out of the graph, because a `Map` that merely mentions a payload does not own it. The graph costs memory — the 50 MB fixture's peak moved 30.1 → 77.4 MB, still below `JSON.parse`'s 106.7 MB, pinned by a test | shipped in `0.31.0` |
 | P37 | beyond the inventory | `suspects <root>` scans an ArkTS source tree without a device and ranks the defects it finds. The scanner reads ArkTS as text with brace tracking — not a parser, because decorators on `struct` and builder syntax break every TS grammar — and it handles the things that made a line-oriented reader wrong: a quote inside a regex literal, a method whose parameter list wraps across lines, a field whose initializer spans lines, and CRLF. Seventeen rules name the shapes OhmBench records (order-by-random, SQL or a write in a loop, an N+1 read, an eager `ForEach` in a virtualisable container, a state write in a high-frequency callback, an unbounded persisted list, a font registered per visit, an HTTP session never destroyed, …). The reported symptom is the ranking input: `--prompt prompt.json` (the benchmark's own file) or `--symptom`/`--scenario` narrows the report to the findings that can explain it, and a Chinese-to-English glossary matches "文章列表" to `ArticleListView`. On OhmBench's 21 blind cases (source + `prompt.json` only, no ground truth, no patches) precision **0.857**, recall **0.929** — where HapRay returns zero code locations on the same input, measured by running its `root-cause` action over all 21 blind trees (it accepts one as `--report-dir` and answers "未发现可用的性能信号产物" without naming a file). Every miss and its reason is in `bench/ohmbench/RESULTS.md` | shipped in `0.32.3` |
 | P38 | beyond the inventory | an external review of the `suspects` scanner is published with its own false positives: eleven findings, six real and five that described failures the code does not have. Every claim was reproduced or refuted against the code before anything changed, and the one the reviewer called Critical — apply the confidence tier before the name filter — measured three cases worse when applied and was reverted. The fixes that shipped: a SQL concatenation is followed to the end of its statement; loop depth is counted on noise-stripped text; `executeSql` must name a write; a cap or a `destroy()` is searched in the holding class; duplicate module statements report their own lines; a regex after a keyword is a regex. Nine `Math.max(...array)` sites that threw between 124k and 150k arguments now use `maxOf`/`minOf`. OhmBench byte-identical at 0.857 / 0.929 | shipped in `0.32.3` |
+| P39 | beyond the inventory | the device axis, driven by somebody else's plans: `workload <plan.workload.json>` runs the `setup` / `measured` / `verify` shape HapRay's `PerfTestCase` publishes, with the harness's own stop-then-launch preamble (a published plan relies on it, so without it the first `wait` fails on the home screen). `setup` runs before the capture, `measured` inside it, `verify` after; a measured failure finishes the capture anyway, and a phase that overruns `--duration` fails naming both numbers. The plan is validated whole before a device is resolved. Driving OhmBench's 21 cases on the emulator (`bench/ohmbench/dynamic/`: build, sign, install, run) found a real defect the source axis could not: every app-attributed analyzer reported `no_data` on a trace full of the app, because the trace records the 15-character kernel comm (`com.hefengbao.jingmo.hw` as `ngbao.jingmo.hw`) and a plain hitrace recorded no pid. `resolveAppIpids` falls back to a name match, and `collect` records the pids in `scene.json`. 21/21 built and signed, 19/21 installed, and `bench/ohmbench/RESULTS.md` names each case whose own workload cannot run and why | shipped in `0.33.0` |
 
 The parity scope comes from a source-level inventory of ArkAnalyzer-HapRay,
 re-pinned in `0.23.0` from rev `9386e4e` to rev `bd5c98a` — 428 commits later,
@@ -806,6 +814,62 @@ One malformed case file fails that case only; the rest still run. The index is
 
 The exit code is 1 when any case failed. `--rounds`, `--only` and `--keep-going`
 keep their meaning per case.
+
+### Workloads somebody else wrote: `workload`
+
+A scenario is this project's document. A benchmark or another team's harness
+publishes its own, and HapRay's `PerfTestCase` publishes one as a
+`*.workload.json` beside a `PerfLoad_*.py`. `workload` runs that file unchanged:
+
+```bash
+ohos-perf workload search.workload.json --duration 15 --out runs/search --json
+```
+
+```json
+{
+  "bundle": "com.example.music",
+  "ability": "EntryAbility",
+  "description": "search",
+  "setup": [{ "op": "wait", "selector": { "text": "首页" } }],
+  "measured": [
+    { "op": "tap", "selector": { "hint": "搜索" } },
+    { "op": "input", "selector": { "hint": "搜索" }, "value": "electronic" },
+    { "op": "repeat", "count": 5, "actions": [
+      { "op": "pause", "seconds": 1 },
+      { "op": "tap", "selector": { "text": "电子音乐" } }
+    ] }
+  ],
+  "verify": [{ "op": "wait", "selector": { "text": "搜索结果" } }]
+}
+```
+
+The actions are the published vocabulary: `launch`, `stop`, `tap`, `input`,
+`type_keys`, `wait`, `pause`, `key`, `point`, `swipe`, `scroll_to` and a
+nesting `repeat`. A selector compares `text`, `id`, `type`, `hint`, `bounds` and
+`enabled` with `substring` (the default), `exact` or `regex`, and `index` picks
+among matches.
+
+The phase order is the harness's, and the preamble is the part that is easy to
+miss: **the app is stopped and launched before `setup` runs**, because the
+published plans rely on the harness doing it and a plan whose first action is
+`wait` would otherwise start on the home screen and fail at its own first
+assertion. `setup` runs before the capture, `measured` runs inside the window
+concurrently with the collectors, and `verify` runs after it.
+
+A `setup` failure stops before the capture starts. A `measured` failure
+**finishes the capture anyway** — the trace is a record of what the device did
+while the action was attempted — and a `verify` failure fails the run without
+discarding the scene. A `measured` phase that overruns `--duration` is a
+failure that names both numbers: a capture window that closed before the
+workload did is not a measurement of that workload.
+
+The plan is validated whole before a device is resolved: an unknown key, an
+unknown `op`, a selector with no fields, a `match` that is not one of the three
+modes, a `key` outside `Back|Home|Power|<code>`, and a bundle or ability that
+is not a bare name (they are interpolated into `aa` commands) are errors naming
+the JSON path. The output is an ordinary scene plus `workload.json` — the run
+record, with every action's outcome, timing and the device's own message — so
+`analyze`, `report`, `query` and `root-cause` apply to it unchanged.
 
 ## UI capture and diff
 

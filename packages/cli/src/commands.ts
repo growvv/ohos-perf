@@ -7,6 +7,7 @@ import {
   loadCases,
   OhosPerfError,
   parseScenario,
+  parseWorkloadPlan,
   renderSuspectsText,
   type BaselineComparison, type CapabilityState, type CasePrompt, type CreateEmulatorRequest,
   type DeltaStatus,
@@ -24,6 +25,8 @@ import {
   type GateVerdict,
   type RunResult, type Scenario,
   type SuspectsDocument,
+  type WorkloadPlan,
+  type WorkloadRunResult,
 } from '@ohos-perf/core';
 import { doctorReport, errorOf, failureLine, safeMessage, type DoctorDeps } from './doctor';
 
@@ -334,6 +337,23 @@ export interface RunInput {
   only?: readonly string[];
   keepGoing?: boolean;
 }
+
+/** What `workload` is asked for, as the command layer reads it. */
+export interface WorkloadInput {
+  /** The `*.workload.json` plan file. */
+  planPath: string;
+  outDir: string;
+  durationMs: number;
+  target?: string;
+}
+
+/** The arguments `workload` forwards to the IO layer: the input plus its parsed plan. */
+export interface WorkloadRequest extends WorkloadInput {
+  plan: WorkloadPlan;
+}
+
+/** What `workload` reports: the runner's own record, verbatim. */
+export type WorkloadOutput = WorkloadRunResult;
 
 /** One gesture to inject, on the target that should receive it. */
 export interface GestureRequest {
@@ -661,6 +681,11 @@ export interface CliDeps {
    * the three artifacts. Throws on any failure; the caller maps it to exit 1.
    */
   rootCause(req: RootCauseRequest): Promise<RootCauseOutput>;
+  /**
+   * Run an external workload plan, capturing the `measured` phase.
+   * Throws on any failure; the caller maps it to exit 1.
+   */
+  workload(req: WorkloadRequest): Promise<WorkloadOutput>;
   /** Walk an app's UI and report the screens it reached. */
   explore(req: ExploreRequest): Promise<ExploreOutput>;
   /**
@@ -1985,6 +2010,72 @@ async function runCases(
 /** The first failed step's error, for the case summary. */
 function firstFailure(result: RunResult): string | undefined {
   return result.steps.find((step) => step.status === 'failed')?.error;
+}
+
+/**
+ * Run one external workload plan.
+ *
+ * The plan is read and validated here, before a device is resolved: a plan
+ * with a typo must not spend a device connection. The phases are reported in
+ * the plan's own vocabulary — `setup`, `measured`, `verify` — because a
+ * reader comparing this run against the plan's text needs the same words.
+ */
+export async function runWorkloadCommand(
+  deps: CliDeps,
+  input: WorkloadInput,
+  opts: { json?: boolean },
+): Promise<CliResult> {
+  let plan;
+  try {
+    let text: string;
+    try {
+      text = readFileSync(input.planPath, 'utf8');
+    } catch (err) {
+      throw new OhosPerfError(
+        `cannot read workload plan ${input.planPath}: ${safeMessage(err)}`,
+        { code: 'WORKLOAD_UNREADABLE', cause: err },
+      );
+    }
+    plan = parseWorkloadPlan(JSON.parse(text));
+  } catch (err) {
+    return failureResult(err);
+  }
+
+  try {
+    const result = await deps.workload({
+      plan,
+      planPath: input.planPath,
+      outDir: input.outDir,
+      durationMs: input.durationMs,
+      ...(input.target === undefined ? {} : { target: input.target }),
+    });
+    if (opts.json) {
+      return jsonResult(result, result.status === 'failed' ? 1 : 0);
+    }
+    const lines: string[] = [];
+    for (const phase of ['launch', 'setup', 'measured', 'verify'] as const) {
+      const record = result[phase];
+      lines.push(`${phase.padEnd(8)} ${record.ok ? 'ok' : 'failed'}` +
+        `  ${record.actions.length} action(s)  ${(record.elapsedMs / 1000).toFixed(1)}s`);
+      for (const action of record.actions) {
+        const mark = action.ok ? '  ' : '! ';
+        const detail = action.ok
+          ? (action.output === undefined ? '' : `  ${action.output}`)
+          : `  ${action.error ?? 'failed'}`;
+        lines.push(`  ${mark}${action.description}${detail}`);
+      }
+    }
+    if (result.sceneDir !== undefined) lines.push(`scene    ${result.sceneDir}`);
+    if (result.pids.length > 0) lines.push(`pids     ${result.pids.join(' ')}`);
+    if (result.error !== undefined) lines.push(`error    ${result.error}`);
+    return {
+      stdout: `${lines.map((line) => `${line}\n`).join('')}`,
+      stderr: '',
+      exitCode: result.status === 'failed' ? 1 : 0,
+    };
+  } catch (err) {
+    return failureResult(err);
+  }
 }
 
 /**

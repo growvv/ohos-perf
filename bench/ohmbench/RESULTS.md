@@ -267,14 +267,100 @@ macro average:
   suppressing. It is kept because the file-wide search is wrong in principle
   and the tests pin the corrected behaviour.
 
+## The dynamic axis
+
+The table above scores the **source** path: `suspects` reads the unfixed tree
+and `prompt.json`, with no device. OhmBench also ships each case as a signed
+HAP and a `testcase/` directory holding the workload HapRay's `PerfTestCase`
+would run, so the same cases can be measured on a device. They were, on the
+emulator, through `bench/ohmbench/dynamic/` (see its `README.md` for the
+commands):
+
+| step | result |
+| --- | --- |
+| reconstruct (upstream + `source.patch`) | 21/21 |
+| `build.py` — ohpm install + `hvigorw assembleHap` | 21/21 |
+| `sign.mjs` — debug profile + HAP signature | 21/21 |
+| `install.mjs` — `bm install` | 19/21 |
+| `run.mjs` — workload, capture, `analyze`, `root-cause --offline` | see below |
+
+The two uninstallable cases are both cloudmusic, refused with
+`grant request permissions failed, PermissionName:
+ohos.permission.SYSTEM_FLOAT_WINDOW`: a debug provisioning profile cannot grant
+that permission, and the app asks for it in its manifest.
+
+A run that reached its `measured` phase produced an ordinary scene —
+`trace.htrace`, `trace.db`, `scene.json`, `workload.json` — and the analyzers
+ran on it unchanged: 83 metrics with 12 degraded, and evidence of the kinds the
+emulator can actually produce (`vsync_anomaly`, `jank`, `empty_frame`, …).
+The 12 degraded metrics are the collectors the emulator lacks, each named in
+the evidence as a `degraded_capability` rather than silently zero:
+
+- no `hiprofiler_cmd` on the emulator;
+- `hiperf record` fails with `create mmap fail` / `Operation not permitted`, so
+  there are no sampled events;
+- `param set persist.ark.trace` is refused (errNum 1001) and
+  `persist.ace.trace.enabled` does not read back, so no ArkTS method trace;
+- the live FPS feed and the hilog stream are not exposed.
+
+`root-cause --offline` still states a verdict from what was captured — the
+`jingmo_sync_page_reimport` scene ranked six `vsync_anomaly` criticals, the
+longest a 4.6 s stall between vsyncs, which is the reimport the case is about.
+
+### Cases whose own workload cannot run
+
+The plans assume data the benchmark does not ship. Each failure below is the
+plan's **own** `setup` wait or `measured` step, and the record names the
+selector and how many nodes were on screen — measured, not inferred:
+
+| case | failed at | why |
+| --- | --- | --- |
+| `browser_history_delete_no_transaction` | setup `text="清除浏览记录"` | needs history entries to delete |
+| `browser_history_list_foreach` | measured `text="Article"` | needs a history page to scroll |
+| `jingmo_random_poem_orderby_random` | setup `text="山水诗 [1-9][0-9]*"` | needs imported poetry |
+| `jingmo_sync_page_reimport` | — | **ran**: the data-source import case saved the source first |
+| `sheafreader_article_list_foreach` | setup `text="300 (?:篇\|articles)"` | needs 300 articles imported |
+| `sheafreader_extract_tag_tolowercase` | setup `text="Journal 1 article 1"` | needs feeds subscribed |
+| `interviewapp_search_history_unbounded` | measured `hint="请输入关键词"` | needs search history |
+| `cloudmusic_*` (×2) | install | permission refused, see above |
+
+`sepweather_font_register_per_page` is a different failure and a real
+measurement: its plan runs 40 open/close cycles of the city manager, and on the
+emulator that took **315 s** against the case's own 30 s window, so the run
+failed with `workload took 315.16s, exceeding the 30.00s capture window` — the
+same check HapRay's `UI.profiled()` makes. Most of the time is the emulator's
+`dumpLayout` latency, not the app.
+
+### What the dynamic run found in this tool
+
+One genuine defect, and it is the kind the source axis could not surface:
+**every app-attributed analyzer reported `no_data` on a trace full of the app.**
+Two causes, both measured:
+
+1. The trace stores `process.name` as the kernel's `comm`, capped at 15
+   characters — `com.hefengbao.jingmo.hw` is `ngbao.jingmo.hw` — so a scene
+   whose `processNames` holds the bundle matched no row.
+2. A plain `hitrace` capture recorded no pid at all: `collect` resolved the
+   app's pid only when a collector needed one.
+
+`resolveAppIpids` now falls back to a name match when the pid route resolves
+nothing (the comm is the bundle, the bundle ends with the comm, or the comm is
+a `:`-separated sub-process; a name shorter than the comm limit is not
+eligible), and `collect` records the app's pids in `scene.json` whenever it can.
+Re-running `analyze` on the same trace cut the degraded analyzers from twelve
+to the ones that genuinely lack data.
+
 ## What this does not measure
 
-- **Dynamic analysis.** Every case also needs a per-case workload (the
-  benchmark calls it unspecified). The device path was built end to end —
-  the trees were reconstructed, built, signed and installed on the emulator
-  — but the benchmark does not supply the traffic that triggers each defect,
-  so the source path is the measurement axis. `ohos-perf` has the device
-  path (`collect`, `analyze`, `root-cause`); this table does not exercise it.
-- **The real Mate 60.** OpenHarmony debug certificates are rejected by the
-  commercial device (`code:9568257 fail to verify pkcs7 file`), so every
-  install was on the emulator.
+- **A physical device.** OpenHarmony debug certificates are rejected by the
+  commercial Mate 60 (`code:9568257 fail to verify pkcs7 file`), so every
+  install and every capture was on the emulator. The emulator's missing
+  `hiprofiler_cmd`, refused `hiperf` and unsettable ArkTS tracing are the reason
+  12 of 83 metrics are degraded; a device that has them would measure more.
+- **A dynamic precision/recall number.** The source axis has one because the
+  ground truth names a source location. A dynamic run names evidence — a
+  critical `vsync_anomaly`, a jank rate — and there is no published mapping
+  from OhmBench's ground truth to an expected trace signature, so no score is
+  claimed for this axis. What is claimed is that the pipeline runs end to end
+  and that a reader can see which cases it could not drive and why.
+

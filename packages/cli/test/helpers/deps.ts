@@ -52,6 +52,7 @@ export function cliDeps(overrides: Partial<CliDeps> = {}): CliDeps {
       create: notStubbed('emulator.create'),
     },
     run: notStubbed('run'),
+    workload: notStubbed('workload'),
     runCli: notStubbed('runCli'),
     ...overrides,
   };

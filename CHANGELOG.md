@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.33.0 — 2026-11-19
+
+**`workload` runs somebody else's plan, and the app-attribution bug a device
+capture found that no source scan could.**
+
+Every measurement this package had started from a scenario *we* wrote. A
+benchmark publishes its own: HapRay's `PerfTestCase` reads a `*.workload.json`
+and drives it through `setup` → `profiled(measured)` → `verify`.
+`ohos-perf workload <plan.workload.json> --duration <s> --out <dir>` runs that
+file unchanged, so an external harness's plans are measured without being
+translated first.
+
+The phase order is the harness's, including the part that is easy to miss: the
+app is stopped and launched **before** `setup`, because the published plans
+rely on the harness doing it. A plan whose first action is `wait` otherwise
+starts on the home screen and fails at its own first assertion — measured on
+the first plan tried. `setup` runs before the capture, `measured` runs inside
+the window, `verify` runs after it. A `measured` failure finishes the capture
+anyway (the trace is a record of what happened); a `verify` failure fails the
+run without discarding the scene; a `measured` phase that overruns `--duration`
+is a failure naming both numbers.
+
+The plan is validated whole before a device is resolved: unknown keys, an
+unknown `op`, a selector with no fields, a `match` outside the three modes, a
+`key` outside `Back|Home|Power|<code>`, and a bundle or ability that is not a
+bare name — those two reach `aa` as command words — are errors naming the JSON
+path.
+
+**The app-attribution bug.** Driving a real workload on the emulator exposed a
+defect in the capture path that the source axis could never surface: every
+app-attributed analyzer reported `no_data` on a trace that was full of the app.
+Two causes, both measured:
+
+- The trace records `process.name` as the kernel's `comm`, which is **capped at
+  15 characters**: `com.hefengbao.jingmo.hw` is stored as `ngbao.jingmo.hw`.
+  The scene's `processNames` held the bundle, which no row equals.
+- A plain `hitrace` capture recorded **no pid at all** — the pid was resolved
+  only when a collector needed one — so there was nothing to translate.
+
+`resolveAppIpids` now takes the `AppIdentity` and falls back to a name match
+when the pid route finds nothing: the comm is the bundle, the bundle ends with
+the comm (the truncation case), or it is one of the bundle's `:`-separated
+sub-processes. Names shorter than the comm limit are not eligible, because a
+three-character name is a suffix of half the system. And `collect` records the
+app's pids in `scene.json` whenever it can resolve them, not only when a
+collector asked. Re-running `analyze` on the same trace moved the degraded
+analyzers from twelve to the ones that genuinely lack data.
+
+`bench/ohmbench/dynamic/` builds, signs, installs and drives all 21 OhmBench
+cases on the emulator (`build.py`, `sign.mjs`, `install.mjs`, `run.mjs`) and
+`bench/ohmbench/RESULTS.md` records what that measured, including which cases
+fail at their own `setup` because the benchmark ships no prepared data and
+which are uninstallable on a debug profile.
+
 ## 0.32.3 — 2026-11-19
 
 **An external review found six real defects in the `suspects` scanner. Five

@@ -297,7 +297,9 @@ describe('CollectSession.ingest', () => {
  * await the first collector forever and hit the test timeout; `Promise.all`
  * starts both in the same tick, so the barrier releases.
  */
-function collectHarness(opts: { failHitrace?: boolean; concurrent?: boolean } = {}) {
+function collectHarness(
+  opts: { failHitrace?: boolean; concurrent?: boolean; pidof?: string } = {},
+) {
   const commands: string[] = [];
   const received: Array<{ durationMs: number }> = [];
   let release = (): void => {};
@@ -307,6 +309,13 @@ function collectHarness(opts: { failHitrace?: boolean; concurrent?: boolean } = 
     shell: async (_target: string, cmd: string) => {
       commands.push(cmd);
       if (cmd === 'cat /proc/uptime') return { stdout: '1234.56 9999.00\n', stderr: '', code: 0 };
+      if (cmd.startsWith('pidof ')) {
+        return {
+          stdout: opts.pidof ?? '',
+          stderr: '',
+          code: opts.pidof === undefined ? 1 : 0,
+        };
+      }
       return { stdout: '', stderr: '', code: 0 };
     },
   };
@@ -536,6 +545,27 @@ describe('CollectSession.ingest with procfs and cold start', () => {
       const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
       expect(meta.pids).toEqual([]);
       expect(meta.capture.collectors).toEqual(['hitrace', 'procfs']);
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('records the app pids of a plain hitrace capture without procfs', async () => {
+    // The trace stores the kernel's 15-char comm, so `com.demo` can read back
+    // as `ngbao.jingmo.hw`-style truncation; the scene's pids are what let an
+    // analyzer find the app's rows without guessing from the name.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-pids-'));
+    try {
+      const h = collectHarness({ pidof: '4242 4243' });
+      const d = fakeDevice(h);
+      const scene = await d.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+      }).then((s) => s.ingest());
+      scene.close();
+      expect(h.commands).toContain('pidof com.demo');
+      const meta = JSON.parse(readFileSync(join(root, 'scene.json'), 'utf8'));
+      expect(meta.pids).toEqual([4242, 4243]);
+      expect(meta.capture.collectors).toEqual(['hitrace']);
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

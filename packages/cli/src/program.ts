@@ -33,6 +33,7 @@ import {
   runAgentCommand,
   runSymbolRecovery,
   runScenarioCommand,
+  runWorkloadCommand,
   runTools,
   runTrend,
   runUiCompare,
@@ -751,6 +752,42 @@ A suspect citing a name this run never measured is marked ungrounded.`)
         ...(rounds === undefined ? {} : { rounds }),
         ...(only === undefined ? {} : { only }),
         ...(opts.keepGoing === true ? { keepGoing: true } : {}),
+      }, { json: opts.json }));
+    });
+
+  program
+    .command('workload')
+    .description('run an external workload plan (setup / measured / verify), capturing the measured phase')
+    .argument('<plan>', 'a *.workload.json plan, as HapRay testcases publish')
+    .requiredOption('--duration <seconds>', 'capture window for the measured phase, in seconds')
+    .requiredOption('--out <dir>', 'scene output directory (one scene, plus workload.json)')
+    .option('--target <id>', 'run against this hdc target instead of the first connected one')
+    .option('--json', 'print the run record as JSON')
+    .addHelpText('after', `
+The plan names its own bundle and ability. setup runs before the capture,
+measured runs inside it, verify runs after and fails the run without
+discarding the scene. The scene is the same shape collect writes, so
+analyze, report, query and root-cause apply to it unchanged.`)
+    .action(async (planPath: string, opts: {
+      duration: string;
+      out: string;
+      target?: string;
+      json?: boolean;
+    }) => {
+      // Parsed here rather than by a commander parser so a bad value produces
+      // the CLI-wide failure contract: empty stdout, one stderr message.
+      let durationMs: number;
+      try {
+        durationMs = parseDurationSeconds(opts.duration);
+      } catch (err) {
+        emit(failureResult(err));
+        return;
+      }
+      emit(await runWorkloadCommand(deps, {
+        planPath,
+        outDir: opts.out,
+        durationMs,
+        ...(opts.target === undefined ? {} : { target: opts.target }),
       }, { json: opts.json }));
     });
 

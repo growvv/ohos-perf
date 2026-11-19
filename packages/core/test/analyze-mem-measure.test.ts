@@ -61,6 +61,9 @@ function ctxWith(
     byPid: (pid: number) => (pid === APP_PID
       ? { id: APP_IPID, ipid: APP_IPID, pid: APP_PID, name: 'com.demo' }
       : undefined),
+    // The fake trace holds no process table; the name fallback must find
+    // nothing rather than reaching for a table the fake does not have.
+    all: () => [],
   } as unknown as ProcessQuery;
   return {
     frames: {} as FrameQuery,

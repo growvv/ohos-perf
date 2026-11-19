@@ -528,6 +528,16 @@ export class Device {
           }
         }
 
+        // The scene records the app's pids whenever it can, not only when a
+        // collector needed them: the trace's `process.name` is the 15-char
+        // kernel comm, and an analyzer without pids had to guess. Best-effort:
+        // an app that is not running yet resolves to none.
+        const sceneAppPids = nativehookPids ?? (
+          app === undefined || app === ''
+            ? []
+            : await tryResolvePids(hdc, this.id, app)
+        );
+
         const collector = this.deps.collector ?? new HitraceCollector();
         const traceOpts: TraceCollectOptions = {
           app,
@@ -745,10 +755,9 @@ export class Device {
             processNames: app === undefined || app === '' ? [] : [app],
           },
           // The procfs collector resolves the pid for its samples; reuse it
-          // instead of issuing another `pidof` device call. Without procfs the
-          // nativehook resolution (if any) already holds the app's pids.
+          // rather than issuing another `pidof` device call.
           pids: procfsSamples === undefined
-            ? nativehookPids ?? []
+            ? sceneAppPids
             : [...new Set(procfsSamples.map((sample) => sample.pid))],
           deviceId: this.id,
           ...(startedAtNs === undefined ? {} : { startedAtNs }),
@@ -920,6 +929,23 @@ async function readUptimeNs(
  * hiprofiler session without pids would record nothing and look like a quiet
  * app, so this is an error with an actionable message.
  */
+/**
+ * Resolve `app`'s pids when there may be none, without failing the capture.
+ *
+ * A plain hitrace records the kernel's comm, which is truncated to 15
+ * characters, so the trace alone cannot reliably name the app process. The
+ * scene records the pids for the analyzer's benefit; an app that is not
+ * running yet (a workload launches it inside the window) is a state, not an
+ * error, and the analyzer's name fallback covers it.
+ */
+async function tryResolvePids(hdc: Hdc, target: string, app: string): Promise<number[]> {
+  try {
+    return await resolvePids(hdc, target, app);
+  } catch {
+    return [];
+  }
+}
+
 async function resolvePids(hdc: Hdc, target: string, app: string): Promise<number[]> {
   const result = await hdc.shell(target, `pidof ${app}`);
   const pids = result.stdout

@@ -168,6 +168,8 @@ export type { SceneLayout } from './ingest/scene';
 export { readSceneMetadata, writeSceneMetadata } from './ingest/metadata';
 // Scenario runner (P13)
 export { parseScenario, COLLECTOR_NAMES } from './scenario/schema';
+export { parseWorkloadPlan, describeWorkloadAction } from './workload/plan';
+export { WorkloadRunner } from './workload/runner';
 export { discoverCases, loadCases } from './scenario/cases';
 export { matchSelector, parseSelector, resolveSelector } from './scenario/selector';
 export { PARITY_ROWS, paritySummary } from './parity';
@@ -262,6 +264,13 @@ export type {
 } from './scenario/schema';
 export type { ActionContext, ActionDevice } from './scenario/actions';
 export type { Selector, SelectorRect } from './scenario/selector';
+export type {
+  WorkloadAction, WorkloadMatch, WorkloadPlan, WorkloadSelector,
+} from './workload/plan';
+export type {
+  WorkloadActionOutcome, WorkloadDevice, WorkloadPhaseResult, WorkloadRunOptions,
+  WorkloadRunResult,
+} from './workload/runner';
 export type { CaseLoad, DiscoveredCase } from './scenario/cases';
 export type { ParityRow, ParityStatus } from './parity';
 export type { RedundantFileEntry, RedundantFileReport } from './analyze/redundant-file';

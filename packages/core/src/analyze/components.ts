@@ -176,7 +176,7 @@ export class ComponentReuseAnalyzer implements Analyzer {
       };
     }
 
-    const ipids = resolveAppIpids(ctx.processes, ctx.app.pids);
+    const ipids = resolveAppIpids(ctx.processes, ctx.app);
     // `computeComponentReuse` reads `[]` as "match every process", which is
     // what keeps the parity fixture reproducible. The analyzer must not pass
     // that through: an unnamed or absent app would report another process's

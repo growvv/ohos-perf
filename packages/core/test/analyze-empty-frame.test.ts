@@ -124,13 +124,17 @@ function fullCaps(): CapabilityMatrix {
   ]);
 }
 
-function ctxWith(target: QueryHandle, appPids: number[] = [4999]): AnalyzeContext {
+function ctxWith(
+  target: QueryHandle,
+  appPids: number[] = [4999],
+  appName = 'com.demo',
+): AnalyzeContext {
   return {
     db: target,
     frames: new FrameQuery(target),
     perf: new PerfQuery(target),
     processes: new ProcessQuery(target),
-    app: { packageName: 'com.demo', pids: appPids, processNames: ['com.demo'] },
+    app: { packageName: appName, pids: appPids, processNames: [appName] },
     window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
     caps: fullCaps(),
     deviceId: 'offline',
@@ -382,8 +386,11 @@ describe('EmptyFrameAnalyzer', () => {
   });
 
   it('degrades instead of crashing when the process is not in the trace', async () => {
+    // `com.absent` names no row in the fixture, by pid or by comm; the app
+    // named `com.demo` is in the fixture and must be found through its name
+    // when no pid was recorded.
     const db = dbWith('no-app.db', { frames: [frame(0, 1e9, 100, 2)] });
-    const r = await new EmptyFrameAnalyzer().run(ctxWith(db, []));
+    const r = await new EmptyFrameAnalyzer().run(ctxWith(db, [], 'com.absent'));
     expect(metricOf(r, 'empty_frame.degraded')).toMatchObject({
       value: 0, unit: 'count', fidelity: 'proxy',
     });

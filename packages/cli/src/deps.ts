@@ -84,6 +84,7 @@ import {
   readUiTree,
   resolveAppIdentity,
   ScenarioRunner,
+  WorkloadRunner,
   resolveQueryLimit,
   runAnalyzerSections,
   runNamedQuery,
@@ -1762,6 +1763,17 @@ export function realDeps(
         ...(req.keepGoing === true ? { keepGoing: true } : {}),
       });
       return runner.run(req.scenario);
+    },
+
+    async workload(req) {
+      // The plan was parsed in the command layer; this is the first place a
+      // device is resolved, so a bad plan never reaches one.
+      const device = await connect(req.target === undefined ? {} : { target: req.target });
+      const runner = new WorkloadRunner(device, {
+        outDir: resolve(req.outDir),
+        durationMs: req.durationMs,
+      });
+      return runner.run(req.plan, req.planPath);
     },
 
     async collect(req) {

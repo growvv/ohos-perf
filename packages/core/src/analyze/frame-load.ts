@@ -298,7 +298,7 @@ export class FrameLoadAnalyzer implements Analyzer {
 
   async run(ctx: AnalyzeContext): Promise<AnalyzeResult> {
     const all = ctx.frames.all(ctx.window);
-    const ipids = resolveAppIpids(ctx.processes, ctx.app.pids);
+    const ipids = resolveAppIpids(ctx.processes, ctx.app);
     if (ipids.length === 0) {
       return degradedResult(
         ctx,

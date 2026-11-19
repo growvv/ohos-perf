@@ -398,6 +398,25 @@ what it found — never a silent zero-case "pass". One malformed file fails only
 that case. `--rounds`, `--only` and `--keep-going` apply per case. Read
 `cases.json` first: it tells you which cases are worth analyzing.
 
+### Somebody else's workload
+
+```bash
+ohos-perf workload plan.workload.json --duration 15 --out runs/search --json
+```
+
+A plan is the `*.workload.json` shape HapRay's `PerfTestCase` publishes:
+`bundle`, `ability`, `description`, and the three phases `setup`, `measured`,
+`verify`. The app is stopped and launched **before** `setup` — the published
+plans rely on the harness doing it, and a plan whose first action is `wait`
+fails on the home screen without it. `setup` runs before the capture,
+`measured` runs inside the window, `verify` runs after it.
+
+Exit 1 means the run failed. Read `workload.json` in `--out`: every action's
+outcome, timing and the device's message, plus `pids` and the error. A
+`setup` failure leaves no scene; a `measured` failure keeps it, so analyze the
+scene anyway. A `measured` phase that overran `--duration` is a failure naming
+both numbers — the window closed before the workload did.
+
 ## UI capture and diff
 
 Use this when the question is about what the user *saw*, not how fast it was

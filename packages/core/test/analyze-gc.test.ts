@@ -51,15 +51,18 @@ function fullCaps(): CapabilityMatrix {
   ]);
 }
 
-function ctxFor(target: QueryHandle, opts: { pids?: number[]; perf?: QueryHandle } = {})
-  : AnalyzeContext {
+function ctxFor(
+  target: QueryHandle,
+  opts: { pids?: number[]; perf?: QueryHandle; packageName?: string } = {},
+): AnalyzeContext {
+  const packageName = opts.packageName ?? 'com.demo';
   return {
     db: target,
     frames: new FrameQuery(target),
     processes: new ProcessQuery(target),
     callstacks: new CallstackQuery(target),
     perf: new PerfQuery(opts.perf ?? target),
-    app: { packageName: 'com.demo', pids: opts.pids ?? [4999], processNames: ['com.demo'] },
+    app: { packageName, pids: opts.pids ?? [4999], processNames: [packageName] },
     window: { startNs: 0, endNs: Number.MAX_SAFE_INTEGER },
     caps: fullCaps(),
     deviceId: 'offline',
@@ -223,7 +226,10 @@ describe('GcAnalyzer', () => {
   });
 
   it('degrades rather than reporting zeros when the app has no pid', async () => {
-    const r = await new GcAnalyzer().run(ctxFor(db, { pids: [] }));
+    // `com.absent` is in neither the pid list nor the fixture's process rows;
+    // `com.demo` is in the fixture, so a name the trace does not hold is what
+    // "no app process" means now.
+    const r = await new GcAnalyzer().run(ctxFor(db, { pids: [], packageName: 'com.absent' }));
     expect(r.metrics.map((m) => m.id)).toEqual(['gc.degraded']);
   });
 

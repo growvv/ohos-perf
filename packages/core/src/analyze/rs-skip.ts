@@ -521,7 +521,7 @@ export class RsSkipAnalyzer implements Analyzer {
       return noData(ctx, 'the trace has no render_service process, so there is no RS skip to trace');
     }
 
-    const appIpids = resolveAppIpids(ctx.processes, ctx.app.pids);
+    const appIpids = resolveAppIpids(ctx.processes, ctx.app);
     // The reverse trace needs the app's ipid to recognise the frames RS
     // consumed. Without it `computeRsSkip` never attempts a trace, so the
     // trace metrics would be an unmeasured 0 dressed as `exact`.

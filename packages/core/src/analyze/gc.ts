@@ -182,7 +182,7 @@ export class GcAnalyzer implements Analyzer {
     if (ctx.db === undefined) {
       return degradedResult(ctx, 'the trace database handle is not available');
     }
-    const ipids = resolveAppIpids(ctx.processes, ctx.app.pids);
+    const ipids = resolveAppIpids(ctx.processes, ctx.app);
     if (ipids.length === 0) {
       return degradedResult(
         ctx,

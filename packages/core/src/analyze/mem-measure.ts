@@ -26,7 +26,7 @@ function appProcessName(ctx: AnalyzeContext): string {
  * Shared with the other ipid-scoped analyzers; see `resolveAppIpids`.
  */
 function appIpids(ctx: AnalyzeContext): number[] {
-  return resolveAppIpids(ctx.processes, ctx.app.pids);
+  return resolveAppIpids(ctx.processes, ctx.app);
 }
 
 /**
