@@ -2,6 +2,7 @@ import type { Metric } from './metric';
 import type { ReportModel } from './model';
 import { METRIC_DIRECTIONS, type MetricDirection } from './compare';
 import { escapeHtml } from './escape';
+import { maxOf, minOf } from '../extremes';
 
 /**
  * Multi-run trend aggregation (HapRay parity row 35, the aggregation half).
@@ -275,8 +276,8 @@ function sparkline(series: TrendSeries): string {
   const values = numeric.filter((value): value is number => value !== null);
   if (values.length < 2) return '';
 
-  let min = Math.min(...values);
-  let max = Math.max(...values);
+  let min = minOf(values);
+  let max = maxOf(values);
   if (min === max) {
     // A flat line has no range to scale; draw it through the middle rather
     // than dividing by zero.

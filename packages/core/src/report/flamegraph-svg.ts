@@ -1,4 +1,5 @@
 import { escapeHtml } from './escape';
+import { maxOf } from '../extremes';
 import type { FoldedStack } from '../query/perf';
 import type { TimeRange } from '../types';
 
@@ -205,7 +206,10 @@ export function renderFlamegraphSvg(stacks: readonly FoldedStack[]): string {
     cursor += width;
   }
 
-  const height = Math.max(...roots.map((root) => maxDepth(root))) * FRAME_HEIGHT + PAD * 2;
+  // Not `Math.max(...roots.map(maxDepth))`: a capture can have one root per
+  // thread and one frame per stack, so the spread form overflows V8's
+  // argument limit on exactly the long capture a flame graph is for.
+  const height = maxOf(roots.map((root) => maxDepth(root))) * FRAME_HEIGHT + PAD * 2;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" ` +
     `viewBox="0 0 ${WIDTH} ${height}">` +

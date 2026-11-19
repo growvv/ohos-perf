@@ -11,6 +11,7 @@
  * was ranked by confidence alone.
  */
 
+import { maxOf } from '../extremes';
 import type { Suspect } from './suspects';
 import type { CasePrompt } from './symptoms';
 
@@ -55,7 +56,10 @@ export function renderSuspectsText(document: SuspectsDocument): string {
     lines.push('suspects none');
     return `${lines.join('\n')}\n`;
   }
-  const width = Math.max(...document.suspects.map((suspect) => suspect.file.length));
+  // Not `Math.max(...paths)`: one argument per suspect overflows V8's
+  // argument limit on a large tree, and a tree with 150k findings is exactly
+  // the one whose report has to print.
+  const width = maxOf(document.suspects.map((suspect) => suspect.file.length));
   for (const suspect of document.suspects) {
     const where = `${suspect.file}:${suspect.lineStart}`;
     const symbol =

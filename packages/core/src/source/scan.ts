@@ -45,6 +45,15 @@ export interface SourceSymbol {
   readonly lineEnd: number;
   /** Every line of the body, verbatim, joined with '\n'. */
   readonly body: string;
+  /**
+   * The body with comments and string contents blanked, line for line.
+   *
+   * Same number of lines as `body`, so a rule can read structure from this and
+   * quote the reader-facing text from `body` at the same index. A rule that
+   * read only `body` counted a `for (…)` written inside a string literal as a
+   * loop, and reported a log line as a query running per iteration.
+   */
+  readonly code: string;
   /** The whole declaration text from its decorators to its closing brace. */
   readonly declaration: string;
 }
@@ -57,6 +66,25 @@ export interface SourceFile {
   readonly symbols: readonly SourceSymbol[];
   /** Module-scope lines: everything no symbol's body covers. */
   readonly moduleLines: readonly string[];
+  /**
+   * The 1-based line number of each entry in `moduleLines`, in the same order.
+   *
+   * A module statement is found by its text, and the same text can appear
+   * twice — two identical `PersistentStorage.persistProp(…)` calls are two
+   * separate statements. Recovering the line with `lines.indexOf(text)` sent
+   * both findings to the first one; carrying the number the scan already knew
+   * keeps them apart.
+   */
+  readonly moduleLineNumbers: readonly number[];
+  /**
+   * Every class/struct/enum declaration's line range.
+   *
+   * A rule that asks "does anything bound this store?" or "is this session
+   * destroyed?" is asking about the class the finding lives in, not the file.
+   * An unrelated class's `maxItems` or `image.destroy()` answers a question
+   * about that class.
+   */
+  readonly classExtents: readonly { readonly name: string; readonly lineStart: number; readonly lineEnd: number }[];
 }
 
 /** Directories never walked: build output and dependency trees. */
@@ -109,6 +137,14 @@ function stripNoise(text: string): string {
   const n = text.length;
   /** The last non-space character emitted, for the regex-or-division test. */
   let previous = '';
+  /**
+   * The identifier or keyword that ends at `previous`, if it ends on one.
+   *
+   * `startsRegex` needs it because a keyword like `return` ends in an
+   * identifier character but is not a value, so the character alone would read
+   * `return /x/` as a division.
+   */
+  let word = '';
   const blank = (from: number, to: number): void => {
     for (let at = from; at < to && at < n; at++) {
       if (text[at] !== '\n') out[at] = ' ';
@@ -133,7 +169,7 @@ function stripNoise(text: string): string {
       blank(start, i);
       continue;
     }
-    if (ch === '/' && startsRegex(previous)) {
+    if (ch === '/' && startsRegex(previous, word)) {
       // Skip the body, honouring escapes and a character class where `/` does
       // not close the literal.
       const start = i;
@@ -156,10 +192,18 @@ function stripNoise(text: string): string {
       while (i < n && /[a-z]/i.test(text[i]!)) i += 1;
       blank(start, i);
       previous = '/';
+      word = '';
       continue;
     }
     if (ch === "'" || ch === '"' || ch === '`') {
       const quote = ch;
+      // A single- or double-quoted string cannot contain a raw newline in
+      // JavaScript, so an unterminated one ends at the end of its line. A
+      // template literal can span lines, so only a backtick runs on.
+      // Without this, one unbalanced quote — a file caught mid-edit, or a
+      // quote inside something this reader misjudged — blanked the rest of
+      // the file and every method below it disappeared from the scan.
+      const singleLine = quote !== '`';
       out[i] = ' ';
       i += 1;
       while (i < n) {
@@ -174,31 +218,66 @@ function stripNoise(text: string): string {
           i += 1;
           break;
         }
-        if (text[i] !== '\n') out[i] = ' ';
+        if (text[i] === '\n') {
+          if (singleLine) break;
+          i += 1;
+          continue;
+        }
+        out[i] = ' ';
         i += 1;
       }
       previous = quote;
+      word = '';
       continue;
     }
-    if (ch.trim() !== '') previous = ch;
+    if (ch.trim() === '') {
+      // Whitespace does not end the word: `return /x/` separates the keyword
+      // from the slash with a space, and that is the case this exists for.
+      i += 1;
+      continue;
+    }
+    // Track the identifier this character belongs to, so `startsRegex` can
+    // tell the keyword `return` from a variable named `returned` and from the
+    // `x` in `return x`.
+    word = /[\w$]/.test(ch)
+      ? (word !== '' && /[\w$]/.test(previous) ? word + ch : ch)
+      : '';
+    previous = ch;
     i += 1;
   }
   return out.join('');
 }
 
 /**
- * Whether a `/` after `previous` opens a regular expression rather than
- * dividing.
+ * Keywords after which a `/` opens a regular expression rather than dividing.
+ *
+ * `return /x/.test(s)` and `case /a/:` both put a regex directly after a word,
+ * so the previous *character* is an identifier character and the
+ * character-only test read the slash as division. A regex whose body holds an
+ * unbalanced brace then counted that brace, the enclosing block never closed,
+ * and every method below it disappeared — the same failure as an unterminated
+ * string, from the opposite direction.
+ */
+const REGEX_PRECEDING_KEYWORDS = new Set([
+  'return', 'typeof', 'instanceof', 'case', 'do', 'else', 'in', 'of', 'new',
+  'delete', 'void', 'throw', 'yield', 'await',
+]);
+
+/**
+ * Whether a `/` after the last significant character and the word ending at it
+ * opens a regular expression rather than dividing.
  *
  * After a value — an identifier's last character, a closing bracket, a string
  * or a regex — a slash divides. After an operator, a comma, an opening bracket
- * or the start of a line it opens a regex. `return a / b` and
- * `.match(/x/)` both fall out of this rule without a list of keywords.
+ * or the start of a line it opens a regex. A keyword is the exception that the
+ * character alone cannot see: `return` ends in an identifier character but
+ * takes an expression, not a divisor. `return a / b` and `.match(/x/)` both
+ * fall out of this rule without a list of operators.
  */
-function startsRegex(previous: string): boolean {
+function startsRegex(previous: string, word: string): boolean {
   if (previous === '') return true;
-  if (/[\w$)\]'"`]/.test(previous)) return false;
-  return true;
+  if (!/[\w$)\]'"`]/.test(previous)) return true;
+  return REGEX_PRECEDING_KEYWORDS.has(word);
 }
 
 /** Per-line brace delta of an already-stripped text. */
@@ -273,6 +352,8 @@ export function scanSourceFile(path: string, text: string): SourceFile {
   const found: { className?: string; symbol: string; lineStart: number; lineEnd: number }[] = [];
   /** The extent of every type declaration, so module lines exclude structure. */
   const typeExtents: { lineStart: number; lineEnd: number }[] = [];
+  /** Every type declaration with its name, for rules that ask about the class. */
+  const classExtents: { name: string; lineStart: number; lineEnd: number }[] = [];
   /** Open type scopes: the depth the scope opened at and its name. */
   const scopes: { depth: number; name: string; lineStart: number }[] = [];
   let depth = 0;
@@ -329,10 +410,11 @@ export function scanSourceFile(path: string, text: string): SourceFile {
     while (scopes.length > 0 && depth <= scopes[scopes.length - 1]!.depth) {
       const closed = scopes.pop()!;
       typeExtents.push({ lineStart: closed.lineStart, lineEnd: index + 1 });
+      classExtents.push({ name: closed.name, lineStart: closed.lineStart, lineEnd: index + 1 });
     }
   }
 
-  return finish(path, lines, found, typeExtents);
+  return finish(path, lines, stripped, found, typeExtents, classExtents);
 }
 
 /**
@@ -380,8 +462,10 @@ function findBlockEnd(
 function finish(
   path: string,
   lines: readonly string[],
+  stripped: readonly string[],
   found: readonly { className?: string; symbol: string; lineStart: number; lineEnd: number }[],
   typeExtents: readonly { lineStart: number; lineEnd: number }[],
+  classExtents: readonly { name: string; lineStart: number; lineEnd: number }[],
 ): SourceFile {
   const byKey = new Map<string, { className?: string; symbol: string; lineStart: number; lineEnd: number }>();
   for (const item of found) {
@@ -404,6 +488,7 @@ function finish(
       return {
         ...item,
         body: bodyLines.join('\n'),
+        code: stripped.slice(item.lineStart - 1, item.lineEnd).join('\n'),
         declaration: bodyLines.join('\n'),
       };
     });
@@ -419,11 +504,15 @@ function finish(
     for (let line = extent.lineStart; line <= extent.lineEnd; line++) covered[line] = 1;
   }
   const moduleLines: string[] = [];
+  const moduleLineNumbers: number[] = [];
   for (let line = 1; line <= lines.length; line++) {
-    if (covered[line] === 0 && (lines[line - 1] ?? '').trim() !== '') moduleLines.push(lines[line - 1]!);
+    if (covered[line] === 0 && (lines[line - 1] ?? '').trim() !== '') {
+      moduleLines.push(lines[line - 1]!);
+      moduleLineNumbers.push(line);
+    }
   }
 
-  return { path, lines, symbols, moduleLines };
+  return { path, lines, symbols, moduleLines, moduleLineNumbers, classExtents };
 }
 
 /**

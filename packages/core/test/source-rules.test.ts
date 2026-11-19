@@ -250,4 +250,114 @@ describe('the remaining rules, one per defect shape the benchmark records', () =
     ].join('\n'));
     expect(rows.map((row) => row.rule)).not.toContain('unbounded-accumulation');
   });
+
+  it('flags a SQL string whose identifier sits on its own continuation line', () => {
+    // The same statement as the concatenation test above, reformatted so the
+    // table reference is a line of its own. Nothing about the defect changed;
+    // a rule that read only quote-leading continuation lines saw half a
+    // statement and missed it.
+    const rows = suspectsIn('DbConst.ets', [
+      'export class DbCRUDConst {',
+      '  static readonly READ: string =',
+      "    'select * from ' +",
+      '    DbTableConst.ClassicPoemTable +',
+      "    ' where id = (select p.id from p order by random() limit 1)'",
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('sql-order-by-random');
+  });
+
+  it('does not count a loop shape inside a string literal', () => {
+    // A string is not a loop. The text of one used to satisfy the loop and the
+    // database-call tests together, so a log line or a template describing a
+    // query was reported as a query running per iteration.
+    const rows = suspectsIn('RdbUtils.ets', [
+      'export class RdbUtils {',
+      '  describe(rows: Row[]) {',
+      '    const text = "for (const row of rows) { db.insert(row); }"',
+      '    return text',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).not.toContain('sql-statement-in-loop');
+  });
+
+  it('flags an unbounded store even when an unrelated class is bounded', () => {
+    // The cap has to belong to the store it caps. An `ImageCache` that trims
+    // itself says nothing about whether a history store grows without bound,
+    // and treating it as if it did hid a real finding.
+    const rows = suspectsIn('history.ets', [
+      'export class HistoryStore {',
+      '  save(keyword: string) {',
+      '    this.pref.putSync(keyword, keyword)',
+      '  }',
+      '}',
+      'export class ImageCache {',
+      '  maxItems: number = 100',
+      '  trim() { this.items.splice(0, 10) }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('unbounded-accumulation');
+  });
+
+  it('flags an undestroyed HTTP session even when another class destroys something', () => {
+    // `image.destroy()` is not the HTTP session's cleanup. Searching the whole
+    // file let any unrelated `destroy()` suppress the finding.
+    const rows = suspectsIn('ApiClient.ets', [
+      'export class ApiClient {',
+      '  request() {',
+      '    const http = http.createHttp()',
+      '    return http.request(url)',
+      '  }',
+      '}',
+      'export class ImageHolder {',
+      '  release() { this.image.destroy() }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('http-session-not-destroyed');
+  });
+
+  it('does not call a read through executeSql a database write', () => {
+    // `executeSql` is a generic executor: it runs whatever string it is given.
+    // Treating its presence as a write reported a SELECT inside a loop as a
+    // write per iteration.
+    const rows = suspectsIn('RdbUtils.ets', [
+      'export class RdbUtils {',
+      '  load(dates: string[]) {',
+      '    for (const date of dates) {',
+      "      this.executeSql('select * from ' + date)",
+      '    }',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).not.toContain('db-write-in-loop');
+  });
+
+  it('flags a schema change executed once per table', () => {
+    // `DROP TABLE` inside the loop is a write, and it is the shape that used
+    // to be hidden: the `${date}` in the template literal's braces closed the
+    // loop counter, so the executor on the next line read as outside the loop.
+    const rows = suspectsIn('RdbUtils.ets', [
+      'export class RdbUtils {',
+      '  deleteAll(dates: string[]) {',
+      '    dates.forEach((date: string) => {',
+      '      this.executeSql(`DROP TABLE IF EXISTS ${date}`)',
+      '    })',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toContain('db-write-in-loop');
+  });
+
+  it('reports two identical module statements on their own lines', () => {
+    // Two `persistProp` calls for the same key are two statements. The line was
+    // recovered with `lines.indexOf(text)`, which always finds the first copy,
+    // so both findings named line 1.
+    const rows = suspectsIn('Index.ets', [
+      "PersistentStorage.persistProp('items', [])",
+      "PersistentStorage.persistProp('items', [])",
+    ].join('\n'));
+    expect(rows.map((row) => row.rule)).toEqual(['persistent-storage-unbounded', 'persistent-storage-unbounded']);
+    expect(rows.map((row) => row.lineStart)).toEqual([1, 2]);
+  });
 });

@@ -58,22 +58,59 @@ export function firstMatch(text: string, pattern: RegExp): string | undefined {
 }
 
 /**
+ * The text of the class a symbol belongs to, or the whole file when it belongs
+ * to none.
+ *
+ * A rule asking "is this bounded?" or "is this cleaned up?" is asking about
+ * the class the finding lives in. Searching the whole file let an unrelated
+ * class answer for it: an `ImageCache` with `maxItems` suppressed an unbounded
+ * history store, and an `image.destroy()` suppressed a leaked HTTP session.
+ *
+ * A module-scope symbol has no class, so the file is the only honest scope —
+ * a top-level statement's cleanup is another top-level statement.
+ */
+function classScope(facts: SourceFacts): string {
+  const className = facts.symbol.className;
+  if (className === undefined) return facts.file.lines.join('\n');
+  const extent = facts.file.classExtents.find(
+    (candidate) => candidate.name === className && candidate.lineStart <= facts.symbol.lineStart && candidate.lineEnd >= facts.symbol.lineEnd,
+  );
+  if (extent === undefined) return facts.file.lines.join('\n');
+  return facts.file.lines.slice(extent.lineStart - 1, extent.lineEnd).join('\n');
+}
+
+/**
  * A SQL string assembled from concatenation.
  *
  * The assembled statement is returned, not one literal: the benchmark's
  * `jingmo_random_poem_orderby_random` root cause is a constant built from
  * `'select * from ' + TABLE + ' where …'`, and a rule that reads one literal
  * sees neither half.
+ *
+ * A continuation is anything the statement still owes: a quoted fragment, an
+ * identifier, a call, an operator. Requiring each continuation to open a quote
+ * handled the shipped formatting and missed the same statement with the table
+ * reference on a line of its own — the defect is in the statement, not in where
+ * the line breaks fell.
  */
 export function sqlText(text: string): string | undefined {
   const lines = text.split('\n');
   for (let index = 0; index < lines.length; index++) {
-    if (!SQL.test(lines[index]!)) continue;
-    const parts = [lines[index]!];
-    for (let next = index + 1; next < lines.length && next <= index + 6; next++) {
+    const start = lines[index]!;
+    if (!SQL.test(start)) continue;
+    const parts = [start];
+    for (let next = index + 1; next < lines.length && next <= index + 12; next++) {
       const line = lines[next]!;
-      if (/^\s*['"`]/.test(line)) parts.push(line);
-      else break;
+      // The previous line promised more (`+`, `,`, `(`) or this one continues
+      // it (a quoted fragment, an identifier chain, a closing paren).
+      if (/[+,(\[]\s*$/.test(parts[parts.length - 1]!) || /^\s*['"`]/.test(line) || /^\s*[)\]]/.test(line)) {
+        parts.push(line);
+        // The statement ends where the previous fragment does: a `;`, or a
+        // line that is not followed by an operator.
+        if (/;\s*$/.test(line)) break;
+        continue;
+      }
+      break;
     }
     return parts.join(' ').trim();
   }
@@ -98,14 +135,21 @@ export const RULES: readonly Rule[] = [
     category: 'latency',
     confidence: 'high',
     match(facts) {
-      const lines = facts.symbol.body.split('\n');
+      // Depth from `code`, the match from `body`. A `for (…)` written inside a
+      // string literal is not a loop — that was the false positive — but a SQL
+      // statement is very often a template literal (`executeSql(`DELETE …`)`),
+      // so blanking the text before looking for it would lose the defect.
+      const code = facts.symbol.code.split('\n');
+      const body = facts.symbol.body.split('\n');
       let loopDepth = 0;
-      for (const line of lines) {
-        if (LOOP.test(line) && line.includes('{')) loopDepth += 1;
+      for (let index = 0; index < code.length; index++) {
+        const structure = code[index]!;
+        const line = body[index] ?? structure;
+        if (LOOP.test(structure) && structure.includes('{')) loopDepth += 1;
         if (loopDepth > 0 && /\b(DELETE|INSERT|UPDATE)\b/i.test(line) && /executeSql|insert|update|delete/i.test(line)) {
           return `a SQL statement runs once per iteration: ${line.trim()}`;
         }
-        if (line.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
+        if (structure.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
       }
       return undefined;
     },
@@ -203,14 +247,24 @@ export const RULES: readonly Rule[] = [
     category: 'latency',
     confidence: 'high',
     match(facts) {
-      const lines = facts.symbol.body.split('\n');
+      // Depth from `code`, the match from `body`: a write is often a template
+      // literal, and a loop written inside a string is not a loop.
+      const code = facts.symbol.code.split('\n');
+      const body = facts.symbol.body.split('\n');
       let loopDepth = 0;
-      for (const line of lines) {
-        if (LOOP.test(line) && line.includes('{')) loopDepth += 1;
-        if (loopDepth > 0 && /\.(insert|update|delete)\s*\(|executeSql\s*\(/.test(line)) {
+      for (let index = 0; index < code.length; index++) {
+        const structure = code[index]!;
+        const line = body[index] ?? structure;
+        if (LOOP.test(structure) && structure.includes('{')) loopDepth += 1;
+        // A write is a call that names a write, or an executor whose argument
+        // is one. `executeSql` alone says nothing: it runs whatever string it
+        // is given, and a SELECT through it is a read.
+        const namesWrite = /\.(insert|update|delete)\s*\(|executeSql\s*\(/i.test(line);
+        const sqlIsWrite = /executeSql\s*\(/i.test(line) && /\b(DELETE|INSERT|UPDATE|DROP|REPLACE|ALTER|CREATE)\b/i.test(line);
+        if (loopDepth > 0 && (namesWrite && (sqlIsWrite || !/executeSql\s*\(/i.test(line)))) {
           return `a database write runs once per iteration, each in its own transaction: ${line.trim()}`;
         }
-        if (line.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
+        if (structure.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
       }
       return undefined;
     },
@@ -220,16 +274,18 @@ export const RULES: readonly Rule[] = [
     category: 'latency',
     confidence: 'high',
     match(facts) {
-      const lines = facts.symbol.body.split('\n');
+      const code = facts.symbol.code.split('\n');
+      const body = facts.symbol.body.split('\n');
       let loopDepth = 0;
-      for (const line of lines) {
+      for (let index = 0; index < code.length; index++) {
+        const line = code[index]!;
         if (LOOP.test(line) && line.includes('{')) loopDepth += 1;
         // One read per row of a list already in memory. The fix is a grouped
         // query; the cost is a query round trip per item. The read has to name
         // a count or a single-row lookup — a write loop is a different rule,
         // and a bulk read outside the loop is not this defect at all.
         if (loopDepth > 0 && /await\s+this\.\w+\.(getUnreadCount|getCount|count|findById|getById|queryById)\s*\(/i.test(line)) {
-          return `one query per row, where a single grouped query would do: ${line.trim()}`;
+          return `one query per row, where a single grouped query would do: ${(body[index] ?? line).trim()}`;
         }
         if (line.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
       }
@@ -245,16 +301,18 @@ export const RULES: readonly Rule[] = [
     // ranks below them.
     confidence: 'low',
     match(facts) {
-      const lines = facts.symbol.body.split('\n');
+      const code = facts.symbol.code.split('\n');
+      const body = facts.symbol.body.split('\n');
       let loopDepth = 0;
-      for (const line of lines) {
+      for (let index = 0; index < code.length; index++) {
+        const line = code[index]!;
         if (LOOP.test(line) && line.includes('{')) loopDepth += 1;
         // An await on `this.` inside a loop is one round trip per item, run
         // one after the other; the fix is to collect and await together. A
         // database read is the sharper N+1 case and is scored above this one,
         // so this fires on everything else.
         if (loopDepth > 0 && /await\s+this\./.test(line) && !/await\s+this\.\w*\.?\w*(get|query|count|find|read)\w*\s*\(/i.test(line)) {
-          return `each iteration waits for the previous one to finish: ${line.trim()}`;
+          return `each iteration waits for the previous one to finish: ${(body[index] ?? line).trim()}`;
         }
         if (line.includes('}')) loopDepth = Math.max(0, loopDepth - 1);
       }
@@ -335,8 +393,12 @@ export const RULES: readonly Rule[] = [
       // only ever reached from a user action does not bound anything — the
       // benchmark's store has exactly that shape, and its root cause is the
       // absence of a cap.
-      const wholeFile = facts.file.lines.join('\n');
-      if (/length\s*[><]=?|size\s*[><]=?|slice\s*\(|splice\s*\(|trim|evict|maxItems|limit/i.test(wholeFile)) return undefined;
+      //
+      // The cap has to belong to the store. Searching the whole file let an
+      // unrelated `ImageCache` that declares `maxItems` suppress a history
+      // store that grows without bound.
+      const scope = classScope(facts);
+      if (/length\s*[><]=?|size\s*[><]=?|slice\s*\(|splice\s*\(|trim|evict|maxItems|limit/i.test(scope)) return undefined;
       const line = firstMatch(body, /(putSync|setSync)\s*\(/)!;
       return `every value is persisted under its own key and nothing caps the number of keys: ${line}`;
     },
@@ -392,10 +454,11 @@ export const RULES: readonly Rule[] = [
       const body = facts.symbol.body;
       if (!/http\.createHttp\s*\(/.test(body)) return undefined;
       // A session that is never destroyed keeps its connection and its
-      // response body alive. Check the file: the destroy usually sits in a
-      // cleanup method beside the one that creates the session.
-      const wholeFile = facts.file.lines.join('\n');
-      if (/\.destroy\s*\(/.test(wholeFile)) return undefined;
+      // response body alive. The destroy usually sits in a cleanup method
+      // beside the one that creates the session, so the search spans the
+      // class — not the file, where an unrelated `image.destroy()` used to
+      // suppress the finding.
+      if (/\.destroy\s*\(/.test(classScope(facts))) return undefined;
       const line = firstMatch(body, /http\.createHttp\s*\(/)!;
       return `an HTTP session is created per request and never destroyed: ${line}`;
     },

@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.32.3 — 2026-11-19
+
+**An external review found six real defects in the `suspects` scanner. Five
+were false positives, and the one it called Critical was worse than what it
+replaced.**
+
+The review (Codex `lab/gpt-6.2-sol`, five files inlined, findings only) is
+recorded in full at `docs/reviews/2026-11-19-codex-p37-suspects.md`, including
+the four claims that did not survive being reproduced. Two of them are worth
+naming here because they are the shape of review error:
+
+- It reported that a regex literal's closing `/` is mistaken for a value, so a
+  later division becomes a regex. The character before a `/` after a completed
+  regex is `/`, which is not in the value set, so the case works.
+- It called the final sort wrong for putting rule order ahead of component
+  kind. The sort can never see two suspects of different kinds: `top` is
+  already filtered to equal `strength`, and `strength = 2·words + kind`.
+
+Its only Critical — "apply the confidence tier before the name filter" — is
+accurate about the code and wrong about the fix. Applied as written it measures
+precision **0.738**, recall **0.833**, three cases worse: the name filter
+answers *which question* and confidence answers *which answer within it*. It was
+reverted and the tradeoff is pinned by a test.
+
+What shipped:
+
+- **`sqlText` follows a concatenation to the end of the statement.** It
+  required every continuation line to open a quote, so the same SQL constant
+  with the table reference on a line of its own produced no finding — the
+  helper's own doc comment promised the case it missed.
+- **The loop rules count braces on noise-stripped text.** A `for (…)` inside a
+  string literal satisfied the loop test, so a log line describing a query was
+  reported as a query per iteration. `SourceSymbol` now carries `code` (blanked)
+  alongside `body` (verbatim), and the rules read structure from one and quote
+  the other.
+- **`executeSql` is not a write by itself.** The same fix exposed the reverse
+  error: `executeSql('select …')` in a loop was called a write. The statement
+  now has to name one. This costs an indirect `DROP TABLE` loop, which is a
+  deliberate false negative — following a local variable into the executor is
+  dataflow analysis this scanner does not do.
+- **`unbounded-accumulation` and `http-session-not-destroyed` search the
+  holding class, not the file.** An unrelated `maxItems` or `image.destroy()`
+  no longer answers for a store or a session it has nothing to do with.
+- **Duplicate module statements report their own lines.** The line was
+  recovered with `lines.indexOf(text)`, so two identical `persistProp` calls
+  both named line 1.
+- **A regex literal after a keyword is a regex.** `return /\{/.test(s)` was read
+  as division because the character before the slash is `n`; the brace inside
+  the regex then never closed and every method below it vanished.
+
+`Math.max(...array)` throws `RangeError` somewhere between 124k and 150k
+arguments on this machine. Nine call sites spread a user-sized array into it —
+a thermal capture's samples, a trend's points, a suspect list's paths. They now
+use `maxOf`/`minOf` in `packages/core/src/extremes.ts`, which throws on an
+empty array instead of returning ±Infinity.
+
+OhmBench is byte-identical: precision **0.857**, recall **0.929**, F1 0.871.
+
 ## 0.32.2 — 2026-11-19
 
 Republish of 0.32.1. `@ohos-perf/cli@0.32.1` reached the registry while

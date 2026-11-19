@@ -1,0 +1,939 @@
+{
+ "summary": {
+  "cases": 21,
+  "precision": 0.8571428571428571,
+  "recall": 0.9285714285714286,
+  "f1": 0.8714285714285714
+ },
+ "cases": [
+  {
+   "id": "browser_eager_history_load",
+   "app": "browser (小狐狸浏览器)",
+   "bundle": "com.example.nanvision",
+   "category": "latency",
+   "scenarios": [
+    "页面启动",
+    "数据库读取"
+   ],
+   "symptom": "浏览历史记录时响应变慢。",
+   "scenario": "浏览器页面操作",
+   "mechanism": "On application startup the main page eagerly queries every per-day history table in the RDB database and materializes all browsing-history rows in memory (Index.aboutToAppear -> RdbUtils.queryAllDate + queryHistoriesByDate for each date), even though history is only consumed when the user opens the browsing-history dialog. Cold-start latency and startup CPU grow linearly with the number of recorded history entries.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/pages/Index.ets",
+     "symbol": "aboutToAppear",
+     "class": "Index"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/pages/Index.ets",
+     "symbol": "aboutToAppear",
+     "class": "Index",
+     "line": 61,
+     "description": "the page runs one query per item before it can render: allDate.forEach(async date => {",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "browser_history_delete_no_transaction",
+   "app": "browser (小狐狸浏览器)",
+   "bundle": "com.example.nanvision",
+   "category": "latency",
+   "scenarios": [
+    "数据库读取",
+    "状态更新"
+   ],
+   "symptom": "清理浏览历史时响应变慢。",
+   "scenario": "浏览器页面操作",
+   "mechanism": "Clearing browsing history (settings -> clear history) walks every per-day history table, selects all row IDs and executes one standalone DELETE statement per row, each in its own implicit transaction (autocommit). With hundreds of history entries this causes hundreds of individual journal/fsync cycles, making the clear operation and the following UI freeze noticeably long.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/utils/RdbUtils.ets",
+     "symbol": "deleteAll",
+     "class": "RdbUtils"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/utils/RdbUtils.ets",
+     "symbol": "deleteAll",
+     "class": "RdbUtils",
+     "line": 167,
+     "description": "a SQL statement runs once per iteration: await RdbUtils.getStore().executeSql(`DELETE FROM ${tableName} WHERE id = ${id}`)",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "browser_history_list_foreach",
+   "app": "browser (小狐狸浏览器)",
+   "bundle": "com.example.nanvision",
+   "category": "latency",
+   "scenarios": [
+    "列表滑动",
+    "组件创建",
+    "页面切换"
+   ],
+   "symptom": "打开浏览历史列表时响应变慢。",
+   "scenario": "浏览器页面操作",
+   "mechanism": "The browsing-history dialog renders each day's entries with a plain ForEach inside ListItemGroup, so when the dialog opens, HistoryItem components for every recorded entry (including off-screen ones) are created eagerly, and scrolling re-creates components instead of recycling them. Opening the history dialog and scrolling it is slow once history grows.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/view/PagesDialog.ets",
+     "symbol": "build",
+     "class": "PagesDialog"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/view/PagesDialog.ets",
+     "symbol": "build",
+     "class": "PagesDialog",
+     "line": 78,
+     "description": "every row is built up front, including the ones off screen: ForEach(this.historyGroups, (group: HistoryGroup) => {",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "cloudmusic_play_time_high_frequency_update",
+   "app": "CloudMusic-HarmonyOSNext (仿网易云音乐)",
+   "bundle": "cc.chenlvin.cloudmusic",
+   "category": "cpu",
+   "scenarios": [
+    "动画",
+    "状态更新"
+   ],
+   "symptom": "播放过程中界面更新不流畅。",
+   "scenario": "通过普通本地曲库菜单播放真实60秒音频，在完整播放器观察播放进度推进",
+   "mechanism": "AVPlayerUtils' timeUpdate callback writes the millisecond-precision playback position into the global PLAY_TIME AppStorage state on every callback (about 10 times per second). The full player page binds PLAY_TIME via @StorageProp, so the heavy player view (cover art, controls, lyrics entry) re-renders at callback frequency even though the displayed progress only changes once per second, wasting UI-thread CPU during playback and draining battery.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/common/utils/play/AVPlayerUtils.ets",
+     "symbol": "play",
+     "class": "AVPlayerUtils"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/common/utils/play/AVPlayerUtils.ets",
+     "symbol": "play",
+     "class": "AVPlayerUtils",
+     "line": 64,
+     "description": "a high-frequency playback callback writes bound state, re-rendering the view: AppStorage.setOrCreate(StorageConstants.PLAY_TIME, time)",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "cloudmusic_search_result_foreach",
+   "app": "CloudMusic-HarmonyOSNext (仿网易云音乐)",
+   "bundle": "cc.chenlvin.cloudmusic",
+   "category": "latency",
+   "scenarios": [
+    "列表滑动",
+    "网络结果渲染",
+    "组件创建"
+   ],
+   "symptom": "搜索歌曲时，大量结果的列表加载较慢。",
+   "scenario": "Search and load the first song result page",
+   "mechanism": "Eager ForEach creates all song result rows on a large search page. LazyForEach creates visible rows as needed. Both revised variants request 1000 songs per page and advance offsets by actual response length; the original 30-song-page negative is archived.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/pages/search/SearchSongsList.ets",
+     "symbol": "build",
+     "class": "SearchSongsList"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/pages/search/SearchSongsList.ets",
+     "symbol": "build",
+     "class": "SearchSongsList",
+     "line": 44,
+     "description": "every row is built up front, including the ones off screen: ForEach(this.songList, (item: Song) => {",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "interviewapp_search_history_unbounded",
+   "app": "interview-handbook-project (面试通)",
+   "bundle": "com.itcast.pass_interview",
+   "category": "resource_retention",
+   "scenarios": [
+    "状态更新",
+    "页面切换"
+   ],
+   "symptom": "打开搜索历史页面后，应用内存占用较高。",
+   "scenario": "interview-handbook-project (面试通)页面操作",
+   "mechanism": "The search-history store persists every keyword as its own preference key and never bounds the number of entries. The history grows without limit, the history component renders an ever-growing ForEach, and preferences storage/flush volume grows with every search.",
+   "primaries": [
+    {
+     "file": "features/home/src/main/ets/utils/history.ets",
+     "symbol": "setItem",
+     "class": "HistoryStore"
+    },
+    {
+     "file": "features/home/src/main/ets/utils/history.ets",
+     "symbol": "getAll",
+     "class": "HistoryStore"
+    }
+   ],
+   "precision": 1,
+   "recall": 0.5,
+   "found": 1,
+   "primaryCount": 2,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "features/home/src/main/ets/utils/history.ets",
+     "symbol": "setItem",
+     "class": "HistoryStore",
+     "line": 19,
+     "description": "every value is persisted under its own key and nothing caps the number of keys: this.store.putSync(keyword, keyword)",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "jingmo_dataset_import_no_transaction",
+   "app": "jingmo (京墨文库)",
+   "bundle": "com.hefengbao.jingmo.hw",
+   "category": "latency",
+   "scenarios": [
+    "数据库读取",
+    "网络结果渲染"
+   ],
+   "symptom": "导入数据时响应变慢。",
+   "scenario": "通过正常同步入口导入文库数据",
+   "mechanism": "The dataset-sync page imports the classic-poem dataset by iterating the parsed JSON array and issuing one standalone RDB INSERT per poem (each in its own autocommit transaction, all fired concurrently via a non-awaited map). Importing thousands of rows generates thousands of individual journal/fsync cycles, saturating the DB writer and freezing the sync page for a long time.",
+   "primaries": [
+    {
+     "file": "features/settings/src/main/ets/pages/SyncData.ets",
+     "symbol": "aboutToAppear",
+     "class": "SyncData"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "features/settings/src/main/ets/pages/SyncData.ets",
+     "symbol": "aboutToAppear",
+     "class": "SyncData",
+     "line": 18,
+     "description": "a full copy of the input is made on every call, which the caller repeats per item: let wrapper: DataWrapper<ClassicPoem> = JSON.parse(data)",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "jingmo_random_poem_orderby_random",
+   "app": "jingmo (京墨文库)",
+   "bundle": "com.hefengbao.jingmo.hw",
+   "category": "latency",
+   "scenarios": [
+    "数据库读取",
+    "页面启动"
+   ],
+   "symptom": "切换随机诗词时响应变慢。",
+   "scenario": "jingmo (京墨文库)页面操作",
+   "mechanism": "Reading a random classic poem executes 'select * from classicalliterature_classicpoem where id = (select p.id from classicalliterature_classicpoem p order by random() limit 1)', which materializes and sorts every row of the poem table (thousands of rows with long text fields) on each refresh. The classic-poem page runs this query on page entry and on every toolbar refresh tap, so its latency grows linearly with dataset size.",
+   "primaries": [
+    {
+     "file": "commons/constants/src/main/ets/DbConst.ets",
+     "symbol": "READ_RANDOM_CLASSICPOEM",
+     "class": "DbCRUDConst"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "commons/constants/src/main/ets/DbConst.ets",
+     "symbol": "READ_RANDOM_CLASSICPOEM",
+     "class": "DbCRUDConst",
+     "line": 29,
+     "description": "a SQL statement sorts the whole table to pick one row: 'select * from ' + DbTableConst.ClassicPoemTable +       ' where id = (select p.id from classicalliterature_classicpoem p order by random() limit 1) limit 1';",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "jingmo_sync_page_reimport",
+   "app": "jingmo (京墨文库)",
+   "bundle": "com.hefengbao.jingmo.hw",
+   "category": "latency",
+   "scenarios": [
+    "数据库读取",
+    "页面切换"
+   ],
+   "symptom": "同步数据时响应变慢。",
+   "scenario": "通过普通同步页面重复检查已导入的文库数据",
+   "mechanism": "Opening the dataset sync page unconditionally re-downloads the full classic-poem dataset JSON and re-runs the bulk import, even when the (static, versioned) dataset is already fully imported. Every re-import re-attempts thousands of inserts that all conflict with existing rows (id primary key), wasting network transfer, parsing, and database work on each visit.",
+   "primaries": [
+    {
+     "file": "features/settings/src/main/ets/viewmodel/DatasetViewModel.ets",
+     "symbol": "insertClassicPoemsToDb",
+     "class": "DatasetViewModel"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "features/settings/src/main/ets/pages/SyncData.ets",
+     "symbol": "aboutToAppear",
+     "class": "SyncData",
+     "line": 18,
+     "description": "a full copy of the input is made on every call, which the caller repeats per item: let wrapper: DataWrapper<ClassicPoem> = JSON.parse(data)",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "sepweather_font_register_per_page",
+   "app": "SepWeather",
+   "bundle": "cn.seayj.sepweather",
+   "category": "memory",
+   "scenarios": [
+    "页面启动",
+    "页面切换"
+   ],
+   "symptom": "多次进入和退出城市管理页后，应用内存持续升高。",
+   "scenario": "Open and return from the city manager",
+   "mechanism": "Revised per-page font-family lifetime: ordinary secondary-page titles use the same complete bundled CJK font. Unfixed registers a unique font family for each page instance; fixed reuses one family. Normal city-manager visits retain duplicate font resources in the unfixed process. Original same-family MainPage recreation and parsing premises remain unverified and archived; no weather network or CPU claim.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/common/utils/PageTitleFont.ets",
+     "symbol": "registerPageTitleFont",
+     "class": null
+    },
+    {
+     "file": "entry/src/main/ets/pages/MainPage.ets",
+     "symbol": "aboutToAppear",
+     "class": "MainPage"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 2,
+   "primaryCount": 2,
+   "correct": 2,
+   "suspectCount": 2,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/pages/MainPage.ets",
+     "symbol": "aboutToAppear",
+     "class": "MainPage",
+     "line": 29,
+     "description": "fonts are registered again on every visit to the page: font.registerFont({",
+     "correct": true,
+     "primary": true
+    },
+    {
+     "rank": 2,
+     "file": "entry/src/main/ets/common/utils/PageTitleFont.ets",
+     "symbol": null,
+     "class": "PageTitleFont",
+     "line": 7,
+     "description": "a new font family is registered per call, so every instance keeps its own copy: font.registerFont({ familyName: family, familySrc: $rawfile('DroidSansFallbackFull.ttf') });",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "sheafreader_article_list_foreach",
+   "app": "Sheaf-Reader (束阅 RSS 阅读器)",
+   "bundle": "com.sheafreader.hm",
+   "category": "latency",
+   "scenarios": [
+    "列表滑动",
+    "组件创建",
+    "页面切换"
+   ],
+   "symptom": "打开文章列表时响应变慢。",
+   "scenario": "正常重启阅读器并加载300篇文章的第一页，再浏览真实文章列表",
+   "mechanism": "The article list view renders store.articles through a Scroll container holding a Column with a plain ForEach, which is never virtualised; the card grid also uses a non-caching ForEach. Opening a feed or scrolling loads pages of articles (limit grows with 'load more'), and every accumulated article row/card — including off-screen ones — is built eagerly, with per-card context menus bound, slowing list display and paging in large feeds.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/components/ArticleListView.ets",
+     "symbol": "build",
+     "class": "ArticleListView"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/components/ArticleListView.ets",
+     "symbol": "build",
+     "class": "ArticleListView",
+     "line": 593,
+     "description": "every row is built up front, including the ones off screen: ForEach(this.store.articles, (article: Article) => {",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "sheafreader_extract_tag_tolowercase",
+   "app": "Sheaf-Reader (束阅 RSS 阅读器)",
+   "bundle": "com.sheafreader.hm",
+   "category": "cpu",
+   "scenarios": [
+    "数据库读取",
+    "网络结果渲染"
+   ],
+   "symptom": "刷新订阅源时响应变慢。",
+   "scenario": "通过普通 F5 刷新已订阅的阅读源",
+   "mechanism": "FeedParser.extractTag locates the closing tag with xml.toLowerCase().indexOf(...), materializing a full lowercase copy of the item fragment for every extracted tag. Parsing one RSS item extracts ~6 tags (title/link/description/date/guid/author), so each refresh of a feed with N items allocates and scans ~6N full-fragment lowercase copies on the parsing thread, increasing GC pressure and feed-refresh latency.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/utils/FeedParser.ets",
+     "symbol": "extractTag",
+     "class": "FeedParser"
+    }
+   ],
+   "precision": 0.3333333333333333,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 3,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "getFeedsWithCounts",
+     "class": "FeedService",
+     "line": 186,
+     "description": "one query per row, where a single grouped query would do: feed.unreadCount = await this.db.getUnreadCount(feed.id, -1);",
+     "correct": false,
+     "primary": false
+    },
+    {
+     "rank": 2,
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "getGroupsWithCounts",
+     "class": "FeedService",
+     "line": 194,
+     "description": "one query per row, where a single grouped query would do: group.unreadCount = await this.db.getUnreadCount(-1, group.id);",
+     "correct": false,
+     "primary": false
+    },
+    {
+     "rank": 3,
+     "file": "entry/src/main/ets/utils/FeedParser.ets",
+     "symbol": "extractTag",
+     "class": "FeedParser",
+     "line": 179,
+     "description": "the whole input document is copied to read one field from it: xml.toLowerCase(",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "sheafreader_insert_duplicate_exception",
+   "app": "Sheaf-Reader (束阅 RSS 阅读器)",
+   "bundle": "com.sheafreader.hm",
+   "category": "cpu",
+   "scenarios": [
+    "数据库读取",
+    "网络结果渲染"
+   ],
+   "symptom": "刷新订阅源时响应变慢。",
+   "scenario": "通过普通 F5 刷新已有文章的阅读源，保持重复文章内容不变",
+   "mechanism": "insertArticle detects duplicates by letting the UNIQUE(feed_id, guid) constraint fail and catching the thrown exception ('Duplicate entry, ignore'). Every feed refresh re-attempts inserts for ALL previously seen articles — each one a full insert attempt that ends in a constraint-violation exception (statement execution + error object construction + catch), multiplying refresh cost with stored article count.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/data/DatabaseManager.ets",
+     "symbol": "insertArticle",
+     "class": "DatabaseManager"
+    }
+   ],
+   "precision": 0,
+   "recall": 0,
+   "found": 0,
+   "primaryCount": 1,
+   "correct": 0,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "getGroupsWithCounts",
+     "class": "FeedService",
+     "line": 202,
+     "description": "one query per row, where a single grouped query would do: group.unreadCount = await this.db.getUnreadCount(-1, group.id);",
+     "correct": false,
+     "primary": false
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "sheafreader_refresh_feeds_sequential",
+   "app": "Sheaf-Reader (束阅 RSS 阅读器)",
+   "bundle": "com.sheafreader.hm",
+   "category": "latency",
+   "scenarios": [
+    "网络结果渲染",
+    "页面启动"
+   ],
+   "symptom": "打开阅读器后，等待订阅刷新完成的时间较长。",
+   "scenario": "Open the reader and wait for its automatic subscription refresh",
+   "mechanism": "Sequential fetching adds the latency of each due subscription. This revision measures normal startup through automatic all-feed refresh under a declared 1.5-second RSS response delay. It does not claim lower CPU time; the original CPU-negative result is archived.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "refreshAllFeeds",
+     "class": "FeedService"
+    }
+   ],
+   "precision": 0.5,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 2,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "refreshFeed",
+     "class": "FeedService",
+     "line": 90,
+     "description": "each iteration waits for the previous one to finish: const id: number = await this.db.insertArticle(article);",
+     "correct": false,
+     "primary": false
+    },
+    {
+     "rank": 2,
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "refreshAllFeeds",
+     "class": "FeedService",
+     "line": 144,
+     "description": "each iteration waits for the previous one to finish: outcome.inserted += await this.refreshFeed(feeds[i].id, outcome);",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "sheafreader_unread_counts_n_plus_1",
+   "app": "Sheaf-Reader (束阅 RSS 阅读器)",
+   "bundle": "com.sheafreader.hm",
+   "category": "latency",
+   "scenarios": [
+    "数据库读取",
+    "状态更新"
+   ],
+   "symptom": "订阅和文章较多时，打开阅读器后侧栏未读数量加载缓慢。",
+   "scenario": "Open the reader and load subscription unread badges",
+   "mechanism": "One unread COUNT query per subscription repeatedly scans unread article rows. A grouped query obtains all subscription counts in one pass. This revised workload uses 100 ordinary subscriptions and 100000 articles; the original small-input retired-instructions negative remains archived.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "getFeedsWithCounts",
+     "class": "FeedService"
+    }
+   ],
+   "precision": 0.6666666666666666,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 2,
+   "suspectCount": 3,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/data/DatabaseManager.ets",
+     "symbol": "insertArticle",
+     "class": "DatabaseManager",
+     "line": 314,
+     "description": "a duplicate insert is detected by letting the constraint fail and catching it: const result = await this.store.insert('articles', values);",
+     "correct": true,
+     "primary": false
+    },
+    {
+     "rank": 2,
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "getFeedsWithCounts",
+     "class": "FeedService",
+     "line": 191,
+     "description": "one query per row, where a single grouped query would do: feed.unreadCount = await this.db.getUnreadCount(feed.id, -1);",
+     "correct": true,
+     "primary": true
+    },
+    {
+     "rank": 3,
+     "file": "entry/src/main/ets/services/FeedService.ets",
+     "symbol": "getGroupsWithCounts",
+     "class": "FeedService",
+     "line": 199,
+     "description": "one query per row, where a single grouped query would do: group.unreadCount = await this.db.getUnreadCount(-1, group.id);",
+     "correct": false,
+     "primary": false
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "wanharmony_persisted_home_list_growth",
+   "app": "WanHarmony (WanAndroid 客户端)",
+   "bundle": "org.example.wan.ohos",
+   "category": "resource_retention",
+   "scenarios": [
+    "列表滑动",
+    "状态更新"
+   ],
+   "symptom": "浏览首页并连续翻页后，应用内存占用较高。",
+   "scenario": "WanHarmony (WanAndroid 客户端)页面操作",
+   "mechanism": "The home list is linked to PersistentStorage. Loaded pages accumulate in the persistent homeList as well as the visible session list. Under the normal twelve-swipe workload, the unfixed app retains more process memory than the fixed app, which persists only its first-page snapshot. Whole-preferences file traffic includes cookies and old keys; this case does not claim a 3x reduction in file-write volume or exclusive attribution of those writes.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/pages/HomePage.ets",
+     "symbol": "PersistentStorage.persistProp(\"homeList\")",
+     "class": null
+    },
+    {
+     "file": "entry/src/main/ets/pages/HomePage.ets",
+     "symbol": "homeList",
+     "class": "HomePage"
+    }
+   ],
+   "precision": 0.5,
+   "recall": 1,
+   "found": 2,
+   "primaryCount": 2,
+   "correct": 2,
+   "suspectCount": 4,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/pages/HomePage.ets",
+     "symbol": null,
+     "class": "HomePage",
+     "line": 10,
+     "description": "the whole list is persisted under \"bannerList\", so it grows with every page loaded: PersistentStorage.persistProp<BannerItem[]>(\"bannerList\", [])",
+     "correct": false,
+     "primary": false
+    },
+    {
+     "rank": 2,
+     "file": "entry/src/main/ets/pages/HomePage.ets",
+     "symbol": null,
+     "class": "HomePage",
+     "line": 11,
+     "description": "the whole list is persisted under \"homeTopList\", so it grows with every page loaded: PersistentStorage.persistProp<DataX[]>(\"homeTopList\", [])",
+     "correct": false,
+     "primary": false
+    },
+    {
+     "rank": 3,
+     "file": "entry/src/main/ets/pages/HomePage.ets",
+     "symbol": null,
+     "class": "HomePage",
+     "line": 12,
+     "description": "the whole list is persisted under \"homeList\", so it grows with every page loaded: PersistentStorage.persistProp<DataX[]>(\"homeList\", [])",
+     "correct": true,
+     "primary": true
+    },
+    {
+     "rank": 4,
+     "file": "entry/src/main/ets/pages/HomePage.ets",
+     "symbol": "build",
+     "class": "HomePage",
+     "line": 41,
+     "description": "every row is built up front, including the ones off screen: ForEach(this.bannerList, (item: BannerItem) => {",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "weatherassistant_http_session_leak",
+   "app": "HarmonyOS-Next-Weather-Assistant",
+   "bundle": "com.alatus.futureweather",
+   "category": "resource_retention",
+   "scenarios": [
+    "网络结果渲染",
+    "页面切换"
+   ],
+   "symptom": "多次返回城市天气页刷新预报后，应用内存持续升高。",
+   "scenario": "Refresh the saved city forecasts",
+   "mechanism": "getWeatherUtil.getWeather creates a new http.createHttp() session for every weather request, retains the session and the full response body in the viewmodel, and never calls request.destroy(). Each city refresh leaks an HTTP session plus its complete response for the lifetime of the app, so repeated refreshes and multi-city loads accumulate retained memory. The revised business-only workload uses all ten already-supported cities, ordinary seven-day hourly responses, an accessible detail page displaying all hourly fields, and identical bundled weather icons. Synthetic fixture values are identical between variants; actual retrieval time is displayed separately. The performance claim is warmed process-PSS growth, not a count of retained sockets or exact live malloc bytes. No payload padding or artificial service delay is used. PSS boundaries follow successful system GC requests and fixed waits; completed GC, exact live-heap ownership, and file-descriptor counts are not claimed.",
+   "primaries": [
+    {
+     "file": "alatus/src/main/ets/viewmodel/getWeatherUtil.ets",
+     "symbol": "getWeather",
+     "class": "getWeatherUtil"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "alatus/src/main/ets/viewmodel/getWeatherUtil.ets",
+     "symbol": "getWeather",
+     "class": "getWeatherUtil",
+     "line": 11,
+     "description": "an HTTP session is created per request and never destroyed: let request = http.createHttp();",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "weatherassistant_remote_weather_icons",
+   "app": "HarmonyOS-Next-Weather-Assistant",
+   "bundle": "com.alatus.futureweather",
+   "category": "latency",
+   "scenarios": [
+    "图片加载",
+    "页面启动",
+    "页面切换"
+   ],
+   "symptom": "打开天气页面后，天气图片显示较慢。",
+   "scenario": "Open the weather forecast",
+   "mechanism": "Remote static icons delay a normal cold-cache forecast launch. Both variants use the same ordinary forecast fixture; unfixed downloads identical icon bytes with a declared four-second image-response delay, while fixed loads bundled images. This does not claim the original weather provider key works or a warm-cache speedup.",
+   "primaries": [
+    {
+     "file": "alatus/src/main/ets/view/cityView.ets",
+     "symbol": "weatherImage",
+     "class": "cityView"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "alatus/src/main/ets/view/cityView.ets",
+     "symbol": "weatherImage",
+     "class": "cityView",
+     "line": 7,
+     "description": "a remote image is fetched instead of a bundled asset: Image(\"http://127.0.0.1:18492/weather/sunny.img\")",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "ytmusic_current_playing_timeupdate",
+   "app": "Youtube-Music-ArkTS-Clone",
+   "bundle": "com.example.myapplication",
+   "category": "cpu",
+   "scenarios": [
+    "动画",
+    "状态更新"
+   ],
+   "symptom": "播放过程中界面更新不流畅。",
+   "scenario": "Youtube-Music-ArkTS-Clone页面操作",
+   "mechanism": "The now-playing page assigns the raw millisecond position from AVPlayer's timeUpdate callback into a page-level @State on every callback (~10/s). The whole player page (cover image, title, slider, controls) re-renders at callback frequency although the slider position and time labels only visibly change once per second, wasting UI-thread CPU throughout playback.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/pages/CurrentPlaying.ets",
+     "symbol": "setAVPlayerCallback",
+     "class": "CurrentPlaying"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/pages/CurrentPlaying.ets",
+     "symbol": "setAVPlayerCallback",
+     "class": "CurrentPlaying",
+     "line": 12,
+     "description": "a high-frequency playback callback writes bound state, re-rendering the view: this.currentValue = time",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "ytmusic_history_json_parse_per_row",
+   "app": "Youtube-Music-ArkTS-Clone",
+   "bundle": "com.example.myapplication",
+   "category": "cpu",
+   "scenarios": [
+    "列表滑动",
+    "状态更新",
+    "组件创建"
+   ],
+   "symptom": "打开观看记录并滑动时，应用 CPU 开销较高。",
+   "scenario": "通过普通观看记录入口读取1000条原生歌曲历史并滚动列表",
+   "mechanism": "The history page eagerly creates every row and repeatedly decodes each stored JSON string. The revised fix uses a lazy list and caches decoded entries by their exact stored string. This case evaluates the combined reduction in eager row construction and repeated decoding; it does not attribute the full performance gain to JSON parsing alone.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/pages/History.ets",
+     "symbol": "build",
+     "class": "History"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/pages/History.ets",
+     "symbol": "build",
+     "class": "History",
+     "line": 8,
+     "description": "every row is built up front, including the ones off screen: ForEach(Array.from(this.history).reverse(), (item: string) => {",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  },
+  {
+   "id": "ytmusic_search_no_debounce",
+   "app": "Youtube-Music-ArkTS-Clone",
+   "bundle": "com.example.myapplication",
+   "category": "network",
+   "scenarios": [
+    "网络结果渲染",
+    "状态更新"
+   ],
+   "symptom": "输入搜索词时，会产生多次无用的搜索结果传输。",
+   "scenario": "Youtube-Music-ArkTS-Clone页面操作",
+   "mechanism": "Searching on every keystroke transfers obsolete result bodies. The revised ordinary backend makes previously failing DNS-independent searches reproducible. Both variants receive the same 20-song catalogue without artificial response delay. The existing 300 ms debounce suppresses intermediate queries; original CPU-pending evidence remains archived.",
+   "primaries": [
+    {
+     "file": "entry/src/main/ets/pages/SearchPage.ets",
+     "symbol": "build",
+     "class": "SearchPage"
+    }
+   ],
+   "precision": 1,
+   "recall": 1,
+   "found": 1,
+   "primaryCount": 1,
+   "correct": 1,
+   "suspectCount": 1,
+   "suspects": [
+    {
+     "rank": 1,
+     "file": "entry/src/main/ets/pages/SearchPage.ets",
+     "symbol": "build",
+     "class": "SearchPage",
+     "line": 10,
+     "description": "a request is issued on every keystroke, with no debounce: axios.get('http://127.0.0.1:18493/search', {",
+     "correct": true,
+     "primary": true
+    }
+   ],
+   "hapray": "# Root Cause Analysis\n\n未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。"
+  }
+ ]
+}

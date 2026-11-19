@@ -716,8 +716,13 @@ function formatCapability(state: CapabilityState, idWidth: number, collectorWidt
 /** Human-readable capability list, or the "nothing probed" line. */
 export function formatCapabilities(states: CapabilityState[]): string {
   if (states.length === 0) return 'no capabilities (no device probed)\n';
-  const idWidth = Math.max(...states.map((s) => s.id.length));
-  const collectorWidth = Math.max(...states.map((s) => (s.collector ?? '—').length));
+  // A reduce, not `Math.max(...)`: the list is bounded by the number of
+  // capability ids today, but a probe that reports one row per collector would
+  // put one argument per row on the stack.
+  const widest = (values: readonly string[]): number =>
+    values.reduce((best, value) => Math.max(best, value.length), 0);
+  const idWidth = widest(states.map((s) => s.id));
+  const collectorWidth = widest(states.map((s) => s.collector ?? '—'));
   return states.map((state) => formatCapability(state, idWidth, collectorWidth) + '\n').join('');
 }
 

@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ohos-perf — OhmBench, case by case</title>
+<meta name="description" content="Every OhmBench case, the defect it carries, what ohos-perf reported and where it ranked it, against HapRay on the same blind input.">
+<meta property="og:title" content="ohos-perf — OhmBench, case by case">
+<meta property="og:description" content="21 blind cases across 9 HarmonyOS apps: precision 0.857, recall 0.929. HapRay returns zero code locations on the same input.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://growvv.github.io/ohos-perf/benchmark.html">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .bm-hero { padding: 120px 0 40px; }
+  .bm-hero h1 { font-size: clamp(32px, 5vw, 52px); margin: 10px 0 16px; letter-spacing: -0.03em; }
+  .bm-hero p { color: var(--fg-dim); max-width: 78ch; font-size: 16px; line-height: 1.75; }
+
+  .score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 34px 0 8px; }
+  .score-tile {
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 22px 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+  }
+  .score-tile .k { font: 600 10.5px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); }
+  .score-tile .v { font: 700 34px/1.1 var(--mono); margin: 10px 0 4px; letter-spacing: -0.02em; }
+  .score-tile .n { color: var(--fg-faint); font-size: 12.5px; }
+  .score-tile.ours .v { color: var(--green); }
+  .score-tile.hapray .v { color: #f87171; }
+
+  .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; margin-top: 12px; }
+  .bar > i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--cyan), var(--violet)); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 18px 0 0; font-size: 12.5px; color: var(--fg-dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.ok { background: var(--green); }
+  .dot.miss { background: #f87171; }
+  .dot.partial { background: var(--amber); }
+
+  .case-list { display: grid; gap: 16px; margin-top: 26px; }
+  .case {
+    border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+    background: rgba(255,255,255,0.016);
+  }
+  .case-head {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 18px 22px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.02);
+  }
+  .case-head h3 { margin: 0; font-size: 15.5px; letter-spacing: -0.01em; font-family: var(--mono); font-weight: 600; }
+  .case-head .app { color: var(--fg-faint); font-size: 12.5px; }
+  .case-scores { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    font: 600 10.5px/1.5 var(--mono); padding: 3px 9px; border-radius: 999px;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .pill.p1 { color: var(--green); background: rgba(52,211,153,0.09); border-color: rgba(52,211,153,0.25); }
+  .pill.p0 { color: #f87171; background: rgba(248,113,113,0.09); border-color: rgba(248,113,113,0.25); }
+  .pill.pm { color: var(--amber); background: rgba(251,191,36,0.09); border-color: rgba(251,191,36,0.25); }
+  .pill.tag { color: var(--fg-dim); background: rgba(255,255,255,0.04); border-color: var(--line); }
+
+  .case-body { padding: 18px 22px 20px; display: grid; gap: 14px; }
+  .kv { display: grid; grid-template-columns: 108px 1fr; gap: 10px; font-size: 13.5px; }
+  .kv .k { font: 600 10.5px/1.7 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-faint); }
+  .kv .v { color: var(--fg-dim); line-height: 1.7; }
+  .kv .v code { color: #e4e4e7; font-size: 12.5px; }
+
+  .sub { font: 600 10.5px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-faint); margin: 4px 0 2px; }
+  .rows { display: grid; gap: 6px; }
+  .row {
+    display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: baseline;
+    font-size: 13px; padding: 7px 10px; border-radius: 8px; background: rgba(255,255,255,0.02);
+    border-left: 2px solid transparent;
+  }
+  .row.hit { border-left-color: var(--green); }
+  .row.primary { border-left-color: var(--cyan); background: rgba(34,211,238,0.055); }
+  .row.wrong { border-left-color: rgba(248,113,113,0.5); }
+  .row .r { font: 700 11px/1.6 var(--mono); color: var(--fg-faint); }
+  .row .loc { color: #e4e4e7; font-family: var(--mono); font-size: 12.5px; }
+  .row .why { color: var(--fg-faint); font-size: 11.5px; white-space: nowrap; }
+
+  .hapray {
+    font-size: 12.5px; color: var(--fg-faint); padding: 10px 12px; border-radius: 8px;
+    background: rgba(248,113,113,0.05); border: 1px solid rgba(248,113,113,0.16);
+    font-family: var(--mono); line-height: 1.6;
+  }
+  .hapray b { color: #f87171; font-weight: 600; }
+
+  .method { margin-top: 54px; }
+  .method h2 { font-size: 24px; margin: 0 0 14px; }
+  .method p, .method li { color: var(--fg-dim); font-size: 14px; line-height: 1.8; }
+  .method ol { padding-left: 20px; }
+  .method code { color: #e4e4e7; }
+
+  .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 26px 0 0; }
+  .filter-bar button {
+    font: 600 12px/1 var(--mono); padding: 8px 14px; border-radius: 999px; cursor: pointer;
+    color: var(--fg-dim); background: rgba(255,255,255,0.03);
+    border: 1px solid var(--line); transition: all 0.15s ease;
+  }
+  .filter-bar button:hover { color: var(--fg); border-color: var(--line-strong); }
+  .filter-bar button[aria-pressed="true"] { color: var(--bg); background: var(--cyan); border-color: var(--cyan); }
+
+  @media (max-width: 720px) {
+    .kv { grid-template-columns: 1fr; gap: 2px; }
+    .case-scores { margin-left: 0; width: 100%; }
+    .row { grid-template-columns: 28px 1fr; }
+    .row .why { grid-column: 2; white-space: normal; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main" data-en="Skip to content" data-zh="跳到正文">Skip to content</a>
+<div class="bg" aria-hidden="true"></div>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html" aria-label="ohos-perf home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <defs>
+          <linearGradient id="mg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <path d="M16 2.8 27.4 9.4v13.2L16 29.2 4.6 22.6V9.4Z" fill="none" stroke="url(#mg)" stroke-width="1.6"/>
+        <path d="M9 16h3.2l2-4.4 3.6 8.8 2-4.4H23" fill="none" stroke="url(#mg)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>ohos-perf</span>
+    </a>
+    <nav class="links" aria-label="Main">
+      <a href="index.html#features" data-en="Features" data-zh="能力">Features</a>
+      <a href="index.html#analyzers" data-en="Analyzers" data-zh="分析器">Analyzers</a>
+      <a href="index.html#roadmap" data-en="Roadmap" data-zh="路线图">Roadmap</a>
+      <a href="benchmark.html" aria-current="page" data-en="Benchmark" data-zh="基准测试">Benchmark</a>
+      <a href="index.html#quickstart" data-en="Quickstart" data-zh="快速开始">Quickstart</a>
+    </nav>
+    <div class="nav-cta">
+      <button class="lang" id="lang" type="button" aria-label="Switch language">
+        <span class="lang-en">中</span><span class="lang-zh">EN</span>
+      </button>
+      <a class="btn btn-small" href="https://github.com/growvv/ohos-perf" target="_blank" rel="noopener">
+        <span data-en="Star" data-zh="Star">Star</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+<section class="section bm-hero" id="top">
+  <div class="wrap">
+    <p class="eyebrow">
+      <span class="dot"></span>
+      <span data-en="OhmBench · 21 cases · 9 real HarmonyOS apps" data-zh="OhmBench · 21 个用例 · 9 个真实鸿蒙应用">OhmBench · 21 cases · 9 real HarmonyOS apps</span>
+    </p>
+    <h1 data-en="Every case, and what each tool found." data-zh="每个用例，以及每个工具找到了什么。">Every case, and what each tool found.</h1>
+    <p data-en="OhmBench hands a tool a signed HAP, the unfixed source tree and the symptom a tester reported — no ground truth, no fix patch, no git history. The tool must name the code that causes the slowness. This page shows, for each of the 21 cases, the defect the benchmark planted, the suspects `ohos-perf suspects` returned and where it ranked them, and what HapRay produced from the same input." data-zh="OhmBench 交给工具的是一个签名的 HAP、未修复的源码树，以及测试人员报告的症状 —— 没有 ground truth、没有修复补丁、没有 git 历史。工具必须指出造成卡顿的代码。本页逐个展示 21 个用例：基准埋下的缺陷、`ohos-perf suspects` 返回的嫌疑点及其排序，以及 HapRay 在同样输入下的产出。">OhmBench hands a tool a signed HAP, the unfixed source tree and the symptom a tester reported — no ground truth, no fix patch, no git history. The tool must name the code that causes the slowness. This page shows, for each of the 21 cases, the defect the benchmark planted, the suspects <code>ohos-perf suspects</code> returned and where it ranked them, and what HapRay produced from the same input.</p>
+
+    <div class="score-grid">
+      <div class="score-tile ours">
+        <div class="k" data-en="Precision" data-zh="精确率">Precision</div>
+        <div class="v" id="tile-p">—</div>
+        <div class="n" data-en="correct / reported, top 5" data-zh="正确 / 报告，前 5">correct / reported, top 5</div>
+        <div class="bar"><i id="bar-p" style="width:0"></i></div>
+      </div>
+      <div class="score-tile ours">
+        <div class="k" data-en="Recall" data-zh="召回率">Recall</div>
+        <div class="v" id="tile-r">—</div>
+        <div class="n" data-en="primary root causes found" data-zh="找到的主要根因">primary root causes found</div>
+        <div class="bar"><i id="bar-r" style="width:0"></i></div>
+      </div>
+      <div class="score-tile ours">
+        <div class="k">F1</div>
+        <div class="v" id="tile-f">—</div>
+        <div class="n" data-en="harmonic mean" data-zh="调和平均">harmonic mean</div>
+        <div class="bar"><i id="bar-f" style="width:0"></i></div>
+      </div>
+      <div class="score-tile hapray">
+        <div class="k" data-en="HapRay" data-zh="HapRay">HapRay</div>
+        <div class="v">0</div>
+        <div class="n" data-en="code locations, all 21 cases" data-zh="代码位置，全部 21 个用例">code locations, all 21 cases</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i class="dot ok"></i><span data-en="Found and correct" data-zh="找到且正确">Found and correct</span></span>
+      <span><i class="dot partial"></i><span data-en="Found, not at rank 1" data-zh="找到，但不在第 1 位">Found, not at rank 1</span></span>
+      <span><i class="dot miss"></i><span data-en="Missed" data-zh="未找到">Missed</span></span>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="cases">
+  <div class="wrap">
+    <div class="filter-bar" id="filters" role="group" aria-label="Filter cases"></div>
+    <div class="case-list" id="case-list"></div>
+  </div>
+</section>
+
+<section class="section alt" id="method">
+  <div class="wrap method">
+    <h2 data-en="How this was measured" data-zh="如何测量的">How this was measured</h2>
+    <p data-en="The number on this page is produced by the benchmark's own scorer, not by a scorer written here: `bench/ohmbench/score.mjs` transcribes OhmBench's `docs/evaluation.md` matcher. A suspect counts as correct when its file matches the ground-truth location on the last two path segments and its symbol matches, or its line range overlaps the location's scope. Precision is correct over reported in the top five; recall is primary root causes matched over all primaries." data-zh="本页的数字由基准自带的评分器产生，而不是这里另写的评分器：`bench/ohmbench/score.mjs` 转写了 OhmBench 的 `docs/evaluation.md` 匹配规则。当嫌疑点的文件在最后两段路径上与 ground truth 一致且符号一致，或其行范围与位置的作用域重叠时，计为正确。精确率是前五名中正确的比例；召回率是匹配到的主要根因占全部主要根因的比例。">The number on this page is produced by the benchmark's own scorer, not by a scorer written here: <code>bench/ohmbench/score.mjs</code> transcribes OhmBench's <code>docs/evaluation.md</code> matcher. A suspect counts as correct when its file matches the ground-truth location on the last two path segments and its symbol matches, or its line range overlaps the location's scope. Precision is correct over reported in the top five; recall is primary root causes matched over all primaries.</p>
+    <p data-en="HapRay's column is measured too, not assumed. Its `root-cause` action was run against all 21 blind trees. It accepts a source tree as `--report-dir` — the flag's help says “report directory” but nothing validates it — and on every one of the 21 it returns 0 with the same body:" data-zh="HapRay 那一列同样是实测的，不是假设的。它的 `root-cause` 动作在全部 21 个盲测源码树上运行过。它接受一个源码树作为 `--report-dir` —— 这个参数的说明写的是“报告目录”，但没有任何校验 —— 而 21 次运行全部返回 0，正文相同：">HapRay's column is measured too, not assumed. Its <code>root-cause</code> action was run against all 21 blind trees. It accepts a source tree as <code>--report-dir</code> — the flag's help says “report directory” but nothing validates it — and on every one of the 21 it returns 0 with the same body:</p>
+    <div class="hapray" style="margin:14px 0 20px">未发现可用的性能信号产物（report/ 下缺少 trace_*.json / perf.db / so_file_load.json 等）。</div>
+    <p data-en="It looks for `trace_*.json`, `perf.db` and `so_file_load.json`, and a source tree holds none of them. No HapRay report names a single `.ets` file. Its `static` action takes a HAP and reports SO and resource inventory, so it cannot name a source line either." data-zh="它要找的是 `trace_*.json`、`perf.db` 与 `so_file_load.json`，而源码树里没有这些。没有任何一份 HapRay 报告点名过任何一个 `.ets` 文件。它的 `static` 动作接收 HAP，报告的是 SO 与资源清单，因此同样无法给出源码行。">It looks for <code>trace_*.json</code>, <code>perf.db</code> and <code>so_file_load.json</code>, and a source tree holds none of them. No HapRay report names a single <code>.ets</code> file. Its <code>static</code> action takes a HAP and reports SO and resource inventory, so it cannot name a source line either.</p>
+    <p data-en="Reproduce it:" data-zh="复现：">Reproduce it:</p>
+    <pre class="code"><code>npm run build -w packages/core &amp;&amp; npm run build -w packages/cli
+node bench/ohmbench/run.mjs --bench &lt;OhmBench&gt; --cases &lt;trees&gt; --out bench/ohmbench/results
+node bench/ohmbench/score.mjs --bench &lt;OhmBench&gt; --results bench/ohmbench/results
+# exits 0 only when precision &gt;= 0.80
+
+# HapRay baseline, from its checkout with its venv:
+PYTHONPATH=. .venv/Scripts/python.exe bench/ohmbench/hapray/probe.py &lt;tree&gt;... &lt;out.json&gt;</code></pre>
+    <p class="footnote" data-en="Every miss and its reason is written down in `bench/ohmbench/RESULTS.md`, including the six ranking variants that were measured and rejected. Where a case is missed, the card above says why." data-zh="每一处漏判与原因都写在 `bench/ohmbench/RESULTS.md` 里，包括六个经过测量并被否决的排序方案。某个用例未命中时，上面的卡片会说明原因。">Every miss and its reason is written down in <code>bench/ohmbench/RESULTS.md</code>, including the six ranking variants that were measured and rejected. Where a case is missed, the card above says why.</p>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <div class="foot-brand"><span>ohos-perf</span></div>
+    <div class="foot-links">
+      <a href="index.html" data-en="Home" data-zh="首页">Home</a>
+      <a href="https://github.com/growvv/ohos-perf" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/MF0-ANT1SHY/OhmBench" target="_blank" rel="noopener">OhmBench</a>
+      <a href="https://www.npmjs.com/package/@ohos-perf/cli" target="_blank" rel="noopener">npm</a>
+    </div>
+    <p class="footer-fine" data-en="Measured, not claimed. Every number on this page comes from a command you can run." data-zh="实测，而非声称。本页每个数字都来自一条你可以运行的命令。">Measured, not claimed. Every number on this page comes from a command you can run.</p>
+  </div>
+</footer>
+
+<script src="main.js"></script>
+<script>
+(() => {
+  'use strict';
+  const root = document.documentElement;
+  const fmt = (n) => n.toFixed(3);
+
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const scoreClass = (p, r) => (p === 1 && r === 1 ? 'p1' : p === 0 && r === 0 ? 'p0' : 'pm');
+  const verdict = (c) => {
+    if (c.recall === 1 && c.precision === 1) return 'ok';
+    if (c.recall === 1) return 'partial';
+    return 'miss';
+  };
+
+  let DATA = null;
+
+  function shortPath(p) {
+    const parts = String(p || '').split('/');
+    return parts.length <= 3 ? p : '…/' + parts.slice(-2).join('/');
+  }
+
+  function caseCard(c, zh) {
+    const suspects = c.suspects.length === 0
+      ? `<div class="row wrong"><span class="r">—</span><span class="loc">${zh ? '没有返回任何嫌疑点' : 'no suspects returned'}</span><span class="why"></span></div>`
+      : c.suspects.map((s) => {
+          const cls = s.primary ? 'primary' : s.correct ? 'hit' : 'wrong';
+          const why = s.primary ? (zh ? '主要根因' : 'primary') : s.correct ? (zh ? '正确' : 'correct') : (zh ? '不匹配' : 'no match');
+          return `<div class="row ${cls}">
+            <span class="r">#${s.rank}</span>
+            <span class="loc">${esc(shortPath(s.file))}:${s.line ?? '?'} · ${esc(s.class ? s.class + '.' + (s.symbol ?? '') : (s.symbol ?? '—'))}</span>
+            <span class="why">${why}</span>
+          </div>`;
+        }).join('');
+
+    const primaries = c.primaries.map((p) =>
+      `<code>${esc(p.class ? p.class + '.' + (p.symbol ?? '') : (p.symbol ?? '—'))}</code> — ${esc(shortPath(p.file))}`).join('<br>');
+
+    const hapray = c.hapray
+      ? `<div class="hapray"><b>HapRay:</b> ${esc(c.hapray.replace(/^#+\s*Root Cause Analysis\s*/, '').trim())}</div>`
+      : '';
+
+    return `<article class="case" data-verdict="${verdict(c)}">
+      <div class="case-head">
+        <h3>${esc(c.id)}</h3>
+        <span class="app">${esc(c.app)}</span>
+        <span class="case-scores">
+          <span class="pill ${scoreClass(c.precision, c.recall)}">P ${c.precision.toFixed(2)}</span>
+          <span class="pill ${scoreClass(c.precision, c.recall)}">R ${c.recall.toFixed(2)}</span>
+          <span class="pill tag">${c.found}/${c.primaryCount} ${zh ? '主要根因' : 'primary'}</span>
+        </span>
+      </div>
+      <div class="case-body">
+        <div class="kv"><span class="k">${zh ? '症状' : 'Symptom'}</span><span class="v">${esc(c.symptom)}</span></div>
+        <div class="kv"><span class="k">${zh ? '场景' : 'Scenario'}</span><span class="v">${esc(c.scenario)} · ${c.scenarios.map(esc).join(' · ')}</span></div>
+        <div class="kv"><span class="k">${zh ? '埋下的缺陷' : 'Planted defect'}</span><span class="v">${esc(c.mechanism)}</span></div>
+        <div class="kv"><span class="k">${zh ? '基准答案' : 'Ground truth'}</span><span class="v">${primaries}</span></div>
+        <div class="sub">${zh ? '我们报告的（按排序）' : 'What we reported, in rank order'}</div>
+        <div class="rows">${suspects}</div>
+        ${hapray}
+      </div>
+    </article>`;
+  }
+
+  function render(zh) {
+    const list = document.getElementById('case-list');
+    const only = list.dataset.filter || 'all';
+    const shown = DATA.cases.filter((c) => only === 'all' || verdict(c) === only);
+    list.innerHTML = shown.map((c) => caseCard(c, zh)).join('');
+  }
+
+  function tiles() {
+    const s = DATA.summary;
+    const set = (id, val, bar) => {
+      document.getElementById(id).textContent = fmt(val);
+      document.getElementById(bar).style.width = (val * 100).toFixed(1) + '%';
+    };
+    set('tile-p', s.precision, 'bar-p');
+    set('tile-r', s.recall, 'bar-r');
+    set('tile-f', s.f1, 'bar-f');
+  }
+
+  function filters(zh) {
+    const bar = document.getElementById('filters');
+    const labels = { all: zh ? '全部 21' : 'All 21', ok: zh ? '完全正确' : 'Perfect', partial: zh ? '部分' : 'Partial', miss: zh ? '未命中' : 'Missed' };
+    const counts = { all: DATA.cases.length, ok: 0, partial: 0, miss: 0 };
+    for (const c of DATA.cases) counts[verdict(c)] += 1;
+    const list = document.getElementById('case-list');
+    const current = list.dataset.filter || 'all';
+    bar.innerHTML = Object.entries(labels).map(([k, label]) =>
+      `<button type="button" data-f="${k}" aria-pressed="${k === current}">${label} · ${counts[k]}</button>`).join('');
+  }
+
+  document.getElementById('filters').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-f]');
+    if (!btn) return;
+    document.getElementById('case-list').dataset.filter = btn.dataset.f;
+    const zh = root.dataset.lang === 'zh';
+    filters(zh);
+    render(zh);
+  });
+
+  // main.js owns the language toggle, but it rewrites [data-en][data-zh] text
+  // only. The cards are built from JSON, so they are rebuilt on a language change.
+  const observer = new MutationObserver(() => render(root.dataset.lang === 'zh'));
+  observer.observe(root, { attributes: true, attributeFilter: ['data-lang', 'lang'] });
+
+  fetch('benchmark.json')
+    .then((r) => r.json())
+    .then((data) => {
+      DATA = data;
+      const zh = root.dataset.lang === 'zh';
+      tiles();
+      filters(zh);
+      render(zh);
+    })
+    .catch((err) => {
+      document.getElementById('case-list').innerHTML =
+        `<p class="footnote">Could not load benchmark.json: ${esc(err.message)}</p>`;
+    });
+})();
+</script>
+</body>
+</html>

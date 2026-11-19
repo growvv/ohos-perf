@@ -9,3 +9,6 @@ spike/logs/
 
 # SDD workspace
 .superpowers/
+
+# Review scratch: prompts, raw transcripts, verification probes
+.review/

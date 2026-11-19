@@ -153,4 +153,28 @@ describe('confidence outranks a shared name word', () => {
     const ranked = rankSuspects(suspects, { symptom: '打开文章列表时响应变慢。', perf_scenarios: ['列表滑动'] });
     expect(ranked.map((suspect) => suspect.className)).toEqual(['ArticleListView']);
   });
+
+  it('keeps the named screen even when a high-confidence finding sits elsewhere', () => {
+    // The name filter answers *which question*; confidence answers *which
+    // answer within it*. A code review argued the tier should run first, so a
+    // high-confidence finding on a different screen would survive a symptom
+    // that names one. Measured on OhmBench that is wrong: it costs three cases
+    // and drops precision 0.857 -> 0.738, recall 0.929 -> 0.833. A
+    // high-confidence defect on a screen the user did not name is a good
+    // answer to a question nobody asked, and the low-confidence finding on the
+    // named screen is the answer they did ask for.
+    const tree = [
+      'export struct ArticleListView {',
+      '  build() { List() { ForEach(this.rows, (row: Row) => { ListItem() { Text(row.t) } }) } }',
+      '}',
+    ].join('\n');
+    const db = [
+      'export class DbConst {',
+      "  static readonly R: string = 'select * from t order by random() limit 1'",
+      '}',
+    ].join('\n');
+    const suspects = findSuspects([scanSourceFile('ArticleListView.ets', tree), scanSourceFile('DbConst.ets', db)]);
+    const ranked = rankSuspects(suspects, { symptom: '打开文章列表时响应变慢。', perf_scenarios: ['列表滑动', '页面启动'] });
+    expect(ranked.map((suspect) => suspect.rule)).toEqual(['eager-foreach']);
+  });
 });

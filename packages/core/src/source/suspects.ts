@@ -51,6 +51,10 @@ export function findSuspects(files: readonly SourceFile[]): Suspect[] {
       lineStart: 1,
       lineEnd: Math.max(1, file.lines.length),
       body: moduleText,
+      // Module lines are statements, not blocks: a rule that counts loop depth
+      // over them has nothing to count, and the blanking would only lose the
+      // text a description quotes. The raw text is the honest answer here.
+      code: moduleText,
       declaration: moduleText,
     };
     const factsList = [
@@ -77,8 +81,16 @@ export function findSuspects(files: readonly SourceFile[]): Suspect[] {
       if (best === undefined) continue;
 
       const isModule = facts.symbol.symbol === '';
+      let cursor = 0;
       for (const hit of best) {
-        const lineStart = isModule ? moduleLineOf(file, hit.description) : facts.symbol.lineStart;
+        let lineStart: number;
+        if (isModule) {
+          const located = moduleLineOf(file, hit.description, cursor);
+          lineStart = located.line;
+          cursor = located.next;
+        } else {
+          lineStart = facts.symbol.lineStart;
+        }
         // A module-level statement has no class to name it, but the file it
         // sits in does: `HomePage.ets` says "home" the same way
         // `class HomePage` would. Without it a module-scope finding could never
@@ -129,17 +141,31 @@ function classOfPath(path: string): string | undefined {
  * The description ends with the matched text, so the first module line that
  * contains it is the line to report. Falling back to line 1 would point a
  * reader at the top of the file.
+ *
+ * Two identical statements are two statements. `start` is where to begin
+ * searching, so the caller can consume one occurrence per match instead of
+ * sending every duplicate to the first line that holds the text. The line
+ * number comes from `moduleLineNumbers` — the number the scan already knew —
+ * rather than from `lines.indexOf`, which always finds the first copy.
  */
-function moduleLineOf(file: SourceFile, description: string): number {
+function moduleLineOf(file: SourceFile, description: string, start: number): { line: number; next: number } {
   const needle = description.slice(description.lastIndexOf(':') + 1).trim();
   if (needle !== '') {
+    for (let index = start; index < file.moduleLines.length; index++) {
+      if (file.moduleLines[index]!.includes(needle)) {
+        return { line: file.moduleLineNumbers[index] ?? 1, next: index + 1 };
+      }
+    }
+    // No further occurrence: the description names text the module lines do
+    // not hold verbatim (a reassembled SQL statement, say). The first one is
+    // still the closest answer.
     for (let index = 0; index < file.moduleLines.length; index++) {
       if (file.moduleLines[index]!.includes(needle)) {
-        return file.lines.indexOf(file.moduleLines[index]!) + 1;
+        return { line: file.moduleLineNumbers[index] ?? 1, next: index + 1 };
       }
     }
   }
-  return 1;
+  return { line: 1, next: start };
 }
 
 export type { Rule };

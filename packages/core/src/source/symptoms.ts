@@ -31,6 +31,7 @@
  * explain is what turns a useful answer into a noise floor.
  */
 
+import { maxOf } from '../extremes';
 import type { Suspect } from './suspects';
 import { RULES } from './rules';
 import type { RuleCategory } from './rules';
@@ -361,17 +362,19 @@ export function rankSuspects(suspects: readonly Suspect[], prompt: CasePrompt): 
   // not that the tree has no defects. Returning an empty report would answer
   // "nothing is wrong" to a question that says something is.
   const explainedOnly = narrowed.length === 0 ? [...suspects] : narrowed;
-  // The named screen is a filter, not just an ordering: it is the only signal
-  // in a prompt that points at one component out of many.
+
+  // The named screen is a filter, and it is applied before the confidence tier
+  // on purpose. It answers *which question*, and confidence answers *which
+  // answer within it*: a high-confidence defect on a different screen is a
+  // good answer to a question nobody asked. Measured on OhmBench, swapping the
+  // two costs three cases and drops precision 0.857 -> 0.738, recall
+  // 0.929 -> 0.833 — a low-confidence eager list on the screen the symptom
+  // names is the right answer, and a `DebugPage` list that merely shares a
+  // word with the prompt is not.
   const namedOnly = explainedOnly.filter((suspect) => sharedWords(suspect) > 0);
-  const report = namedOnly.length > 0 ? namedOnly : explainedOnly;
-  // Narrow to the strongest name match. The named screen is the question; a
-  // finding on a different screen is an answer to a different question, however
-  // real the defect. The component kind the symptom names breaks a tie between
-  // two screens that share a domain noun: "文章列表" prefers `ArticleListView`
-  // to `ArticleReaderView`.
-  //
-  // Confidence comes first, though.
+  const scoped = namedOnly.length > 0 ? namedOnly : explainedOnly;
+
+  // Confidence comes next.
   //
   // A rule's confidence is the tool's own estimate of how reliably its shape
   // identifies a defect. Sharing a word with a screen name is weaker evidence
@@ -388,11 +391,22 @@ export function rankSuspects(suspects: readonly Suspect[], prompt: CasePrompt): 
   // for no reason; the name match then decides among the medium findings, which
   // is what it was for. Measured on OhmBench: precision 0.841 -> 0.857,
   // recall 0.881 -> 0.929.
+  const highOnly = scoped.filter((suspect) => suspect.confidence === 'high');
+  const report = highOnly.length > 0 ? highOnly : scoped;
+
+  // Narrow to the strongest name match. The named screen is the question; a
+  // finding on a different screen is an answer to a different question, however
+  // real the defect. The component kind the symptom names breaks a tie between
+  // two screens that share a domain noun: "文章列表" prefers `ArticleListView`
+  // to `ArticleReaderView`.
   const strength = (suspect: Suspect): number => sharedWords(suspect) * 2 + kindMatch(suspect, kinds);
-  const highOnly = report.filter((suspect) => suspect.confidence === 'high');
-  const tiered = highOnly.length > 0 ? highOnly : report;
-  const best = Math.max(...tiered.map(strength));
-  const top = best > 0 ? tiered.filter((suspect) => strength(suspect) === best) : tiered;
+  // A reduce, not `Math.max(...)`: one argument per suspect overflows V8's
+  // argument limit on a tree with enough findings, and that tree is the one
+  // that needs its ranking. `maxOf` refuses an empty array where `Math.max`
+  // returns -Infinity, so the empty case — a tree with no findings — is
+  // answered here.
+  const best = report.length === 0 ? 0 : maxOf(report.map(strength));
+  const top = best > 0 ? report.filter((suspect) => strength(suspect) === best) : report;
   const ordered = top
     .map((suspect, index) => ({
       suspect,

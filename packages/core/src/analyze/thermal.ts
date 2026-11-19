@@ -1,5 +1,6 @@
 import type { CapabilityId } from '../device/capability';
 import type { ThermalCapture } from '../collectors/thermal';
+import { maxOf } from '../extremes';
 import { evidence, type Evidence } from '../report/evidence';
 import { metric, type Metric } from '../report/metric';
 import { round2HalfEven } from '../rounding';
@@ -206,7 +207,10 @@ export class ThermalAnalyzer implements Analyzer {
     const items: Evidence[] = sensors.map(({ sensor, values }) => {
       const start = values[0]!;
       const end = values[values.length - 1]!;
-      const peak = Math.max(...values);
+      // A reduce, not `Math.max(...values)`: a long thermal capture has one
+      // sample per interval, and the spread form overflows V8's argument
+      // limit well before a multi-hour soak finishes.
+      const peak = maxOf(values);
       const mean = round2HalfEven(values.reduce((sum, value) => sum + value, 0) / values.length);
       const rise = round2HalfEven(end - start);
       const slug = slugOf.get(sensor)!;

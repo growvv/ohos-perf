@@ -159,4 +159,57 @@ describe('scanSourceFile', () => {
     writeFileSync(join(root, 'node_modules', 'x.ets'), 'export class X {}');
     expect(scanSourceTree(root).map((file) => file.path)).toEqual(['b/a.ets', 'z.ets']);
   });
+
+  it('does not let an unterminated string swallow the rest of the file', () => {
+    // A file can be mid-edit or truncated when it is scanned. An unterminated
+    // quote used to run the string to end of file, so every method after it
+    // vanished from the scan — the tool then reported "no suspects" for a tree
+    // whose defects were simply below the broken line.
+    const text = [
+      'export class A {',
+      '  f() {',
+      '    const s = "unterminated;',
+      '  }',
+      '  g() { return 1; }',
+      '  h() { return 2; }',
+      '}',
+    ].join('\n');
+    const file = scanSourceFile('a.ets', text);
+    expect(file.symbols.map((symbol) => symbol.symbol)).toEqual(['f', 'g', 'h']);
+  });
+
+  it('reads a regex literal that follows a keyword, not a value', () => {
+    // `startsRegex` decides slash-or-division from the previous character, and
+    // the last character of `return` is `n` — an identifier character, so the
+    // slash was read as division. A regex whose body holds an unbalanced brace
+    // then counted that brace, the method's block never closed, and every
+    // method below it vanished. A regex with no brace in it hid the same bug,
+    // which is why this one has a brace.
+    const text = [
+      'export class A {',
+      '  f(s: string): boolean {',
+      '    return /\\{/.test(s);',
+      '  }',
+      '  g(): number { return 1; }',
+      '}',
+    ].join('\n');
+    const file = scanSourceFile('a.ets', text);
+    expect(file.symbols.map((symbol) => symbol.symbol)).toEqual(['f', 'g']);
+    expect(file.symbols[0]?.lineEnd).toBe(4);
+  });
+
+  it('still reads a division after an identifier', () => {
+    // The keyword list must not swallow a real division: `total / count` is
+    // division, and reading it as a regex would blank the rest of the line.
+    const text = [
+      'export class A {',
+      '  f(total: number, count: number): number {',
+      '    return total / count;',
+      '  }',
+      '  g(): number { return 1; }',
+      '}',
+    ].join('\n');
+    const file = scanSourceFile('a.ets', text);
+    expect(file.symbols.map((symbol) => symbol.symbol)).toEqual(['f', 'g']);
+  });
 });

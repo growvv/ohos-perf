@@ -227,6 +227,46 @@ Two of these were bugs in the scanner, not tuning:
 
 Both were found by asking why a known root cause was not in the output.
 
+A third was found by a code review and confirmed by measurement: a regex
+literal directly after a keyword (`return /\{/.test(s)`) was read as division,
+because the character before the slash is `n`. The brace inside the regex then
+never closed, and every method below it disappeared. Fixed by tracking the
+preceding word, not just the preceding character.
+
+## What a review changed, and what it did not
+
+An external review of the five `source/` modules produced eleven findings. Six
+were real and are fixed; five described failures the code does not have. Each
+was reproduced before any edit and the record is in
+`docs/reviews/2026-11-19-codex-p37-suspects.md`.
+
+The most instructive one is the review's only Critical: it said the confidence
+tier should run *before* the name filter, so a high-confidence finding on a
+different screen would survive a symptom that names one screen. The code does
+what the reviewer described. Applying the remedy measured at **P 0.738 /
+R 0.833** — three cases worse — because the name filter answers *which
+question* and confidence answers *which answer within it*. It was reverted and
+the tradeoff is now pinned by a test.
+
+Two of the real fixes each changed behaviour on a real tree without changing the
+macro average:
+
+- Teaching the loop rules to count braces on the noise-stripped text surfaced a
+  `db-write-in-loop` in `browser_eager_history_load` that had been invisible:
+  the `${date}` in a template literal closed the old loop counter, so the
+  executor on the next line read as outside the loop. The finding is real — a
+  `DROP TABLE` per date — but the statement reaches `executeSql` through a
+  local variable, and the same fix also exposed a false positive in the rule
+  (`executeSql('select …')` in a loop called a write). Requiring the statement
+  to name a write fixes the false positive and drops the indirect DDL loop with
+  it. That is a deliberate false negative: following a local variable into the
+  executor is dataflow analysis this scanner does not do.
+- Narrowing the "is this bounded?" and "is this session destroyed?" searches
+  from the file to the holding class changes nothing on the 21 cases, because
+  no case has an unrelated class whose `maxItems` or `destroy()` was doing the
+  suppressing. It is kept because the file-wide search is wrong in principle
+  and the tests pin the corrected behaviour.
+
 ## What this does not measure
 
 - **Dynamic analysis.** Every case also needs a per-case workload (the

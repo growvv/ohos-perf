@@ -1,6 +1,7 @@
 // Ported from ArkAnalyzer-HapRay (Apache-2.0); see THIRD_PARTY_NOTICES.md.
 
 import { OhosPerfError } from '../errors';
+import { maxOf } from '../extremes';
 import type { InventoryFile } from './inventory';
 import type { ZipArchive, ZipEntry } from './zip';
 
@@ -201,16 +202,17 @@ function matchOne(ruleId: string, rule: FileRule, file: InventoryFile, reader: E
         }
         const carried = verdicts.filter((verdict) => verdict.confidence !== undefined)
           .map((verdict) => verdict.confidence!);
-        const confidence = rule.confidence ?? (carried.length === 0 ? undefined : Math.max(...carried));
+        const confidence = rule.confidence ?? (carried.length === 0 ? undefined : maxOf(carried));
         return confidence === undefined ? { matched: true } : { matched: true, confidence };
       }
       const verdicts = subRules.map((sub) => matchOne(ruleId, sub, file, reader));
       const matched = rule.operator === 'or'
         ? verdicts.some((verdict) => verdict.matched)
         : verdicts.length > 0 && verdicts[0]!.matched && !verdicts.slice(1).some((verdict) => verdict.matched);
-      if (!matched) return { matched: false };      const carried = verdicts.filter((verdict) => verdict.matched && verdict.confidence !== undefined)
+      if (!matched) return { matched: false };
+      const carried = verdicts.filter((verdict) => verdict.matched && verdict.confidence !== undefined)
         .map((verdict) => verdict.confidence!);
-      const confidence = rule.confidence ?? (carried.length === 0 ? undefined : Math.max(...carried));
+      const confidence = rule.confidence ?? (carried.length === 0 ? undefined : maxOf(carried));
       return confidence === undefined ? { matched: true } : { matched: true, confidence };
     }
     default:
@@ -272,7 +274,7 @@ export function matchHapRules(
       if (!verdicts.some((verdict) => verdict.matched)) continue;
       const carried = verdicts.filter((verdict) => verdict.matched && verdict.confidence !== undefined)
         .map((verdict) => verdict.confidence!);
-      const confidence = carried.length === 0 ? undefined : Math.max(...carried);
+      const confidence = carried.length === 0 ? undefined : maxOf(carried);
       if (confidence !== undefined) {
         state.best = state.best === undefined ? confidence : Math.max(state.best, confidence);
       }
