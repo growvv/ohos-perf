@@ -335,6 +335,28 @@ describe('WorkloadRunner', () => {
     expect(result.error).toMatch(/UI target not found/);
   });
 
+  it('attributes an unmarked node to the window that contains it', async () => {
+    // The published driver's `UI.nodes` inherits `bundleName` down the tree,
+    // so a node the dump left unmarked belongs to its nearest ancestor's
+    // window. Without that, an unmarked node in another app's window — a
+    // launcher card, a system dialog — matched every plan and got tapped.
+    const launcher = node({
+      depth: 0, type: 'Root', bundleName: 'com.ohos.sceneboard',
+      bounds: '[0,0][1080,2340]',
+      boundsRect: { left: 0, top: 0, right: 1080, bottom: 2340 },
+    });
+    const stray = node({ depth: 1, type: 'Button', text: '保存数据源', bundleName: '' });
+    const device = fakeDevice({ screens: [[launcher, stray]] });
+    const plan = parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{ op: 'tap', selector: { text: '保存数据源' } }],
+    });
+    let clock = 0;
+    const result = await runner(device, 60_000, () => (clock += 16_000)).run(plan);
+    expect(result.status).toBe('failed');
+    expect(result.error).toMatch(/UI target not found/);
+  });
+
   it('still refuses a node the dump marked disabled', async () => {
     const disabled = node({
       type: 'Button', text: '保存数据源',

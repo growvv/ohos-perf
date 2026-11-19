@@ -164,6 +164,29 @@ function attributeOf(node: UiNode, field: keyof WorkloadSelector): string {
   }
 }
 
+/**
+ * Each node's effective `bundleName`, inherited from its nearest ancestor that
+ * carries one — the published driver's `UI.nodes(layout, inherited_bundle)`.
+ *
+ * `flattenUiTree` is pre-order, so the nodes before a node at depth *d* hold
+ * every ancestor at depth < *d*; a stack indexed by depth is enough. An
+ * unmarked node in the launcher's window belongs to the launcher, not to
+ * whichever app the plan names.
+ */
+function inheritedBundles(nodes: readonly UiNode[]): string[] {
+  const stack: string[] = [];
+  const bundles: string[] = [];
+  for (const node of nodes) {
+    stack.length = Math.min(stack.length, node.depth);
+    const inherited = node.bundleName !== ''
+      ? node.bundleName
+      : (node.depth > 0 ? stack[node.depth - 1] ?? '' : '');
+    stack[node.depth] = inherited;
+    bundles.push(inherited);
+  }
+  return bundles;
+}
+
 function matches(value: string, expected: string, mode: WorkloadSelector['match']): boolean {
   if (mode === 'exact') return value === expected;
   if (mode === 'regex') {
@@ -560,7 +583,8 @@ export class WorkloadRunner {
   private matching(nodes: readonly UiNode[], selector: WorkloadSelector): UiNode[] {
     const mode = selector.match ?? 'substring';
     const fields = FIELDS.filter((field) => selector[field] !== undefined);
-    return nodes.filter((node) => {
+    const bundles = inheritedBundles(nodes);
+    return nodes.filter((node, position) => {
       // The published driver skips a node only when the dump spells
       // `visible="false"` or `enabled="false"`. A node whose dump carries no
       // `enabled` at all is not disabled by that rule — the device still taps
@@ -568,11 +592,8 @@ export class WorkloadRunner {
       if (node.attributes?.visible === 'false' || node.attributes?.enabled === 'false') {
         return false;
       }
-      if (
-        this.bundle !== '' &&
-        node.bundleName !== '' &&
-        node.bundleName !== this.bundle
-      ) {
+      const bundle = bundles[position] ?? '';
+      if (this.bundle !== '' && bundle !== '' && bundle !== this.bundle) {
         return false;
       }
       return fields.every((field) =>
