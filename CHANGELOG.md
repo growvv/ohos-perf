@@ -52,7 +52,10 @@ analyzers from twelve to the ones that genuinely lack data.
 cases on the emulator (`build.py`, `sign.mjs`, `install.mjs`, `run.mjs`) and
 `bench/ohmbench/RESULTS.md` records what that measured, including which cases
 fail at their own `setup` because the benchmark ships no prepared data and
-which are uninstallable on a debug profile.
+which are uninstallable on a debug profile. Every degraded metric in a
+dynamic run names its reason, and the record separates "this capture did not
+ask for that collector" from "this device cannot produce it" — the first is a
+choice of flags, not a limit.
 
 ## 0.32.3 — 2026-11-19
 

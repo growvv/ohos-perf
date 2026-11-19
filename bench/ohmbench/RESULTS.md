@@ -293,15 +293,20 @@ A run that reached its `measured` phase produced an ordinary scene —
 `trace.htrace`, `trace.db`, `scene.json`, `workload.json` — and the analyzers
 ran on it unchanged: 83 metrics with 12 degraded, and evidence of the kinds the
 emulator can actually produce (`vsync_anomaly`, `jank`, `empty_frame`, …).
-The 12 degraded metrics are the collectors the emulator lacks, each named in
-the evidence as a `degraded_capability` rather than silently zero:
+Every degraded metric names its reason in `degraded.reason`; they fall into two
+groups and the difference matters:
 
-- no `hiprofiler_cmd` on the emulator;
-- `hiperf record` fails with `create mmap fail` / `Operation not permitted`, so
-  there are no sampled events;
-- `param set persist.ark.trace` is refused (errNum 1001) and
-  `persist.ace.trace.enabled` does not read back, so no ArkTS method trace;
-- the live FPS feed and the hilog stream are not exposed.
+- **Not requested.** `workload` captures with `hitrace` only, the way HapRay's
+  `profiled()` does, so `symbols`, `flamegraph`, `frame-load`, `empty_frame`'s
+  load share, the GC perf share, memory, native memory, hilog, thermal and the
+  UI capture are all absent because no collector was asked for them. The reason
+  is `no perf samples: the scene was captured without --hiperf` or `capability
+  not probed`. This is a choice of capture, not a limit of the device, and
+  `collect` with the same flags on the same device measures those metrics.
+- **The device cannot.** The emulator has no `hiprofiler_cmd`, `hiperf record`
+  fails with `create mmap fail` / `Operation not permitted`, and
+  `param set persist.ark.trace` is refused (errNum 1001) — so even a capture
+  that asks for sampled events or an ArkTS method trace gets nothing back.
 
 `root-cause --offline` still states a verdict from what was captured — the
 `jingmo_sync_page_reimport` scene ranked six `vsync_anomaly` criticals, the
@@ -354,16 +359,19 @@ Two causes, both measured:
 nothing (the comm is the bundle, the bundle ends with the comm, or the comm is
 a `:`-separated sub-process; a name shorter than the comm limit is not
 eligible), and `collect` records the app's pids in `scene.json` whenever it can.
-Re-running `analyze` on the same trace cut the degraded analyzers from twelve
-to the ones that genuinely lack data.
+Re-running `analyze` on the same trace turned the analyzers that had reported
+`no_data` — a claim that the trace holds nothing for them — into the ones that
+report what they actually found; the ones still degraded are degraded for the
+capture reasons listed above, not for want of a process.
 
 ## What this does not measure
 
 - **A physical device.** OpenHarmony debug certificates are rejected by the
   commercial Mate 60 (`code:9568257 fail to verify pkcs7 file`), so every
-  install and every capture was on the emulator. The emulator's missing
-  `hiprofiler_cmd`, refused `hiperf` and unsettable ArkTS tracing are the reason
-  12 of 83 metrics are degraded; a device that has them would measure more.
+  install and every capture was on the emulator. Of the 12 degraded metrics,
+  the ones a device with `hiprofiler_cmd`, a working `hiperf` and settable
+  ArkTS tracing would recover are the device-limited group above; the rest are
+  absent because `workload` captures with `hitrace` alone.
 - **A dynamic precision/recall number.** The source axis has one because the
   ground truth names a source location. A dynamic run names evidence — a
   critical `vsync_anomaly`, a jank rate — and there is no published mapping
