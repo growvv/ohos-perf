@@ -282,7 +282,7 @@ commands):
 | `build.py` — ohpm install + `hvigorw assembleHap` | 21/21 |
 | `sign.mjs` — debug profile + HAP signature | 21/21 |
 | `install.mjs` — `bm install` | 19/21 |
-| `run.mjs` — workload, capture, `analyze`, `root-cause --offline` | see below |
+| `run.mjs` — workload, capture, `analyze`, `root-cause --offline` | 5/21 captured and analyzed |
 
 The two uninstallable cases are both cloudmusic, refused with
 `grant request permissions failed, PermissionName:
