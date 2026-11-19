@@ -287,25 +287,30 @@ commands):
 The two uninstallable cases are both cloudmusic, refused with
 `grant request permissions failed, PermissionName:
 ohos.permission.SYSTEM_FLOAT_WINDOW`: a debug provisioning profile cannot grant
-that permission, and the app asks for it in its manifest.
+that permission, and the app asks for it in its manifest. Their `run.mjs` rows
+therefore stop at `launch`, and they used to stop at `setup` instead: `aa start`
+answers exit 0 for a bundle that is not installed, so the run's first `wait`
+failed and read as a plan problem. 0.33.5 reads the device's own
+`error: failed to start ability.` line.
 
 Six of the 21 cases ran their own workload to completion and were analyzed:
 
 | case | its own window | ran | `measured` phase | metrics | evidence | root cause |
 | --- | --- | --- | --- | --- | --- | --- |
-| `browser_eager_history_load` | 15 s | 15 s | 2.0 s | 83 (12 degraded) | 14 | warn — a frame flagged late by the platform |
-| `browser_history_delete_no_transaction` | 20 s | 20 s | 2.1 s | 81 (13) | 20 | warn — a frame drew nothing |
-| `jingmo_dataset_import_no_transaction` | 120 s | 120 s | 4.7 s | 83 (12) | 28 | **critical** — a 615 ms VSync gap |
-| `jingmo_sync_page_reimport` | 180 s | 120 s | 23.4 s | 83 (12) | 90 | **critical** — a 2.7 s VSync gap |
-| `ytmusic_current_playing_timeupdate` | 70 s | 70 s | 60.0 s | 81 (13) | 700 | warn — 697 frames drew nothing |
-| `ytmusic_search_no_debounce` | 60 s | 60 s | 27.0 s | 81 (12) | 142 | **critical** — a 1.7 s VSync gap |
+| `browser_eager_history_load` | 15 s | 15 s | 1.9 s | 83 (13 degraded) | 13 | warn — a frame flagged late by the platform |
+| `browser_history_delete_no_transaction` | 20 s | 20 s | 2.5 s | 81 (13) | 26 | warn — a frame flagged late by the platform |
+| `jingmo_dataset_import_no_transaction` | 120 s | 120 s | 4.8 s | 83 (12) | 29 | **critical** — a 597 ms VSync gap |
+| `jingmo_sync_page_reimport` | 180 s | 120 s | 23.4 s | 83 (12) | 96 | **critical** — a 607 ms VSync gap |
+| `ytmusic_current_playing_timeupdate` | 70 s | 70 s | 60.0 s | 81 (13) | 703 | warn — 700 frames drew nothing |
+| `ytmusic_search_no_debounce` | 60 s | 60 s | 6.1 s | 81 (12) | 69 | **critical** — a 1.8 s VSync gap |
 
 `browser_history_delete_no_transaction` and `jingmo_sync_page_reimport` joined
 the clean set in the 0.33.5 sweep. Neither is a code change: the first needs a
 history entry the previous sweep's own `browser_eager_history_load` had not yet
 produced, and the second prepares its own data (see below). Every case is
 re-measured rather than assumed, so which of the 21 run is data that moves
-between sweeps.
+between sweeps. Evidence counts move between sweeps for the same reason — they
+count what a capture happened to contain, not a fixed expectation.
 
 Eight more captured without running clean, and their scenes are complete:
 `browser_history_list_foreach` (measured), `interviewapp_search_history_unbounded`
@@ -325,7 +330,7 @@ Each produced an ordinary scene — `trace.htrace`, `trace.db`, `scene.json`,
 `workload.json` — and `analyze` and `root-cause --offline` ran on it unchanged.
 The evidence is of the kinds the emulator can actually produce: `jank`,
 `empty_frame`, `vsync_anomaly`, `gc_pressure`, `fault_pattern`,
-`binder_hotspot`, `startup`. The scenes are 17–830 MB each; the largest is
+`binder_hotspot`, `startup`. The scenes are 18–818 MB each; the largest is
 `interviewapp_search_history_unbounded`, whose 900 s window ran to its end
 after the `measured` phase failed at 123 s.
 
@@ -363,7 +368,7 @@ selector and how many nodes were on screen — measured, not inferred:
 | `ytmusic_history_json_parse_per_row` | measured `text="Listening Track 1000"` | needs 1 000 history entries |
 | `weatherassistant_http_session_leak` | setup `text="深圳市"` | needs a saved city |
 | `weatherassistant_remote_weather_icons` | verify `text="深圳市"` | needs a saved city; captured and analyzed anyway, see above |
-| `cloudmusic_*` (×2) | setup `text="发现"` / `text="音乐云盘"` | the app starts but its cloud pages never appear without an account; captured nothing |
+| `cloudmusic_*` (×2) | launch `aa start … does not exist` | never installed: a debug profile cannot grant `ohos.permission.SYSTEM_FLOAT_WINDOW`, and `aa start` says so only in its output, with exit 0 |
 
 `jingmo_sync_page_reimport` **did run**, and it is the one case whose
 own `setup` prepares the data it needs: it types the data-source URL into the
@@ -377,23 +382,24 @@ self-contained, and it does not for the ones above.
 
 | case | its own window | measured | what the plan does |
 | --- | --- | --- | --- |
-| `sepweather_font_register_per_page` | 30 s | **315 s** | 40 open/close cycles of the city manager |
-| `wanharmony_persisted_home_list_growth` | 60 s | **100.8 s**, then **67.0 s** after the fix | 12 swipes on the home list |
+| `sepweather_font_register_per_page` | 30 s | **322 s** | 40 open/close cycles of the city manager |
+| `wanharmony_persisted_home_list_growth` | 60 s | **100.8 s**, then **65.6 s** after the fix | 12 swipes on the home list |
 
 Both fail with `workload took …s, exceeding the …s capture window`, the same
 check HapRay's `UI.profiled()` makes. WanHarmony's overrun was also a defect in
 this tool: the runner sent `uitest uiInput swipe x y1 x y2` with no velocity,
 and the reference driver sends `1000`. Measured on the device, one swipe costs
 **5.15 s** without the argument and **3.21 s** with it. Sending it (0.33.1)
-took the whole 12-swipe phase from **100.8 s to 67.0 s**, a 5.58 s swipe — so
+took the whole 12-swipe phase from **100.8 s to 65.6 s**, a 5.47 s swipe — so
 the bug was a third of the run, and the case is still over its window: the rest
 is the emulator's `dumpLayout` latency, which also accounts for Sepweather's
-315 s against 30 s (40 cycles each waiting for two screens).
+322 s against 30 s (40 cycles each waiting for two screens).
 
 ### What the dynamic run found in this tool
 
-Four fidelity defects, and they are the kind the source axis could not
-surface. The first is about the capture itself: **every app-attributed
+Seven defects, and they are the kind the source axis could not surface: four in
+what the runner sends the device, three in the tooling around it. The first is
+about the capture itself: **every app-attributed
 analyzer reported `no_data` on a trace full of the app.** Two causes, both
 measured:
 
@@ -427,7 +433,7 @@ first:
 The first two made selectors miss nodes the device taps; the third made a
 selector able to tap a node in another app's window; the last made the one
 case that measures keystroke cost measure something else. None of them changed
-an outcome on the 21 cases — the same five run and the same twelve stop at the
+an outcome on the 21 cases — the same six run and the same eight stop at the
 same selector — which is exactly why they needed a line-by-line diff and a
 test rather than a bench score to find.
 
@@ -435,6 +441,23 @@ test rather than a bench score to find.
 three variants, and only the two weatherassistant cases and
 `ytmusic_search_no_debounce` carry that op. Group the files by hash before
 comparing them.
+
+Three more came from running the sweep rather than reading code, and each was
+invisible in a green test run:
+
+| defect | what it did | found by |
+| --- | --- | --- |
+| a killed sweep left `hitrace` recording | every later begin answered `errorCode(1103)`; one 21-case sweep recorded every case stopped at `measured` | a sweep that reported 0/21 |
+| `aa start` exits 0 for an app that is not installed | the cloudmusic cases read as a plan whose first `wait` matched nothing | a case that "started" an app `bm dump` does not list |
+| a published core nested in `packages/cli/node_modules` | it beat the workspace link, so the built CLI ran 0.33.2 while every test passed against the source — and a whole sweep measured that build | a device probe behaving like the unfixed code |
+
+The third is the one worth remembering: the bench drives
+`packages/cli/dist/index.js`, so a stale copy under the CLI's own
+`node_modules` silently changes what the bench measures. `packages/cli/test/
+workspace-link.test.ts` now checks the tree, the lockfile, the exact pin and
+both builds' ages. Writing it found a second defect: the root `npm run build`
+built only core, so `npm run verify` could pass with a CLI dist from an
+earlier build.
 
 ## What this does not measure
 
