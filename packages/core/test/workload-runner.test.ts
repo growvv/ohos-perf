@@ -281,4 +281,74 @@ describe('WorkloadRunner', () => {
       { action: 'swipe', fromX: 540, fromY: 702, toX: 540, toY: 1825, velocity: 1000 },
     ]);
   });
+
+  it('swipes at the published velocity while scrolling to a target', async () => {
+    // The reference driver's `scroll_to` sends the same `1000` velocity its
+    // plain `swipe` does. Without it the scroll is slower than the plan was
+    // written against, and on a long list that is the difference between
+    // reaching the row inside the window and overrunning it.
+    // The first dump is the bounds read, the second the first search, the
+    // third the one after the swipe.
+    const device = fakeDevice({ screens: [[ROOT], [ROOT], [ROOT, HOME]] });
+    const plan = parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{ op: 'scroll_to', selector: { text: '首页' } }],
+    });
+    const result = await runner(device).run(plan);
+    expect(result.status).toBe('ok');
+    expect(device.gestures).toEqual([
+      { action: 'swipe', fromX: 540, fromY: 1825, toX: 540, toY: 702, velocity: 1000 },
+    ]);
+  });
+
+  it('matches a node the dump did not mark enabled', async () => {
+    // The reference driver excludes a node only when the dump says
+    // `enabled="false"`. A node whose attributes carry no `enabled` at all is
+    // a node the dump did not describe that way — the device still taps it —
+    // and requiring the attribute to be present dropped real targets.
+    const unmarked = node({ type: 'Button', text: '保存数据源' });
+    const device = fakeDevice({ screens: [[ROOT, unmarked]] });
+    const plan = parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{ op: 'tap', selector: { text: '保存数据源' } }],
+    });
+    const result = await runner(device).run(plan);
+    expect(result.status).toBe('ok');
+    expect(device.gestures).toEqual([{ action: 'click', x: 50, y: 50 }]);
+  });
+
+  it('compares the enabled selector against the dump\'s own attribute', async () => {
+    // The published driver's selector matches `str(node.get('enabled', ''))`,
+    // so an absent attribute compares as the empty string. Synthesizing
+    // `'false'` from the flattened flag (which `flattenUiTree` sets to `false`
+    // when the attribute is missing) would make a `substring` match on
+    // `'false'` hit a node the dump never called disabled.
+    const unmarked = node({ type: 'Button', text: '保存数据源', enabled: false });
+    const device = fakeDevice({ screens: [[ROOT, unmarked]] });
+    const plan = parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{ op: 'tap', selector: { text: '保存数据源', enabled: 'false' } }],
+    });
+    let clock = 0;
+    const result = await runner(device, 60_000, () => (clock += 16_000)).run(plan);
+    expect(result.status).toBe('failed');
+    expect(result.error).toMatch(/UI target not found/);
+  });
+
+  it('still refuses a node the dump marked disabled', async () => {
+    const disabled = node({
+      type: 'Button', text: '保存数据源',
+      attributes: { enabled: 'false' },
+    });
+    const device = fakeDevice({ screens: [[ROOT, disabled]] });
+    const plan = parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{ op: 'tap', selector: { text: '保存数据源' } }],
+    });
+    // A clock that outruns the find timeout on the first read.
+    let clock = 0;
+    const result = await runner(device, 60_000, () => (clock += 16_000)).run(plan);
+    expect(result.status).toBe('failed');
+    expect(result.error).toMatch(/UI target not found/);
+  });
 });

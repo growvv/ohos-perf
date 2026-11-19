@@ -282,7 +282,7 @@ commands):
 | `build.py` — ohpm install + `hvigorw assembleHap` | 21/21 |
 | `sign.mjs` — debug profile + HAP signature | 21/21 |
 | `install.mjs` — `bm install` | 19/21 |
-| `run.mjs` — workload, capture, `analyze`, `root-cause --offline` | 5/21 captured and analyzed |
+| `run.mjs` — workload, capture, `analyze`, `root-cause --offline` | 5/21 ran clean, 6/21 captured |
 
 The two uninstallable cases are both cloudmusic, refused with
 `grant request permissions failed, PermissionName:
@@ -298,6 +298,15 @@ Five of the 21 cases ran their own workload to completion and were analyzed:
 | `jingmo_sync_page_reimport` | 180 s | 120 s | 23.7 s | 83 (12) | 55 | **critical** — 6 gaps, the longest 4.6 s |
 | `ytmusic_current_playing_timeupdate` | 70 s | 70 s | 60.0 s | 81 (13) | 704 | warn — 697 frames drew nothing |
 | `ytmusic_search_no_debounce` | 60 s | 60 s | 27.7 s | 81 (12) | 121 | **critical** — 11 gaps, the longest 1.7 s |
+
+A sixth captured without running clean: `weatherassistant_remote_weather_icons`
+fails in `verify` (its 深圳市 wait, after the window), and the 25 s scene it
+produced is complete — 65 metrics, 12 degraded, 4 evidence items, 19.7 MB. It
+is analyzed and recorded as `captured: true` with the failing phase named;
+`run.mjs` used to discard every non-`ok` record's scene, which threw this one
+away. Its content is the app's launch screen, not the forecast the plan meant
+to reach, so it says something about startup and nothing about the weather
+list.
 
 Each produced an ordinary scene — `trace.htrace`, `trace.db`, `scene.json`,
 `workload.json` — and `analyze` and `root-cause --offline` ran on it unchanged.
@@ -339,7 +348,7 @@ selector and how many nodes were on screen — measured, not inferred:
 | `interviewapp_search_history_unbounded` | measured `hint="请输入关键词"` | needs search history |
 | `ytmusic_history_json_parse_per_row` | measured `text="Listening Track 1000"` | needs 1 000 history entries |
 | `weatherassistant_http_session_leak` | setup `text="深圳市"` | needs a saved city |
-| `weatherassistant_remote_weather_icons` | measured `text="深圳市"` (in `verify`) | needs a saved city |
+| `weatherassistant_remote_weather_icons` | verify `text="深圳市"` | needs a saved city; captured and analyzed anyway, see above |
 | `cloudmusic_*` (×2) | install | permission refused, see above |
 
 `jingmo_sync_page_reimport` **did run**, and it is the one case whose

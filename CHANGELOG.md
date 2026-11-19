@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.33.2 — 2026-11-19
+
+**A selector now matches the way the published driver matches, and the bench
+keeps the captures it used to throw away.**
+
+Two divergences from `workload_driver.py`, both found by diffing our matcher
+against the reference line by line:
+
+- **An absent `enabled` no longer excludes a node.** The reference skips a node
+  only when the dump spells `visible="false"` or `enabled="false"`; we skipped
+  every node whose `enabled` flag was false, and `flattenUiTree` sets that flag
+  to false for an absent attribute as well. Plenty of tappable nodes carry no
+  `enabled` at all, and they were invisible to every selector.
+- **The `enabled` selector compares the dump's attribute, not the flag.** The
+  reference matches `str(node.get('enabled', ''))`, so an absent attribute is
+  `""`. Synthesizing `'false'` meant a `substring` selector of `"false"` could
+  match a node the dump never called disabled.
+- **`scroll_to` swipes with the same velocity `swipe` does.** The reference
+  driver's `scroll_to` sends `1000` as its fifth argument; ours omitted it, so
+  every scroll was as slow as the device's own default. Found by diffing the
+  two drivers line by line after the swipe fix.
+
+`bench/ohmbench/dynamic/run.mjs` also changed in two ways the re-run exposed:
+a `verify` failure was labelled `measured` (a plan whose 深圳市 wait sits in
+`verify` was reported as a measured failure), and the scene such a run
+produced — a complete 25 s capture — was discarded because analysis was gated
+on `status === 'ok'`. Analysis now runs whenever `scene.json` exists, and the
+summary counts captures and clean runs separately.
+
 ## 0.33.1 — 2026-11-19
 
 **A swipe takes the velocity the reference driver passes.**

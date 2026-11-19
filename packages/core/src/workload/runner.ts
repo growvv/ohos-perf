@@ -154,7 +154,11 @@ function attributeOf(node: UiNode, field: keyof WorkloadSelector): string {
     case 'bounds':
       return node.bounds;
     case 'enabled':
-      return String(node.enabled);
+      // The published driver matches `str(node.get('enabled', ''))`, so an
+      // attribute the dump never carried compares as the empty string. The
+      // flattened `enabled` flag reads `false` for both "absent" and
+      // "explicitly false", and only the second is a value the dump stated.
+      return node.attributes?.enabled ?? '';
     default:
       return '';
   }
@@ -505,7 +509,10 @@ export class WorkloadRunner {
         return 'reached';
       }
       if (attempt === maxSwipes) break;
-      await this.device.gesture({ action: 'swipe', fromX: x, fromY: from, toX: x, toY: to });
+      await this.device.gesture({
+        action: 'swipe', fromX: x, fromY: from, toX: x, toY: to,
+        velocity: SWIPE_VELOCITY,
+      });
       await this.sleep(DEFAULT_SWIPE_INTERVAL_S * 1000);
     }
     throw new OhosPerfError(
@@ -554,7 +561,13 @@ export class WorkloadRunner {
     const mode = selector.match ?? 'substring';
     const fields = FIELDS.filter((field) => selector[field] !== undefined);
     return nodes.filter((node) => {
-      if (node.attributes?.visible === 'false' || !node.enabled) return false;
+      // The published driver skips a node only when the dump spells
+      // `visible="false"` or `enabled="false"`. A node whose dump carries no
+      // `enabled` at all is not disabled by that rule — the device still taps
+      // it — and requiring the attribute to be present dropped real targets.
+      if (node.attributes?.visible === 'false' || node.attributes?.enabled === 'false') {
+        return false;
+      }
       if (
         this.bundle !== '' &&
         node.bundleName !== '' &&

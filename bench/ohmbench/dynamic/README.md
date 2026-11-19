@@ -56,6 +56,10 @@ uses, then runs the case's `*.workload.json` through `ohos-perf workload`,
 which executes the harness's stop-then-launch preamble, the plan's `setup`, the
 capture window with `measured` inside it, then `verify`. The resulting scene is
 analyzed by `ohos-perf analyze` and ranked by `ohos-perf root-cause --offline`.
+Analysis is gated on the scene existing, not on the run succeeding: a `verify`
+failure happens after the window, so its scene is complete, and the record
+names the phase that failed (`setup`, `measured` or `verify`) and whether the
+scene was captured anyway.
 
 ## What the benchmark does not supply
 

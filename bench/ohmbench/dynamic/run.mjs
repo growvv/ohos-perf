@@ -131,8 +131,14 @@ for (const id of ids) {
   record.status = record.workload?.status ?? 'failed';
   record.wallS = Math.round((Date.now() - started) / 1000);
 
-  if (record.status === 'ok') {
-    const analyze = run(['analyze', outDir, '--json']);
+  // A `verify` failure happens after the capture window, so the scene it
+  // produced is complete and worth analyzing: it holds the launch, not the
+  // screen the plan meant to reach, and the record says which phase failed.
+  // Gating on `status === 'ok'` discarded those captures.
+  const sceneDir = record.workload?.sceneDir;
+  record.captured = typeof sceneDir === 'string' && existsSync(join(sceneDir, 'scene.json'));
+  if (record.captured) {
+    const analyze = run(['analyze', sceneDir, '--json']);
     record.analyzeExit = analyze.code;
     try {
       const parsed = JSON.parse(analyze.stdout);
@@ -148,7 +154,7 @@ for (const id of ids) {
     } catch {
       record.analyze = { error: (analyze.stderr || analyze.stdout).slice(-2000) };
     }
-    const rootCause = run(['root-cause', outDir, '--out', join(outDir, 'root-cause'),
+    const rootCause = run(['root-cause', sceneDir, '--out', join(sceneDir, 'root-cause'),
       '--offline', '--json']);
     record.rootCauseExit = rootCause.code;
     try {
@@ -165,14 +171,27 @@ for (const id of ids) {
   records.push(record);
   const measured = record.workload?.measured;
   const failedAction = measured?.actions?.find((action) => !action.ok);
+  // Name the phase that failed. A `verify` failure is neither setup nor a
+  // measured overrun: the capture happened and its scene was analyzed, and
+  // calling that `measured` pointed a reader at the wrong part of the plan.
+  const phase = record.workload?.setup?.ok === false
+    ? 'setup'
+    : record.workload?.verify?.ok === false
+      ? 'verify'
+      : 'measured';
   const where = record.status === 'ok'
     ? `${record.metrics ?? '?'} metrics, ${record.degraded ?? '?'} degraded,` +
       ` ${record.evidence?.length ?? 0} evidence, ${record.wallS}s`
-    : `${record.workload?.setup?.ok === false ? 'setup' : 'measured'}:` +
-      ` ${(record.workload?.error ?? failedAction?.error ?? record.workload?.error ?? '').slice(0, 120)}`;
+    : `${phase}:` +
+      ` ${(record.workload?.error ?? failedAction?.error ?? record.workload?.error ?? '').slice(0, 120)}` +
+      (record.captured === true && record.status !== 'ok'
+        ? ` (scene analyzed anyway: ${record.metrics ?? '?'} metrics,` +
+          ` ${record.evidence?.length ?? 0} evidence)`
+        : '');
   console.log(`${id}: ${record.status}  ${where}`);
 }
 
 writeFileSync(join(outRoot, 'dynamic.json'), `${JSON.stringify({ records }, null, 2)}\n`);
 const ok = records.filter((record) => record.status === 'ok').length;
-console.log(`\n${ok}/${records.length} captured and analyzed`);
+const captured = records.filter((record) => record.captured === true).length;
+console.log(`\n${ok}/${records.length} ran clean, ${captured}/${records.length} captured and analyzed`);
