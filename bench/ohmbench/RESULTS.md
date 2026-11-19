@@ -289,10 +289,22 @@ The two uninstallable cases are both cloudmusic, refused with
 ohos.permission.SYSTEM_FLOAT_WINDOW`: a debug provisioning profile cannot grant
 that permission, and the app asks for it in its manifest.
 
-A run that reached its `measured` phase produced an ordinary scene —
-`trace.htrace`, `trace.db`, `scene.json`, `workload.json` — and the analyzers
-ran on it unchanged: 83 metrics with 12 degraded, and evidence of the kinds the
-emulator can actually produce (`vsync_anomaly`, `jank`, `empty_frame`, …).
+Five of the 21 cases ran their own workload to completion and were analyzed:
+
+| case | its own window | ran | `measured` phase | metrics | evidence | root cause |
+| --- | --- | --- | --- | --- | --- | --- |
+| `browser_eager_history_load` | 15 s | 15 s | 1.8 s | 83 (12 degraded) | 17 | warn — a thread woken often and re-sleeping |
+| `jingmo_dataset_import_no_transaction` | 120 s | 120 s | 5.2 s | 83 (12) | 21 | **critical** — a 597 ms VSync gap |
+| `jingmo_sync_page_reimport` | 180 s | 120 s | 23.7 s | 83 (12) | 55 | **critical** — 6 gaps, the longest 4.6 s |
+| `ytmusic_current_playing_timeupdate` | 70 s | 70 s | 60.0 s | 81 (13) | 704 | warn — 697 frames drew nothing |
+| `ytmusic_search_no_debounce` | 60 s | 60 s | 27.7 s | 81 (12) | 121 | **critical** — 11 gaps, the longest 1.7 s |
+
+Each produced an ordinary scene — `trace.htrace`, `trace.db`, `scene.json`,
+`workload.json` — and `analyze` and `root-cause --offline` ran on it unchanged.
+The evidence is of the kinds the emulator can actually produce: `jank`,
+`empty_frame`, `vsync_anomaly`, `gc_pressure`, `fault_pattern`,
+`binder_hotspot`, `startup`. The scenes are 17–297 MB each.
+
 Every degraded metric names its reason in `degraded.reason`; they fall into two
 groups and the difference matters:
 
@@ -308,10 +320,6 @@ groups and the difference matters:
   `param set persist.ark.trace` is refused (errNum 1001) — so even a capture
   that asks for sampled events or an ArkTS method trace gets nothing back.
 
-`root-cause --offline` still states a verdict from what was captured — the
-`jingmo_sync_page_reimport` scene ranked six `vsync_anomaly` criticals, the
-longest a 4.6 s stall between vsyncs, which is the reimport the case is about.
-
 ### Cases whose own workload cannot run
 
 The plans assume data the benchmark does not ship. Each failure below is the
@@ -325,7 +333,11 @@ selector and how many nodes were on screen — measured, not inferred:
 | `jingmo_random_poem_orderby_random` | setup `text="山水诗 [1-9][0-9]*"` | needs imported poetry |
 | `sheafreader_article_list_foreach` | setup `text="300 (?:篇\|articles)"` | needs 300 articles imported |
 | `sheafreader_extract_tag_tolowercase` | setup `text="Journal 1 article 1"` | needs feeds subscribed |
+| `sheafreader_insert_duplicate_exception` | setup `text="Journal 1 article 1"` | needs feeds subscribed |
+| `sheafreader_refresh_feeds_sequential` | measured a `Button` by exact bounds | needs a subscribed feed to refresh |
+| `sheafreader_unread_counts_n_plus_1` | measured `text="Journal 1 article 1"` | needs feeds subscribed |
 | `interviewapp_search_history_unbounded` | measured `hint="请输入关键词"` | needs search history |
+| `ytmusic_history_json_parse_per_row` | measured `text="Listening Track 1000"` | needs 1 000 history entries |
 | `cloudmusic_*` (×2) | install | permission refused, see above |
 
 `jingmo_sync_page_reimport` **did run**, and it is the one case whose
@@ -336,24 +348,21 @@ opens. That is the chain in `workload.json` — `wait 京墨` → `point 0.94,0.
 so the benchmark does ship the traffic for the cases whose setup is
 self-contained, and it does not for the ones above.
 
-Two cases failed at their own window rather than at a selector, and both are
-real measurements of how long the emulator takes:
+### Two overruns, and one of them was our bug
 
 | case | its own window | measured | what the plan does |
 | --- | --- | --- | --- |
 | `sepweather_font_register_per_page` | 30 s | **315 s** | 40 open/close cycles of the city manager |
-| `wanharmony_persisted_home_list_growth` | 60 s | **100.8 s** (first run) | 12 swipes on the home list |
+| `wanharmony_persisted_home_list_growth` | 60 s | **100.8 s** | 12 swipes on the home list |
 
 Both fail with `workload took …s, exceeding the …s capture window`, the same
 check HapRay's `UI.profiled()` makes. WanHarmony's overrun was also a defect in
 this tool: the runner sent `uitest uiInput swipe x y1 x y2` with no velocity,
 and the reference driver sends `1000`. Measured on the device, a swipe costs
 **5.15 s** without the argument and **3.21 s** with it, so the 12-swipe plan was
-paying roughly 23 s it should not have. The velocity is now sent; the full
-12-swipe run was not re-measured after the fix because the sweep held the
-device, so whether it now fits 60 s is not claimed here. Sepweather's overrun is
-the emulator's `dumpLayout` latency: 40 cycles each waiting for two screens,
-which the velocity does not affect.
+paying roughly 23 s it should not have. The velocity is now sent (0.33.1).
+Sepweather's overrun is the emulator's `dumpLayout` latency: 40 cycles each
+waiting for two screens, which the velocity does not affect.
 
 ### What the dynamic run found in this tool
 
