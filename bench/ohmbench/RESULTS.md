@@ -318,11 +318,18 @@ selector and how many nodes were on screen — measured, not inferred:
 | `browser_history_delete_no_transaction` | setup `text="清除浏览记录"` | needs history entries to delete |
 | `browser_history_list_foreach` | measured `text="Article"` | needs a history page to scroll |
 | `jingmo_random_poem_orderby_random` | setup `text="山水诗 [1-9][0-9]*"` | needs imported poetry |
-| `jingmo_sync_page_reimport` | — | **ran**: the data-source import case saved the source first |
 | `sheafreader_article_list_foreach` | setup `text="300 (?:篇\|articles)"` | needs 300 articles imported |
 | `sheafreader_extract_tag_tolowercase` | setup `text="Journal 1 article 1"` | needs feeds subscribed |
 | `interviewapp_search_history_unbounded` | measured `hint="请输入关键词"` | needs search history |
 | `cloudmusic_*` (×2) | install | permission refused, see above |
+
+`jingmo_sync_page_reimport` **did run**, and it is the one case whose
+own `setup` prepares the data it needs: it types the data-source URL into the
+app's settings screen, taps 保存数据源, and waits for 已保存 before the window
+opens. That is the chain in `workload.json` — `wait 京墨` → `point 0.94,0.07` →
+`wait 设置` → `input 数据源地址` → `key Back` → `tap 保存数据源` → `wait 已保存` —
+so the benchmark does ship the traffic for the cases whose setup is
+self-contained, and it does not for the ones above.
 
 `sepweather_font_register_per_page` is a different failure and a real
 measurement: its plan runs 40 open/close cycles of the city manager, and on the
