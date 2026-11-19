@@ -7,10 +7,11 @@
 `uitest uiInput swipe` takes an optional fifth argument, and the published
 driver always sends `1000`. It is a velocity, not a duration, and without it
 the device picks its own: measured on the emulator, **5.15 s per swipe against
-3.21 s** with the argument. WanHarmony's plan swipes twelve times, so the
-argument is worth about 23 s of its 100.8 s run against a 60 s window; whether
-that alone brings it under 60 s was not re-measured, and is not claimed here.
-The runner now sends the same velocity.
+3.21 s** with the argument. WanHarmony's plan swipes twelve times, and sending
+the velocity took its measured phase from **100.8 s to 67.0 s** — re-measured
+end to end, not extrapolated. It is still over the case's 60 s window; the rest
+is the emulator's `dumpLayout` latency, which also explains Sepweather's 315 s
+against 30 s.
 
 ## 0.33.0 — 2026-11-19
 
