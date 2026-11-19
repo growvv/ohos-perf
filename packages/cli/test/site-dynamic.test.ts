@@ -73,6 +73,35 @@ describe('site-dynamic', () => {
     expect((cases[0]!.stoppedAt as { phase: string }).phase).toBe('measured');
   });
 
+  it('names a launch the device refused as the launch phase', () => {
+    // `aa start` exits 0 for a bundle that is not installed. The run stops
+    // before `setup` — the harness's own preamble — so no plan step failed and
+    // calling it `measured` points a reader at a phase the run never reached.
+    const { cases } = generate([
+      record({
+        case: 'missing_app',
+        workload: {
+          launch: {
+            ok: false,
+            actions: [
+              { op: 'stop', description: 'stop', ok: true },
+              {
+                op: 'launch', description: 'launch', ok: false,
+                error: 'aa start failed (exit 0): error: failed to start ability.',
+              },
+            ],
+          },
+          setup: { ok: true, actions: [] },
+          measured: { ok: true, actions: [] },
+          verify: { ok: true, actions: [] },
+        },
+      }),
+    ]);
+    const stopped = cases[0]!.stoppedAt as { phase: string; error: string } | null;
+    expect(stopped?.phase).toBe('launch');
+    expect(stopped?.error).toContain('failed to start ability');
+  });
+
   it('names an overrun as the measured phase, and carries its reason', () => {
     // `sepweather_font_register_per_page` ran its own `repeat x40` for 322 s
     // inside a 30 s window: every phase succeeded, and the run failed on the
@@ -128,9 +157,12 @@ describe('site-dynamic', () => {
       expect(item.status === 'ok' || item.status === 'failed').toBe(true);
       // The table's two claims: a captured row carries counts, and a stopped
       // row names a phase. A run that overran its own window is `measured`:
-      // the workload was inside it when it took too long.
+      // the workload was inside it when it took too long. A launch the device
+      // refused is `launch`: no plan phase ran at all.
       if (item.captured) expect(typeof item.metrics).toBe('number');
-      if (item.status !== 'ok') expect(['setup', 'measured', 'verify']).toContain(item.stoppedAt?.phase);
+      if (item.status !== 'ok') {
+        expect(['launch', 'setup', 'measured', 'verify']).toContain(item.stoppedAt?.phase);
+      }
     }
   });
 });

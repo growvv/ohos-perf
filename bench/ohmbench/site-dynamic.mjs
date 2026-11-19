@@ -26,9 +26,14 @@ const records = Array.isArray(record) ? record : record.records ?? [];
 /** The phase a run failed in, and the plan step that stopped it. */
 function stoppedAt(row) {
   const workload = row.workload ?? {};
-  // Execution order, not check order: `measured` runs inside the window and
-  // `verify` after it, so when both fail the first one is where the run
-  // actually stopped.
+  // Execution order, not check order: the harness's `stop`/`launch` preamble
+  // runs before `setup`, `measured` runs inside the window and `verify` after
+  // it, so when two fail the first one is where the run actually stopped.
+  //
+  // `launch` is its own phase because `aa start` exits 0 for a bundle that is
+  // not installed: a run whose preamble failed never reached a plan step, and
+  // naming `measured` would point a reader at a phase it never ran.
+  if (workload.launch?.ok === false) return { phase: 'launch', ...failedAction(workload.launch) };
   if (workload.setup?.ok === false) return { phase: 'setup', ...failedAction(workload.setup) };
   if (workload.measured?.ok === false) return { phase: 'measured', ...failedAction(workload.measured) };
   if (workload.verify?.ok === false) return { phase: 'verify', ...failedAction(workload.verify) };

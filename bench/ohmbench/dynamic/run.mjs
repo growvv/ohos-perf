@@ -171,16 +171,20 @@ for (const id of ids) {
   records.push(record);
   const measured = record.workload?.measured;
   const failedAction = measured?.actions?.find((action) => !action.ok);
-  // Name the phase that failed, in execution order: `measured` runs inside the
-  // window and `verify` after it, so when both fail the run stopped at
-  // `measured`. Checking `verify` first pointed a reader at the wrong step.
-  const phase = record.workload?.setup?.ok === false
-    ? 'setup'
-    : record.workload?.measured?.ok === false
-      ? 'measured'
-      : record.workload?.verify?.ok === false
-        ? 'verify'
-        : 'measured';
+  // Name the phase that failed, in execution order: the harness's own
+  // stop/launch preamble runs before `setup`, `measured` runs inside the
+  // window and `verify` after it, so when two fail the run stopped at the
+  // first. `launch` is its own phase because `aa start` exits 0 for a bundle
+  // that is not installed — the run then never reached a plan step at all.
+  const phase = record.workload?.launch?.ok === false
+    ? 'launch'
+    : record.workload?.setup?.ok === false
+      ? 'setup'
+      : record.workload?.measured?.ok === false
+        ? 'measured'
+        : record.workload?.verify?.ok === false
+          ? 'verify'
+          : 'measured';
   const where = record.status === 'ok'
     ? `${record.metrics ?? '?'} metrics, ${record.degraded ?? '?'} degraded,` +
       ` ${record.evidence?.length ?? 0} evidence, ${record.wallS}s`
