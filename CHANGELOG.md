@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.33.4 — 2026-11-19
+
+**`type_keys` is one device-side burst, the way the published driver sends it.**
+
+OhmBench ships three variants of `workload_driver.py`, not one: the base 17
+cases, the two weatherassistant cases, and `ytmusic_search_no_debounce`. The
+last two add `type_keys`, and it is a single `uinput -K` for the whole word
+with `-i <ms>` between keys, requiring the device to confirm every release
+("you raised the key N"). We sent one `inputText` per character, so each key
+was its own device command and the interval the plan asked for was not the
+interval the app saw — on the one case that measures keystroke cost.
+
+The parser now carries the reference's rules: `[a-z]{1,100}`, an interval in
+1..15000 defaulting to 50, and both are refused before a device is resolved.
+The variant that gives `swipe` a selector is not mirrored: no published plan
+uses it.
+
 ## 0.33.3 — 2026-11-19
 
 **An unmarked node belongs to the window that contains it.**

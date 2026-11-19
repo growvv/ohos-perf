@@ -423,6 +423,11 @@ selector compares the attribute the dump carried (so an absent one is `""`),
 and an unmarked node inherits its nearest ancestor's `bundleName`. Do not add
 `enabled` to a selector unless you have seen the dump state it.
 
+`type_keys` is a single `uinput -K` burst for the whole word, with `-i <ms>`
+between keys; its value is 1–100 lowercase letters and its interval is
+1–15000 ms, defaulting to 50. A plan outside that is rejected before a device
+is touched, naming the JSON path.
+
 ## UI capture and diff
 
 Use this when the question is about what the user *saw*, not how fast it was

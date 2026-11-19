@@ -69,6 +69,21 @@ failure happens after the window, so its scene is complete, and the record
 names the phase that failed (`setup`, `measured` or `verify`) and whether the
 scene was captured anyway.
 
+### The drivers are per case, and they are not all the same
+
+`testcase/workload_driver.py` ships in three variants:
+
+| variant | cases | what it adds |
+| --- | --- | --- |
+| base | 17 | the whole vocabulary except `type_keys` |
+| `type_keys` | both weatherassistant, `ytmusic_search_no_debounce` | `type_keys` as one `uinput -K` burst with a per-key release confirmation |
+| `swipe` with a selector | none published | a `swipe` whose bounds come from a selector instead of the screen |
+
+Reading one case's driver and generalising from it is how a divergence gets
+missed: the base file is where the `enabled` and `bundleName` rules came from,
+and `type_keys` is only in the other two. Group the files by hash before
+comparing (`md5sum cases/*/testcase/workload_driver.py | sort`).
+
 ## What the benchmark does not supply
 
 The plans assume prepared data: `jingmo_sync_page_reimport` waits for a data
