@@ -8,7 +8,7 @@
     "node": "^22.13.0 || >=23.4.0"
   },
   "scripts": {
-    "build": "npm run build -w @ohos-perf/core",
+    "build": "npm run build -w @ohos-perf/core && npm run build -w @ohos-perf/cli",
     "test": "npm run build -w @ohos-perf/core && npm run build -w @ohos-perf/cli && npm run test:unit && npm run test:device",
     "test:unit": "vitest run --project unit",
     "test:device": "vitest run --project device --fileParallelism=false",
