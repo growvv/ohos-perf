@@ -21,6 +21,10 @@ against the reference line by line:
   driver's `scroll_to` sends `1000` as its fifth argument; ours omitted it, so
   every scroll was as slow as the device's own default. Found by diffing the
   two drivers line by line after the swipe fix.
+- **`bundleName` is inherited down the tree.** The reference's
+  `UI.nodes(layout, inherited_bundle)` gives an unmarked node its nearest
+  ancestor's bundle; we compared the raw field, so an unmarked node in the
+  launcher's window matched every plan and could be tapped.
 
 `bench/ohmbench/dynamic/run.mjs` also changed in two ways the re-run exposed:
 a `verify` failure was labelled `measured` (a plan whose 深圳市 wait sits in

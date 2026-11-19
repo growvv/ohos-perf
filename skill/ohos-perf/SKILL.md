@@ -418,9 +418,10 @@ so analyze the scene anyway. A `measured` phase that overran `--duration` is a
 failure naming both numbers — the window closed before the workload did.
 
 Selectors match the way the published driver matches: a node is skipped only
-when the dump spells `visible="false"` or `enabled="false"`, and `enabled` in a
-selector compares the attribute the dump carried, so an absent one is `""`. Do
-not add `enabled` to a selector unless you have seen the dump state it.
+when the dump spells `visible="false"` or `enabled="false"`, `enabled` in a
+selector compares the attribute the dump carried (so an absent one is `""`),
+and an unmarked node inherits its nearest ancestor's `bundleName`. Do not add
+`enabled` to a selector unless you have seen the dump state it.
 
 ## UI capture and diff
 
