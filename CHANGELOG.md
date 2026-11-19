@@ -19,6 +19,27 @@ rather than retried again. A begin that failed for any other reason (`tag is
 empty`, a transport failure) is not retried and does not stop a recording that
 is not there — the fourth test pins that boundary.
 
+**`aa start` is checked by what it printed, not by its exit code.**
+
+Measured on the emulator, starting a bundle that is not installed prints
+`error: failed to start ability.` / `The specified ability does not exist` and
+exits **0**. Three call sites read only the code — `workload`'s `launch`, the
+scenario runner's `launch`, and `collect --cold-start` — so each could record a
+start for an app that was never there. The OhmBench cloudmusic cases came out
+as a setup `wait` that matched nothing, which points at the plan rather than at
+the missing app; `workload` now reports `aa start failed … does not exist`.
+
+**The CLI resolves the workspace core, and a build builds both packages.**
+
+A published `@ohos-perf/core@0.33.2` had been installed under
+`packages/cli/node_modules`, where a nested `node_modules` beats the hoisted
+workspace link. The built CLI therefore imported 0.33.2 while every test passed
+against the workspace source, and a whole device sweep measured that build.
+`packages/cli/test/workspace-link.test.ts` now checks the tree, the lockfile,
+the exact pin and the two builds' ages; writing it exposed that the root
+`npm run build` built only core, so `npm run verify` could pass against a stale
+CLI dist. It builds both.
+
 ## 0.33.4 — 2026-11-19
 
 **`type_keys` is one device-side burst, the way the published driver sends it.**
