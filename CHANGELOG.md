@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.33.1 — 2026-11-19
+
+**A swipe takes the velocity the reference driver passes.**
+
+`uitest uiInput swipe` takes an optional fifth argument, and the published
+driver always sends `1000`. It is a velocity, not a duration, and without it
+the device picks its own: measured on the emulator, **5.15 s per swipe against
+3.21 s** with the argument. WanHarmony's plan swipes twelve times, and that
+difference is the whole of its overrun — 100.8 s against a 60 s window. The
+runner now sends the same velocity.
+
 ## 0.33.0 — 2026-11-19
 
 **`workload` runs somebody else's plan, and the app-attribution bug a device
