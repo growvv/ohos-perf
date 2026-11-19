@@ -37,6 +37,7 @@ import type { TraceCollectOptions } from '../collectors/types';
 import { frameDelta } from '../analyze/render';
 import { buildMatrix, type CapabilityMatrix } from './capability';
 import { GestureDriver, type Gesture, type GestureResult } from './gesture';
+import { aaStartFailed } from './launch';
 import { DeviceNotFoundError, OhosPerfError } from '../errors';
 import { writeSceneMetadata, type SceneStepRef } from '../ingest/metadata';
 import {
@@ -486,10 +487,14 @@ export class Device {
             this.id,
             `aa start -a ${opts.coldStart.ability} -b ${pidApp!}`,
           );
-          if (result.code !== 0) {
+          // Exit 0 is not a start: `aa start` answers 0 for a bundle that is
+          // not installed and prints `error: failed to start ability.` A
+          // cold-start capture of an app that never launched is a trace of
+          // whatever was on screen.
+          if (aaStartFailed(result)) {
             throw new OhosPerfError(
               `aa start failed for ${pidApp!}/${opts.coldStart.ability}` +
-                ` (exit ${result.code})`,
+                ` (exit ${result.code}): ${result.stdout.trim() || result.stderr.trim()}`,
               { code: 'COLLECT_COLD_START_FAILED' },
             );
           }

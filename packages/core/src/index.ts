@@ -32,6 +32,7 @@ export type { Env, HdcOptions, HdcTarget, HdcResult } from './transport/hdc';
 
 // Device and capabilities
 export { connect, Device, HIPROFILER_PLUGIN_NAMES } from './device/device';
+export { aaStartFailed } from './device/launch';
 export type {
   ConnectOptions,
   CollectOptions,

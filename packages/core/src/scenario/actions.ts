@@ -18,6 +18,7 @@
  */
 
 import type { Gesture, GestureResult } from '../device/gesture';
+import { aaStartFailed } from '../device/launch';
 import { OhosPerfError } from '../errors';
 import type { UiNode } from '../query/ui';
 import { resolveSelector, type Selector } from './selector';
@@ -294,8 +295,19 @@ export async function executeAction(
   context?: ActionContext,
 ): Promise<{ output?: string }> {
   switch (action.kind) {
-    case 'launch':
-      return runAa(device, `aa start -a ${action.ability} -b ${app}`);
+    case 'launch': {
+      const result = await device.shell(`aa start -a ${action.ability} -b ${app}`);
+      // `aa start` exits 0 for a bundle that is not installed; see
+      // `aaStartFailed`. A scenario that records a start that never happened
+      // puts every later step on the wrong screen with nothing saying why.
+      if (aaStartFailed(result)) {
+        throw new OhosPerfError(
+          `aa start failed (exit ${result.code}): ${detail(result)}`,
+          { code: 'SCENARIO_ACTION_FAILED' },
+        );
+      }
+      return { output: result.stdout.trim() };
+    }
     case 'forceStop':
       return runAa(device, `aa force-stop ${app}`);
     case 'wait':

@@ -60,6 +60,24 @@ describe('executeAction', () => {
       .rejects.toThrow(/aa start.*exit 2.*StartAbility failed/);
   });
 
+  it('fails on a launch the device refused with exit 0', async () => {
+    // Measured: `aa start` for a bundle that is not installed exits 0 and
+    // prints `error: failed to start ability.` A scenario that treats that as
+    // a start puts every later step on the wrong screen.
+    const device = fakeDevice({
+      async shell() {
+        return {
+          stdout:
+            'error: failed to start ability.\n' +
+            'Error Code:10104001  Error Message:The specified ability does not exist\n',
+          stderr: '', code: 0,
+        };
+      },
+    });
+    await expect(executeAction(device, 'com.a', { kind: 'launch', ability: 'X' }))
+      .rejects.toThrow(/aa start.*does not exist/);
+  });
+
   it('fails on a non-zero aa force-stop exit', async () => {
     const device = fakeDevice({
       async shell() { return { stdout: '', stderr: '', code: 1 }; },

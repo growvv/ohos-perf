@@ -43,6 +43,8 @@ interface FakeOptions {
   screens?: UiNode[][];
   failIngest?: boolean;
   writeScene?: boolean;
+  /** Override what `aa start` prints, e.g. the device's "not installed" line. */
+  startOutput?: string;
 }
 
 function fakeDevice(opts: FakeOptions = {}) {
@@ -57,6 +59,9 @@ function fakeDevice(opts: FakeOptions = {}) {
     async shell(cmd: string) {
       shellCalls.push(cmd);
       if (cmd.startsWith('pidof ')) return { stdout: '4242\n', stderr: '', code: 0 };
+      if (cmd.startsWith('aa start ')) {
+        return { stdout: opts.startOutput ?? 'start ability successfully.\n', stderr: '', code: 0 };
+      }
       // A real device answers a `uinput -K` burst with one confirmation per
       // key; the runner requires every one of them.
       if (cmd.startsWith('uinput -K')) {
@@ -173,6 +178,31 @@ describe('WorkloadRunner', () => {
     expect(result.launch.actions.map((action) => action.op)).toEqual(['stop', 'launch']);
     expect(device.shellCalls).toContain('aa force-stop com.example.app');
     expect(device.shellCalls).toContain('aa start -a EntryAbility -b com.example.app');
+  });
+
+  it('reports a launch that started nothing as failed, though aa exits 0', async () => {
+    // Measured on the emulator: `aa start` for a bundle that is not installed
+    // exits 0 and prints `error: failed to start ability.` /
+    // `The specified ability does not exist`. The cloudmusic cases were
+    // recorded as a setup wait that matched nothing, which points a reader at
+    // the plan; the app was never there.
+    const device = fakeDevice({
+      startOutput:
+        'error: failed to start ability.\n' +
+        'Error Code:10104001  Error Message:The specified ability does not exist\n' +
+        'Error cause: The specified Ability is not installed\n',
+    });
+    const plan = parseWorkloadPlan({
+      bundle: 'cc.chenlvin.cloudmusic', ability: 'EntryAbility',
+      measured: [{ op: 'pause', seconds: 1 }],
+    });
+    const result = await runner(device).run(plan);
+
+    expect(result.status).toBe('failed');
+    expect(result.launch.ok).toBe(false);
+    expect(result.launch.error).toMatch(/does not exist|not installed/);
+    // The run never reached the capture: there is nothing to trace.
+    expect(device.collects).toEqual([]);
   });
 
   it('starts no capture when setup fails', async () => {

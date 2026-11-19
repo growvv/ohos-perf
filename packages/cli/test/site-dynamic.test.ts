@@ -73,6 +73,29 @@ describe('site-dynamic', () => {
     expect((cases[0]!.stoppedAt as { phase: string }).phase).toBe('measured');
   });
 
+  it('names an overrun as the measured phase, and carries its reason', () => {
+    // `sepweather_font_register_per_page` ran its own `repeat x40` for 322 s
+    // inside a 30 s window: every phase succeeded, and the run failed on the
+    // window. Calling that "no phase" leaves the table saying `failed` with no
+    // reason, and calling it `verify` points at a step that passed.
+    const { cases } = generate([
+      record({
+        case: 'overrun',
+        captured: true,
+        metrics: 83,
+        workload: {
+          setup: { ok: true, actions: [] },
+          measured: { ok: true, actions: [] },
+          verify: { ok: true, actions: [] },
+          error: 'workload took 322.23s, exceeding the 30.00s capture window',
+        },
+      }),
+    ]);
+    const stopped = cases[0]!.stoppedAt as { phase: string; error: string } | null;
+    expect(stopped?.phase).toBe('measured');
+    expect(stopped?.error).toContain('exceeding the 30.00s capture window');
+  });
+
   it('counts a scene as captured only when it was analyzed', () => {
     // A scene on disk is not an analysis. `run.mjs` before 0.33.2 wrote the
     // directory for a measured failure and never analyzed it, so a record
@@ -104,7 +127,8 @@ describe('site-dynamic', () => {
       expect(typeof item.id).toBe('string');
       expect(item.status === 'ok' || item.status === 'failed').toBe(true);
       // The table's two claims: a captured row carries counts, and a stopped
-      // row names a phase.
+      // row names a phase. A run that overran its own window is `measured`:
+      // the workload was inside it when it took too long.
       if (item.captured) expect(typeof item.metrics).toBe('number');
       if (item.status !== 'ok') expect(['setup', 'measured', 'verify']).toContain(item.stoppedAt?.phase);
     }

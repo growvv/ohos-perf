@@ -298,7 +298,7 @@ describe('CollectSession.ingest', () => {
  * starts both in the same tick, so the barrier releases.
  */
 function collectHarness(
-  opts: { failHitrace?: boolean; concurrent?: boolean; pidof?: string } = {},
+  opts: { failHitrace?: boolean; concurrent?: boolean; pidof?: string; startOutput?: string } = {},
 ) {
   const commands: string[] = [];
   const received: Array<{ durationMs: number }> = [];
@@ -309,6 +309,9 @@ function collectHarness(
     shell: async (_target: string, cmd: string) => {
       commands.push(cmd);
       if (cmd === 'cat /proc/uptime') return { stdout: '1234.56 9999.00\n', stderr: '', code: 0 };
+      if (cmd.startsWith('aa start ')) {
+        return { stdout: opts.startOutput ?? '', stderr: '', code: 0 };
+      }
       if (cmd.startsWith('pidof ')) {
         return {
           stdout: opts.pidof ?? '',
@@ -421,6 +424,24 @@ describe('CollectSession.ingest with procfs and cold start', () => {
       }).then((s) => s.ingest());
       scene.close();
       expect(h.commands).toContain('aa start -a EntryAbility -b com.demo');
+    } finally {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it('fails a cold start the device refused with exit 0', async () => {
+    // Measured: `aa start` for a bundle that is not installed exits 0 and
+    // prints `error: failed to start ability.` Capturing a cold start of an
+    // app that never launched traces whatever was on screen instead.
+    const root = mkdtempSync(join(tmpdir(), 'ohosperf-collect-cold-refused-'));
+    try {
+      const h = collectHarness({ startOutput: 'error: failed to start ability.\n' });
+      const d = fakeDevice(h);
+      const session = await d.collect({
+        app: 'com.demo', durationMs: 1000, sceneRoot: root,
+        coldStart: { ability: 'EntryAbility' },
+      });
+      await expect(session.ingest()).rejects.toMatchObject({ code: 'COLLECT_COLD_START_FAILED' });
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

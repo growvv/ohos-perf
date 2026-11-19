@@ -14,6 +14,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Gesture, GestureResult } from '../device/gesture';
+import { aaStartFailed } from '../device/launch';
 import { OhosPerfError } from '../errors';
 import { readSceneMetadata, writeSceneMetadata } from '../ingest/metadata';
 import { createSceneLayout } from '../ingest/scene';
@@ -384,9 +385,16 @@ export class WorkloadRunner {
       case 'launch': {
         const flags = action.flags === undefined ? '' : ` -f ${action.flags}`;
         const result = await this.device.shell(`aa start -a ${this.ability} -b ${this.bundle}${flags}`);
-        if (result.code !== 0) {
+        // The exit code is not the signal: `aa start` for a bundle that is not
+        // installed exits 0 and prints `error: failed to start ability.` A
+        // runner that trusts the code records "started" for an app that was
+        // never there, and the plan's first `wait` then fails and blames the
+        // plan. See `aaStartFailed`.
+        if (aaStartFailed(result)) {
+          const output = `${result.stdout}\n${result.stderr}`;
           throw new OhosPerfError(
-            `aa start failed (exit ${result.code})`, { code: 'WORKLOAD_LAUNCH_FAILED' },
+            `aa start failed (exit ${result.code}): ${output.trim().slice(0, 300)}`,
+            { code: 'WORKLOAD_LAUNCH_FAILED' },
           );
         }
         return 'started';

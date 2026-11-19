@@ -1,9 +1,9 @@
 {
   "summary": {
     "cases": 21,
-    "ranClean": 5,
-    "captured": 5,
-    "critical": 3
+    "ranClean": 6,
+    "captured": 14,
+    "critical": 5
   },
   "cases": [
     {
@@ -13,41 +13,37 @@
       "captured": true,
       "metrics": 83,
       "degraded": 12,
-      "evidence": 17,
-      "verdict": "warn: 被频繁唤醒但立即进入等待，典型无效调度。 (and 30 other observations, 15 of them gaps in the capture)",
-      "bytes": 18289408,
+      "evidence": 14,
+      "verdict": "warn: ample.nanvision frame at 1426.3ms flagged late by platform (dur 14.7ms, vsync 39672) (and 28 other observations, 16 of them gaps in the capture)",
+      "bytes": 17016825,
       "stoppedAt": null
     },
     {
       "id": "browser_history_delete_no_transaction",
-      "status": "failed",
+      "status": "ok",
       "windowSeconds": 20,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 1806,
-      "stoppedAt": {
-        "phase": "setup",
-        "description": "tap text=\"清除浏览记录\"",
-        "error": "UI target not found: text=\"清除浏览记录\" (0 of 67 nodes matched)"
-      }
+      "captured": true,
+      "metrics": 81,
+      "degraded": 13,
+      "evidence": 20,
+      "verdict": "warn: com.example.nanvision frame at vsync 39775 drew nothing (flag 2, dur 0.0ms) and no buffer was submitted for it (and 34 other observations, 16 of them gaps in the capture)",
+      "bytes": 21383383,
+      "stoppedAt": null
     },
     {
       "id": "browser_history_list_foreach",
       "status": "failed",
       "windowSeconds": 20,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 237199334,
+      "captured": true,
+      "metrics": 83,
+      "degraded": 12,
+      "evidence": 16,
+      "verdict": "warn: ample.nanvision frame at 129.8ms flagged late by platform (dur 17.8ms, vsync 39819) (and 30 other observations, 16 of them gaps in the capture)",
+      "bytes": 40769945,
       "stoppedAt": {
         "phase": "measured",
         "description": "wait text=\"Article\"",
-        "error": "UI target not found: text=\"Article\" (0 of 72 nodes matched)"
+        "error": "UI target not found: text=\"Article\" (0 of 67 nodes matched)"
       }
     },
     {
@@ -63,7 +59,7 @@
       "stoppedAt": {
         "phase": "setup",
         "description": "wait text=\"发现\"",
-        "error": "UI target not found: text=\"发现\" (0 of 72 nodes matched)"
+        "error": "UI target not found: text=\"发现\" (0 of 67 nodes matched)"
       }
     },
     {
@@ -79,19 +75,19 @@
       "stoppedAt": {
         "phase": "setup",
         "description": "wait text=\"音乐云盘\"",
-        "error": "UI target not found: text=\"音乐云盘\" (0 of 72 nodes matched)"
+        "error": "UI target not found: text=\"音乐云盘\" (0 of 67 nodes matched)"
       }
     },
     {
       "id": "interviewapp_search_history_unbounded",
       "status": "failed",
       "windowSeconds": 900,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 206528477,
+      "captured": true,
+      "metrics": 83,
+      "degraded": 12,
+      "evidence": 38,
+      "verdict": "warn: ohos.sceneboard frame at 789881.7ms flagged late by platform (dur 3.4ms, vsync 39986) (and 52 other observations, 16 of them gaps in the capture)",
+      "bytes": 829705783,
       "stoppedAt": {
         "phase": "measured",
         "description": "wait hint=\"请输入关键词\"",
@@ -105,9 +101,9 @@
       "captured": true,
       "metrics": 83,
       "degraded": 12,
-      "evidence": 21,
-      "verdict": "critical: low-frequency VSync period: 3 intervals, 5.0Hz average, 596.7ms long (vsync 14610..14616, severity high) (and 35 other observations, 16 of them gaps in the capture)",
-      "bytes": 142155722,
+      "evidence": 28,
+      "verdict": "critical: low-frequency VSync period: 3 intervals, 4.9Hz average, 615.3ms long (vsync 40245..40251, severity high) (and 41 other observations, 15 of them gaps in the capture)",
+      "bytes": 101953697,
       "stoppedAt": null
     },
     {
@@ -133,25 +129,25 @@
       "captured": true,
       "metrics": 83,
       "degraded": 12,
-      "evidence": 55,
-      "verdict": "critical: low-frequency VSync period: 4 intervals, 6.6Hz average, 607.8ms long (vsync 15003..15011, severity high) (and 69 other observations, 16 of them gaps in the capture)",
-      "bytes": 136276043,
+      "evidence": 90,
+      "verdict": "critical: low-frequency VSync period: 3 intervals, 1.1Hz average, 2661.0ms long (vsync 40605..40615, severity high) (and 104 other observations, 16 of them gaps in the capture)",
+      "bytes": 185693949,
       "stoppedAt": null
     },
     {
       "id": "sepweather_font_register_per_page",
       "status": "failed",
       "windowSeconds": 30,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 109663243,
+      "captured": true,
+      "metrics": 83,
+      "degraded": 12,
+      "evidence": 271,
+      "verdict": "critical: low-frequency VSync period: 5 intervals, 16.1Hz average, 310.9ms long (vsync 41326..41344, severity high) (and 285 other observations, 16 of them gaps in the capture)",
+      "bytes": 111445959,
       "stoppedAt": {
         "phase": "measured",
         "description": null,
-        "error": "workload took 315.16s, exceeding the 30.00s capture window"
+        "error": "workload took 322.23s, exceeding the 30.00s capture window"
       }
     },
     {
@@ -206,48 +202,48 @@
       "id": "sheafreader_refresh_feeds_sequential",
       "status": "failed",
       "windowSeconds": 60,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 105447443,
+      "captured": true,
+      "metrics": 83,
+      "degraded": 12,
+      "evidence": 20,
+      "verdict": "warn: .sheafreader.hm frame at 18.9ms flagged late by platform (dur 86.2ms, vsync 45830) (and 34 other observations, 16 of them gaps in the capture)",
+      "bytes": 161444046,
       "stoppedAt": {
         "phase": "measured",
         "description": "wait type=\"Button\", bounds=\"[195,326][296,427]\", enabled=\"true\"",
-        "error": "UI target not found: type=\"Button\", bounds=\"[195,326][296,427]\", enabled=\"true\" (0 of 59 nodes matched)"
+        "error": "UI target not found: type=\"Button\", bounds=\"[195,326][296,427]\", enabled=\"true\" (0 of 116 nodes matched)"
       }
     },
     {
       "id": "sheafreader_unread_counts_n_plus_1",
       "status": "failed",
       "windowSeconds": 120,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 115112554,
+      "captured": true,
+      "metrics": 65,
+      "degraded": 12,
+      "evidence": 6,
+      "verdict": "warn: ohos.sceneboard frame at 0.0ms flagged late by platform (dur 10.7ms, vsync 45909) (and 23 other observations, 19 of them gaps in the capture)",
+      "bytes": 104139021,
       "stoppedAt": {
         "phase": "verify",
         "description": "wait text=\"Journal 1 article 1\"",
-        "error": "UI target not found: text=\"Journal 1 article 1\" (0 of 59 nodes matched)"
+        "error": "UI target not found: text=\"Journal 1 article 1\" (0 of 116 nodes matched)"
       }
     },
     {
       "id": "wanharmony_persisted_home_list_growth",
       "status": "failed",
       "windowSeconds": 60,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 495167067,
+      "captured": true,
+      "metrics": 81,
+      "degraded": 12,
+      "evidence": 1456,
+      "verdict": "critical: low-frequency VSync period: 3 intervals, 6.8Hz average, 440.3ms long (vsync 47805..47812, severity high) (and 1470 other observations, 16 of them gaps in the capture)",
+      "bytes": 470555092,
       "stoppedAt": {
         "phase": "measured",
         "description": null,
-        "error": "workload took 100.83s, exceeding the 60.00s capture window"
+        "error": "workload took 66.42s, exceeding the 60.00s capture window"
       }
     },
     {
@@ -259,27 +255,27 @@
       "degraded": null,
       "evidence": null,
       "verdict": null,
-      "bytes": 1841,
+      "bytes": 1614,
       "stoppedAt": {
         "phase": "setup",
         "description": "wait text=\"深圳市\"",
-        "error": "uitest dumpLayout did not report \"DumpLayout saved\" (exit 0: DumpLayout failed:Wait for subscribe uitest.broadcast.command.reply timeout)"
+        "error": "UI target not found: text=\"深圳市\" (0 of 44 nodes matched)"
       }
     },
     {
       "id": "weatherassistant_remote_weather_icons",
       "status": "failed",
       "windowSeconds": 25,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 21160957,
+      "captured": true,
+      "metrics": 65,
+      "degraded": 12,
+      "evidence": 4,
+      "verdict": "info: RS UnMarshRSTransactionData: 1 (and 21 other observations, 19 of them gaps in the capture)",
+      "bytes": 19405663,
       "stoppedAt": {
         "phase": "verify",
         "description": "wait text=\"深圳市\"",
-        "error": "uitest produced no output at /data/local/tmp/ohosperf_ui.json (file is empty); ls -l output: -rw-r--r-- 1 shell shell 0 2026-11-19 18:55 /data/local/tmp/ohosperf_ui.json"
+        "error": "UI target not found: text=\"深圳市\" (0 of 44 nodes matched)"
       }
     },
     {
@@ -289,21 +285,21 @@
       "captured": true,
       "metrics": 81,
       "degraded": 13,
-      "evidence": 704,
-      "verdict": "warn: com.example.myapplication frame at vsync 28391 drew nothing (flag 2, dur 0.1ms) and no buffer was submitted for it (and 718 other observations, 16 of them gaps in the capture)",
-      "bytes": 311003487,
+      "evidence": 700,
+      "verdict": "warn: com.example.myapplication frame at vsync 51025 drew nothing (flag 2, dur 0.3ms) and no buffer was submitted for it (and 714 other observations, 16 of them gaps in the capture)",
+      "bytes": 317126543,
       "stoppedAt": null
     },
     {
       "id": "ytmusic_history_json_parse_per_row",
       "status": "failed",
       "windowSeconds": 60,
-      "captured": false,
-      "metrics": null,
-      "degraded": null,
-      "evidence": null,
-      "verdict": null,
-      "bytes": 158486853,
+      "captured": true,
+      "metrics": 83,
+      "degraded": 13,
+      "evidence": 15,
+      "verdict": "warn: com.example.myapplication frame at vsync 52528 drew nothing (flag 2, dur 0.2ms) and no buffer was submitted for it (and 29 other observations, 16 of them gaps in the capture)",
+      "bytes": 157000897,
       "stoppedAt": {
         "phase": "measured",
         "description": "wait text=\"Listening Track 1000\"",
@@ -317,9 +313,9 @@
       "captured": true,
       "metrics": 81,
       "degraded": 12,
-      "evidence": 121,
-      "verdict": "critical: low-frequency VSync period: 5 intervals, 3.0Hz average, 1687.8ms long (vsync 29409..29419, severity high) (and 135 other observations, 16 of them gaps in the capture)",
-      "bytes": 119367854,
+      "evidence": 142,
+      "verdict": "critical: low-frequency VSync period: 5 intervals, 2.9Hz average, 1746.8ms long (vsync 52852..52862, severity high) (and 156 other observations, 16 of them gaps in the capture)",
+      "bytes": 115868476,
       "stoppedAt": null
     }
   ]

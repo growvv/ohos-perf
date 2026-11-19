@@ -282,37 +282,52 @@ commands):
 | `build.py` — ohpm install + `hvigorw assembleHap` | 21/21 |
 | `sign.mjs` — debug profile + HAP signature | 21/21 |
 | `install.mjs` — `bm install` | 19/21 |
-| `run.mjs` — workload, capture, `analyze`, `root-cause --offline` | 5/21 ran clean, 6/21 captured |
+| `run.mjs` — workload, capture, `analyze`, `root-cause --offline` | 6/21 ran clean, 14/21 captured |
 
 The two uninstallable cases are both cloudmusic, refused with
 `grant request permissions failed, PermissionName:
 ohos.permission.SYSTEM_FLOAT_WINDOW`: a debug provisioning profile cannot grant
 that permission, and the app asks for it in its manifest.
 
-Five of the 21 cases ran their own workload to completion and were analyzed:
+Six of the 21 cases ran their own workload to completion and were analyzed:
 
 | case | its own window | ran | `measured` phase | metrics | evidence | root cause |
 | --- | --- | --- | --- | --- | --- | --- |
-| `browser_eager_history_load` | 15 s | 15 s | 1.8 s | 83 (12 degraded) | 17 | warn — a thread woken often and re-sleeping |
-| `jingmo_dataset_import_no_transaction` | 120 s | 120 s | 5.2 s | 83 (12) | 21 | **critical** — a 597 ms VSync gap |
-| `jingmo_sync_page_reimport` | 180 s | 120 s | 23.7 s | 83 (12) | 55 | **critical** — 6 gaps, the longest 4.6 s |
-| `ytmusic_current_playing_timeupdate` | 70 s | 70 s | 60.0 s | 81 (13) | 704 | warn — 697 frames drew nothing |
-| `ytmusic_search_no_debounce` | 60 s | 60 s | 27.7 s | 81 (12) | 121 | **critical** — 11 gaps, the longest 1.7 s |
+| `browser_eager_history_load` | 15 s | 15 s | 2.0 s | 83 (12 degraded) | 14 | warn — a frame flagged late by the platform |
+| `browser_history_delete_no_transaction` | 20 s | 20 s | 2.1 s | 81 (13) | 20 | warn — a frame drew nothing |
+| `jingmo_dataset_import_no_transaction` | 120 s | 120 s | 4.7 s | 83 (12) | 28 | **critical** — a 615 ms VSync gap |
+| `jingmo_sync_page_reimport` | 180 s | 120 s | 23.4 s | 83 (12) | 90 | **critical** — a 2.7 s VSync gap |
+| `ytmusic_current_playing_timeupdate` | 70 s | 70 s | 60.0 s | 81 (13) | 700 | warn — 697 frames drew nothing |
+| `ytmusic_search_no_debounce` | 60 s | 60 s | 27.0 s | 81 (12) | 142 | **critical** — a 1.7 s VSync gap |
 
-A sixth captured without running clean: `weatherassistant_remote_weather_icons`
-fails in `verify` (its 深圳市 wait, after the window), and the 25 s scene it
-produced is complete — 65 metrics, 12 degraded, 4 evidence items, 19.7 MB. It
-is analyzed and recorded as `captured: true` with the failing phase named;
-`run.mjs` used to discard every non-`ok` record's scene, which threw this one
-away. Its content is the app's launch screen, not the forecast the plan meant
-to reach, so it says something about startup and nothing about the weather
-list.
+`browser_history_delete_no_transaction` and `jingmo_sync_page_reimport` joined
+the clean set in the 0.33.5 sweep. Neither is a code change: the first needs a
+history entry the previous sweep's own `browser_eager_history_load` had not yet
+produced, and the second prepares its own data (see below). Every case is
+re-measured rather than assumed, so which of the 21 run is data that moves
+between sweeps.
+
+Eight more captured without running clean, and their scenes are complete:
+`browser_history_list_foreach` (measured), `interviewapp_search_history_unbounded`
+(measured), `sepweather_font_register_per_page` (overran its window),
+`sheafreader_refresh_feeds_sequential` (measured),
+`sheafreader_unread_counts_n_plus_1` (verify),
+`wanharmony_persisted_home_list_growth` (overran its window),
+`weatherassistant_remote_weather_icons` (verify), and
+`ytmusic_history_json_parse_per_row` (measured). A failure after the capture
+window opened leaves a usable trace, so each is analyzed and recorded as
+`captured: true` with the failing phase named; `run.mjs` used to discard every
+non-`ok` record's scene. The content is what the app showed before its plan
+gave up — the launch screen for `weatherassistant_remote_weather_icons`, so it
+says something about startup and nothing about the weather list.
 
 Each produced an ordinary scene — `trace.htrace`, `trace.db`, `scene.json`,
 `workload.json` — and `analyze` and `root-cause --offline` ran on it unchanged.
 The evidence is of the kinds the emulator can actually produce: `jank`,
 `empty_frame`, `vsync_anomaly`, `gc_pressure`, `fault_pattern`,
-`binder_hotspot`, `startup`. The scenes are 17–297 MB each.
+`binder_hotspot`, `startup`. The scenes are 17–830 MB each; the largest is
+`interviewapp_search_history_unbounded`, whose 900 s window ran to its end
+after the `measured` phase failed at 123 s.
 
 Every degraded metric names its reason in `degraded.reason`; they fall into two
 groups and the difference matters:
@@ -337,19 +352,18 @@ selector and how many nodes were on screen — measured, not inferred:
 
 | case | failed at | why |
 | --- | --- | --- |
-| `browser_history_delete_no_transaction` | setup `text="清除浏览记录"` | needs history entries to delete |
 | `browser_history_list_foreach` | measured `text="Article"` | needs a history page to scroll |
 | `jingmo_random_poem_orderby_random` | setup `text="山水诗 [1-9][0-9]*"` | needs imported poetry |
 | `sheafreader_article_list_foreach` | setup `text="300 (?:篇\|articles)"` | needs 300 articles imported |
 | `sheafreader_extract_tag_tolowercase` | setup `text="Journal 1 article 1"` | needs feeds subscribed |
 | `sheafreader_insert_duplicate_exception` | setup `text="Journal 1 article 1"` | needs feeds subscribed |
 | `sheafreader_refresh_feeds_sequential` | measured a `Button` by exact bounds | needs a subscribed feed to refresh |
-| `sheafreader_unread_counts_n_plus_1` | measured `text="Journal 1 article 1"` | needs feeds subscribed |
+| `sheafreader_unread_counts_n_plus_1` | verify `text="Journal 1 article 1"` | needs feeds subscribed; captured and analyzed anyway |
 | `interviewapp_search_history_unbounded` | measured `hint="请输入关键词"` | needs search history |
 | `ytmusic_history_json_parse_per_row` | measured `text="Listening Track 1000"` | needs 1 000 history entries |
 | `weatherassistant_http_session_leak` | setup `text="深圳市"` | needs a saved city |
 | `weatherassistant_remote_weather_icons` | verify `text="深圳市"` | needs a saved city; captured and analyzed anyway, see above |
-| `cloudmusic_*` (×2) | install | permission refused, see above |
+| `cloudmusic_*` (×2) | setup `text="发现"` / `text="音乐云盘"` | the app starts but its cloud pages never appear without an account; captured nothing |
 
 `jingmo_sync_page_reimport` **did run**, and it is the one case whose
 own `setup` prepares the data it needs: it types the data-source URL into the
@@ -398,7 +412,7 @@ Re-running `analyze` on the same trace turned the analyzers that had reported
 report what they actually found; the ones still degraded are degraded for the
 capture reasons listed above, not for want of a process.
 
-The other three came from diffing our selector matcher against
+The first three came from diffing our selector matcher against
 `workload_driver.py` line by line, and each is pinned by a test that failed
 first:
 
@@ -408,12 +422,19 @@ first:
 | the `enabled` selector | compares `str(node.get('enabled', ''))` — absent is `""` | compared a synthesized `'false'` |
 | `bundleName` | inherits it down the tree (`UI.nodes(layout, inherited_bundle)`) | compared the raw field, so an unmarked node in any window matched |
 | `scroll_to`'s swipe | sends the `1000` velocity | omitted it, like the plain swipe did before 0.33.1 |
+| `type_keys` | one `uinput -K` burst for the word, `-i <ms>` between keys, a release confirmation per key | one `inputText` per character, so each key was its own command |
 
 The first two made selectors miss nodes the device taps; the third made a
-selector able to tap a node in another app's window. None of them changed an
-outcome on the 21 cases — the same five run and the same twelve stop at the
+selector able to tap a node in another app's window; the last made the one
+case that measures keystroke cost measure something else. None of them changed
+an outcome on the 21 cases — the same five run and the same twelve stop at the
 same selector — which is exactly why they needed a line-by-line diff and a
 test rather than a bench score to find.
+
+`type_keys` was the divergence a single-file read misses: the drivers ship in
+three variants, and only the two weatherassistant cases and
+`ytmusic_search_no_debounce` carry that op. Group the files by hash before
+comparing them.
 
 ## What this does not measure
 
