@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.33.3 — 2026-11-19
+
+**An unmarked node belongs to the window that contains it.**
+
+The published driver's `UI.nodes(layout, inherited_bundle)` gives every node
+the `bundleName` of its nearest ancestor that carries one. We compared the raw
+field, so a node the dump left unmarked — a launcher card, a system dialog —
+matched every plan and could be tapped. `inheritedBundles` walks the pre-order
+list with a depth-indexed stack and the matcher uses the inherited value.
+
+Found in the same line-by-line diff as the 0.33.2 selectors; it is the one that
+could act on the wrong app rather than merely miss a target.
+
 ## 0.33.2 — 2026-11-19
 
 **A selector now matches the way the published driver matches, and the bench

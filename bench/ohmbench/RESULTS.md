@@ -378,9 +378,10 @@ is the emulator's `dumpLayout` latency, which also accounts for Sepweather's
 
 ### What the dynamic run found in this tool
 
-One genuine defect, and it is the kind the source axis could not surface:
-**every app-attributed analyzer reported `no_data` on a trace full of the app.**
-Two causes, both measured:
+Four fidelity defects, and they are the kind the source axis could not
+surface. The first is about the capture itself: **every app-attributed
+analyzer reported `no_data` on a trace full of the app.** Two causes, both
+measured:
 
 1. The trace stores `process.name` as the kernel's `comm`, capped at 15
    characters — `com.hefengbao.jingmo.hw` is `ngbao.jingmo.hw` — so a scene
@@ -397,6 +398,23 @@ Re-running `analyze` on the same trace turned the analyzers that had reported
 report what they actually found; the ones still degraded are degraded for the
 capture reasons listed above, not for want of a process.
 
+The other three came from diffing our selector matcher against
+`workload_driver.py` line by line, and each is pinned by a test that failed
+first:
+
+| divergence | what the reference does | what we did |
+| --- | --- | --- |
+| an absent `enabled` | skips a node only for an explicit `enabled="false"` | skipped every node whose flag was false, which `flattenUiTree` sets for an absent attribute |
+| the `enabled` selector | compares `str(node.get('enabled', ''))` — absent is `""` | compared a synthesized `'false'` |
+| `bundleName` | inherits it down the tree (`UI.nodes(layout, inherited_bundle)`) | compared the raw field, so an unmarked node in any window matched |
+| `scroll_to`'s swipe | sends the `1000` velocity | omitted it, like the plain swipe did before 0.33.1 |
+
+The first two made selectors miss nodes the device taps; the third made a
+selector able to tap a node in another app's window. None of them changed an
+outcome on the 21 cases — the same five run and the same twelve stop at the
+same selector — which is exactly why they needed a line-by-line diff and a
+test rather than a bench score to find.
+
 ## What this does not measure
 
 - **A physical device.** OpenHarmony debug certificates are rejected by the
@@ -411,4 +429,12 @@ capture reasons listed above, not for want of a process.
   from OhmBench's ground truth to an expected trace signature, so no score is
   claimed for this axis. What is claimed is that the pipeline runs end to end
   and that a reader can see which cases it could not drive and why.
+- **The oracle metric itself.** Every included case's `performance_oracle` is
+  `hiperf_instructions` (except `ytmusic_search_no_debounce`, which counts
+  successful search response-body bytes), compared as `unfixed ≥ 1.2 × fixed`
+  over three rounds per variant. The emulator cannot run `hiperf record`
+  (`create mmap fail`, Operation not permitted), so the one number the
+  benchmark would accept as a verdict is the one number this device cannot
+  produce. Running the fixed and unfixed variants against that oracle needs a
+  device with a working `hiperf`; the emulator is not that device.
 
