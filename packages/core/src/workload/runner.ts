@@ -96,6 +96,15 @@ export interface WorkloadRunOptions {
 const POLL_MS = 250;
 const DEFAULT_TIMEOUT_S = 15;
 const DEFAULT_SWIPE_INTERVAL_S = 0.4;
+/**
+ * The velocity the reference driver passes as `swipe`'s fifth argument.
+ *
+ * It is not a duration: `uitest uiInput swipe` interprets the number as a
+ * velocity, and without it the device picks its own. Measured on the emulator
+ * on 2026-11-19: 5.15 s per swipe without the argument against 3.21 s with
+ * it, which is enough to push a 12-swipe plan past its own 60 s window.
+ */
+const SWIPE_VELOCITY = 1000;
 /** A phase that did not run: absent outcomes, and nothing to report. */
 const EMPTY_PHASE: WorkloadPhaseResult = Object.freeze({
   actions: [], ok: true, elapsedMs: 0,
@@ -399,7 +408,10 @@ export class WorkloadRunner {
         let to = Math.round(bounds.bottom * 0.3);
         if ((action.direction ?? 'up') === 'down') [from, to] = [to, from];
         for (let index = 0; index < (action.count ?? 1); index++) {
-          await this.device.gesture({ action: 'swipe', fromX: x, fromY: from, toX: x, toY: to });
+          await this.device.gesture({
+            action: 'swipe', fromX: x, fromY: from, toX: x, toY: to,
+            velocity: SWIPE_VELOCITY,
+          });
           await this.sleep(Math.round((action.interval_s ?? DEFAULT_SWIPE_INTERVAL_S) * 1000));
         }
         return `swiped x${action.count ?? 1}`;

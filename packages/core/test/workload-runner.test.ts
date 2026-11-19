@@ -250,4 +250,35 @@ describe('WorkloadRunner', () => {
     expect(result.status).toBe('failed');
     expect(result.error).toMatch(/typed value does not match/);
   });
+
+  it('swipes at the velocity the published driver uses', async () => {
+    // The reference driver's swipe is `uitest uiInput swipe x y1 x y2 1000`,
+    // and the fifth argument is a velocity, not a duration. Without it the
+    // device picks its own speed: measured on the emulator, 5.15 s per swipe
+    // against 3.21 s with the argument, which is what pushed a 12-swipe plan
+    // past its own 60 s window.
+    const device = fakeDevice();
+    const plan = parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{ op: 'swipe', count: 2 }],
+    });
+    const result = await runner(device).run(plan);
+    expect(result.status).toBe('ok');
+    expect(device.gestures).toEqual([
+      { action: 'swipe', fromX: 540, fromY: 1825, toX: 540, toY: 702, velocity: 1000 },
+      { action: 'swipe', fromX: 540, fromY: 1825, toX: 540, toY: 702, velocity: 1000 },
+    ]);
+  });
+
+  it('reverses the swipe for a down direction', async () => {
+    const device = fakeDevice();
+    const plan = parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{ op: 'swipe', direction: 'down' }],
+    });
+    await runner(device).run(plan);
+    expect(device.gestures).toEqual([
+      { action: 'swipe', fromX: 540, fromY: 702, toX: 540, toY: 1825, velocity: 1000 },
+    ]);
+  });
 });
