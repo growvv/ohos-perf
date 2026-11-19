@@ -490,31 +490,62 @@ export class WorkloadRunner {
     return `text ${JSON.stringify(value)}`;
   }
 
+  /**
+   * The published driver's `type_keys`: one `uinput -K` for the whole word.
+   *
+   * `workload_driver.py` accepts `[a-z]{1,100}` and an interval in
+   * 1..15000 ms, clicks the field, then sends every key in a single device
+   * command with `-i <ms>` between them, and requires the device to confirm
+   * each release ("you raised the key N"). Typing one `inputText` per
+   * character is a different workload — each call is its own command, so the
+   * interval the plan asks for is not the interval the app sees — and the
+   * burst is what the search case measures.
+   */
   private async typeKeys(selector: WorkloadSelector, value: string, intervalMs: number): Promise<string> {
-    let node = await this.find(selector, DEFAULT_TIMEOUT_S * 1000);
+    if (!/^[a-z]{1,100}$/.test(value)) {
+      throw new OhosPerfError(
+        `type_keys value must be 1-100 lowercase letters, got ${JSON.stringify(value)}`,
+        { code: 'WORKLOAD_TYPING_INVALID' },
+      );
+    }
+    if (!Number.isInteger(intervalMs) || intervalMs < 1 || intervalMs > 15_000) {
+      throw new OhosPerfError(
+        `type_keys interval_ms must be a whole number in 1..15000, got ${intervalMs}`,
+        { code: 'WORKLOAD_TYPING_INVALID' },
+      );
+    }
+    const node = await this.find(selector, DEFAULT_TIMEOUT_S * 1000);
     if (node.text !== '') {
-      const { x, y } = centerOf(node);
-      await this.device.gesture({ action: 'click', x, y });
-      await this.shellChecked('uitest uiInput keyEvent 2072 2017');
-      await this.shellChecked('uitest uiInput keyEvent 2055');
-      node = await this.find(selector, DEFAULT_TIMEOUT_S * 1000);
-      if (node.text !== '') {
+      throw new OhosPerfError(
+        `type_keys requires an empty field, found ${JSON.stringify(node.text)}`,
+        { code: 'WORKLOAD_TYPING_NOT_EMPTY' },
+      );
+    }
+    const { x, y } = centerOf(node);
+    await this.device.gesture({ action: 'click', x, y });
+    const parts = ['uinput -K'];
+    for (const [index, letter] of [...value].entries()) {
+      if (index > 0) parts.push(`-i ${intervalMs}`);
+      const key = 2017 + letter.charCodeAt(0) - 'a'.charCodeAt(0);
+      parts.push(`-d ${key} -u ${key}`);
+    }
+    const result = await this.device.shell(parts.join(' '));
+    const output = `${result.stdout}\n${result.stderr}`;
+    for (const letter of value) {
+      const key = 2017 + letter.charCodeAt(0) - 'a'.charCodeAt(0);
+      if (!output.includes(`you raised the key ${key}`)) {
         throw new OhosPerfError(
-          `type_keys did not clear the previous value: found ${JSON.stringify(node.text)}`,
-          { code: 'WORKLOAD_INPUT_NOT_CLEARED' },
+          `native keyboard injection did not confirm key ${key}` +
+            ` (exit ${result.code}: ${output.trim().slice(0, 200)})`,
+          { code: 'WORKLOAD_TYPING_UNCONFIRMED' },
         );
       }
     }
-    for (const character of value) {
-      const { x, y } = centerOf(await this.find(selector, DEFAULT_TIMEOUT_S * 1000));
-      await this.device.gesture({ action: 'inputText', x, y, text: character });
-      if (intervalMs > 0) await this.sleep(intervalMs);
-    }
-    node = await this.find(selector, DEFAULT_TIMEOUT_S * 1000);
-    if (node.text !== value) {
+    const after = await this.find(selector, DEFAULT_TIMEOUT_S * 1000);
+    if (after.text !== value) {
       throw new OhosPerfError(
         `typed value does not match: expected ${JSON.stringify(value)},` +
-          ` found ${JSON.stringify(node.text)}`,
+          ` found ${JSON.stringify(after.text)}`,
         { code: 'WORKLOAD_INPUT_MISMATCH' },
       );
     }

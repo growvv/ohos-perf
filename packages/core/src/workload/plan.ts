@@ -212,15 +212,23 @@ function action(value: unknown, path: string): WorkloadAction {
     }
     case 'type_keys': {
       allowedKeys(object, ['op', 'selector', 'value', 'interval_ms'], path);
-      const interval = optionalNumber(object.interval_ms, `${path}.interval_ms`, 0, 60_000);
+      // The published driver's `type_keys` is a `uinput -K` burst: it accepts
+      // `[a-z]{1,100}`, an interval in 1..15000, and defaults the interval to
+      // 50. A value outside that is a plan error here, before a device is
+      // resolved, rather than a device command that cannot work.
+      const burst = text(object.value, `${path}.value`);
+      if (!/^[a-z]{1,100}$/.test(burst)) {
+        bad(`${path}.value`, 'type_keys expects 1-100 lowercase letters (a-z)');
+      }
+      const interval = optionalNumber(object.interval_ms, `${path}.interval_ms`, 1, 15_000);
       if (interval !== undefined && !Number.isInteger(interval)) {
         bad(`${path}.interval_ms`, 'expected a whole number');
       }
       return {
         op,
         selector: selector(object.selector, `${path}.selector`),
-        value: text(object.value, `${path}.value`),
-        ...(interval === undefined ? {} : { interval_ms: interval }),
+        value: burst,
+        interval_ms: interval ?? 50,
       };
     }
     case 'wait': {

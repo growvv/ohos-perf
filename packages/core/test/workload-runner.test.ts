@@ -57,6 +57,15 @@ function fakeDevice(opts: FakeOptions = {}) {
     async shell(cmd: string) {
       shellCalls.push(cmd);
       if (cmd.startsWith('pidof ')) return { stdout: '4242\n', stderr: '', code: 0 };
+      // A real device answers a `uinput -K` burst with one confirmation per
+      // key; the runner requires every one of them.
+      if (cmd.startsWith('uinput -K')) {
+        const keys = [...cmd.matchAll(/-d (\d+)/g)].map((m) => Number(m[1]));
+        return {
+          stdout: keys.map((key) => `you raised the key ${key}`).join('\n'),
+          stderr: '', code: 0,
+        };
+      }
       if (cmd.startsWith('uitest uiInput')) return { stdout: 'No Error\n', stderr: '', code: 0 };
       return { stdout: '', stderr: '', code: 0 };
     },
@@ -228,27 +237,20 @@ describe('WorkloadRunner', () => {
     expect(result.error).toMatch(/exceeding the 1\.00s capture window/);
   });
 
-  it('types a value and verifies the field holds it', async () => {
-    let typed = '';
-    const search = { ...SEARCH };
+  it('fails when the field does not hold what was typed', async () => {
+    // The fake screen never reflects typed text, so the verification must
+    // fail — and it must say what it expected and what it found.
     const device = fakeDevice({
-      screens: [[ROOT, search], [ROOT, search], [ROOT, search]],
+      screens: [[ROOT, SEARCH], [ROOT, SEARCH], [ROOT, SEARCH]],
     });
-    const original = device.gesture;
-    device.gesture = async (g: Gesture) => {
-      if (g.action === 'inputText') typed += g.text;
-      return original(g);
-    };
     const plan = parseWorkloadPlan({
       bundle: 'com.example.app', ability: 'EntryAbility',
       measured: [{ op: 'type_keys', selector: { hint: '搜索' }, value: 'electronic' }],
     });
     const result = await runner(device).run(plan);
-    // The fake screen never reflects typed text, so the verification must
-    // fail — and it must say what it expected and what it found.
-    expect(typed).toBe('electronic');
+    expect(result.error ?? '', device.shellCalls.join('\n')).toMatch(/typed value does not match/);
+    expect(device.shellCalls.some((call) => call.startsWith('uinput -K'))).toBe(true);
     expect(result.status).toBe('failed');
-    expect(result.error).toMatch(/typed value does not match/);
   });
 
   it('swipes at the velocity the published driver uses', async () => {
@@ -280,6 +282,68 @@ describe('WorkloadRunner', () => {
     expect(device.gestures).toEqual([
       { action: 'swipe', fromX: 540, fromY: 702, toX: 540, toY: 1825, velocity: 1000 },
     ]);
+  });
+
+  it('types a burst in one device command, the way the published driver does', async () => {
+    // `workload_driver.py`'s `type_keys` sends one `uinput -K` for the whole
+    // word, with `-i <ms>` between keys, and requires the device to confirm
+    // every release ("you raised the key N"). One `inputText` per character is
+    // a different workload: each call is its own command, so the interval the
+    // plan asks for is not what the app sees.
+    const search = { ...SEARCH, text: '' };
+    const device = fakeDevice({ screens: [[ROOT, search], [ROOT, search], [ROOT, search]] });
+    const original = device.uiTree;
+    let typed = '';
+    device.shell = async (cmd: string) => {
+      device.shellCalls.push(cmd);
+      if (cmd.startsWith('uinput -K')) {
+        const keys = [...cmd.matchAll(/-d (\d+)/g)].map((m) => Number(m[1]));
+        typed = keys.map((k) => String.fromCharCode(k - 2017 + 97)).join('');
+        return {
+          stdout: keys.map((k) => `you raised the key ${k}`).join('\n'),
+          stderr: '', code: 0,
+        };
+      }
+      if (cmd.startsWith('pidof ')) return { stdout: '4242\n', stderr: '', code: 0 };
+      return { stdout: '', stderr: '', code: 0 };
+    };
+    device.uiTree = async () => {
+      const screen = await original();
+      return typed === '' ? screen : [ROOT, { ...SEARCH, text: typed }];
+    };
+    const plan = parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{
+        op: 'type_keys', selector: { hint: '搜索' }, value: 'electronic', interval_ms: 50,
+      }],
+    });
+    const result = await runner(device).run(plan);
+    expect(result.status).toBe('ok');
+    const burst = device.shellCalls.filter((call) => call.startsWith('uinput -K'));
+    expect(burst).toHaveLength(1);
+    // e=2021, l=2028, e, c=2019, t=2036, r=2034, o=2031, n=2030, i=2025, c.
+    expect(burst[0]).toBe(
+      'uinput -K -d 2021 -u 2021 -i 50 -d 2028 -u 2028 -i 50 -d 2021 -u 2021 -i 50' +
+        ' -d 2019 -u 2019 -i 50 -d 2036 -u 2036 -i 50 -d 2034 -u 2034 -i 50' +
+        ' -d 2031 -u 2031 -i 50 -d 2030 -u 2030 -i 50 -d 2025 -u 2025 -i 50' +
+        ' -d 2019 -u 2019',
+    );
+  });
+
+  it('refuses a type_keys burst the published driver would refuse', () => {
+    // The reference accepts `[a-z]{1,100}` and an interval in 1..15000. The
+    // plan is validated whole before a device is resolved, so this is a parse
+    // error naming the JSON path — not a device command that cannot work.
+    expect(() => parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{ op: 'type_keys', selector: { hint: '搜索' }, value: 'Electronic' }],
+    })).toThrow(/lowercase letters/);
+    expect(() => parseWorkloadPlan({
+      bundle: 'com.example.app', ability: 'EntryAbility',
+      measured: [{
+        op: 'type_keys', selector: { hint: '搜索' }, value: 'abc', interval_ms: 0,
+      }],
+    })).toThrow(/interval_ms/);
   });
 
   it('swipes at the published velocity while scrolling to a target', async () => {
