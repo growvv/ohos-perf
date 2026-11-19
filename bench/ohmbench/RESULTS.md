@@ -336,12 +336,24 @@ opens. That is the chain in `workload.json` — `wait 京墨` → `point 0.94,0.
 so the benchmark does ship the traffic for the cases whose setup is
 self-contained, and it does not for the ones above.
 
-`sepweather_font_register_per_page` is a different failure and a real
-measurement: its plan runs 40 open/close cycles of the city manager, and on the
-emulator that took **315 s** against the case's own 30 s window, so the run
-failed with `workload took 315.16s, exceeding the 30.00s capture window` — the
-same check HapRay's `UI.profiled()` makes. Most of the time is the emulator's
-`dumpLayout` latency, not the app.
+Two cases failed at their own window rather than at a selector, and both are
+real measurements of how long the emulator takes:
+
+| case | its own window | measured | what the plan does |
+| --- | --- | --- | --- |
+| `sepweather_font_register_per_page` | 30 s | **315 s** | 40 open/close cycles of the city manager |
+| `wanharmony_persisted_home_list_growth` | 60 s | **100.8 s** (first run) | 12 swipes on the home list |
+
+Both fail with `workload took …s, exceeding the …s capture window`, the same
+check HapRay's `UI.profiled()` makes. WanHarmony's overrun was also a defect in
+this tool: the runner sent `uitest uiInput swipe x y1 x y2` with no velocity,
+and the reference driver sends `1000`. Measured on the device, a swipe costs
+**5.15 s** without the argument and **3.21 s** with it, so the 12-swipe plan was
+paying roughly 23 s it should not have. The velocity is now sent; the full
+12-swipe run was not re-measured after the fix because the sweep held the
+device, so whether it now fits 60 s is not claimed here. Sepweather's overrun is
+the emulator's `dumpLayout` latency: 40 cycles each waiting for two screens,
+which the velocity does not affect.
 
 ### What the dynamic run found in this tool
 
