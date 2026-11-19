@@ -91,10 +91,12 @@ describe('parseSize', () => {
 });
 
 // 用假 Hdc 驱动 collect()，断言失败路径不静默通过。
+type Reply = { stdout: string; stderr: string; code: number };
+
 class FakeHdc {
   calls: Array<{ kind: string; args: unknown[] }> = [];
   constructor(
-    private readonly responses: Record<string, { stdout: string; stderr: string; code: number }>,
+    private readonly responses: Record<string, Reply | Reply[]>,
     private readonly throwOn: string[] = [],
   ) {}
   async shell(_t: string, cmd: string) {
@@ -103,7 +105,12 @@ class FakeHdc {
       if (cmd.includes(needle)) throw new Error(`hdc shell failed: ${cmd}`);
     }
     for (const [needle, r] of Object.entries(this.responses)) {
-      if (cmd.includes(needle)) return r;
+      if (!cmd.includes(needle)) continue;
+      // An array answers the same command once per call, in order, holding
+      // its last reply: a retry gets the next one instead of the same one.
+      if (!Array.isArray(r)) return r;
+      const next = r.length > 1 ? r.shift()! : r[0]!;
+      return next;
     }
     return { stdout: '', stderr: '', code: 0 };
   }
@@ -170,6 +177,101 @@ describe('HitraceCollector.collect failure paths', () => {
     // The actual device error line must survive into the message.
     expect(err.message).toContain('errorCode(1103)');
     expect(recvCalls(hdc)).toEqual([]);
+    // A stale long recording is the one begin failure the collector can clear,
+    // so it must try — see the retry suite below.
+    expect(stopCalls(hdc)).toHaveLength(1);
+  });
+
+  it('stops a stale recording and retries the begin once', async () => {
+    // Measured on the emulator: a `--trace_begin` left recording by an aborted
+    // run makes every later begin answer `errorCode(1103)` until a
+    // `--trace_finish_nodump` clears it — an earlier sweep recorded 0 of 21
+    // cases to exactly this. One stop, one retry, and the retry succeeds.
+    const stale = {
+      stdout:
+        '2026/11/15 03:09:00 hitrace enter, running_state is RECORDING_LONG_BEGIN\n' +
+        'args: tags:sched bufferSize:204800 overwrite:1\n' +
+        '2026/11/15 03:09:00 error: OpenRecording failed, errorCode(1103)',
+      stderr: '',
+      code: 0,
+    };
+    const hdc = new FakeHdc({
+      '--trace_begin': [stale, BEGIN_OK],
+      '--trace_finish': FINISH_OK,
+      'ls -l': LS_OK,
+    });
+    const c = new HitraceCollector();
+    await c.collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout());
+
+    const begins = hdc.calls.filter(
+      (x) => x.kind === 'shell' && String(x.args[0]).includes('--trace_begin'),
+    );
+    expect(begins).toHaveLength(2);
+    expect(stopCalls(hdc)).toHaveLength(1);
+    // The stop sits between the two begins, not after them.
+    const order = hdc.calls.map((x) => String(x.args[0]));
+    const firstBegin = order.findIndex((cmd) => cmd.includes('--trace_begin'));
+    const stop = order.findIndex((cmd) => cmd.includes('--trace_finish_nodump'));
+    const secondBegin = order.findIndex(
+      (cmd, index) => index > stop && cmd.includes('--trace_begin'),
+    );
+    expect(firstBegin).toBeLessThan(stop);
+    expect(secondBegin).toBeGreaterThan(stop);
+    expect(recvCalls(hdc)).toHaveLength(1);
+  });
+
+  it('gives up after one retry and names both failures', async () => {
+    // A begin that fails twice is not a stale session. Retrying again would
+    // spend the capture window on a device that cannot record, so the second
+    // failure is the error, and it carries the first one's text too.
+    const stale = {
+      stdout: 'error: OpenRecording failed, errorCode(1103)',
+      stderr: '',
+      code: 0,
+    };
+    const hdc = new FakeHdc({ '--trace_begin': [stale, stale, BEGIN_OK] });
+    const c = new HitraceCollector();
+    const err = await c
+      .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string; message?: string }) => e,
+      );
+
+    expect(err.code).toBe('HITRACE_BEGIN_FAILED');
+    expect(err.message).toContain('errorCode(1103)');
+    const begins = hdc.calls.filter(
+      (x) => x.kind === 'shell' && String(x.args[0]).includes('--trace_begin'),
+    );
+    expect(begins).toHaveLength(2);
+    expect(stopCalls(hdc)).toHaveLength(1);
+    expect(recvCalls(hdc)).toEqual([]);
+  });
+
+  it('does not retry a begin that failed for another reason', async () => {
+    // `tag is empty` is a caller mistake, not a stale session: stopping a
+    // recording that is not there and retrying the same command only doubles
+    // the device round trips before the same error.
+    const hdc = new FakeHdc({
+      '--trace_begin': {
+        stdout: 'error: tag is empty, please add.',
+        stderr: '',
+        code: 0,
+      },
+    });
+    const c = new HitraceCollector();
+    const err = await c
+      .collect(hdc as never, 'dev', { app: 'x', durationMs: 1 }, fakeLayout())
+      .then(
+        () => { throw new Error('expected collect() to reject'); },
+        (e: { code?: string; message?: string }) => e,
+      );
+
+    expect(err.code).toBe('HITRACE_BEGIN_FAILED');
+    const begins = hdc.calls.filter(
+      (x) => x.kind === 'shell' && String(x.args[0]).includes('--trace_begin'),
+    );
+    expect(begins).toHaveLength(1);
     expect(stopCalls(hdc)).toEqual([]);
   });
 

@@ -35,6 +35,13 @@ const DEVICE_TRACE_PATH = '/data/local/tmp/ohosperf_trace.htrace';
 const BEGIN_MARKER = 'OpenRecording done';
 const FINISH_MARKER = 'trace read done';
 
+/**
+ * What hitrace says when a recording is already running. Measured on the
+ * emulator: a `--trace_begin` left running by an aborted run answers this to
+ * every later begin, and only `--trace_finish_nodump` clears it.
+ */
+const STALE_SESSION_MARKER = 'errorCode(1103)';
+
 /** Node's setTimeout clamps anything larger to 1 ms (32-bit signed limit). */
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
@@ -142,6 +149,19 @@ function detail(text: string): string {
 }
 
 /**
+ * The error a begin that never started recording raises.
+ *
+ * Kept as one function so the single-attempt and retried paths name the same
+ * expectation, and so the device's own diagnostics survive into the message.
+ */
+function beginFailed(deviceOutput: string): OhosPerfError {
+  return new OhosPerfError(
+    `hitrace begin failed: expected "${BEGIN_MARKER}"; device output: ${detail(deviceOutput)}`,
+    { code: 'HITRACE_BEGIN_FAILED' },
+  );
+}
+
+/**
  * Parse the byte count of `path` from `ls -l` output.
  *
  * A line matches only when its **last** whitespace-separated token is exactly
@@ -215,6 +235,14 @@ export class HitraceCollector implements Collector {
    * with `errorCode(1103)` until someone stopped it by hand. The stop's own
    * error is swallowed; the original failure is what the caller sees.
    *
+   * That stop only covers failures *this* process lives through. A process
+   * killed mid-capture leaves the same recording behind with nothing to stop
+   * it, so a begin that answers `errorCode(1103)` is treated as a stale
+   * session: the collector stops it and retries the same begin once. Two
+   * failures in a row raise with both attempts named; any other begin failure
+   * is raised without a retry and without stopping a recording that is not
+   * there.
+   *
    * `opts.durationMs` must be finite and in `(0, 2^31 - 1]`; anything else
    * throws `HITRACE_BAD_DURATION` before the device is touched. `categories`,
    * when supplied, must contain at least one non-empty bare tag name
@@ -237,11 +265,28 @@ export class HitraceCollector implements Collector {
     await hdc.shell(target, `rm -f ${devicePath}`);
 
     const begin = await hdc.shell(target, this.beginCommand(opts));
-    if (!combined(begin).includes(BEGIN_MARKER)) {
-      throw new OhosPerfError(
-        `hitrace begin failed: expected "${BEGIN_MARKER}"; device output: ${detail(combined(begin))}`,
-        { code: 'HITRACE_BEGIN_FAILED' },
-      );
+    const firstFailure = combined(begin);
+    if (!firstFailure.includes(BEGIN_MARKER)) {
+      // A long recording left running by an earlier, aborted run is the one
+      // begin failure this collector can clear: measured on the emulator, it
+      // answers `errorCode(1103)` to every begin until a
+      // `--trace_finish_nodump` stops it, and one such session cost every case
+      // of a 21-case sweep. Stop it and try the same command once.
+      if (!firstFailure.includes(STALE_SESSION_MARKER)) {
+        throw beginFailed(firstFailure);
+      }
+      await this.stopBestEffort(hdc, target);
+      const retry = await hdc.shell(target, this.beginCommand(opts));
+      if (!combined(retry).includes(BEGIN_MARKER)) {
+        // Two failures in a row is not a stale session; retrying again would
+        // spend the capture window on a device that cannot record. Both
+        // attempts are named, because the second may be a different error.
+        throw new OhosPerfError(
+          `hitrace begin failed after stopping a stale recording` +
+            ` (first: ${detail(firstFailure)}; retry: ${detail(combined(retry))})`,
+          { code: 'HITRACE_BEGIN_FAILED' },
+        );
+      }
     }
 
     let finished = false;

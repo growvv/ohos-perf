@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.33.5 — 2026-11-19
+
+**A stale hitrace recording is cleared instead of poisoning every later
+capture.**
+
+A `--trace_begin` left running by an aborted run makes every later begin
+answer `error: OpenRecording failed, errorCode(1103)` until something stops it,
+and `collect` threw on that answer before it reached the best-effort stop it
+already had. One killed process therefore made every capture on the device fail
+— observed here as a whole 21-case sweep in which every case stopped at
+`measured` with the same 1103.
+
+`collect` now recognises 1103, stops the stale recording with
+`--trace_finish_nodump`, and retries the same begin **once**. Two failures in a
+row is not a stale session, so the error is raised with both attempts named
+rather than retried again. A begin that failed for any other reason (`tag is
+empty`, a transport failure) is not retried and does not stop a recording that
+is not there — the fourth test pins that boundary.
+
 ## 0.33.4 — 2026-11-19
 
 **`type_keys` is one device-side burst, the way the published driver sends it.**

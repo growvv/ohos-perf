@@ -96,6 +96,12 @@ matched and how many nodes were on screen — the benchmark's own documented gap
 
 ## Emulator limits
 
+One failure mode is neither the emulator's nor the benchmark's: a sweep that is
+killed mid-capture leaves a hitrace long recording running, and every later
+begin on that device answers `errorCode(1103)` until it is stopped. A 21-case
+sweep was lost to exactly this. `collect` now clears it and retries once
+(0.33.5), so a killed sweep costs the case it was on and not the run after it.
+
 The emulator (`127.0.0.1:5555`, OpenHarmony 6.1.1.125) has no
 `hiprofiler_cmd`; `hiperf record` fails with `create mmap fail` / `Operation
 not permitted`; and `param set persist.ark.trace` is refused with errNum 1001.
