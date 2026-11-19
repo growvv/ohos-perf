@@ -72,11 +72,15 @@ matched and how many nodes were on screen — the benchmark's own documented gap
 The emulator (`127.0.0.1:5555`, OpenHarmony 6.1.1.125) has no
 `hiprofiler_cmd`; `hiperf record` fails with `create mmap fail` / `Operation
 not permitted`; and `param set persist.ark.trace` is refused with errNum 1001.
-The capture therefore carries the hitrace stream and procfs, and the analyzers
-that need sampled events, the live FPS feed, native allocation hooks or the
-hilog stream report themselves degraded with the missing capability named.
-Every dynamic record says how many metrics were degraded, so a reader can tell
-a thin capture from a clean one.
+`workload` captures with `hitrace` only, the way HapRay's `profiled()` does, so
+the analyzers that need sampled events, the live FPS feed, native allocation
+hooks, procfs, thermal readings or the hilog stream report themselves degraded
+with the missing capability named. That split matters: a degraded metric whose
+reason is `captured without --hiperf` or `capability not probed` is a choice of
+capture flags, and `collect` with those flags on the same device measures it —
+only the emulator's own limits are the device's. Every dynamic record says how
+many metrics were degraded, so a reader can tell a thin capture from a clean
+one.
 
 The real Mate 60 rejects the OpenHarmony debug profile
 (`code:9568257 fail to verify pkcs7 file`), so the emulator is the only dynamic
